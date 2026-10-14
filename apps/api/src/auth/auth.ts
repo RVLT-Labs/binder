@@ -9,7 +9,7 @@ import type { SendMail } from './mailer'
 
 export interface AuthOptions {
   db: Db
-  config: Pick<Config, 'AUTH_SECRET' | 'APP_ORIGIN'>
+  config: Pick<Config, 'AUTH_SECRET' | 'APP_ORIGIN' | 'ALLOW_SIGNUP'>
   sendMail: SendMail
 }
 
@@ -24,6 +24,8 @@ export function createAuth({ db, config, sendMail }: AuthOptions) {
     emailAndPassword: { enabled: true },
     plugins: [
       magicLink({
+        // Verifying a link for an unknown email would otherwise create a user, bypassing the sign-up guard.
+        disableSignUp: !config.ALLOW_SIGNUP,
         sendMagicLink: async ({ email, url }) => {
           await sendMail({
             to: email,

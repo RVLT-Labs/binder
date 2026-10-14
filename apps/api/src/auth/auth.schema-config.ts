@@ -10,6 +10,7 @@ export const auth = createAuth({
   config: {
     AUTH_SECRET: 'schema-generation-placeholder-secret-0000',
     APP_ORIGIN: 'http://localhost:5173',
+    ALLOW_SIGNUP: false,
   },
   sendMail: async () => {},
 })

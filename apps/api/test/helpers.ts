@@ -5,6 +5,7 @@ import { getTestDb } from '@binder/db/testing'
 import type { Hono } from 'hono'
 import { type AppDeps, type AppEnv, createApp } from '../src/app'
 import { createAuth } from '../src/auth/auth'
+import type { SendMail } from '../src/auth/mailer'
 import { DiskBlobStore } from '../src/blob/DiskBlobStore'
 import type { Config } from '../src/config'
 
@@ -22,10 +23,12 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
   }
 }
 
-export async function testDeps(overrides: Partial<AppDeps> = {}): Promise<AppDeps> {
+export async function testDeps(
+  overrides: Partial<AppDeps> = {},
+  sendMail: SendMail = async () => {},
+): Promise<AppDeps> {
   const { db } = await getTestDb()
   const config = overrides.config ?? testConfig()
-  const sendMail = async () => {}
   return {
     config,
     db,
@@ -35,8 +38,8 @@ export async function testDeps(overrides: Partial<AppDeps> = {}): Promise<AppDep
   }
 }
 
-export async function createTestApp(overrides: Partial<AppDeps> = {}) {
-  const deps = await testDeps(overrides)
+export async function createTestApp(overrides: Partial<AppDeps> = {}, sendMail?: SendMail) {
+  const deps = await testDeps(overrides, sendMail)
   return { app: createApp(deps), deps }
 }
 

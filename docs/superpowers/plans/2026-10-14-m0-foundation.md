@@ -258,7 +258,7 @@ git add -A && git -c commit.gpgsign=false commit -m "feat(api): hono skeleton, c
 - `requireUser` Hono middleware: reads `auth.api.getSession({ headers: c.req.raw.headers })`, sets `c.var.user = { id, email, name }` and `c.var.actor = { userId, via: 'web', agent: null }`, throws `unauthenticated()` when absent.
 - `GET /api/me` returns `{ user }`.
 - `POST /api/auth/sign-up/email` is answered 403 by a guard middleware unless `ALLOW_SIGNUP=true`.
-- CLI: `cli create-user --email <e> --name <n> --password <p>` calls `auth.api.signUpEmail({ body })` directly (not over HTTP) and prints the user id.
+- CLI: `cli create-user --email <e> --name <n>` (password from BINDER_PASSWORD or `--password-stdin`) calls `auth.api.signUpEmail({ body })` directly (not over HTTP) and prints the user id.
 - Test helper `createTestUser(app, { email, name, password }): Promise<{ id: string; cookie: string }>` that creates via `auth.api.signUpEmail` and signs in over HTTP to capture the cookie.
 
 - [ ] **Step 1: Write the failing tests**
