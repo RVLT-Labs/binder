@@ -10,3 +10,10 @@ export {
   requireShowRole,
   updateShow,
 } from './tenancy'
+export {
+  authenticateToken,
+  createToken,
+  listTokens,
+  revokeToken,
+  tokenAllowsShow,
+} from './tokens'

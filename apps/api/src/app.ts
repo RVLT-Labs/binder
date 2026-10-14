@@ -10,6 +10,7 @@ import { AppError } from './errors'
 import { health } from './routes/health'
 import { me } from './routes/me'
 import { tenancy } from './routes/tenancy'
+import { tokens } from './routes/tokens'
 
 export interface AppDeps {
   config: Config
@@ -23,6 +24,8 @@ export type AppEnv = {
     deps: AppDeps
     user?: { id: string; email: string; name: string }
     actor?: Actor
+    /** Set only when authenticated by a personal access token. */
+    tokenScope?: '*' | string[]
   }
 }
 
@@ -60,6 +63,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   api.route('/', health)
   api.route('/', me)
   api.route('/', tenancy)
+  api.route('/', tokens)
   app.route('/api', api)
 
   return app
