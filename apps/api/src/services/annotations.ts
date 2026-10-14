@@ -10,7 +10,7 @@ import {
   newId,
 } from '@binder/shared'
 import { and, eq, type InferSelectModel, inArray, or, type SQL, sql } from 'drizzle-orm'
-import { forbidden, IdTaken, invalid, notFound } from '../errors'
+import { AppError, forbidden, IdTaken, invalid, notFound } from '../errors'
 import { hasNoNul, parseOrInvalid } from '../validation'
 import { logChange } from './changeLog'
 import { assertAnchorTarget } from './cues'
@@ -62,7 +62,15 @@ export async function loadAnnotationRow(db: Executor, id: string): Promise<Annot
 async function loadVisible(db: Executor, actor: Actor, id: string): Promise<Annotation> {
   const row = await loadAnnotationRow(db, id)
   if (!row) throw notFound('Annotation not found')
-  await requireShowRole(db, actor, row.showId, 'viewer')
+  try {
+    await requireShowRole(db, actor, row.showId, 'viewer')
+  } catch (err) {
+    // A non-member gets the message a missing id gets (not "Show not found"); token scope stays forbidden.
+    if (err instanceof AppError && err.code === 'not_found') {
+      throw notFound('Annotation not found')
+    }
+    throw err
+  }
   if (row.layerKind === 'personal' && row.layerId !== actor.userId) {
     throw notFound('Annotation not found')
   }

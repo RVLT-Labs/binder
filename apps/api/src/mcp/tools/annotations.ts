@@ -66,9 +66,16 @@ async function resolveLayer(
   return { kind: 'department', id: await resolveDepartment(db, actor, showId, ref) }
 }
 
-async function anchorOf(db: Executor, actor: Actor, p: AnnotationPlacement): Promise<Anchor> {
-  const { text, ...point } = p
+/** A moved annotation keeps its bound words (`current.text`) unless the placement names new ones. */
+async function anchorOf(
+  db: Executor,
+  actor: Actor,
+  p: AnnotationPlacement,
+  current?: Anchor,
+): Promise<Anchor> {
+  const { text: given, ...point } = p
   const anchor = await anchorFor(db, actor, point)
+  const text = given ?? current?.text
   return text ? { ...anchor, text } : anchor
 }
 
@@ -187,7 +194,7 @@ export function registerAnnotationTools(server: McpServer, mcp: McpContext): voi
         patch.layerKind = resolved.kind
         patch.layerId = resolved.id
       }
-      if (anchor !== undefined) patch.anchor = await anchorOf(db, actor, anchor)
+      if (anchor !== undefined) patch.anchor = await anchorOf(db, actor, anchor, current.anchor)
       await updateAnnotation(db, actor, { annotationId, patch })
       return jsonResult(view(await getAnnotation(db, actor, { annotationId })))
     }),

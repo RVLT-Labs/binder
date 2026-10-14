@@ -331,6 +331,66 @@ describe('annotation tools', () => {
     expect(r.structuredContent?.code).not.toBe('CONFIRMATION_REQUIRED')
   })
 
+  test('get_annotation reads the same for a missing id and for an id in a show the caller is not in', async () => {
+    const lxNote = await callTool(lx, 'create_annotation', {
+      showId: s.show.id,
+      layer: 'LX',
+      type: 'note',
+      text: 'in the show',
+      anchor: place(),
+    })
+    const stranger = await connect(s.outsider.id)
+    const existing = await callTool(stranger, 'get_annotation', {
+      annotationId: lxNote.structuredContent?.id,
+    })
+    const missing = await callTool(stranger, 'get_annotation', {
+      annotationId: crypto.randomUUID(),
+    })
+    expect(existing.isError).toBe(true)
+    expect(resultText(missing)).toBe('not_found: Annotation not found')
+    expect(resultText(existing)).toBe(resultText(missing))
+    for (const tool of ['update_annotation', 'delete_annotations'] as const) {
+      const args = (annotationId: string) =>
+        tool === 'update_annotation'
+          ? { annotationId, text: 'x' }
+          : { annotationIds: [annotationId] }
+      const a = await callTool(stranger, tool, args(lxNote.structuredContent?.id))
+      const b = await callTool(stranger, tool, args(crypto.randomUUID()))
+      expect(resultText(a), tool).toBe(resultText(b))
+    }
+  })
+
+  test('update_annotation moves a highlight without re-sending its quote, keeping the bound words', async () => {
+    const made = await callTool(lx, 'create_annotation', {
+      showId: s.show.id,
+      layer: 'LX',
+      type: 'highlight',
+      anchor: { ...place(2, 30, 400), text: { quote: 'to be or', wordStart: 4, wordEnd: 6 } },
+    })
+    const id = made.structuredContent?.id
+    const moved = await callTool(lx, 'update_annotation', {
+      annotationId: id,
+      anchor: place(5, 60, 300),
+    })
+    expect(moved.isError).toBeFalsy()
+    expect(moved.structuredContent?.anchor).toMatchObject({
+      pageIndex: 5,
+      x: 60,
+      y: 300,
+      text: { quote: 'to be or', wordStart: 4, wordEnd: 6 },
+    })
+    // A placement that does send text replaces it.
+    const rebound = await callTool(lx, 'update_annotation', {
+      annotationId: id,
+      anchor: { ...place(5, 60, 300), text: { quote: 'not to', wordStart: 7, wordEnd: 8 } },
+    })
+    expect(rebound.structuredContent?.anchor.text).toEqual({
+      quote: 'not to',
+      wordStart: 7,
+      wordEnd: 8,
+    })
+  })
+
   test('annotation writes through MCP log via mcp with the client name as agent and the layer key', async () => {
     const made = await callTool(owner, 'create_annotation', {
       showId: s.show.id,

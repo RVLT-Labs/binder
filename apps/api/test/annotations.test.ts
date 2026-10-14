@@ -114,6 +114,36 @@ describe('personal layers are private', () => {
     expect(await code(listAnnotations(db, outsider, { showId: s.show.id }))).toBe('not_found')
   })
 
+  test('the not_found message is identical for a missing id, an id in a show the caller is not in, and a foreign personal row', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const lx = { kind: 'department' as const, id: s.depts.LX.id }
+    const shared = await createAnnotation(db, s.actors.owner, {
+      showId: s.show.id,
+      ...fields(s, lx),
+    })
+    const theirs = await createAnnotation(db, s.actors.viewer, {
+      showId: s.show.id,
+      ...fields(s, personal(s.viewer.id)),
+    })
+    const outsider: Actor = { userId: s.outsider.id, via: 'web', agent: null }
+    const message = (p: Promise<unknown>) =>
+      p.then(
+        () => 'ok',
+        (e) => (e instanceof AppError ? `${e.code}: ${e.message}` : 'other'),
+      )
+    const attempts = (who: Actor, annotationId: string) => [
+      message(getAnnotation(db, who, { annotationId })),
+      message(updateAnnotation(db, who, { annotationId, patch: { text: 'x' } })),
+      message(deleteAnnotations(db, who, { annotationIds: [annotationId] })),
+    ]
+    const missing = await Promise.all(attempts(s.actors.owner, newId()))
+    expect(missing).toEqual(Array(3).fill('not_found: Annotation not found'))
+    // Existing in a show the outsider is not in; and the viewer's personal row seen by the owner.
+    expect(await Promise.all(attempts(outsider, shared.id))).toEqual(missing)
+    expect(await Promise.all(attempts(s.actors.owner, theirs.id))).toEqual(missing)
+  })
+
   test("creating a personal annotation on someone else's layer id is forbidden", async () => {
     const s = await setupMarkupShow()
     const db = s.deps.db

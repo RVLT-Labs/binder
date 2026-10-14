@@ -426,4 +426,28 @@ describe('cue reads', () => {
     expect(await code(getCue(db, outsider, { cueId: cue.id }))).toBe('not_found')
     expect(await code(getCue(db, s.actors.owner, { cueId: newId() }))).toBe('not_found')
   })
+
+  test('the not_found message for a cue in a show the caller is not in equals that of a missing id', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const cue = await createCue(db, s.actors.owner, {
+      showId: s.show.id,
+      departmentId: s.depts.LX.id,
+    })
+    const outsider: Actor = { userId: s.outsider.id, via: 'web', agent: null }
+    const message = (p: Promise<unknown>) =>
+      p.then(
+        () => 'ok',
+        (e) => (e instanceof AppError ? `${e.code}: ${e.message}` : 'other'),
+      )
+    const attempts = (cueId: string) => [
+      message(getCue(db, outsider, { cueId })),
+      message(updateCue(db, outsider, { cueId, patch: { label: 'x' } })),
+      message(deleteCues(db, outsider, { cueIds: [cueId] })),
+    ]
+    const missing = await Promise.all(attempts(newId()))
+    expect(missing).toEqual(Array(3).fill('not_found: Cue not found'))
+    expect(await Promise.all(attempts(cue.id))).toEqual(missing)
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).label).toBe('')
+  })
 })

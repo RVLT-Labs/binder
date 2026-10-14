@@ -10,8 +10,8 @@ import {
   layerKey,
   newId,
 } from '@binder/shared'
-import { and, eq, type InferSelectModel, inArray } from 'drizzle-orm'
-import { IdTaken, invalid, notFound } from '../errors'
+import { and, eq, type InferSelectModel } from 'drizzle-orm'
+import { AppError, IdTaken, invalid, notFound } from '../errors'
 import { hasNoNul, parseOrInvalid } from '../validation'
 import { logChange } from './changeLog'
 import type { Executor } from './executor'
@@ -50,6 +50,22 @@ export async function loadCueRow(db: Executor, id: string): Promise<Cue | null> 
   if (id.includes('\u0000')) return null
   const [row] = await db.select().from(cues).where(eq(cues.id, id))
   return row ?? null
+}
+
+/**
+ * Internal: the row as the actor may know it. A non-member gets the same `not_found: Cue not found`
+ * a missing id gets (never "Show not found"); a token outside the show stays `forbidden` (R27).
+ */
+async function loadVisibleCue(db: Executor, actor: Actor, id: string): Promise<Cue> {
+  const row = await loadCueRow(db, id)
+  if (!row) throw notFound('Cue not found')
+  try {
+    await requireShowRole(db, actor, row.showId, 'viewer')
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'not_found') throw notFound('Cue not found')
+    throw err
+  }
+  return row
 }
 
 /**
@@ -195,8 +211,7 @@ export async function updateCue(
   const batchId = input.batchId ?? newId()
   const patch = parseOrInvalid(patchSchema, input.patch)
   return db.transaction(async (tx) => {
-    const current = await loadCueRow(tx, input.cueId)
-    if (!current) throw notFound('Cue not found')
+    const current = await loadVisibleCue(tx, actor, input.cueId)
     await requireLayerEdit(tx, actor, current.showId, layerRef(current.departmentId))
 
     const before: Record<string, unknown> = {}
@@ -251,15 +266,14 @@ export async function deleteCues(
   const ids = [...new Set(input.cueIds)]
   if (ids.length === 0) throw invalid('cueIds must not be empty')
   return db.transaction(async (tx) => {
-    const rows = await tx.select().from(cues).where(inArray(cues.id, ids))
-    const byId = new Map(rows.map((r) => [r.id, r]))
+    const rows: Cue[] = []
     for (const id of ids) {
-      const row = byId.get(id)
-      if (!row) throw notFound('Cue not found')
+      const row = await loadVisibleCue(tx, actor, id)
       await requireLayerEdit(tx, actor, row.showId, layerRef(row.departmentId))
+      rows.push(row)
     }
-    for (const id of ids) {
-      const row = byId.get(id) as Cue
+    for (const row of rows) {
+      const id = row.id
       await tx.delete(cues).where(eq(cues.id, id))
       await logChange(tx, {
         showId: row.showId,
@@ -327,9 +341,7 @@ export async function getCue(
   actor: Actor,
   input: { cueId: string },
 ): Promise<CueView> {
-  const row = await loadCueRow(db, input.cueId)
-  if (!row) throw notFound('Cue not found')
-  await requireShowRole(db, actor, row.showId, 'viewer')
+  const row = await loadVisibleCue(db, actor, input.cueId)
   const view = (await viewsFor(db, row.showId)).find((c) => c.id === row.id)
   if (!view) throw notFound('Cue not found')
   return view
