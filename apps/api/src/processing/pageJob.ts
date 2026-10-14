@@ -120,3 +120,16 @@ export async function processPage(deps: ProcessingDeps, pageId: string): Promise
   }
   await finishVersionIfDone(db, version.id)
 }
+
+/**
+ * The page job's dead-letter action (R45): pg-boss gave up after retries or expiry. Fails the page
+ * if it is still queued, then runs the same ready check as a finished page job.
+ */
+export async function markPageFailed(db: Executor, pageId: string, error: string): Promise<void> {
+  const [failed] = await db
+    .update(pages)
+    .set({ status: 'failed', error, updatedBy: SYSTEM })
+    .where(and(eq(pages.id, pageId), eq(pages.status, 'queued')))
+    .returning({ versionId: pages.documentVersionId })
+  if (failed) await finishVersionIfDone(db, failed.versionId)
+}

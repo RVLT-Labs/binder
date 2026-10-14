@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from 'node:child_process'
 import { createReadStream, readdirSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -15,7 +15,15 @@ import { processDocumentVersion } from '../src/processing/documentJob'
 import { describeOcrFailure, runOcrmypdf } from '../src/processing/ocrmypdf'
 import { processPage } from '../src/processing/pageJob'
 import { pdfInfo, renderPageImage, renderThumbnail } from '../src/processing/poppler'
-import { createJobQueue, DOCUMENT_QUEUE, PAGE_QUEUE } from '../src/processing/queue'
+import {
+  createJobQueue,
+  DOCUMENT_DEAD_QUEUE,
+  DOCUMENT_QUEUE,
+  handleDocumentDeadLetter,
+  handlePageDeadLetter,
+  PAGE_DEAD_QUEUE,
+  PAGE_QUEUE,
+} from '../src/processing/queue'
 import type { ProcessingDeps } from '../src/processing/types'
 import { addDocumentVersion, createDocument } from '../src/services'
 import { setupShow } from './documentHelpers'
@@ -58,6 +66,7 @@ beforeAll(async () => {
 })
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })
 afterAll(async () => {
   await rm(work, { recursive: true, force: true })
@@ -287,29 +296,84 @@ describe.skipIf(missing.length > 0)('processing pipeline', () => {
     expect((await wordLayer(p4)).words.map((w) => w.t)).toContain('PIRATES')
   }, 300_000)
 
-  test('encrypted pdf: version ready, all pages ocr_applied false, error names exit code 8', async () => {
+  test('owner-restricted pdf: OCRmyPDF refusing it (exit 8) falls back to a copy and pages still process', async () => {
+    // Opens without a password but carries owner restrictions. OCRmyPDF 17.13 actually OCRs these
+    // (next test), so a stand-in ocrmypdf on PATH plays an OCRmyPDF that refuses them with exit 8.
+    const ownerOnly = join(work, 'owner-only.pdf')
+    await run('qpdf', ['--encrypt', '', 'owner', '256', '--', FIXTURES.mixedPdf, ownerOnly])
+    const bin = join(work, 'refusing-ocrmypdf')
+    await mkdir(bin, { recursive: true })
+    await writeFile(
+      join(bin, 'ocrmypdf'),
+      '#!/bin/sh\necho "EncryptedPdfError: Input PDF is encrypted. The encryption must be removed to" >&2\nexit 8\n',
+      { mode: 0o755 },
+    )
+    vi.stubEnv('PATH', `${bin}:${process.env.PATH}`)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { version } = await upload(ownerOnly)
+    const done = await processAll(version.id)
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/OCR fell back to a copy/))
+    expect(done.version.status).toBe('ready')
+    expect(done.version.error).toMatch(/^ocrmypdf exit 8: EncryptedPdfError/)
+    expect(done.pages.map((p) => [p.status, p.ocrApplied])).toEqual(
+      Array.from({ length: 4 }, () => ['ready', false]),
+    )
+    expect((await blobBytes(done.version.searchableKey)).equals(await readFile(ownerOnly))).toBe(
+      true,
+    )
+    expect((await wordLayer(done.pages[0] as { wordsKey: string })).words.map((w) => w.t)).toEqual([
+      'PAGE',
+      'ONE',
+      'PORTRAIT',
+    ])
+  }, 120_000)
+
+  test('owner-restricted pdf with the installed OCRmyPDF: processed and OCRd like any other', async () => {
+    const ownerOnly = join(work, 'owner-only-real.pdf')
+    await run('qpdf', ['--encrypt', '', 'owner', '256', '--', FIXTURES.mixedPdf, ownerOnly])
+    const { version } = await upload(ownerOnly)
+    const done = await processAll(version.id)
+    expect(done.version).toMatchObject({ status: 'ready', pageCount: 4, error: null })
+    expect(done.pages.map((p) => [p.status, p.ocrApplied])).toEqual([
+      ['ready', false],
+      ['ready', false],
+      ['ready', false],
+      ['ready', true],
+    ])
+  }, 120_000)
+
+  test('password-protected pdf: version failed with a password message and the technical detail', async () => {
     const encrypted = join(work, 'encrypted.pdf')
     await run('qpdf', ['--encrypt', 'user', 'owner', '256', '--', FIXTURES.librettoPdf, encrypted])
     const { document, version } = await upload(encrypted)
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
     const done = await processAll(version.id)
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringMatching(/OCR fell back to a copy.*EncryptedPdfError/s),
-    )
 
-    expect(done.version.status).toBe('ready')
-    expect(done.version.error).toMatch(/^ocrmypdf exit 8: .*encrypted/i)
-    // A user password also stops poppler opening the PDF, so no page rows can be made; the
-    // fallback copy is still stored as the searchable PDF for the viewer to prompt for.
-    expect(done.version.error).toMatch(/cannot read pages: .*password/i)
-    expect(done.pages.every((p) => !p.ocrApplied)).toBe(true)
-    expect(done.pages).toHaveLength(0)
-    expect(done.version.pageCount).toBe(0)
-    expect((await blobBytes(done.version.searchableKey)).equals(await readFile(encrypted))).toBe(
-      true,
+    expect(done.version.status).toBe('failed')
+    expect(done.version.error).toMatch(
+      /^This PDF is password-protected\. Remove the password and upload it again\. \(.+\)$/,
     )
+    expect(done.version.error).toMatch(/ocrmypdf exit 8: EncryptedPdfError/)
+    expect(done.version.error).toMatch(/pdfinfo exit 1: .*Incorrect password/)
+    expect(done.pages).toHaveLength(0)
+    expect(done.enqueuedPages).toHaveLength(0)
+    // The failed upload stays where it was: the document keeps its version, nothing new is current.
     const [doc] = await s.deps.db.select().from(documents).where(eq(documents.id, document.id))
     expect(doc?.currentVersionId).toBe(version.id)
+  }, 120_000)
+
+  test('a file that is not a readable PDF: version failed with a plain message', async () => {
+    const corrupt = join(work, 'corrupt.pdf')
+    await writeFile(corrupt, '%PDF-1.7\nthis is not a pdf\n')
+    const { version } = await upload(corrupt)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const done = await processAll(version.id)
+    expect(done.version.status).toBe('failed')
+    expect(done.version.error).toMatch(
+      /^This file could not be read as a PDF\. \(.*pdfinfo exit 1: /,
+    )
+    expect(done.pages).toHaveLength(0)
   }, 120_000)
 
   test("ocr mode 'never' copies even a scan and leaves its word layers empty", async () => {
@@ -404,6 +468,63 @@ describe.skipIf(missing.length > 0)('processing pipeline', () => {
   }, 120_000)
 })
 
+describe.skipIf(missing.length > 0)('dead letters', () => {
+  test('a dead-lettered page job fails the page and the version still becomes ready', async () => {
+    const { version } = await upload(await textOnlyPdf())
+    const deps = processingDeps()
+    await processDocumentVersion(deps, version.id)
+    const [p0, p1, p2] = deps.jobs.enqueuedPages as [string, string, string]
+    await processPage(deps, p0)
+    await processPage(deps, p1)
+
+    await handlePageDeadLetter(deps, {
+      data: { pageId: p2 },
+      sourceOutput: { value: { message: 'job timed out' } },
+    })
+    const done = await load(version.id)
+    expect(done.pages.map((p) => p.status)).toEqual(['ready', 'ready', 'failed'])
+    expect(done.pages[2]?.error).toBe('Page processing timed out after retries.')
+    expect(done.version).toMatchObject({ status: 'ready', pageCount: 3 })
+
+    // A late dead letter for a page that finished is ignored.
+    await handlePageDeadLetter(deps, { data: { pageId: p0 }, sourceOutput: { message: 'x' } })
+    expect((await load(version.id)).pages[0]?.status).toBe('ready')
+  }, 60_000)
+
+  test('a dead-lettered document job fails the version with the last error', async () => {
+    const { version } = await upload(await textOnlyPdf())
+    const deps = processingDeps()
+    await handleDocumentDeadLetter(deps, {
+      data: { versionId: version.id },
+      sourceOutput: { name: 'ToolError', message: 'ocrmypdf timed out after 1800s: killed' },
+    })
+    const failed = await load(version.id)
+    expect(failed.version).toMatchObject({
+      status: 'failed',
+      error: 'Processing failed after retries: ocrmypdf timed out after 1800s: killed',
+      updatedBy: 'system',
+    })
+
+    const timedOut = await upload(await textOnlyPdf())
+    await handleDocumentDeadLetter(deps, {
+      data: { versionId: timedOut.version.id },
+      sourceOutput: { value: { message: 'job timed out' } },
+    })
+    expect((await load(timedOut.version.id)).version.error).toBe(
+      'Processing timed out after retries.',
+    )
+
+    // A version that reached ready is never failed by a late dead letter.
+    const ready = await upload(await textOnlyPdf())
+    await processAll(ready.version.id)
+    await handleDocumentDeadLetter(deps, {
+      data: { versionId: ready.version.id },
+      sourceOutput: null,
+    })
+    expect((await load(ready.version.id)).version).toMatchObject({ status: 'ready', error: null })
+  }, 60_000)
+})
+
 describe.skipIf(missing.length > 0)('tool wrappers', () => {
   test('runOcrmypdf falls back to a copy on invalid input and reports the exit code', async () => {
     const input = join(work, 'not-really.pdf')
@@ -465,19 +586,33 @@ describe.skipIf(missing.length > 0)('tool wrappers', () => {
 })
 
 describe('pg-boss job queue', () => {
-  test('starts, creates both queues, and sends a document job', async () => {
+  test('starts, creates both queues with dead letters, and sends a document job', async () => {
     const { url } = await getTestDb()
     const boss = new PgBoss({ connectionString: url })
     const errors: unknown[] = []
     boss.on('error', (err) => errors.push(err))
     await boss.start()
     try {
+      // A queue left by an earlier release without a dead letter gets one on start.
+      await boss.createQueue(PAGE_QUEUE, { retryLimit: 1 })
       const jobs = createJobQueue(boss, { db: s.deps.db, blobs: s.deps.blobs })
       await jobs.start()
-      const queues = await boss.getQueues([DOCUMENT_QUEUE, PAGE_QUEUE])
+      const queues = await boss.getQueues([
+        DOCUMENT_QUEUE,
+        PAGE_QUEUE,
+        DOCUMENT_DEAD_QUEUE,
+        PAGE_DEAD_QUEUE,
+      ])
       expect(
-        Object.fromEntries(queues.map((q) => [q.name, [q.retryLimit, q.expireInSeconds]])),
-      ).toEqual({ [DOCUMENT_QUEUE]: [2, 1800], [PAGE_QUEUE]: [3, 300] })
+        Object.fromEntries(
+          queues.map((q) => [q.name, [q.retryLimit, q.expireInSeconds, q.deadLetter ?? null]]),
+        ),
+      ).toEqual({
+        [DOCUMENT_QUEUE]: [2, 1800, DOCUMENT_DEAD_QUEUE],
+        [PAGE_QUEUE]: [3, 300, PAGE_DEAD_QUEUE],
+        [DOCUMENT_DEAD_QUEUE]: [expect.any(Number), expect.any(Number), null],
+        [PAGE_DEAD_QUEUE]: [expect.any(Number), expect.any(Number), null],
+      })
 
       await jobs.enqueueDocumentProcess('no-such-version')
       const { rows } = await s.deps.db.$client.query(
@@ -489,5 +624,32 @@ describe('pg-boss job queue', () => {
       await boss.stop({ graceful: true, timeout: 10_000 })
     }
     expect(errors).toEqual([])
+  }, 60_000)
+
+  test('a document job that fails its last attempt is dead-lettered and fails the version', async () => {
+    const { url } = await getTestDb()
+    const boss = new PgBoss({ connectionString: url })
+    boss.on('error', () => {})
+    await boss.start()
+    try {
+      const jobs = createJobQueue(boss, { db: s.deps.db, blobs: s.deps.blobs })
+      await jobs.start()
+      const { version } = await upload(await textOnlyPdf())
+      // Without its original the document job throws on every attempt; no retries, to be quick.
+      await s.deps.blobs.delete(version.originalKey)
+      await boss.send(DOCUMENT_QUEUE, { versionId: version.id }, { retryLimit: 0 })
+
+      let current = (await load(version.id)).version
+      for (let i = 0; i < 60 && current.status !== 'failed'; i++) {
+        await new Promise((r) => setTimeout(r, 250))
+        current = (await load(version.id)).version
+      }
+      expect(current.status).toBe('failed')
+      expect(current.error).toMatch(
+        /^Processing failed after retries: blob .*original\.pdf is missing$/,
+      )
+    } finally {
+      await boss.stop({ graceful: true, timeout: 10_000 })
+    }
   }, 60_000)
 })

@@ -2,27 +2,36 @@ import { createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { documents, documentVersions, pages } from '@binder/db'
 import { newId } from '@binder/shared'
-import { and, eq, gte, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, sql } from 'drizzle-orm'
 import { searchableBlobKey } from '../blob/keys'
 import { firstLine, ToolError } from './exec'
 import { describeOcrFailure, runOcrmypdf } from './ocrmypdf'
-import { finishVersionIfDone, SYSTEM } from './pageJob'
+import { SYSTEM } from './pageJob'
 import { listImagePages, type PdfInfo, pdfInfo } from './poppler'
 import { blobFile, withTempDir } from './tmp'
 import type { ProcessingDeps } from './types'
 
+const PASSWORD_MESSAGE = 'This PDF is password-protected. Remove the password and upload it again.'
+const UNREADABLE_MESSAGE = 'This file could not be read as a PDF.'
+
 /**
- * Reads the searchable PDF's pages. Poppler exits 1 when it cannot open the file at all (a user
- * password, or a broken PDF that OCRmyPDF also refused); retrying cannot help, so that becomes zero
- * pages and a recorded error rather than a failed job.
+ * Reads the searchable PDF's pages, or says why it has none. Poppler exiting non-zero means it
+ * could not open the file (a user password, or not a PDF at all), which no retry can fix (R44); a
+ * timeout or a failure to start rethrows so the job is retried.
  */
-async function readPages(pdf: string, errors: string[]): Promise<PdfInfo> {
+async function readPages(
+  pdf: string,
+): Promise<PdfInfo | { unreadable: string; password: boolean }> {
   try {
-    return await pdfInfo(pdf)
+    const info = await pdfInfo(pdf)
+    if (info.pageCount > 0) return info
+    return { unreadable: 'pdfinfo: the PDF has no pages', password: false }
   } catch (err) {
-    if (!(err instanceof ToolError) || err.exitCode !== 1) throw err
-    errors.push(`cannot read pages: ${firstLine(err.stderr)}`)
-    return { pageCount: 0, pages: [] }
+    if (!(err instanceof ToolError) || err.exitCode === null) throw err
+    return {
+      unreadable: `pdfinfo exit ${err.exitCode}: ${firstLine(err.stderr)}`,
+      password: /password/i.test(err.stderr),
+    }
   }
 }
 
@@ -64,9 +73,18 @@ export async function processDocumentVersion(
       console.warn(`OCR fell back to a copy for version ${versionId}:\n${ocr.stderr}`)
     }
 
+    const info = await readPages(searchable)
+    if ('unreadable' in info) {
+      const human = info.password ? PASSWORD_MESSAGE : UNREADABLE_MESSAGE
+      await markVersionFailed(
+        db,
+        versionId,
+        `${human} (${[...errors, info.unreadable].join('; ')})`,
+      )
+      return []
+    }
     const key = searchableBlobKey(version.showId, version.documentId, version.id)
     await blobs.put(key, createReadStream(searchable), 'application/pdf')
-    const info = await readPages(searchable, errors)
 
     return db.transaction(async (tx) => {
       await tx
@@ -76,7 +94,6 @@ export async function processDocumentVersion(
       await tx
         .delete(pages)
         .where(and(eq(pages.documentVersionId, versionId), gte(pages.index, info.pageCount)))
-      if (info.pages.length === 0) return []
       const rows = await tx
         .insert(pages)
         .values(
@@ -113,12 +130,14 @@ export async function processDocumentVersion(
     })
   })
 
+  // The last page job marks the version ready.
   if (pageIds.length > 0) await jobs.enqueuePageProcess(pageIds)
-  // Covers a version with no readable pages; otherwise the last page job does this.
-  await finishVersionIfDone(db, versionId)
 }
 
-/** Called when the document job has failed after its last retry. */
+/**
+ * Fails a version that has not reached ready; a ready version is never failed afterwards. Also the
+ * document job's dead-letter action (R45), when pg-boss gave up after retries or expiry.
+ */
 export async function markVersionFailed(
   db: ProcessingDeps['db'],
   versionId: string,
@@ -127,5 +146,10 @@ export async function markVersionFailed(
   await db
     .update(documentVersions)
     .set({ status: 'failed', error, updatedBy: SYSTEM })
-    .where(eq(documentVersions.id, versionId))
+    .where(
+      and(
+        eq(documentVersions.id, versionId),
+        inArray(documentVersions.status, ['queued', 'processing']),
+      ),
+    )
 }
