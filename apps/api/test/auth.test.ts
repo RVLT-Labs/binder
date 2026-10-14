@@ -1,8 +1,10 @@
 import { session as sessionTable, user as userTable } from '@binder/db'
 import { eq } from 'drizzle-orm'
 import { describe, expect, test } from 'vitest'
+import { createApp } from '../src/app'
+import { createAuth } from '../src/auth/auth'
 import type { MailMessage } from '../src/auth/mailer'
-import { createTestApp, createTestUser, testConfig } from './helpers'
+import { createTestApp, createTestUser, testConfig, testDeps } from './helpers'
 
 const signUp = (app: Awaited<ReturnType<typeof createTestApp>>['app'], email: string) =>
   app.request('/api/auth/sign-up/email', {
@@ -113,6 +115,54 @@ describe('auth', () => {
       const me = await app.request('/api/me', { headers: { cookie } })
       expect(me.status).toBe(200)
       expect(((await me.json()) as { user: { id: string } }).user.id).toBe(u.id)
+    })
+  })
+
+  describe('rate limiting', () => {
+    async function limitedApp() {
+      const deps = await testDeps()
+      deps.auth = createAuth({
+        db: deps.db,
+        config: deps.config,
+        sendMail: async () => {},
+        rateLimit: { enabled: true },
+      })
+      return createApp(deps)
+    }
+    const badSignIn = (app: ReturnType<typeof createApp>, headers: Record<string, string>) =>
+      app.request('/api/auth/sign-in/email', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ email: 'nobody@x.test', password: 'wrong password' }),
+      })
+    const statuses = async (
+      app: ReturnType<typeof createApp>,
+      headers: Record<string, string>,
+      n: number,
+    ) => {
+      const out: number[] = []
+      for (let i = 0; i < n; i++) out.push((await badSignIn(app, headers)).status)
+      return out
+    }
+
+    test('clients are limited independently by cf-connecting-ip', async () => {
+      const app = await limitedApp()
+      // Behind the proxies every request shares one X-Forwarded-For tail; only the client differs.
+      const via = (ip: string) => ({ 'cf-connecting-ip': ip, 'x-forwarded-for': '10.1.2.3' })
+      const a = await statuses(app, via('203.0.113.10'), 6)
+      expect(a).toContain(429)
+      expect(a[0]).not.toBe(429)
+      // A different client is untouched by the first one's failures.
+      expect((await badSignIn(app, via('203.0.113.11'))).status).not.toBe(429)
+      // The first client is still locked out.
+      expect((await badSignIn(app, via('203.0.113.10'))).status).toBe(429)
+    })
+
+    test('without cf-connecting-ip, the client is the last non-private x-forwarded-for entry', async () => {
+      const app = await limitedApp()
+      const via = (ip: string) => ({ 'x-forwarded-for': `${ip}, 10.9.8.7` })
+      expect(await statuses(app, via('198.51.100.20'), 6)).toContain(429)
+      expect((await badSignIn(app, via('198.51.100.21'))).status).not.toBe(429)
     })
   })
 })

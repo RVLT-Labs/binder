@@ -12,9 +12,30 @@ export interface AuthOptions {
   db: Db
   config: Pick<Config, 'AUTH_SECRET' | 'APP_ORIGIN' | 'ALLOW_SIGNUP'>
   sendMail: SendMail
+  /** Better Auth turns its rate limiter on in production only; tests pass `{ enabled: true }`. */
+  rateLimit?: { enabled: boolean }
 }
 
-export function createAuth({ db, config, sendMail }: AuthOptions) {
+/**
+ * Where the client address comes from, for the rate limiter. Production traffic is Cloudflare tunnel
+ * (sets CF-Connecting-IP), Traefik, Caddy, then this server, so the connecting peer is always a proxy.
+ * CF-Connecting-IP wins; X-Forwarded-For is the fallback, read from the right and skipping private
+ * proxy addresses. Safe because the API is reachable only through those proxies.
+ */
+export const IP_ADDRESS_OPTIONS = {
+  ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'],
+  trustedProxies: [
+    '10.0.0.0/8',
+    '172.16.0.0/12',
+    '192.168.0.0/16',
+    '127.0.0.0/8',
+    '100.64.0.0/10',
+    'fc00::/7',
+    '::1/128',
+  ],
+}
+
+export function createAuth({ db, config, sendMail, rateLimit }: AuthOptions) {
   return betterAuth({
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     secret: config.AUTH_SECRET,
@@ -23,6 +44,7 @@ export function createAuth({ db, config, sendMail }: AuthOptions) {
     basePath: '/api/auth',
     trustedOrigins: [config.APP_ORIGIN],
     emailAndPassword: { enabled: true },
+    ...(rateLimit ? { rateLimit } : {}),
     plugins: [
       magicLink({
         // Verifying a link for an unknown email would otherwise create a user, bypassing the sign-up guard.
@@ -50,7 +72,7 @@ export function createAuth({ db, config, sendMail }: AuthOptions) {
         },
       },
     },
-    advanced: { database: { generateId: () => newId() } },
+    advanced: { database: { generateId: () => newId() }, ipAddress: IP_ADDRESS_OPTIONS },
   })
 }
 

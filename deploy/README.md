@@ -82,14 +82,29 @@ personal access token from the same terminal and give it to the client as a bear
 node apps/api/dist/cli.js create-token --email you@example.com --name "claude code" --scope '*'
 ```
 
-### The role must exist before the API first starts
+### Startup order and the PowerSync role
 
 Migration `0003_publication` creates the `powersync` publication and grants `SELECT` on the
 published tables to `powersync_role` only if that role already exists. The Postgres init script
 (`postgres/init-prod.sh`) creates it when the data directory is first created, and the API waits for
-Postgres to be healthy, so on a fresh volume the order is always right. If you ever bring up an API
-against a database that was created without the role, create it, then re-run that migration's
-statements by hand (or recreate the volume), or PowerSync will not see the tables.
+Postgres to be healthy, so on a fresh volume the order is always right.
+
+PowerSync only waits for Postgres, not for the API, so on a fresh volume it can start before the API
+has migrated and created the publication. It logs that the publication is missing and retries until
+the API's first start creates it; no action is needed (seen in the local smoke from a wiped volume).
+
+If the init script failed part way (for example the first start was interrupted), it is safe to
+run again: it only creates what is missing and re-applies the role's attributes and password.
+
+```sh
+docker compose exec -T postgres sh /docker-entrypoint-initdb.d/10-powersync.sh
+# on Coolify, from the host: docker exec <postgres-container> sh /docker-entrypoint-initdb.d/10-powersync.sh
+```
+
+If the API had already migrated while the role was missing, the migration is recorded as applied and
+will not redo the grants: run `GRANT SELECT ON ALL TABLES IN SCHEMA public TO powersync_role;` and
+`CREATE PUBLICATION powersync FOR TABLE ...` as in
+`packages/db/drizzle/0003_publication.sql` by hand, or recreate the volume.
 
 ## Backups
 
@@ -109,8 +124,10 @@ docker run --rm -v <blobs-volume>:/data:ro -v /backups:/backup alpine \
 
 Take both from the same moment (database first, then blobs) and keep a few days of each. Put them in
 a host cron job or a Coolify scheduled task, and copy them off the host. To restore: bring the stack
-up on a fresh volume, `pg_restore --clean --if-exists -U binder -d binder < dump` into the postgres
-container, and untar into the blobs volume.
+up on a fresh volume, **stop the api service** (it holds connections and runs jobs against the
+database), run `pg_restore --clean --if-exists -U binder -d binder < dump` inside the postgres
+container, untar into the blobs volume, then **start the api service** again. On start it applies any
+migrations the dump predates.
 
 ## Upgrades
 
@@ -126,6 +143,10 @@ Moving Postgres to a new major version is not automatic: dump, change the base i
 
 - Uploads are capped at 200 MB by the API, but Cloudflare's proxy caps request bodies at 100 MB on
   Free and Pro plans. Larger PDFs need a plan with a higher limit.
+- Client IPs: the chain is Cloudflare tunnel, Traefik, Caddy, API. Caddy trusts private ranges so it
+  keeps the forwarded address, and the API's rate limiter reads `CF-Connecting-IP` first, then
+  `X-Forwarded-For`. This is only safe because the API is reachable solely through those proxies; do
+  not publish the api or web ports to the internet.
 - Caddy is configured for streaming (`flush_interval -1`), which MCP's streamable HTTP needs.
 - The API image installs `ocrmypdf` from Debian bookworm (14.x). OCR failures never block a document:
   it falls back to a plain copy with `ocr_applied = false`.
