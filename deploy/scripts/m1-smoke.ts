@@ -15,7 +15,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { basename } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { ensureFixtures, FIXTURES } from '../../fixtures/scripts/index.ts'
@@ -53,7 +53,7 @@ async function loadMcpSdk(): Promise<{
 
 type Json = Record<string, unknown>
 
-interface State {
+export interface State {
   base: string
   token: string
   mcp: McpClient
@@ -63,6 +63,8 @@ interface State {
   versionId?: string
   quote?: string
   cueId?: string
+  /** Set once the archive step has passed (or the cleanup has archived the show). */
+  archived?: boolean
 }
 
 const text = (r: ToolResult) => r.content.map((c) => c.text ?? '').join('\n')
@@ -80,12 +82,12 @@ function need<T>(value: T | undefined, what: string): T {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-interface Step {
+export interface Step {
   name: string
   run(s: State): Promise<string | undefined>
 }
 
-const CHECKPOINT: Step[] = [
+export const CHECKPOINT: Step[] = [
   {
     name: 'create_show',
     async run(s) {
@@ -245,6 +247,7 @@ const CHECKPOINT: Step[] = [
         status: 'archived',
       })
       if (show.status !== 'archived') throw new Error(`status is ${JSON.stringify(show.status)}`)
+      s.archived = true
       return undefined
     },
   },
@@ -254,6 +257,47 @@ const CHECKPOINT: Step[] = [
 const FULL: Step[] = []
 
 // ---- Runner -------------------------------------------------------------------------------------
+
+type Log = (line: string) => void
+
+/** Runs the steps in order; after the first failure the rest print SKIP. Resolves to true on failure. */
+export async function runSteps(steps: Step[], s: State, log: Log = console.log): Promise<boolean> {
+  let failed = false
+  const total = steps.length + 1
+  for (const [i, step] of steps.entries()) {
+    const label = `[${i + 2}/${total}] ${step.name}`
+    if (failed) {
+      log(`SKIP ${label}`)
+      continue
+    }
+    try {
+      const detail = await step.run(s)
+      log(`PASS ${label}${detail ? ` (${detail})` : ''}`)
+    } catch (err) {
+      log(`FAIL ${label}: ${err instanceof Error ? err.message : err}`)
+      failed = true
+    }
+  }
+  return failed
+}
+
+/**
+ * A failed run must not leave an active smoke show behind (production runs this too): when a show
+ * was created and the archive step did not pass, archive it now. Best effort: it reports
+ * CLEANUP PASS or CLEANUP FAIL and never changes the exit code.
+ */
+export async function cleanupShow(s: State, log: Log = console.log): Promise<void> {
+  if (!s.showId || s.archived) return
+  try {
+    await tool(s, 'update_show', { showId: s.showId, status: 'archived' })
+    s.archived = true
+    log(`CLEANUP PASS archived the smoke show ${s.showId}`)
+  } catch (err) {
+    log(
+      `CLEANUP FAIL could not archive the smoke show ${s.showId}; archive it by hand: ${err instanceof Error ? err.message : err}`,
+    )
+  }
+}
 
 async function main(): Promise<number> {
   const { values } = parseArgs({ options: { stage: { type: 'string' } } })
@@ -278,42 +322,35 @@ async function main(): Promise<number> {
   const mcp = new Client({ name: 'm1-smoke', version: '1.0.0' })
   const steps = stage === 'full' ? [...CHECKPOINT, ...FULL] : CHECKPOINT
   const s: State = { base, token, mcp }
-  let failed = false
   const total = steps.length + 1
+  let failed = false
 
   try {
-    await mcp.connect(
-      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
-        requestInit: {
-          headers: { authorization: `Bearer ${token}`, 'x-request-id': randomUUID() },
-        },
-      }),
-    )
-    console.log(`PASS [1/${total}] connect to ${base}/mcp as m1-smoke`)
-  } catch (err) {
-    console.log(
-      `FAIL [1/${total}] connect to ${base}/mcp: ${err instanceof Error ? err.message : err}`,
-    )
-    failed = true
-  }
-
-  for (const [i, step] of steps.entries()) {
-    const label = `[${i + 2}/${total}] ${step.name}`
-    if (failed) {
-      console.log(`SKIP ${label}`)
-      continue
-    }
     try {
-      const detail = await step.run(s)
-      console.log(`PASS ${label}${detail ? ` (${detail})` : ''}`)
+      await mcp.connect(
+        new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+          requestInit: {
+            headers: { authorization: `Bearer ${token}`, 'x-request-id': randomUUID() },
+          },
+        }),
+      )
+      console.log(`PASS [1/${total}] connect to ${base}/mcp as m1-smoke`)
+      failed = await runSteps(steps, s)
     } catch (err) {
-      console.log(`FAIL ${label}: ${err instanceof Error ? err.message : err}`)
+      console.log(
+        `FAIL [1/${total}] connect to ${base}/mcp: ${err instanceof Error ? err.message : err}`,
+      )
       failed = true
+      for (const [i, step] of steps.entries()) console.log(`SKIP [${i + 2}/${total}] ${step.name}`)
     }
+    await cleanupShow(s)
+  } finally {
+    await mcp.close().catch(() => {})
   }
-  await mcp.close().catch(() => {})
   console.log(failed ? 'FAIL' : `PASS (${stage})`)
   return failed ? 1 : 0
 }
 
-process.exitCode = await main()
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  process.exitCode = await main()
+}

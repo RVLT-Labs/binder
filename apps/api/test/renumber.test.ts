@@ -188,7 +188,7 @@ describe('renumberCues', () => {
       ),
     ).toBe('not_found')
     await updateShow(db, s.actors.owner, { showId: s.show.id, patch: { status: 'archived' } })
-    expect(await code(renumberCues(db, s.actors.owner, input))).not.toBe('ok')
+    expect(await code(renumberCues(db, s.actors.owner, input))).toBe('forbidden')
   })
 
   test('MCP renumber_cues returns changed and flagged counts and logs via mcp', async () => {

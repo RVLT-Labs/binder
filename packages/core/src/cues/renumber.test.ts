@@ -115,3 +115,25 @@ test('block size 2 spills the third cue of a group', () => {
 test.each([1, 1001, 2.5, Number.NaN])('block size %s is refused', (blockSize) =>
   expect(() => renumberByBlocks([], { blockSize })).toThrow(RangeError),
 )
+
+test('a group of blockSize + 149 spills 99 distinct points (1..99) and flags exactly 50 as overflow', () => {
+  const r = renumberByBlocks(run('a', 10 + 149, 'A'))
+  const spilled = r.changes.slice(10)
+  expect(spilled).toHaveLength(99)
+  const minors = spilled.map((c) => c.minor)
+  expect(minors.every((m) => m >= 1 && m <= 99)).toBe(true)
+  expect(minors.every((m, i) => i === 0 || m > (minors[i - 1] as number))).toBe(true)
+  expect(new Set(spilled.map((c) => c.major))).toEqual(new Set([19]))
+  expect(r.flagged.filter((f) => f.reason === 'spilled')).toHaveLength(99)
+  const overflow = r.flagged.filter((f) => f.reason === 'overflow')
+  expect(overflow).toHaveLength(50)
+  // Overflow cues keep their numbers: they are not in changes.
+  for (const f of overflow) expect(r.changes.find((c) => c.id === f.id)).toBeUndefined()
+})
+
+test('a group of blockSize + 150 has one more overflow cue and the same distinct points', () => {
+  const r = renumberByBlocks(run('a', 10 + 150, 'A'))
+  const minors = r.changes.slice(10).map((c) => c.minor)
+  expect(minors).toEqual(Array.from({ length: 99 }, (_, i) => i + 1))
+  expect(r.flagged.filter((f) => f.reason === 'overflow')).toHaveLength(51)
+})

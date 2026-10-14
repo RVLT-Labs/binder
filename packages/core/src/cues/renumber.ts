@@ -64,6 +64,9 @@ export function renumberByBlocks(
       for (let i = 0; i < fit; i++)
         assigned.set((run[i] as RenumberCue).id, { major: start + i, minor: 0 })
       const spilled = len - blockSize
+      // Points are 1..99, spread evenly over what fits; the divisor never exceeds 100, so the
+      // minors stay distinct and never collide with the block's last integer cue (minor 0).
+      const points = Math.min(spilled, MAX_MINOR)
       for (let i = 1; i <= spilled; i++) {
         const cue = run[blockSize + i - 1] as RenumberCue
         if (i > MAX_MINOR) {
@@ -72,7 +75,7 @@ export function renumberByBlocks(
         }
         assigned.set(cue.id, {
           major: start + blockSize - 1,
-          minor: Math.floor((i * 100) / (spilled + 1)),
+          minor: Math.floor((i * 100) / (points + 1)),
         })
         flagged.push({ id: cue.id, reason: 'spilled' })
       }

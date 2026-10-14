@@ -97,3 +97,38 @@ test('a click on a placed row opens it; a click in a field or on an unplaced row
   fireEvent.click(container.querySelector('tr[data-cue-id="c2"] .cue-trigger') as HTMLElement)
   expect(onOpen).toHaveBeenCalledTimes(1)
 })
+
+test('the number error clears when the stored value is typed back, and on Escape', () => {
+  const onEdit = vi.fn()
+  const { container, queryByRole } = render(
+    <CueListTable rows={[row()]} readOnly={null} onEdit={onEdit} onOpen={() => {}} />,
+  )
+  const input = numberField(container)
+
+  fireEvent.focus(input)
+  fireEvent.change(input, { target: { value: 'abc' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(queryByRole('alert')).not.toBeNull()
+  // Retyping the stored number and leaving the field is not an edit, and the error goes.
+  fireEvent.change(input, { target: { value: '12' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(queryByRole('alert')).toBeNull()
+  expect(onEdit).not.toHaveBeenCalled()
+
+  fireEvent.change(input, { target: { value: 'abc' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(queryByRole('alert')).not.toBeNull()
+  fireEvent.change(input, { target: { value: '12' } })
+  fireEvent.blur(input)
+  expect(queryByRole('alert')).toBeNull()
+
+  fireEvent.focus(input)
+  fireEvent.change(input, { target: { value: 'abc' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(queryByRole('alert')).not.toBeNull()
+  fireEvent.focus(input)
+  fireEvent.change(input, { target: { value: 'zzz' } })
+  fireEvent.keyDown(input, { key: 'Escape' })
+  expect(queryByRole('alert')).toBeNull()
+  expect(onEdit).not.toHaveBeenCalled()
+})

@@ -34,16 +34,24 @@ const onControl = (target: EventTarget) =>
 export function CueListTable({ rows, readOnly, onEdit, onOpen }: CueListTableProps) {
   const [numberErrors, setNumberErrors] = useState<Record<string, string>>({})
 
+  const clearError = (id: string) =>
+    setNumberErrors((prev) => {
+      const { [id]: _gone, ...rest } = prev
+      return rest
+    })
+
   function commitNumber(row: CueListRow, text: string) {
+    // Retyping the stored number is not an edit and ends any complaint about an earlier try.
+    if (text === row.display) {
+      clearError(row.id)
+      return
+    }
     const parsed = parseCueNumber(text)
     if (!parsed) {
       setNumberErrors((prev) => ({ ...prev, [row.id]: NUMBER_HINT }))
       return
     }
-    setNumberErrors((prev) => {
-      const { [row.id]: _gone, ...rest } = prev
-      return rest
-    })
+    clearError(row.id)
     onEdit(row.id, parsed)
   }
 
@@ -86,13 +94,8 @@ export function CueListTable({ rows, readOnly, onEdit, onOpen }: CueListTablePro
                   aria-invalid={error ? true : undefined}
                   value={row.display}
                   disabled={disabled}
-                  onCommit={(text) => text !== row.display && commitNumber(row, text)}
-                  onCancel={() =>
-                    setNumberErrors((prev) => {
-                      const { [row.id]: _gone, ...rest } = prev
-                      return rest
-                    })
-                  }
+                  onCommit={(text) => commitNumber(row, text)}
+                  onCancel={() => clearError(row.id)}
                 />
                 {error && (
                   <p role="alert" className="field-error">

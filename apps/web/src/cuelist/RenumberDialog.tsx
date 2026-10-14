@@ -58,6 +58,9 @@ export function RenumberDialog({
     [rows, documentId, blockSize, blockValid],
   )
 
+  const spilled = preview?.flagged.filter((f) => f.reason === 'spilled').length ?? 0
+  const overflow = preview?.flagged.filter((f) => f.reason === 'overflow').length ?? 0
+
   async function apply(e: FormEvent) {
     e.preventDefault()
     const ctx = editContext()
@@ -105,7 +108,11 @@ export function RenumberDialog({
           <p role="status" className="renumber-preview">
             {placed === 0
               ? 'No placed cues in this document.'
-              : `${preview.changes.length} of ${placed} cues will change, ${preview.flagged.length} will spill into points.`}
+              : `${preview.changes.length} of ${placed} cues will change, ${spilled} will spill into points.${
+                  overflow > 0
+                    ? ` ${overflow} ${overflow === 1 ? "cue doesn't" : "cues don't"} fit and keep their numbers.`
+                    : ''
+                }`}
           </p>
         )}
         {error && (
