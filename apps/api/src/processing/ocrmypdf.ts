@@ -2,7 +2,7 @@ import { copyFile } from 'node:fs/promises'
 import type { OcrMode } from '@binder/shared'
 import { firstLine, runTool, ToolError } from './exec'
 
-const OCRMYPDF_TIMEOUT_MS = 30 * 60 * 1000
+export const OCRMYPDF_TIMEOUT_MS = 30 * 60 * 1000
 
 export interface OcrResult {
   ocrApplied: boolean

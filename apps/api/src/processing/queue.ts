@@ -2,6 +2,7 @@ import type { Db } from '@binder/db'
 import type { JobWithMetadata, PgBoss } from 'pg-boss'
 import type { BlobStore } from '../blob/BlobStore'
 import { markVersionFailed, processDocumentVersion } from './documentJob'
+import { OCRMYPDF_TIMEOUT_MS } from './ocrmypdf'
 import { markPageFailed, processPage } from './pageJob'
 import type { JobQueue, ProcessingDeps } from './types'
 
@@ -10,6 +11,13 @@ export const PAGE_QUEUE = 'page-process'
 /** pg-boss moves a job here once it has failed or expired on every retry (R45). */
 export const DOCUMENT_DEAD_QUEUE = 'document-process-dead'
 export const PAGE_DEAD_QUEUE = 'page-process-dead'
+
+/**
+ * The document job runs OCRmyPDF (killed at its own timeout) plus pdfimages, the copy fallback,
+ * pdfinfo, the blob write and a transaction. Expiring only after a margin past the OCR timeout keeps
+ * pg-boss from retrying a job whose first worker is still running (R46).
+ */
+export const DOCUMENT_JOB_EXPIRE_SECONDS = OCRMYPDF_TIMEOUT_MS / 1000 + 10 * 60
 
 const QUEUES = [
   { name: DOCUMENT_DEAD_QUEUE, options: { retryLimit: 5, retryDelay: 10, retryBackoff: true } },
@@ -20,7 +28,7 @@ const QUEUES = [
       retryLimit: 2,
       retryDelay: 30,
       retryBackoff: true,
-      expireInSeconds: 30 * 60,
+      expireInSeconds: DOCUMENT_JOB_EXPIRE_SECONDS,
       deadLetter: DOCUMENT_DEAD_QUEUE,
     },
   },

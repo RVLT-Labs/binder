@@ -5,6 +5,14 @@ const POPPLER_TIMEOUT_MS = 2 * 60 * 1000
 const poppler = (command: string, args: string[]) =>
   runTool(command, args, { timeoutMs: POPPLER_TIMEOUT_MS })
 
+/** pdfinfo ran cleanly but its output lacks what we need: a deterministic, unreadable PDF. */
+export class PdfInfoParseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PdfInfoParseError'
+  }
+}
+
 export interface PdfPageInfo {
   /** Displayed width in points, after /Rotate. */
   width: number
@@ -22,7 +30,7 @@ export interface PdfInfo {
 export async function pdfInfo(path: string): Promise<PdfInfo> {
   const summary = await poppler('pdfinfo', [path])
   const pageCount = Number(summary.stdout.match(/^Pages:\s+(\d+)/m)?.[1])
-  if (!Number.isInteger(pageCount)) throw new Error(`pdfinfo gave no page count for ${path}`)
+  if (!Number.isInteger(pageCount)) throw new PdfInfoParseError('pdfinfo gave no page count')
   if (pageCount === 0) return { pageCount, pages: [] }
 
   const { stdout } = await poppler('pdfinfo', ['-f', '1', '-l', String(pageCount), path])
@@ -37,7 +45,8 @@ export async function pdfInfo(path: string): Promise<PdfInfo> {
   const pages = Array.from({ length: pageCount }, (_, i) => {
     const size = sizes.get(i + 1)
     const rotation = rotations.get(i + 1)
-    if (!size || rotation === undefined) throw new Error(`pdfinfo gave no size for page ${i + 1}`)
+    if (!size || rotation === undefined)
+      throw new PdfInfoParseError(`pdfinfo gave no size for page ${i + 1}`)
     const [w, h] = size
     const quarterTurn = rotation % 180 === 90
     return { width: quarterTurn ? h : w, height: quarterTurn ? w : h, rotation }

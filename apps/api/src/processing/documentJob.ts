@@ -7,7 +7,7 @@ import { searchableBlobKey } from '../blob/keys'
 import { firstLine, ToolError } from './exec'
 import { describeOcrFailure, runOcrmypdf } from './ocrmypdf'
 import { SYSTEM } from './pageJob'
-import { listImagePages, type PdfInfo, pdfInfo } from './poppler'
+import { listImagePages, type PdfInfo, PdfInfoParseError, pdfInfo } from './poppler'
 import { blobFile, withTempDir } from './tmp'
 import type { ProcessingDeps } from './types'
 
@@ -15,9 +15,10 @@ const PASSWORD_MESSAGE = 'This PDF is password-protected. Remove the password an
 const UNREADABLE_MESSAGE = 'This file could not be read as a PDF.'
 
 /**
- * Reads the searchable PDF's pages, or says why it has none. Poppler exiting non-zero means it
- * could not open the file (a user password, or not a PDF at all), which no retry can fix (R44); a
- * timeout or a failure to start rethrows so the job is retried.
+ * Reads the searchable PDF's pages, or says why it has none. Poppler exiting non-zero, or output
+ * without a page count or page sizes, means the file cannot be read (a user password, or not a PDF
+ * at all), which no retry can fix (R44, R47); a timeout or a failure to start rethrows so the job is
+ * retried.
  */
 async function readPages(
   pdf: string,
@@ -27,6 +28,7 @@ async function readPages(
     if (info.pageCount > 0) return info
     return { unreadable: 'pdfinfo: the PDF has no pages', password: false }
   } catch (err) {
+    if (err instanceof PdfInfoParseError) return { unreadable: err.message, password: false }
     if (!(err instanceof ToolError) || err.exitCode === null) throw err
     return {
       unreadable: `pdfinfo exit ${err.exitCode}: ${firstLine(err.stderr)}`,

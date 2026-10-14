@@ -12,12 +12,13 @@ import { asc, eq, sql } from 'drizzle-orm'
 import { PgBoss } from 'pg-boss'
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
 import { processDocumentVersion } from '../src/processing/documentJob'
-import { describeOcrFailure, runOcrmypdf } from '../src/processing/ocrmypdf'
+import { describeOcrFailure, OCRMYPDF_TIMEOUT_MS, runOcrmypdf } from '../src/processing/ocrmypdf'
 import { processPage } from '../src/processing/pageJob'
 import { pdfInfo, renderPageImage, renderThumbnail } from '../src/processing/poppler'
 import {
   createJobQueue,
   DOCUMENT_DEAD_QUEUE,
+  DOCUMENT_JOB_EXPIRE_SECONDS,
   DOCUMENT_QUEUE,
   handleDocumentDeadLetter,
   handlePageDeadLetter,
@@ -376,6 +377,30 @@ describe.skipIf(missing.length > 0)('processing pipeline', () => {
     expect(done.pages).toHaveLength(0)
   }, 120_000)
 
+  test.each([
+    ['no page count', 'Encrypted:       no\n', /pdfinfo gave no page count/],
+    ['no page size', 'Pages:           3\n', /pdfinfo gave no size for page 1/],
+  ])(
+    'pdfinfo output with %s: version failed at once as unreadable',
+    async (_, output, detail) => {
+      const bin = join(work, `odd-pdfinfo-${Math.random().toString(36).slice(2)}`)
+      await mkdir(bin, { recursive: true })
+      await writeFile(join(bin, 'pdfinfo'), `#!/bin/sh\nprintf '${output}'\nexit 0\n`, {
+        mode: 0o755,
+      })
+      vi.stubEnv('PATH', `${bin}:${process.env.PATH}`)
+
+      const { version } = await upload(await textOnlyPdf())
+      const done = await processAll(version.id)
+      expect(done.version.status).toBe('failed')
+      expect(done.version.error).toMatch(/^This file could not be read as a PDF\. \(/)
+      expect(done.version.error).toMatch(detail)
+      expect(done.pages).toHaveLength(0)
+      expect(done.enqueuedPages).toHaveLength(0)
+    },
+    60_000,
+  )
+
   test("ocr mode 'never' copies even a scan and leaves its word layers empty", async () => {
     const { version } = await upload(FIXTURES.scanPdf, 'never')
     const done = await processAll(version.id)
@@ -608,7 +633,7 @@ describe('pg-boss job queue', () => {
           queues.map((q) => [q.name, [q.retryLimit, q.expireInSeconds, q.deadLetter ?? null]]),
         ),
       ).toEqual({
-        [DOCUMENT_QUEUE]: [2, 1800, DOCUMENT_DEAD_QUEUE],
+        [DOCUMENT_QUEUE]: [2, 2400, DOCUMENT_DEAD_QUEUE],
         [PAGE_QUEUE]: [3, 300, PAGE_DEAD_QUEUE],
         [DOCUMENT_DEAD_QUEUE]: [expect.any(Number), expect.any(Number), null],
         [PAGE_DEAD_QUEUE]: [expect.any(Number), expect.any(Number), null],
@@ -652,4 +677,10 @@ describe('pg-boss job queue', () => {
       await boss.stop({ graceful: true, timeout: 10_000 })
     }
   }, 60_000)
+
+  test('the document job expires only after the OCR timeout, with a margin for the rest of the job', () => {
+    expect(OCRMYPDF_TIMEOUT_MS).toBe(30 * 60 * 1000)
+    expect(DOCUMENT_JOB_EXPIRE_SECONDS * 1000).toBeGreaterThan(OCRMYPDF_TIMEOUT_MS)
+    expect(DOCUMENT_JOB_EXPIRE_SECONDS).toBe(40 * 60)
+  })
 })
