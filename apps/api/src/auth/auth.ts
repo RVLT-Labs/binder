@@ -20,7 +20,8 @@ export interface AuthOptions {
  * Where the client address comes from, for the rate limiter. Production traffic is Cloudflare tunnel
  * (sets CF-Connecting-IP), Traefik, Caddy, then this server, so the connecting peer is always a proxy.
  * CF-Connecting-IP wins; X-Forwarded-For is the fallback, read from the right and skipping private
- * proxy addresses. Safe because the API is reachable only through those proxies.
+ * proxy addresses. A client that reaches Traefik directly could forge CF-Connecting-IP, so Caddy
+ * deletes it unless the hop Traefik saw was private (deploy/Caddyfile, deploy/README.md).
  */
 export const IP_ADDRESS_OPTIONS = {
   ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'],

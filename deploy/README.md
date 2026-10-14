@@ -147,15 +147,50 @@ Moving Postgres to a new major version is not automatic: dump, change the base i
   Free and Pro plans, so the upload dialog refuses files over 100 MB before sending (and explains a
   proxy 413 the same way). Larger PDFs need a plan with a higher limit and a matching change to
   `MAX_UPLOAD_BYTES` in `apps/web/src/documents/UploadDialog.tsx`.
-- Client IPs: the chain is Cloudflare tunnel, Traefik, Caddy, API. Caddy trusts private ranges so it
-  keeps the forwarded address, and the API's rate limiter reads `CF-Connecting-IP` first, then
-  `X-Forwarded-For`. This is only safe because the API is reachable solely through those proxies; do
-  not publish the api or web ports to the internet.
+- Client IPs: see [Client addresses and the rate limiter](#client-addresses-and-the-rate-limiter).
 - Caddy is configured for streaming (`flush_interval -1`), which MCP's streamable HTTP needs.
 - The API image installs `ocrmypdf` from Debian bookworm (14.x). OCR failures never block a document:
   it falls back to a plain copy with `ocr_applied = false`.
 - On SIGTERM the API stops accepting requests, lets in-flight jobs finish for up to 10 seconds, and
   always exits.
+
+## Client addresses and the rate limiter
+
+Better Auth rate-limits sign-in and magic-link requests per client address. The chain is Cloudflare
+tunnel (cloudflared, a container on the host), Coolify's Traefik, Caddy (`web`), then the API. The API
+reads `CF-Connecting-IP` first and falls back to `X-Forwarded-For`, read from the right past private
+proxy addresses. Caddy trusts private ranges, so it passes the forwarded headers on unchanged.
+
+**Why Caddy strips `CF-Connecting-IP`.** Traefik listens on the host's public ports 80 and 443 (Coolify's
+default), so anyone can skip Cloudflare and send `Host: binder.rvlt.app` straight to the host's IP.
+Such a request can carry any `CF-Connecting-IP`, and a fresh value per request would get a fresh
+rate-limit bucket each time, which defeats the limiter (password guessing, magic-link floods). Traefik
+appends the address it received each request from to `X-Forwarded-For`, so the last entry is that hop:
+a private address for the local cloudflared container, a public one for a direct client. Caddy
+removes `CF-Connecting-IP` unless that last entry is private (`@notViaTunnel` in `Caddyfile`); the
+API then keys the direct client by its real address from `X-Forwarded-For`.
+
+**Recommended: firewall the host.** The tunnel reaches Traefik locally (`host.docker.internal:80`), so
+nothing needs the host's public 80/443. Closing them (host firewall or the provider's firewall, keeping
+SSH) removes the bypass entirely; the Caddy rule then stays as a second layer. Docker publishes ports
+around `ufw`, so use the provider's firewall or the `DOCKER-USER` iptables chain.
+
+**Post-deploy check.** From a machine outside the host, send sign-in attempts straight to the origin
+IP with a different forged `CF-Connecting-IP` each time:
+
+```sh
+ORIGIN_IP=203.0.113.10   # the Coolify host's public IP
+for i in 1 2 3 4 5 6; do
+  curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 "http://$ORIGIN_IP/api/auth/sign-in/email" \
+    -H 'Host: binder.rvlt.app' -H 'Origin: https://binder.rvlt.app' -H 'content-type: application/json' \
+    -H "CF-Connecting-IP: 198.51.100.$i" -d '{"email":"nobody@example.com","password":"not-the-password"}'
+done
+```
+
+With the firewall closed every attempt fails to connect (`000`), which is the goal. Without it, the
+output must turn into `429` after a few `401`s: the forged header is ignored and the attempts share
+your real address's bucket. Six `401`s in a row mean the forged header is being honoured; stop and
+check the Caddy rule.
 
 ## Trying the production stack locally
 
