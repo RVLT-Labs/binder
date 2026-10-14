@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, type ReactNode, type Ref, useState } from 'react'
 import { MAX_ZOOM, MIN_ZOOM } from './controls'
 
 export interface ViewerToolbarProps {
@@ -12,6 +12,10 @@ export interface ViewerToolbarProps {
   /** One-based, already clamped to the document. */
   onGoToPage: (pageNumber: number) => void
   versionLabel: string
+  /** The page input, so the `g` shortcut can focus it. */
+  pageInputRef?: Ref<HTMLInputElement>
+  /** Markup tools, after the page controls. */
+  children?: ReactNode
 }
 
 export function ViewerToolbar({
@@ -23,6 +27,8 @@ export function ViewerToolbar({
   pageCount,
   onGoToPage,
   versionLabel,
+  pageInputRef,
+  children,
 }: ViewerToolbarProps) {
   const [target, setTarget] = useState('')
 
@@ -53,6 +59,7 @@ export function ViewerToolbar({
       </output>
       <form onSubmit={go} className="go-to-page">
         <input
+          ref={pageInputRef}
           aria-label="Go to page"
           placeholder="Page"
           inputMode="numeric"
@@ -62,6 +69,7 @@ export function ViewerToolbar({
           onChange={(e) => setTarget(e.target.value)}
         />
       </form>
+      {children}
       <span className="version-label">{versionLabel}</span>
     </div>
   )

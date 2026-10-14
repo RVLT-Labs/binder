@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { readRun, storageStateFor } from './env'
 import { hasInk, uploadAndWaitReady } from './helpers'
 
-test.use({ storageState: storageStateFor('a') })
+test.use({ storageState: storageStateFor('owner') })
 
 /** The scan fixture has 8 pages and no text layer; processing runs OCR over it (about 15 s). */
 const PAGES = 8

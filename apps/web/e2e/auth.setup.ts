@@ -1,7 +1,7 @@
 import { expect, test as setup } from '@playwright/test'
-import { readRun, storageStateFor, type UserKey } from './env'
+import { readRun, storageStateFor, USER_KEYS } from './env'
 
-for (const key of ['a', 'b', 'c'] as UserKey[]) {
+for (const key of USER_KEYS) {
   setup(`sign in ${key}`, async ({ page }) => {
     const { users, password } = readRun()
     await page.goto('/login')

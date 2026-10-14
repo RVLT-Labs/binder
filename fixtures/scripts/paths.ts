@@ -11,6 +11,8 @@ export const PIRATES_TXT = join(PUBLIC_DIR, 'pirates.txt')
 export const FIXTURES = {
   librettoText: PIRATES_TXT,
   librettoPdf: join(GENERATED_DIR, 'pirates-libretto.pdf'),
+  /** The libretto's first three pages: a text PDF that processes in seconds, for markup e2e. */
+  librettoShortPdf: join(GENERATED_DIR, 'pirates-short.pdf'),
   scanPdf: join(GENERATED_DIR, 'pirates-scan.pdf'),
   mixedPdf: join(GENERATED_DIR, 'mixed.pdf'),
 }

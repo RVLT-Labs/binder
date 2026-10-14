@@ -6,8 +6,10 @@ test('an owner manages departments and member scope; an editor sees them read-on
 }) => {
   const { sharedShow, users } = readRun()
   const url = `/shows/${sharedShow.id}/settings`
-  const a = await (await browser.newContext({ storageState: storageStateFor('a') })).newPage()
-  const b = await (await browser.newContext({ storageState: storageStateFor('b') })).newPage()
+  const a = await (await browser.newContext({ storageState: storageStateFor('owner') })).newPage()
+  const b = await (
+    await browser.newContext({ storageState: storageStateFor('sndEditor') })
+  ).newPage()
   await a.goto(url)
   await b.goto(url)
 
@@ -46,7 +48,7 @@ test('an owner manages departments and member scope; an editor sees them read-on
   const bobRow = a
     .getByRole('list', { name: 'Members' })
     .getByRole('listitem')
-    .filter({ hasText: users.b.name })
+    .filter({ hasText: users.sndEditor.name })
   await expect(bobRow).toBeVisible()
   await expect(bobRow.getByLabel('All departments')).not.toBeChecked()
   await bobRow.getByLabel('All departments').click()
@@ -67,7 +69,7 @@ test('an owner manages departments and member scope; an editor sees them read-on
     b
       .getByRole('list', { name: 'Members' })
       .getByRole('listitem')
-      .filter({ hasText: users.b.name }),
+      .filter({ hasText: users.sndEditor.name }),
   ).toContainText('SND', { timeout: 20_000 })
   // The editor's page shows no controls.
   await expect(b.getByRole('combobox', { name: /role$/ })).toHaveCount(0)

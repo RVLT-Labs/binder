@@ -1,25 +1,44 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { ensureFixtures } from '@binder/fixtures'
-import { API_URL, APP_URL, AUTH_DIR, apiEnv, REPO_ROOT, RUN_FILE, type RunData } from './env'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename } from 'node:path'
+import { ensureFixtures, FIXTURES } from '@binder/fixtures'
+import {
+  API_URL,
+  APP_URL,
+  AUTH_DIR,
+  apiEnv,
+  REPO_ROOT,
+  RUN_FILE,
+  type RunData,
+  type UserKey,
+} from './env'
+
+const NAMES: Record<UserKey, string> = {
+  owner: 'Alice',
+  sndEditor: 'Bob',
+  lxEditor: 'Lena',
+  viewer: 'Victor',
+  outsider: 'Carol',
+}
+/** How long the libretto may take to process. */
+const READY_TIMEOUT_MS = 180_000
 
 /**
- * Creates three fresh users and two shows against the dev database, and scopes B (an editor of the
- * shared show) to the SND department. Every name carries a run
- * suffix, so the suite can run again and again against the persistent dev stack.
+ * Creates five fresh users and two shows against the dev database. The owner shares the first show
+ * with an editor scoped to SND, an editor scoped to LX, and a viewer, and uploads a short libretto
+ * to it; the outsider owns the second. Every name carries a run suffix, so the suite can run again
+ * and again against the persistent dev stack.
  */
 export default async function globalSetup() {
   await ensureFixtures()
   const run = `${Date.now()}`
   const password = randomBytes(18).toString('base64url')
-  const users: RunData['users'] = {
-    a: { email: `a-${run}@e2e.test`, name: `Alice ${run}` },
-    b: { email: `b-${run}@e2e.test`, name: `Bob ${run}` },
-    c: { email: `c-${run}@e2e.test`, name: `Carol ${run}` },
-  }
-  for (const user of Object.values(users)) {
-    execFileSync(
+  const users = {} as RunData['users']
+  for (const key of Object.keys(NAMES) as UserKey[]) {
+    const email = `${key.toLowerCase()}-${run}@e2e.test`
+    const name = `${NAMES[key]} ${run}`
+    const out = execFileSync(
       'pnpm',
       [
         '--filter',
@@ -29,9 +48,9 @@ export default async function globalSetup() {
         'src/cli.ts',
         'create-user',
         '--email',
-        user.email,
+        email,
         '--name',
-        user.name,
+        name,
       ],
       {
         cwd: REPO_ROOT,
@@ -39,29 +58,83 @@ export default async function globalSetup() {
         stdio: 'pipe',
       },
     )
+    // The CLI prints the new user's id.
+    const id = out.toString().trim().split('\n').at(-1)?.trim() ?? ''
+    if (!id) throw new Error(`create-user ${email} printed no id`)
+    users[key] = { id, email, name }
   }
 
-  const a = await signIn(users.a.email, password)
-  const sharedShow = await createShow(a, `Pirates ${run}`)
-  const { membership } = await call<{ membership: { id: string } }>(
-    a,
-    'POST',
-    `/api/shows/${sharedShow.id}/members`,
-    { email: users.b.email, role: 'editor' },
-  )
+  const owner = await signIn(users.owner.email, password)
+  const sharedShow = await createShow(owner, `Pirates ${run}`)
   const list = await call<{ departments: { id: string; code: string }[] }>(
-    a,
+    owner,
     'GET',
     `/api/shows/${sharedShow.id}/departments`,
   )
   const departments = Object.fromEntries(list.departments.map((d) => [d.code, d.id]))
-  await call(a, 'PATCH', `/api/memberships/${membership.id}`, { departments: [departments.SND] })
-  const c = await signIn(users.c.email, password)
-  const cShow = await createShow(c, `Carol's show ${run}`)
+  await addMember(owner, sharedShow.id, users.sndEditor.email, 'editor', [departments.SND])
+  await addMember(owner, sharedShow.id, users.lxEditor.email, 'editor', [departments.LX])
+  await addMember(owner, sharedShow.id, users.viewer.email, 'viewer')
+  const libretto = await uploadAndWait(owner, sharedShow.id, FIXTURES.librettoShortPdf)
+
+  const outsider = await signIn(users.outsider.email, password)
+  const cShow = await createShow(outsider, `Carol's show ${run}`)
 
   mkdirSync(AUTH_DIR, { recursive: true })
-  const data: RunData = { password, users, sharedShow, departments, cShow }
+  const data: RunData = { password, users, sharedShow, departments, cShow, libretto }
   writeFileSync(RUN_FILE, JSON.stringify(data, null, 2))
+}
+
+async function addMember(
+  cookie: string,
+  showId: string,
+  email: string,
+  role: 'editor' | 'viewer',
+  scope?: string[],
+) {
+  const { membership } = await call<{ membership: { id: string } }>(
+    cookie,
+    'POST',
+    `/api/shows/${showId}/members`,
+    { email, role },
+  )
+  if (scope)
+    await call(cookie, 'PATCH', `/api/memberships/${membership.id}`, { departments: scope })
+}
+
+/** Uploads a libretto PDF and waits for its first version to finish processing. */
+async function uploadAndWait(
+  cookie: string,
+  showId: string,
+  file: string,
+): Promise<RunData['libretto']> {
+  const form = new FormData()
+  form.append('kind', 'libretto')
+  form.append('title', 'Markup libretto')
+  form.append('file', new Blob([readFileSync(file)], { type: 'application/pdf' }), basename(file))
+  const res = await fetch(`${API_URL}/api/shows/${showId}/documents`, {
+    method: 'POST',
+    headers: { cookie, origin: APP_URL },
+    body: form,
+  })
+  if (!res.ok) throw new Error(`upload: ${res.status} ${await res.text()}`)
+  const { document, version } = (await res.json()) as {
+    document: { id: string }
+    version: { id: string }
+  }
+  const deadline = Date.now() + READY_TIMEOUT_MS
+  for (;;) {
+    const { documents } = await call<{
+      documents: { id: string; versions: { id: string; status: string; error: string | null }[] }[]
+    }>(cookie, 'GET', `/api/shows/${showId}/documents`)
+    const status = documents
+      .find((d) => d.id === document.id)
+      ?.versions.find((v) => v.id === version.id)
+    if (status?.status === 'ready') return { documentId: document.id, versionId: version.id }
+    if (status?.status === 'failed') throw new Error(`libretto failed to process: ${status.error}`)
+    if (Date.now() > deadline) throw new Error(`libretto not ready after ${READY_TIMEOUT_MS} ms`)
+    await new Promise((r) => setTimeout(r, 1_000))
+  }
 }
 
 async function call<T>(cookie: string, method: string, path: string, body?: unknown): Promise<T> {

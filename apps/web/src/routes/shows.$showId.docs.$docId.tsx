@@ -1,9 +1,16 @@
 import { useQuery } from '@powersync/react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { blobUrl } from '../blobs/fetchBlob'
+import { CueEditor } from '../markup/CueEditor'
+import { LayerPanel } from '../markup/LayerPanel'
+import { PageMarkup } from '../markup/MarkupOverlay'
+import { MarkupSessionProvider } from '../markup/MarkupSession'
+import { MarkupTools } from '../markup/MarkupTools'
+import { useSelection } from '../markup/selection'
+import { useMarkupShortcuts } from '../markup/useMarkupShortcuts'
 import type { DocumentRow, DocumentVersionRow, PageRow } from '../powersync/schema'
-import { Viewer } from '../viewer/Viewer'
+import { Viewer, type ViewerHandle } from '../viewer/Viewer'
 
 interface DocumentSearch {
   /** A version to view instead of the document's current one. */
@@ -33,6 +40,7 @@ function DocumentPage() {
   const { showId, docId } = Route.useParams()
   const { v, p } = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
+  const viewer = useRef<ViewerHandle>(null)
   const { data: docs, isLoading } = useQuery<DocumentRow>(
     'SELECT * FROM documents WHERE id = ? AND show_id = ?',
     [docId, showId],
@@ -59,6 +67,14 @@ function DocumentPage() {
         height: page.height ?? 0,
         thumb_key: page.thumb_key,
       })),
+    [pages],
+  )
+
+  const renderOverlay = useCallback(
+    (pageIndex: number, zoom: number) => {
+      const page = pages[pageIndex]
+      return page ? <PageMarkup page={page} zoom={zoom} /> : null
+    },
     [pages],
   )
 
@@ -109,17 +125,48 @@ function DocumentPage() {
       ) : !version.searchable_key || pages.length === 0 ? (
         <p className="viewer-message">Loading pages…</p>
       ) : (
-        <Viewer
+        <MarkupSessionProvider
           key={version.id}
+          showId={showId}
+          documentId={doc.id}
           versionId={version.id}
-          pdfUrl={blobUrl(version.searchable_key)}
-          pages={viewerPages}
-          versionLabel={versionName(version)}
-          initialPage={(p ?? 1) - 1}
-          onPageChange={onPageChange}
-        />
+          pages={pages}
+          snapDefault={doc.snap_to_text}
+          viewer={viewer}
+        >
+          <MarkupKeys />
+          <Viewer
+            ref={viewer}
+            versionId={version.id}
+            pdfUrl={blobUrl(version.searchable_key)}
+            pages={viewerPages}
+            versionLabel={versionName(version)}
+            initialPage={(p ?? 1) - 1}
+            onPageChange={onPageChange}
+            renderOverlay={renderOverlay}
+            tools={<MarkupTools />}
+            side={<MarkupSide showId={showId} />}
+          />
+        </MarkupSessionProvider>
       )}
     </div>
+  )
+}
+
+/** The markup keys, live while a version is open. */
+function MarkupKeys() {
+  useMarkupShortcuts()
+  return null
+}
+
+/** Layers, and the selected cue's editor. */
+function MarkupSide({ showId }: { showId: string }) {
+  const selection = useSelection()
+  return (
+    <>
+      <LayerPanel showId={showId} />
+      {selection?.table === 'cues' && <CueEditor key={selection.id} cueId={selection.id} />}
+    </>
   )
 }
 

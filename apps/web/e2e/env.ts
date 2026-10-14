@@ -19,18 +19,25 @@ export function apiEnv(): Record<string, string> {
   return env
 }
 
-export type UserKey = 'a' | 'b' | 'c'
+/**
+ * The run's users by their part in the shared show: its owner, an editor scoped to SND, an editor
+ * scoped to LX, a viewer, and an outsider who is not a member at all.
+ */
+export const USER_KEYS = ['owner', 'sndEditor', 'lxEditor', 'viewer', 'outsider'] as const
+export type UserKey = (typeof USER_KEYS)[number]
 
 /** Everything global-setup created for this run; read by auth.setup.ts and the specs. */
 export interface RunData {
   password: string
-  users: Record<UserKey, { email: string; name: string }>
-  /** The show A owns and B edits (scoped to the SND department only); C is not a member. */
+  users: Record<UserKey, { id: string; email: string; name: string }>
+  /** The show the owner owns; the editors and viewer are members; the outsider is not. */
   sharedShow: { id: string; title: string }
   /** The shared show's departments: code to id. */
   departments: Record<string, string>
-  /** A show only C belongs to, so C's home screen proves C has synced. */
+  /** A show only the outsider belongs to, so their home screen proves they have synced. */
   cShow: { id: string; title: string }
+  /** A three-page text libretto in the shared show, uploaded by the owner and processed. */
+  libretto: { documentId: string; versionId: string }
 }
 
 export function readRun(): RunData {

@@ -24,9 +24,9 @@ test('edits sync between two users, survive offline, rejections converge, and no
     await page.goto('/')
     return { context, page }
   }
-  const a = await open('a')
-  const b = await open('b')
-  const c = await open('c')
+  const a = await open('owner')
+  const b = await open('sndEditor')
+  const c = await open('outsider')
 
   try {
     // Initial sync: owner and editor both receive the shared show.

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { readRun, storageStateFor } from './env'
 import { hasInk, uploadAndWaitReady } from './helpers'
 
-test.use({ storageState: storageStateFor('a') })
+test.use({ storageState: storageStateFor('owner') })
 
 /** The libretto fixture (generated from fixtures/public/pirates.txt) has 147 pages. */
 const PAGES = 147

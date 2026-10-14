@@ -1,8 +1,11 @@
 import type { DocHit } from '@binder/core'
 import {
   type KeyboardEvent,
+  type ReactNode,
+  type Ref,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -41,6 +44,20 @@ export interface ViewerProps {
   initialPage: number
   /** Called with the one-based page in view once scrolling settles. */
   onPageChange: (pageNumber: number) => void
+  /** Drawn in each mounted page's overlay (displayed space), above search highlights. */
+  renderOverlay?: (pageIndex: number, zoom: number) => ReactNode
+  /** Extra toolbar controls, e.g. the markup tools. */
+  tools?: ReactNode
+  /** A panel beside the pages, e.g. layers and the cue editor. */
+  side?: ReactNode
+  ref?: Ref<ViewerHandle>
+}
+
+export interface ViewerHandle {
+  /** Scrolls a point of a page (displayed y, in points) into view. */
+  scrollToPoint(pageIndex: number, y: number): void
+  /** Focuses the toolbar's page input. */
+  focusPageInput(): void
 }
 
 /** Toolbar, thumbnail rail, and the virtualised page list for one ready document version. */
@@ -51,6 +68,10 @@ export function Viewer({
   versionLabel,
   initialPage,
   onPageChange,
+  renderOverlay,
+  tools,
+  side,
+  ref,
 }: ViewerProps) {
   const { pdf, status, error } = usePdfDocument(pdfUrl)
   const firstPage = Math.min(Math.max(0, initialPage), pages.length - 1)
@@ -63,6 +84,7 @@ export function Viewer({
   const [activeHit, setActiveHit] = useState<number | null>(null)
   const area = useRef<HTMLDivElement>(null)
   const list = useRef<PageListHandle>(null)
+  const pageInput = useRef<HTMLInputElement>(null)
 
   const widest = useMemo(() => Math.max(...pages.map((p) => p.width)), [pages])
   const fit = useCallback(
@@ -89,6 +111,20 @@ export function Viewer({
     [pages.length],
   )
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToPoint(pageIndex, y) {
+        const page = pages[pageIndex]
+        if (!page || zoom === null) return
+        if (list.current) list.current.scrollToPoint(pageIndex, (page.height - y) * zoom)
+        else goTo(pageIndex)
+      },
+      focusPageInput: () => pageInput.current?.focus(),
+    }),
+    [pages, zoom, goTo],
+  )
+
   const hitsByPage = useMemo(() => {
     const byPage = new Map<number, DocHit[]>()
     for (const hit of hits) byPage.set(hit.pageIndex, [...(byPage.get(hit.pageIndex) ?? []), hit])
@@ -108,18 +144,23 @@ export function Viewer({
       const pageHits = hitsByPage.get(pageIndex)
       const words = documentSearch.layers?.get(pageIndex)?.words
       const page = pages[pageIndex]
-      if (!pageHits || !words || zoom === null) return null
+      if (zoom === null) return null
+      const markup = renderOverlay?.(pageIndex, zoom)
+      if ((!pageHits || !words) && !markup) return null
       return (
         <PageOverlay width={page.width} height={page.height} zoom={zoom}>
-          <SearchHighlights
-            hits={pageHits}
-            words={words}
-            active={activeHit === null ? null : hits[activeHit]}
-          />
+          {pageHits && words && (
+            <SearchHighlights
+              hits={pageHits}
+              words={words}
+              active={activeHit === null ? null : hits[activeHit]}
+            />
+          )}
+          {markup}
         </PageOverlay>
       )
     },
-    [hitsByPage, documentSearch.layers, pages, zoom, activeHit, hits],
+    [hitsByPage, documentSearch.layers, pages, zoom, activeHit, hits, renderOverlay],
   )
 
   function onKeyDown(e: KeyboardEvent<HTMLElement>) {
@@ -144,7 +185,10 @@ export function Viewer({
         pageCount={pages.length}
         onGoToPage={(n) => goTo(n - 1)}
         versionLabel={versionLabel}
-      />
+        pageInputRef={pageInput}
+      >
+        {tools}
+      </ViewerToolbar>
       <div className="viewer-body">
         <ThumbnailRail pages={pages} current={current} onSelect={goTo} />
         <div ref={area} className="viewer-pages">
@@ -167,6 +211,7 @@ export function Viewer({
             <p className="viewer-message">Loading PDF…</p>
           )}
         </div>
+        {side && <aside className="markup-panel">{side}</aside>}
         <SearchPanel
           search={documentSearch.search}
           loading={documentSearch.loading}

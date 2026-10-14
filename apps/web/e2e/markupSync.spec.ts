@@ -50,8 +50,8 @@ test('a cue created offline uploads on reconnect and reaches the other user', as
   const { sharedShow, departments } = readRun()
   const contexts: BrowserContext[] = []
   try {
-    const a = await open(browser, 'a', contexts)
-    const b = await open(browser, 'b', contexts)
+    const a = await open(browser, 'owner', contexts)
+    const b = await open(browser, 'sndEditor', contexts)
     await expect(a.page.getByLabel('Sync status')).toHaveText('Connected', { timeout: 20_000 })
 
     const id = randomUUID()
@@ -90,8 +90,8 @@ test('an out-of-scope create is rejected, named, and disappears locally', async 
   const { sharedShow, departments } = readRun()
   const contexts: BrowserContext[] = []
   try {
-    const a = await open(browser, 'a', contexts)
-    const b = await open(browser, 'b', contexts)
+    const a = await open(browser, 'owner', contexts)
+    const b = await open(browser, 'sndEditor', contexts)
 
     // B edits SND only, so an LX cue is refused by the server.
     const id = randomUUID()

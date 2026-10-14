@@ -18,3 +18,29 @@ export function cueTargetDepartment(
   const target = last ?? departments[0]
   return target ? { departmentId: target.id } : { disabled: NO_DEPARTMENT_HINT }
 }
+
+export const LOADING_LAYERS_HINT = 'Waiting for your layers to sync…'
+
+export interface CueToolInput {
+  /** Why the show cannot be edited (archived), or null. */
+  readOnly: string | null
+  /** Null until the membership has synced. */
+  active: LayerRef | null
+  lastActiveDepartment: string | null
+  editable: LayerRef[]
+  /** Locked layer keys. */
+  locked: readonly string[]
+  departmentCode: (id: string) => string
+}
+
+/** Where the cue tool (and the `c` key) places a cue now, or why it cannot. */
+export function cueToolState(input: CueToolInput): { departmentId: string } | { disabled: string } {
+  if (input.readOnly) return { disabled: input.readOnly }
+  if (!input.active) return { disabled: LOADING_LAYERS_HINT }
+  const target = cueTargetDepartment(input.active, input.lastActiveDepartment, input.editable)
+  if ('disabled' in target) return target
+  if (input.locked.includes(`department:${target.departmentId}`)) {
+    return { disabled: `The ${input.departmentCode(target.departmentId)} layer is locked.` }
+  }
+  return target
+}

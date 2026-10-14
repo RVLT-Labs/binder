@@ -14,6 +14,8 @@ import type { PDFDocumentProxy } from './pdfjs'
 
 /** Vertical space around each page, in CSS pixels. Part of every item's size. */
 const GAP = 16
+/** The page slot's top padding (styles.css `.page-slot`): where the page box starts in its item. */
+const SLOT_PADDING_TOP = 8
 
 export interface ListPage {
   id: string
@@ -24,13 +26,15 @@ export interface ListPage {
 export interface PageListHandle {
   /** Scrolls so the top of page `index` (zero-based) is at the top of the list. */
   scrollToPage(index: number): void
+  /** Scrolls so a point `top` CSS pixels below the top of page `index` sits a third of the way down the view. */
+  scrollToPoint(index: number, top: number): void
 }
 
 export interface PageListProps {
   pdf: PDFDocumentProxy
   pages: readonly ListPage[]
   zoom: number
-  /** Drawn over each mounted page in its box, e.g. a PageOverlay. `pageIndex` is zero-based. */
+  /** Drawn over each mounted page in its box, e.g. a PageOverlay with markup. `pageIndex` is zero-based. */
   overlay?: (pageIndex: number) => ReactNode
   /** Zero-based page to open at. Read on mount only. */
   initialPage?: number
@@ -103,8 +107,16 @@ export function PageList({
 
   useImperativeHandle(
     ref,
-    () => ({ scrollToPage: (index) => virtualizer.scrollToIndex(index, { align: 'start' }) }),
-    [virtualizer],
+    () => ({
+      scrollToPage: (index) => virtualizer.scrollToIndex(index, { align: 'start' }),
+      scrollToPoint: (index, top) => {
+        const view = scroller.current?.clientHeight ?? 0
+        const start = heightBefore[index] * zoom + GAP * index
+        const at = start + SLOT_PADDING_TOP + top - view / 3
+        virtualizer.scrollToOffset(Math.max(0, at))
+      },
+    }),
+    [virtualizer, zoom, heightBefore],
   )
 
   return (

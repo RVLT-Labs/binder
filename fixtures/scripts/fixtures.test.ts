@@ -11,6 +11,8 @@ test('fixtures generate with the expected page counts and kinds', async () => {
   expect(await pageCount(f.librettoPdf)).toBeGreaterThan(30)
   expect(await pageCount(f.scanPdf)).toBe(8)
   expect(await pageCount(f.mixedPdf)).toBe(4)
+  expect(await pageCount(f.librettoShortPdf)).toBe(3)
+  expect(await hasText(f.librettoShortPdf, 3)).toBe(true)
   expect(await hasText(f.scanPdf, 1)).toBe(false)
   expect(await hasText(f.librettoPdf, 1)).toBe(true)
 }, 120_000)

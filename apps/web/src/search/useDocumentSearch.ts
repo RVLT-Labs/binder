@@ -18,7 +18,8 @@ interface PageWords {
   words_key: string | null
 }
 
-async function loadLayer(key: string): Promise<WordLayer | null> {
+/** One page's words.json through the blob cache; null when it is missing or unreadable. */
+export async function loadLayer(key: string): Promise<WordLayer | null> {
   try {
     const res = await fetchBlob(blobUrl(key))
     if (!res.ok) return null

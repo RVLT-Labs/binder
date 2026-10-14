@@ -40,8 +40,8 @@ test('an edit made while the sync service is down uploads and reaches another us
     await page.goto('/')
     return page
   }
-  const a = await open('a')
-  const b = await open('b')
+  const a = await open('owner')
+  const b = await open('sndEditor')
 
   try {
     // A owns exactly one show here: the shared one, whatever its title is by now.

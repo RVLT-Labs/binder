@@ -33,6 +33,14 @@ export async function makeMixedPdf(): Promise<Uint8Array> {
   return doc.save()
 }
 
+/** The first `count` pages of a PDF, as a new PDF. */
+export async function firstPages(pdfPath: string, count: number): Promise<Uint8Array> {
+  const src = await PDFDocument.load(await readFile(pdfPath), { updateMetadata: false })
+  const doc = await newDoc()
+  for (const page of await doc.copyPages(src, [...Array(count).keys()])) doc.addPage(page)
+  return doc.save()
+}
+
 async function exists(path: string): Promise<boolean> {
   return stat(path).then(
     () => true,
@@ -65,6 +73,7 @@ async function generate(): Promise<void> {
     await rasterisePages(FIXTURES.librettoPdf, [1, 2, 3, 4, 5, 6, 7, 8], 150),
   )
   await publish(FIXTURES.mixedPdf, await makeMixedPdf())
+  await publish(FIXTURES.librettoShortPdf, await firstPages(FIXTURES.librettoPdf, 3))
 }
 
 let inflight: Promise<typeof FIXTURES> | undefined
@@ -76,7 +85,9 @@ let inflight: Promise<typeof FIXTURES> | undefined
 export function ensureFixtures(): Promise<typeof FIXTURES> {
   inflight ??= (async () => {
     const present = await Promise.all(
-      [FIXTURES.librettoPdf, FIXTURES.scanPdf, FIXTURES.mixedPdf].map(exists),
+      [FIXTURES.librettoPdf, FIXTURES.scanPdf, FIXTURES.mixedPdf, FIXTURES.librettoShortPdf].map(
+        exists,
+      ),
     )
     if (!present.every(Boolean)) await generate()
     return FIXTURES
