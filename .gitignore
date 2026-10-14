@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+fixtures/private/
+*.tmix
+!fixtures/public/**/*.tmix
+.DS_Store
+coverage/

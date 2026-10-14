@@ -1,0 +1,367 @@
+# cueapp platform design
+
+Date: 2026-10-14
+Status: approved in conversation, awaiting written review
+Author: Jayden Nawotka with Claude
+
+## 1. Purpose
+
+cueapp is a web platform for musical theatre production teams. It imports script and score PDFs, text-based or scanned, lets people annotate them and place cues, manages cues per department, and holds all show documentation as views over a single show graph. Its first integration target is generating TheatreMix show files from the mic plot and the cue points marked on the script.
+
+The reference competitor is Cuelist (thecuelist.com). Cuelist places cues on a PDF and shares them in real time, but has no OCR, treats cues as drawings rather than data, and holds nothing beyond the script. cueapp keeps Cuelist's strengths (PDF-centred, real-time, per-department layers, print export) and adds the show graph underneath.
+
+### 1.1 Primary users
+
+Sound (designer, A1, A2) and lighting are the version one users. Stage management, directors, and production managers are supported by the same model and roles but are not the design centre of version one.
+
+### 1.2 Success criteria for version one
+
+- A real show is run from cueapp: script marked up, cues placed, mic plot built, and the TheatreMix file generated from it rather than by hand.
+- Editing works in a venue with no internet and syncs when a connection returns.
+- Two people can work on the same show at once without overwriting each other.
+- A scanned script is searchable and cues snap to its text.
+- The current workflow (Cuelist markup, print, hand-build one .tmix per cast variant) is replaced end to end.
+
+### 1.3 Constraints
+
+- Self-hosted on Jayden's Coolify server, Docker containers only.
+- Personal tool first. No billing, no public sign-up, no onboarding flows.
+- Native iPad client later. The backend and data model must not need rework for it.
+- Real show materials never enter git. They carry real names.
+
+### 1.4 Prior work this design builds on
+
+- `/Users/jayden/theatremix-skills/`: a working skill with a `.tmix` validator and seed-clone builder, plus references on Jayden's cue style, mic and DCA practice, the verified file format, and scanned score handling. The rules in sections 4.8, 6.3, and 6.4 come from it.
+- `/Users/jayden/hermes-backup-2026-09-06-132644/theatremix_analysis/`: the original schema reverse-engineering.
+- `/Users/jayden/Downloads/35mm-draft-v1/`: an end-to-end generated draft (show.json, cue sheet, mic allocation, .tmix) that is the shape of what cueapp automates.
+
+## 2. Scope
+
+### 2.1 In version one
+
+- Accounts, organisations, shows, show membership with roles and department scope.
+- Document upload (PDF), page rendering, word layer from embedded text or OCR, client-side search.
+- Script structure: acts, scenes, songs, anchored to pages in one or more documents.
+- Cues per department with (major, minor) numbering, anchored to page positions with text anchors.
+- Annotations: text notes, cue markers with standby, warn, go styling, shapes, arrows, stamps. Department layers and a personal layer.
+- Cue list views per department, auto numbering from script order, print export to PDF.
+- Show graph: people, characters, casting with cast variants, appearances per scene or song, mics, mic assignments per scene range.
+- Derived documents: mic plot, mic swap and handover sheet, book of faces, contact sheet, scene and song breakdown, per-department cue sheets and run sheets.
+- TheatreMix: automatic DCA allocation for TM cues, .tmix writer with one file per cast variant, .tmix reader to bootstrap shows from existing files.
+- Exports: PDF (marked script, cue sheets), CSV (cue lists, mic plot), .tmix.
+- Offline: all reads and writes work without a connection; a show can be made available offline on demand.
+- Real-time: changes from other users appear without reload.
+
+### 2.2 Deferred, with the model already supporting them
+
+- Freehand ink with pressure.
+- ETC Eos and QLab cue list export, OSC go to TheatreMix.
+- Script revision re-anchoring (anchors capture text from day one; the re-link operation comes later).
+- Presence indicators and share links.
+- Native iPad client.
+- Positions, FX, snippets, and channel levels in .tmix output.
+- Server-side full-text search.
+
+## 3. Architecture
+
+### 3.1 Shape
+
+A TypeScript monorepo managed with pnpm workspaces.
+
+| Package | Role |
+|---|---|
+| apps/web | React and Vite single-page app, installable PWA, PDF.js viewer, SVG overlay, local SQLite via PowerSync |
+| apps/api | Node with Hono. Auth, uploads, blob serving, sync write path, sync token minting, OCR job queue and worker |
+| packages/db | Drizzle schema and migrations for Postgres, plus the PowerSync sync rules and the client schema derived from the same source |
+| packages/core | Pure domain logic with no I/O: cue sorting and numbering, anchor ordering, mic plot derivation, DCA allocation, .tmix reader and writer, PDF coordinate maths, CSV export |
+| packages/shared | Zod schemas and types shared by web and api |
+
+packages/core must remain free of Node-only and browser-only dependencies so it runs in both, and so it can be ported for a native client later.
+
+### 3.2 Data flow
+
+1. The browser holds a SQLite database (wa-sqlite in a worker, OPFS storage) mirrored from Postgres by PowerSync. All reads come from it. All writes go to it first.
+2. PowerSync queues local writes and uploads them to `POST /sync/upload` as batched create, update, and delete operations.
+3. The API validates each operation against the user's membership and department scope, applies accepted operations to Postgres in one transaction, and returns the list of rejected operations with reasons.
+4. The client discards rejected operations locally and shows a notice. Rejections are expected to be rare (a viewer editing, a revoked membership) and never block the queue.
+5. PowerSync streams Postgres changes back to every connected client whose sync rules include the affected rows.
+
+Blobs (original PDFs, page thumbnails, per-page word layers) do not go through PowerSync. The API serves them from storage after a membership check. The client caches them with the Cache API, keyed by blob URL. "Make available offline" on a show prefetches every blob the show references.
+
+Identifiers are UUIDv7 generated on the client so rows can be created offline.
+
+### 3.3 Sync rules
+
+- Global bucket per user: their user row, organisation memberships, show memberships, and the show rows those memberships point to.
+- Show bucket per show membership: every show-scoped table filtered by show id.
+
+Row-level write rules live in the API, not in sync rules.
+
+### 3.4 Auth
+
+Better Auth with email and password plus magic link. Sessions are cookies. The API mints a short-lived JWT for PowerSync carrying the user id, refreshed by the client before expiry.
+
+### 3.5 Storage
+
+A `BlobStore` interface with `put`, `get`, `delete`, and `exists`. Version one implements it on a disk volume. An S3-compatible implementation (MinIO) is a drop-in later. Blob keys follow `shows/{showId}/documents/{documentId}/original.pdf`, `.../pages/{index}/thumb.png`, `.../pages/{index}/words.json`.
+
+### 3.6 Jobs
+
+pg-boss on the same Postgres runs document processing jobs inside the API container. One job per uploaded document fans out to one job per page. Jobs are idempotent and retried three times.
+
+### 3.7 Deploy
+
+Coolify runs four services and one volume: Postgres, the PowerSync service (open edition, Postgres bucket storage), the API container (which includes the job worker and has poppler and tesseract installed), the static web app behind a reverse proxy, and a disk volume for blobs mounted into the API container. Backups are a nightly Postgres dump plus the blob volume.
+
+### 3.8 The sync spike
+
+The first task of milestone M0 is a time-boxed spike, five working days at most: PowerSync service on Coolify, a two-table schema, a browser client creating rows offline and seeing them on a second browser online. Exit criteria: offline create and update, sync on reconnect, server-side rejection surfacing in the client, and a Swift SDK smoke test against the same service. If the spike fails, the fallback is ElectricSQL for the read path with TanStack DB on the client, keeping the same API write path. The decision is recorded in docs/superpowers/specs as an addendum.
+
+## 4. Data model
+
+All show-scoped tables carry `show_id`, `created_at`, `updated_at`, `updated_by`. Soft delete is not used; deletes are real and sync as deletes.
+
+### 4.1 Tenancy
+
+- **User**: id, email, name, avatar blob key.
+- **Organisation**: id, name.
+- **OrgMembership**: user, organisation, role (`owner`, `member`).
+- **Show**: id, organisation, title, status (`prep`, `rehearsal`, `running`, `archived`), settings JSON.
+- **ShowMembership**: user, show, role (`owner`, `editor`, `viewer`), departments (array of department ids, or the literal `*`).
+
+Permissions:
+
+| Action | owner | editor | viewer |
+|---|---|---|---|
+| Read everything in the show | yes | yes | yes |
+| Personal layer annotations | yes | yes | yes |
+| Cues and annotations in a department layer | yes | only departments in scope | no |
+| Show graph (people, characters, casting, script items, mics, assignments) | yes | yes | no |
+| Documents (upload, rename, delete) | yes | yes | no |
+| Show settings, console config, memberships | yes | no | no |
+
+### 4.2 Departments
+
+- **Department**: id, show, code (`LX`, `SND`, `TM`, `VID`, `SM`, `STG`, `FLY`, user-defined), name, colour, number format (`decimal` shows 10.5, `point` shows 10.50), sort order.
+
+A new show is seeded with LX, SND, TM, VID, SM, STG, FLY. Departments can be added, renamed, and hidden. The `TM` department is special only in that its cues carry a DCA payload and feed the .tmix writer.
+
+### 4.3 Documents and pages
+
+- **Document**: id, show, kind (`libretto`, `score`, `blocking`, `other`), title, version number, original blob key, page count, sort order, OCR mode (`auto`, `always`, `never`, default `auto`), snap to text (boolean, default true for `libretto` and `other`, false for `score` and `blocking`), processing status (`queued`, `processing`, `ready`, `failed`).
+
+OCR on music notation produces mostly junk, so on score documents the word layer is for search and discovery only. Snapping defaults off there and cues anchor by position.
+- **Page**: id, document, index (zero-based), width and height in PDF points, rotation, thumbnail blob key, word layer blob key, word source (`embedded`, `ocr`, `merged`, `none`), OCR status.
+
+The word layer blob is JSON: `{ source, words: [{ t, x, y, w, h, conf }], lines: [[wordIndex, ...]] }` with boxes in PDF user space (points, origin bottom-left). This shape is identical whether the words came from embedded text or OCR, so nothing above the pipeline distinguishes scanned pages.
+
+### 4.4 Anchors
+
+An anchor is a value type stored inline on the owning row, not a table.
+
+```
+Anchor {
+  documentId, pageIndex,
+  x, y,                       // PDF points, origin bottom-left
+  text?: { quote, wordStart, wordEnd }   // optional, captured when snapped to a line
+}
+```
+
+Reading order within a document is `(pageIndex ascending, pageHeight minus y ascending)`. Across documents there is no single order; each document is ordered independently.
+
+### 4.5 Script structure
+
+- **ScriptItem**: id, show, parent (null for acts), kind (`act`, `scene`, `song`), number (text, e.g. "1", "2a"), title, sort order.
+- **ScriptItemAnchor**: script item, document, pageIndex, y. One per document the item appears in. Position-only, no x.
+
+Scenes and songs are the columns of the mic plot and the units of the breakdown. Acts are containers. Resolving a position P in a document to a script item: the scene or song with the greatest start anchor less than or equal to P in that document. If none, P has no item.
+
+### 4.6 People and characters
+
+- **Person**: id, show, name, email, phone, job (free text, e.g. "Cast", "LX Op"), headshot blob key, notes.
+- **Character**: id, show, name, short label (up to 12 characters, used on scribble strips), colour, priority (integer, lower is more important, used by the DCA allocator), notes.
+- **CastVariant**: id, show, name (e.g. "Principal", "Mo as Ray"), is default.
+- **Casting**: character, person, cast variant.
+- **Appearance**: character, script item (scene or song). Means the character is on and live during that item.
+
+Every show has exactly one default cast variant. Other variants start as a copy of the default and override individual castings.
+
+### 4.7 Mics
+
+- **Mic**: id, show, console channel (integer), label, pack id, frequency, element, colour, notes, sort order.
+- **MicAssignment**: mic, person, from script item, to script item (inclusive, by ScriptItem sort order; null to-item means to the end). A person may hold different mics in different ranges. Two assignments for the same mic may not overlap.
+- **MicPlotOverride**: mic, script item, state (`on`, `off`). Forces a cell regardless of derivation.
+
+Derivation. A mic is live in script item S under cast variant V when: there is a MicAssignment of that mic to person P covering S, a Casting of some character C to P in V, and an Appearance of C in S. A MicPlotOverride on (mic, S) replaces the derived state. The mic plot is this function evaluated over every mic and every scene or song.
+
+### 4.8 Cues
+
+- **Cue**: id, show, department, major (integer), minor (integer 0 to 99), label, anchor (nullable), type (`go`, `standby`, `warn`), notes, colour, payload JSON.
+
+Display: `major` alone when minor is zero, otherwise `major.minor` formatted per the department's number format. Sort order within a department is `(major, minor)`. Uniqueness of `(department, major, minor)` is not enforced by the database. Duplicates are a validation warning in the cue list and block .tmix export for the TM department until resolved.
+
+Numbering convention. Jayden's standing preference, which overrides the older per-song point style seen in WAKA and Songs for a New World: each scene or song owns a block of ten (10, 20, 30), cues inside the block take the following integers (11, 12, 13), and points (14.50) are reserved for insertions made after numbering. Line checks live in the number 0 range, conventionally 0.50.
+
+"Renumber from script order" is an explicit operation on one department within one document. It orders cues by anchor reading order, groups them by the scene or song resolved from the anchor, assigns each group's first cue the next multiple of the block size (default 10) and the rest consecutive integers, and resets minors to zero. Cues that would not fit in a block (more than nine inside one song at block size 10) spill into points and are flagged. Unplaced cues are untouched. Importing a file never renumbers; existing numbers are preserved exactly.
+
+A cue with a null anchor is "unplaced". It appears in cue lists and exports but not on any page.
+
+TM cue payload:
+
+```
+{
+  dca: { [dcaNumber]: { channels: number[], label: string } },   // allocator output, persisted
+  overrides: {
+    pin:   { [micId]: dcaNumber },      // force a mic onto a DCA
+    exclude: micId[],                   // drop a mic even if live
+    add: micId[],                       // include a mic even if not live
+    groups: [{ dca, micIds, label }]    // force these mics onto one DCA with this label
+  },
+  warnings: string[]
+}
+```
+
+Other departments' payloads are empty objects in version one.
+
+### 4.9 Annotations
+
+- **Annotation**: id, show, layer kind (`department`, `personal`), layer id (department id or user id), anchor, type (`note`, `rect`, `ellipse`, `line`, `arrow`, `stamp`, `highlight`), geometry JSON (in PDF points), text, style JSON.
+
+Stamps are chosen from a per-show stamp set (defaults: Enter, Exit, Fly in, Fly out, Blackout, Standby, Go). Highlights reference a word range through the anchor's text field.
+
+### 4.10 Console config
+
+- **ConsoleConfig**: show, target console (`SQ-5`, `SQ-6`, `SQ-7`, `QL1`, `QL5`, `CL`, `TF`, `X32`, `M32`, `Wing`, `Avantis`, `dLive`, `other`), DCA numbers (array), designer, venue, extra config JSON (passed through to .tmix config rows).
+
+The channel list is derived from the Mic table, not stored.
+
+## 5. Script engine
+
+### 5.1 Upload and processing
+
+1. `POST /shows/:id/documents` accepts a PDF up to 200 MB, checked by magic bytes. The API stores the original and creates Document and Page rows with dimensions read by pdfjs-dist.
+2. One job per page decides the word source. With OCR mode `auto`, a page is OCR'd when it has an image covering more than half the page area, or fewer than 200 non-whitespace characters of embedded text. Otherwise embedded text is used alone. `always` and `never` override the heuristic.
+3. Embedded words come from pdfjs-dist `getTextContent` in Node, converted to word boxes in user space.
+4. OCR rasterises the page with poppler at 300 dpi and runs tesseract with TSV output. Pixel boxes are scaled by 72/300 and flipped to bottom-left origin.
+5. When both exist they merge: OCR words whose box overlaps an embedded word box by more than half are dropped. Source is recorded as `merged`.
+6. Lines are grouped from words by vertical overlap, sorted left to right.
+7. The thumbnail is rendered at 160 px wide.
+8. Processing status rolls up to the Document. Failure on a page sets that page's OCR status to `failed`; the document still becomes `ready`.
+
+Cuelist-printed scans (an image per page plus Cuelist's header, footer, and cue labels as embedded text) take the OCR path with merge. The embedded cue labels remain searchable.
+
+### 5.2 Viewer
+
+- Pages render client-side with PDF.js from the cached original, in a virtualised vertical list, with zoom from 50 to 400 percent and a thumbnail rail.
+- Cues and annotations render as one SVG overlay per page in PDF user space, with a single transform per page. Hit testing and dragging happen in user space.
+- When snapping is on for the document, dropping a cue within 12 points of a text line snaps its y to the line and captures the text anchor (the nearest word and a quote of up to eight words). A toolbar toggle overrides the document default for the session. The quote doubles as the cue's trigger text on cue sheets.
+- Layer visibility toggles per department and personal layer, remembered per user in local storage.
+- Search runs over the cached word layers for every document in the show and jumps to the hit.
+- Keyboard: next and previous cue, place cue in the active department, jump to page.
+
+### 5.3 Print export
+
+pdf-lib in the browser loads the cached original and stamps markers, labels, and annotations for the chosen departments onto each page, then downloads. Page size is unchanged. The same path produces a "clean" copy with no markup.
+
+## 6. Mic plot, DCA allocation, and TheatreMix
+
+### 6.1 Mic plot view
+
+A grid with mics as rows and scenes or songs as columns. Cells show the live character short label under the selected cast variant, with override state marked. Clicking a cell toggles an override. Changing any casting, appearance, or assignment re-derives the grid and every TM cue's allocation.
+
+The swap and handover sheet is derived from MicAssignment boundaries: for each mic whose assignment changes, one row with the outgoing person, their last live item, the incoming person, their first live item, and a free-text window note. Its purpose is to make every physical pack change explicit before anyone approves sharing a pack. Timing feasibility is a human judgement; the sheet records it, it does not compute it.
+
+### 6.2 Live set at a cue
+
+For a TM cue with an anchor, the live mic set is the derivation of 4.7 evaluated at the script item resolved from the anchor, then modified by the cue's `add` and `exclude` overrides. For an unplaced TM cue the live set is empty before overrides, so imported cues keep exactly their pinned assignments.
+
+### 6.3 Allocator
+
+Inputs: the ordered list of TM cues, each with its live mic set; the DCA numbers from console config; the previous cue's allocation; the cue's overrides; characters' priorities.
+
+For each cue in `(major, minor)` order:
+
+1. Apply `groups`: each group occupies its DCA with its label.
+2. Apply `pin`: each pinned mic occupies its DCA, labelled with the character short label.
+3. For each remaining live mic, if it held a DCA in the previous cue and that DCA is still free, keep it there.
+4. Sort the remaining live mics by character priority, then console channel. Assign each to the lowest free DCA.
+5. If live mics remain with no free DCA, place them together on the highest-numbered DCA that was assigned in step 4, relabel it from the first matching ensemble definition or `ENS`, and add a warning. If step 4 assigned nothing, they remain unassigned and the warning says so. Unassigned controlled channels are muted by TheatreMix.
+6. Labels for single-mic DCAs are the character short label of the character the mic's person plays at that script item; if the person plays several, the highest-priority one.
+
+Rules the allocator must satisfy, taken from the observed corpus: a mic is never on two DCAs in one cue (disjoint allocation); solo voices are never merged into a group unless capacity forces it; groups go to the rightmost DCAs; continuity is local, not a permanent DCA per person.
+
+Warnings: capacity overflow; a cue with no live mics and no overrides ("mutes every controlled channel", suppressed for cues labelled as pre show, post show, or interval); a live mic with no console channel.
+
+Label suggestion: when a TM cue has no label, the UI proposes one from the diff against the previous cue in the style of the corpus ("Add Bonnie, Lilli", "Remove Nick", "Bonnie solo"). The user can accept or type their own.
+
+The output is written into the cue's payload `dca` and `warnings`. The allocator is a pure function in packages/core and is deterministic for a given input.
+
+### 6.4 .tmix writer
+
+Runs in the browser with sql.js, and in Node for tests and a CLI. Produces one file per selected cast variant, named `{show title} - {variant}.tmix`.
+
+Schema. The DDL is not hand-written. It is captured verbatim from an app-generated TheatreMix 3.4.1 file into a constant in packages/core, including the `skip` column, the twelve DCA column pairs, the two unique indexes, and the malformed-looking `ensembles` column type (`TEXT\`channelProfiles\` TEXT`) that the app itself writes. A test asserts the generated file's `sqlite_master.sql` rows equal the captured strings.
+
+Rows:
+
+- `config`: a minimal conservative key set, not the full set found in saved shows. TheatreMix inserts any missing key with its own default on open, which is safer than copying another show's console settings. Written keys: `targetConsole`, `designer`, `venue`, `channels` (mic console channels ascending), `dcas` (from console config), `minVersion` `3.0`, `profileSchemaVersion` `2`, `autoConnect` `0`, `consoleIP` `""`, `consoleMAC` `""`, `consoleModel` `""`, `consoleVersion` `""`, `qLabPasscode` `""`, `backupChannels` `""`, `spareBackup` `0`, `fxAssigns` `0`, `fxMutes` `0`, `defaultFX` `-1`, `qLabCues` `0`, `snippetRecall` `0`, `sceneRecall` `0`, `channelLevels` `0`, `gangLR` `0`, `enableChannelMonitoring` `1`, `consoleMuteDCAUnassign` `1`, `suppressDCAMuteBackupSwitch` `0`. Network credentials, passcodes, and auto-connect are never carried into a generated file, including on re-export of an imported show. Extra config JSON from console config overlays last and cannot set those keys.
+- `profiles`: one row per mic: `channel`, `name` set to the assigned person's name under the variant (first assignment in script order), `label` set to the character short labels joined with `/` and truncated to 12 characters, `default` 1, `data` empty. `profiles.id` is an autoincrement and never the console channel.
+- `positions`: exactly one row, id 0, Centre Stage, CS, delay 0, pan 0, buses empty. This row is mandatory: a file without position id 0 crashed TheatreMix 3.4.1 on open, and adding it was the confirmed fix.
+- `ensembles`: ids 2 and 3, Male and Female, empty channels.
+- `cues`: one row per TM cue with `number` = major, `point` = minor, `name` = label, `dcaNNChannels` as comma-joined channels and `dcaNNLabel` from the payload, `colour` null, `skip` 0, every other column empty string. Preamble cues, on by default in export options: 0.50 Line checks (every mic on its own DCA in channel order up to the DCA count, label from the profile), 1 Pre show (nothing assigned), and a Post show cue at the next multiple of the block size after the last cue. A show that already has cues in the 0 range keeps them and no line-check cue is added.
+- Remaining tables are created empty.
+
+Validation before writing, ported from tmix_tool.py and run again on the produced file:
+
+- Controlled channels and DCAs are non-empty; DCAs are within 1 to 12.
+- Every controlled channel has exactly one default profile; no profile is on an uncontrolled channel.
+- Position id 0 exists.
+- Cue identities are valid (`number` at least 0, `point` 0 to 99) and unique.
+- Assignments reference only enabled DCAs and controlled channels; memberships are positive integers with no duplicates.
+- At least one cue exists, and at least one cue is in the number 0 range.
+- Warning, not error: a channel on more than one DCA in a cue; a cue with no assignments outside pre show, post show, and interval.
+
+Export is blocked, with a list linking to each offending cue or mic, when any error rule fails. The browser download uses `application/octet-stream` with the `.tmix` filename; no ZIP wrapper.
+
+### 6.5 .tmix reader
+
+Imports an existing file into a new or empty show: `config` to console config (target console, DCAs, designer, venue only; credentials are dropped), `profiles` to mics keyed by the `channel` column (name as a Person, label split on `/` into Characters, cast under the default variant), `cues` to unplaced TM cues with every assignment written as `pin` and `groups` overrides so the re-exported file matches the import. Numbers are preserved exactly, including the older per-song point style. Both observed schema variants (with and without `skip`) are readable. Cue columns the writer does not produce (positions, profiles, FX, snippets, QLab, levels, scenes, colour) are kept in the cue payload's `imported` field so nothing is silently lost, and re-export writes them back unchanged. A round-trip test asserts that import followed by export reproduces the cue and profile rows of each private fixture.
+
+## 7. Error handling
+
+- **Sync rejection**: the API returns rejected operations with a reason code; the client reverts the local row and shows a notice naming the row. Never a blocked queue.
+- **Conflicts**: last write wins per row by server arrival. Cue number collisions are a warning, not an error.
+- **Processing failure**: the document is still usable; failed pages show a badge and anchor by position only. A retry action re-queues the page.
+- **Offline**: the UI shows a persistent sync state (synced, pending with a count, offline). Exports work offline because they run on local data.
+- **Blob miss offline**: a page whose original is not cached shows a placeholder with a "needs connection" message rather than an error.
+- **Export validation**: blocked exports list every problem with a link to the offending cue or mic.
+
+## 8. Testing
+
+- **packages/core** (Vitest): numbering, display formatting, and block renumbering; anchor ordering; script item resolution; mic plot derivation with overrides; the allocator (stickiness, priority, overflow grouping, pins, exclusions, disjointness, label suggestion); .tmix DDL equality against the captured schema; the validator against the malformed cases in test_tmix_tool.py (missing position 0, duplicate cues, point out of range, uncontrolled channel, bad membership text, missing line check); reader on both schema variants; reader and writer round-trips on private fixtures when present and on synthetic fixtures always.
+- **apps/api** (Vitest with a throwaway Postgres in Docker): auth, membership and department scope on the sync write path, upload validation, page processing on the public fixtures, blob access control.
+- **apps/web** (Vitest and Testing Library for components; Playwright end to end): upload a fixture, wait for ready, search a word, place a cue snapped to text, export the marked PDF, generate a .tmix and assert its rows with sql.js.
+- **Manual gate per milestone**: Jayden opens a generated .tmix in TheatreMix 3.4.1 and runs cues.
+
+Fixtures: `fixtures/public/` holds a Gilbert and Sullivan libretto rendered to a text PDF from Project Gutenberg and a scanned vocal score from IMSLP, committed. `fixtures/private/` is gitignored and populated by a script that copies the WAKA, 35MM, Spring Chicken, and Songs for a New World materials from their known paths.
+
+## 9. Milestones
+
+Each milestone gets its own implementation plan and is usable on its own.
+
+- **M0 Foundation**: monorepo, CI, Coolify deploy, auth, organisations, shows, memberships, the sync spike and its go or no-go, document upload and processing, viewer with search and thumbnails, public fixtures.
+- **M1 Script markup**: departments, cues, annotations, overlay editing, snapping and text anchors, cue list views, renumbering, layer visibility, print export, offline prefetch.
+- **M2 Show graph**: script items and anchors, people, characters, cast variants, casting, appearances, mics, assignments, mic plot with overrides, swap and handover sheet, book of faces, contact sheet, breakdown, CSV exports.
+- **M3 TheatreMix**: allocator, TM cue payload editing, .tmix writer with console presets, per-variant export, .tmix reader, private fixture round-trips, manual gate in TheatreMix.
+- **M4 Polish and exports**: cue sheets and run sheets per department, presence, share links, duplicate show, revision re-anchoring, OSC go, Eos and QLab export as scope allows.
+
+## 10. Open items resolved during design
+
+- Freehand ink: out of v1 by Jayden's choice.
+- Live TheatreMix control: secondary; file generation is primary.
+- Beats and enter or exit anchors inside a song: dropped. Mid-song mic changes are TM cue overrides, which matches current practice (WAKA cues 1.00 to 1.04 are add and remove steps within one song).
+- Positions, FX, snippets in .tmix: deferred; the writer leaves them at defaults and the reader preserves imported values.
+- Numbering: blocks of ten per song with integer cues inside, from Jayden's standing preference in theatremix-skills. Older point-style files are imported as-is.
+- Position id 0 and the minimal config set: required by the confirmed 3.4.1 crash and the verified-opening builder in theatremix-skills.
+- ZIP delivery of .tmix files: a workaround for a different delivery channel, not needed in a browser download.
+- Music recognition (OMR) on scores: out of scope. Scores get OCR for search only and position-only cue anchoring.
