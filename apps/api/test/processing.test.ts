@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { createReadStream, readdirSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,6 +29,7 @@ import type { ProcessingDeps } from '../src/processing/types'
 import { addDocumentVersion, createDocument } from '../src/services'
 import { setupShow } from './documentHelpers'
 import { RecordingJobs } from './helpers'
+import { findMissingTools, skipWithoutTools } from './tools'
 
 const run = promisify(execFile)
 
@@ -41,21 +42,7 @@ const TOOLS: Array<[string, string[]]> = [
   ['qpdf', ['--version']],
 ]
 
-function missingTools(): string[] {
-  return TOOLS.filter(([cmd, args]) => {
-    try {
-      execFileSync(cmd, args, { stdio: 'ignore' })
-      return false
-    } catch {
-      return true
-    }
-  }).map(([cmd]) => cmd)
-}
-
-const missing = missingTools()
-if (missing.length > 0) {
-  console.warn(`Skipping processing tests; missing tools: ${missing.join(', ')}`)
-}
+const skip = skipWithoutTools('processing tests', findMissingTools(TOOLS))
 
 type Setup = Awaited<ReturnType<typeof setupShow>>
 let s: Setup
@@ -186,7 +173,7 @@ async function textOnlyPdf(): Promise<string> {
   return out
 }
 
-describe.skipIf(missing.length > 0)('processing pipeline', () => {
+describe.skipIf(skip)('processing pipeline', () => {
   test('text libretto: version ready, pages match pdfinfo, no OCR, page 1 words include PIRATES', async () => {
     const { document, version } = await upload(FIXTURES.librettoPdf)
     const changesBefore = await showChangeCount()
@@ -499,7 +486,7 @@ describe.skipIf(missing.length > 0)('processing pipeline', () => {
   }, 120_000)
 })
 
-describe.skipIf(missing.length > 0)('dead letters', () => {
+describe.skipIf(skip)('dead letters', () => {
   test('a dead-lettered page job fails the page and the version still becomes ready', async () => {
     const { version } = await upload(await textOnlyPdf())
     const deps = processingDeps()
@@ -556,7 +543,7 @@ describe.skipIf(missing.length > 0)('dead letters', () => {
   }, 60_000)
 })
 
-describe.skipIf(missing.length > 0)('tool wrappers', () => {
+describe.skipIf(skip)('tool wrappers', () => {
   test('runOcrmypdf falls back to a copy on invalid input and reports the exit code', async () => {
     const input = join(work, 'not-really.pdf')
     const output = join(work, 'not-really-out.pdf')

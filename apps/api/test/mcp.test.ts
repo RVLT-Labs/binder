@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { changeLog } from '@binder/db'
 import { FIXTURES } from '@binder/fixtures'
@@ -13,18 +12,18 @@ import { processPage } from '../src/processing/pageJob'
 import { createDocument, createShow, createToken, listOrganisations } from '../src/services'
 import { type Json, setupShow } from './documentHelpers'
 import { RecordingJobs } from './helpers'
+import { findMissingTools, skipWithoutTools } from './tools'
 
-const missingTools = ['pdfinfo', 'pdftoppm', 'pdftotext', 'pdfimages', 'ocrmypdf'].filter((cmd) => {
-  try {
-    execFileSync(cmd, cmd === 'ocrmypdf' ? ['--version'] : ['-v'], { stdio: 'ignore' })
-    return false
-  } catch {
-    return true
-  }
-})
-if (missingTools.length > 0) {
-  console.warn(`Skipping MCP page tests; missing tools: ${missingTools.join(', ')}`)
-}
+const skipPages = skipWithoutTools(
+  'MCP processed-page tests',
+  findMissingTools([
+    ['pdfinfo', ['-v']],
+    ['pdftoppm', ['-v']],
+    ['pdftotext', ['-v']],
+    ['pdfimages', ['-v']],
+    ['ocrmypdf', ['--version']],
+  ]),
+)
 
 type Setup = Awaited<ReturnType<typeof setupShow>>
 let s: Setup
@@ -83,7 +82,7 @@ beforeAll(async () => {
     file: createReadStream(FIXTURES.librettoPdf),
   })
   versionId = version.id
-  if (missingTools.length === 0) {
+  if (!skipPages) {
     const deps = { db: s.deps.db, blobs: s.deps.blobs, jobs: new RecordingJobs() }
     await processDocumentVersion(deps, version.id)
     await Promise.all(deps.jobs.enqueuedPages.map((id) => processPage(deps, id)))
@@ -241,7 +240,7 @@ describe.each(['legacy', 'auto'] as const)('%s protocol era', (era) => {
       expect(errorText(file)).toMatch(/Only http and https/)
     })
 
-    describe.skipIf(missingTools.length > 0)('processed pages', () => {
+    describe.skipIf(skipPages)('processed pages', () => {
       test('get_page returns an image block and the word layer for the processed libretto', async () => {
         const client = await connect(allToken, era)
         const res = await call(client, 'get_page', { versionId, index: 0 })
