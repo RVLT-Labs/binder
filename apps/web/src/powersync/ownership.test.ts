@@ -50,3 +50,23 @@ test('claims an empty database without wiping it', async () => {
   expect(db.disconnectAndClear).not.toHaveBeenCalled()
   expect(localStorage.getItem(OWNER_KEY)).toBe('u1')
 })
+
+test('clears caches left by another user when the owner changes', async () => {
+  localStorage.setItem(OWNER_KEY, 'u2')
+  const clearForeign = vi.fn(async () => {})
+  await claimLocalDb(fakeDb(), 'u1', clearForeign)
+  expect(clearForeign).toHaveBeenCalledOnce()
+})
+
+test('clears caches when no owner is recorded, even with no rows', async () => {
+  const clearForeign = vi.fn(async () => {})
+  await claimLocalDb(fakeDb(), 'u1', clearForeign)
+  expect(clearForeign).toHaveBeenCalledOnce()
+})
+
+test('keeps caches for the same owner', async () => {
+  localStorage.setItem(OWNER_KEY, 'u1')
+  const clearForeign = vi.fn(async () => {})
+  await claimLocalDb(fakeDb(['shows']), 'u1', clearForeign)
+  expect(clearForeign).not.toHaveBeenCalled()
+})

@@ -33,10 +33,16 @@ async function hasLocalRows(db: LocalDb): Promise<boolean> {
 /**
  * Makes the local database the signed-in user's before it is shown or synced. A database marked
  * as another user's, or holding rows with no marker at all (storage partly cleared), is wiped, so
- * on a shared machine one user's rows never appear for the next.
+ * on a shared machine one user's rows never appear for the next. `clearForeignCaches` runs whenever
+ * the recorded owner is not this user, for caches that hold no rows to detect (cached blobs).
  */
-export async function claimLocalDb(db: LocalDb, userId: string): Promise<void> {
+export async function claimLocalDb(
+  db: LocalDb,
+  userId: string,
+  clearForeignCaches?: () => Promise<void>,
+): Promise<void> {
   const owner = readOwner()
+  if (owner !== userId) await clearForeignCaches?.()
   if (owner !== userId && (owner !== null || (await hasLocalRows(db)))) {
     await db.disconnectAndClear()
   }

@@ -1,0 +1,122 @@
+import {
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { fitWidthZoom, viewerKeyAction, zoomIn, zoomOut } from './controls'
+import { PageList, type PageListHandle } from './PageList'
+import { ThumbnailRail } from './ThumbnailRail'
+import { usePdfDocument } from './usePdfDocument'
+import { ViewerToolbar } from './ViewerToolbar'
+
+/** Page list padding plus room for a classic scrollbar, so fit width never scrolls sideways. */
+const FIT_ALLOWANCE = 48
+/** How long the view rests on a page before the URL follows it. */
+const URL_SETTLE_MS = 250
+
+export interface ViewerPage {
+  id: string
+  width: number
+  height: number
+  thumb_key: string | null
+}
+
+export interface ViewerProps {
+  /** The version's searchable PDF. */
+  pdfUrl: string
+  pages: readonly ViewerPage[]
+  versionLabel: string
+  /** Zero-based page to open at. */
+  initialPage: number
+  /** Called with the one-based page in view once scrolling settles. */
+  onPageChange: (pageNumber: number) => void
+}
+
+/** Toolbar, thumbnail rail, and the virtualised page list for one ready document version. */
+export function Viewer({ pdfUrl, pages, versionLabel, initialPage, onPageChange }: ViewerProps) {
+  const { pdf, status, error } = usePdfDocument(pdfUrl)
+  const firstPage = Math.min(Math.max(0, initialPage), pages.length - 1)
+  const [current, setCurrent] = useState(firstPage)
+  /** Where the page list opens once the PDF has loaded; jumps before then land here. */
+  const [openAt, setOpenAt] = useState(firstPage)
+  const [zoom, setZoom] = useState<number | null>(null)
+  const area = useRef<HTMLDivElement>(null)
+  const list = useRef<PageListHandle>(null)
+
+  const widest = useMemo(() => Math.max(...pages.map((p) => p.width)), [pages])
+  const fit = useCallback(
+    () => fitWidthZoom((area.current?.clientWidth ?? 0) - FIT_ALLOWANCE, widest),
+    [widest],
+  )
+  // Open at fit width, measured before the first paint so pages never render at a throwaway zoom.
+  useLayoutEffect(() => {
+    if (zoom === null) setZoom(fit())
+  }, [zoom, fit])
+
+  useEffect(() => {
+    const timer = setTimeout(() => onPageChange(current + 1), URL_SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [current, onPageChange])
+
+  const goTo = useCallback(
+    (index: number) => {
+      const target = Math.min(Math.max(0, index), pages.length - 1)
+      if (list.current) return list.current.scrollToPage(target)
+      setOpenAt(target)
+      setCurrent(target)
+    },
+    [pages.length],
+  )
+
+  function onKeyDown(e: KeyboardEvent<HTMLElement>) {
+    const action = viewerKeyAction(e)
+    if (!action || zoom === null) return
+    e.preventDefault()
+    if (action === 'nextPage') goTo(current + 1)
+    else if (action === 'prevPage') goTo(current - 1)
+    else if (action === 'zoomIn') setZoom(zoomIn(zoom))
+    else if (action === 'zoomOut') setZoom(zoomOut(zoom))
+    else setZoom(fit())
+  }
+
+  return (
+    <div className="viewer">
+      <ViewerToolbar
+        zoom={zoom ?? 1}
+        onZoomIn={() => setZoom((z) => zoomIn(z ?? 1))}
+        onZoomOut={() => setZoom((z) => zoomOut(z ?? 1))}
+        onFitWidth={() => setZoom(fit())}
+        pageNumber={current + 1}
+        pageCount={pages.length}
+        onGoToPage={(n) => goTo(n - 1)}
+        versionLabel={versionLabel}
+      />
+      <div className="viewer-body">
+        <ThumbnailRail pages={pages} current={current} onSelect={goTo} />
+        <div ref={area} className="viewer-pages">
+          {status === 'error' ? (
+            <p role="alert" className="viewer-message">
+              {error}
+            </p>
+          ) : pdf && zoom !== null ? (
+            <PageList
+              ref={list}
+              pdf={pdf}
+              pages={pages}
+              zoom={zoom}
+              initialPage={openAt}
+              onVisiblePage={setCurrent}
+              onKeyDown={onKeyDown}
+            />
+          ) : (
+            <p className="viewer-message">Loading PDF…</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

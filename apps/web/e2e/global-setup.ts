@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { ensureFixtures } from '@binder/fixtures'
 import { API_URL, APP_URL, AUTH_DIR, apiEnv, REPO_ROOT, RUN_FILE, type RunData } from './env'
 
 /**
@@ -8,6 +9,7 @@ import { API_URL, APP_URL, AUTH_DIR, apiEnv, REPO_ROOT, RUN_FILE, type RunData }
  * suffix, so the suite can run again and again against the persistent dev stack.
  */
 export default async function globalSetup() {
+  await ensureFixtures()
   const run = `${Date.now()}`
   const password = randomBytes(18).toString('base64url')
   const users: RunData['users'] = {

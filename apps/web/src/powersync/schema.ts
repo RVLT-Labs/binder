@@ -92,3 +92,6 @@ export const AppSchema = new Schema({
 
 export type Database = (typeof AppSchema)['types']
 export type ShowRow = Database['shows']
+export type DocumentRow = Database['documents']
+export type DocumentVersionRow = Database['document_versions']
+export type PageRow = Database['pages']

@@ -1,6 +1,7 @@
 import { PowerSyncContext } from '@powersync/react'
 import type { PowerSyncDatabase } from '@powersync/web'
 import { type ReactNode, useEffect, useState } from 'react'
+import { clearBlobCache } from '../blobs/fetchBlob'
 import { ApiConnector } from './connector'
 import { createPowerSync } from './db'
 import { claimLocalDb, writeOwner } from './ownership'
@@ -23,7 +24,7 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      await claimLocalDb(db, userId)
+      await claimLocalDb(db, userId, clearBlobCache)
       if (cancelled) return
       setClaimedFor(userId)
       await db.connect(new ApiConnector())
@@ -37,8 +38,8 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
   return <PowerSyncContext.Provider value={db}>{children}</PowerSyncContext.Provider>
 }
 
-/** After sign-out: stop syncing and delete every local row and queued upload. */
+/** After sign-out: stop syncing and delete every local row, queued upload, and cached blob. */
 export async function clearLocalData(): Promise<void> {
-  await getPowerSync().disconnectAndClear()
+  await Promise.all([getPowerSync().disconnectAndClear(), clearBlobCache()])
   writeOwner(null)
 }

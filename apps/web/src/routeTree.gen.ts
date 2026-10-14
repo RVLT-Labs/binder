@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SettingsTokensRouteImport } from './routes/settings.tokens'
 import { Route as ShowsShowIdRouteImport } from './routes/shows.$showId'
+import { Route as ShowsShowIdDocsDocIdRouteImport } from './routes/shows.$showId.docs.$docId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,39 +35,63 @@ const ShowsShowIdRoute = ShowsShowIdRouteImport.update({
   path: '/shows/$showId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShowsShowIdDocsDocIdRoute = ShowsShowIdDocsDocIdRouteImport.update({
+  id: '/docs/$docId',
+  path: '/docs/$docId',
+  getParentRoute: () => ShowsShowIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings/tokens': typeof SettingsTokensRoute
-  '/shows/$showId': typeof ShowsShowIdRoute
+  '/shows/$showId': typeof ShowsShowIdRouteWithChildren
+  '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings/tokens': typeof SettingsTokensRoute
-  '/shows/$showId': typeof ShowsShowIdRoute
+  '/shows/$showId': typeof ShowsShowIdRouteWithChildren
+  '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings/tokens': typeof SettingsTokensRoute
-  '/shows/$showId': typeof ShowsShowIdRoute
+  '/shows/$showId': typeof ShowsShowIdRouteWithChildren
+  '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/settings/tokens' | '/shows/$showId'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/settings/tokens'
+    | '/shows/$showId'
+    | '/shows/$showId/docs/$docId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/settings/tokens' | '/shows/$showId'
-  id: '__root__' | '/' | '/login' | '/settings/tokens' | '/shows/$showId'
+  to:
+    | '/'
+    | '/login'
+    | '/settings/tokens'
+    | '/shows/$showId'
+    | '/shows/$showId/docs/$docId'
+  id:
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/settings/tokens'
+    | '/shows/$showId'
+    | '/shows/$showId/docs/$docId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   SettingsTokensRoute: typeof SettingsTokensRoute
-  ShowsShowIdRoute: typeof ShowsShowIdRoute
+  ShowsShowIdRoute: typeof ShowsShowIdRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -99,14 +124,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShowsShowIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shows/$showId/docs/$docId': {
+      id: '/shows/$showId/docs/$docId'
+      path: '/docs/$docId'
+      fullPath: '/shows/$showId/docs/$docId'
+      preLoaderRoute: typeof ShowsShowIdDocsDocIdRouteImport
+      parentRoute: typeof ShowsShowIdRoute
+    }
   }
 }
+
+interface ShowsShowIdRouteChildren {
+  ShowsShowIdDocsDocIdRoute: typeof ShowsShowIdDocsDocIdRoute
+}
+
+const ShowsShowIdRouteChildren: ShowsShowIdRouteChildren = {
+  ShowsShowIdDocsDocIdRoute: ShowsShowIdDocsDocIdRoute,
+}
+
+const ShowsShowIdRouteWithChildren = ShowsShowIdRoute._addFileChildren(
+  ShowsShowIdRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   SettingsTokensRoute: SettingsTokensRoute,
-  ShowsShowIdRoute: ShowsShowIdRoute,
+  ShowsShowIdRoute: ShowsShowIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
