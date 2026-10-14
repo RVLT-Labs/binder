@@ -7,6 +7,7 @@ import { DiskBlobStore } from './blob/DiskBlobStore'
 import { loadConfig } from './config'
 import { connectAndMigrate } from './db'
 import { createJobQueue } from './processing/queue'
+import { createShutdown } from './shutdown'
 
 const config = loadConfig(process.env)
 const { db, pool } = await connectAndMigrate(config)
@@ -26,16 +27,12 @@ const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.log(`binder api listening on :${info.port}`)
 })
 
-let stopping = false
-async function shutdown(signal: string) {
-  if (stopping) return
-  stopping = true
-  console.log(`${signal} received, shutting down`)
-  server.close()
-  // In-flight jobs get a moment to finish; anything left is retried by the next worker.
-  await boss.stop({ graceful: true, timeout: 10_000 })
-  await pool.end()
-  process.exit(0)
-}
+// In-flight jobs get a moment to finish; anything left is retried by the next worker.
+const shutdown = createShutdown({
+  closeServer: () => server.close(),
+  stopQueue: () => boss.stop({ graceful: true, timeout: 10_000 }),
+  endPool: () => pool.end(),
+  exit: (code) => process.exit(code),
+})
 process.on('SIGINT', () => void shutdown('SIGINT'))
 process.on('SIGTERM', () => void shutdown('SIGTERM'))

@@ -1,0 +1,83 @@
+# Binder production stack, for Coolify (Docker Compose build pack) and for a local production smoke.
+# See README.md. Nothing in here is a secret: Coolify generates the SERVICE_* values, and for a local
+# run deploy/scripts/gen-env.sh writes the same names into a gitignored deploy/.env.
+#
+# No `ports:` and no bind mounts: Coolify routes the two SERVICE_FQDN_* services through its proxy and
+# builds every image from this repository. docker-compose.local.yml publishes ports for a local run.
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    environment:
+      - POSTGRES_USER=binder
+      - POSTGRES_DB=binder
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POWERSYNC_DB_PASSWORD=${SERVICE_PASSWORD_POWERSYNC}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # -h localhost: the first-start init phase listens on the unix socket only, so this stays
+      # unhealthy until the real server (and the init script) is done.
+      test: ['CMD-SHELL', 'pg_isready -h localhost -U binder -d binder']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  powersync:
+    build:
+      context: .
+      dockerfile: Dockerfile.powersync
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - SERVICE_FQDN_POWERSYNC_8080
+      - PS_DATA_SOURCE_URI=postgresql://powersync_role:${SERVICE_PASSWORD_POWERSYNC}@postgres:5432/binder
+      - PS_STORAGE_SOURCE_URI=postgresql://powersync_role:${SERVICE_PASSWORD_POWERSYNC}@postgres:5432/powersync_storage
+      # base64url shared secret; the same value is the API's POWERSYNC_JWT_SECRET.
+      - PS_JWT_SECRET=${SERVICE_HEX_64_PSJWT}
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:8080/probes/liveness').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgres://binder:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/binder
+      - BLOB_ROOT=/data/blobs
+      # Public origins: set in Coolify (https://binder.rvlt.app and https://binder-sync.rvlt.app).
+      - APP_ORIGIN=${APP_ORIGIN:?set APP_ORIGIN to the public URL of the web service}
+      - POWERSYNC_URL=${POWERSYNC_URL:?set POWERSYNC_URL to the public URL of the powersync service}
+      - AUTH_SECRET=${SERVICE_BASE64_64_AUTH}
+      - POWERSYNC_JWT_SECRET=${SERVICE_HEX_64_PSJWT}
+      - SMTP_URL=${SMTP_URL:-}
+      - ALLOW_SIGNUP=false
+    volumes:
+      - blobs:/data/blobs
+    stop_grace_period: 30s
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - SERVICE_FQDN_WEB_80
+
+volumes:
+  pgdata:
+  blobs:

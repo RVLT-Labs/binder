@@ -1,0 +1,25 @@
+# Binder web: the Vite PWA build served by Caddy, which also proxies /api, /blobs and /mcp to the API.
+# Build context is the repository root:  docker build -f deploy/Dockerfile.web .
+# The web app has no build-time URLs: it is same-origin, and gets the PowerSync endpoint from
+# GET /api/sync/token (the API's POWERSYNC_URL).
+
+ARG PNPM_VERSION=12.11.2
+
+FROM node:24-bookworm-slim AS build
+ARG PNPM_VERSION
+RUN npm i -g pnpm@${PNPM_VERSION}
+WORKDIR /repo
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+RUN pnpm fetch
+
+COPY . .
+RUN pnpm install --offline --frozen-lockfile --filter "@binder/web..."
+RUN pnpm --filter @binder/web build
+
+FROM caddy:2
+COPY deploy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /repo/apps/web/dist /srv
+EXPOSE 80
+HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=5 \
+  CMD ["wget", "-q", "--spider", "http://127.0.0.1/index.html"]

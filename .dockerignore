@@ -1,0 +1,18 @@
+# Keep the build context small and keep secrets and real show material out of every image.
+**/node_modules
+**/dist
+**/.data
+**/test-results
+**/playwright-report
+.git
+.github
+.superpowers
+.env
+.env.*
+!.env.example
+deploy/.env
+fixtures/private
+fixtures/public/generated
+*.tmix
+apps/web/e2e/.auth
+coverage

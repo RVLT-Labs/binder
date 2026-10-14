@@ -1,0 +1,7 @@
+# PowerSync service with its configuration baked in (no bind mounts). Connection URIs and the JWT
+# secret come from PS_* environment variables, read by `!env` in powersync.yaml.
+FROM journeyapps/powersync-service:1.27.0
+
+COPY powersync/powersync.yaml powersync/sync-config.yaml /config/
+ENV POWERSYNC_CONFIG_PATH=/config/powersync.yaml
+CMD ["start", "-r", "unified"]

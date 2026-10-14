@@ -1,0 +1,12 @@
+# Local production smoke only: publishes ports and nothing else. Use with gen-env.sh:
+#   deploy/scripts/gen-env.sh
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml \
+#     --env-file deploy/.env -p binder-prodtest up -d --build
+# Ports avoid the dev stack's (5432, 8080). APP_ORIGIN and POWERSYNC_URL in deploy/.env match them.
+services:
+  web:
+    ports:
+      - '80:80'
+  powersync:
+    ports:
+      - '18080:8080'

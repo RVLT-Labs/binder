@@ -1,0 +1,49 @@
+# Binder API: Hono on Node, plus the pg-boss workers and the PDF tools they run (ocrmypdf and poppler).
+# Build context is the repository root:  docker build -f deploy/Dockerfile.api .
+
+ARG PNPM_VERSION=12.11.2
+
+# --- build: workspace install, tsup bundle, production-only node_modules -----------------------------
+FROM node:24-bookworm-slim AS build
+ARG PNPM_VERSION
+RUN npm i -g pnpm@${PNPM_VERSION}
+WORKDIR /repo
+
+# Resolve and download dependencies from the lockfile alone, so this layer survives source edits.
+COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+RUN pnpm fetch
+
+COPY . .
+RUN pnpm install --offline --frozen-lockfile --filter "@binder/api..."
+# tsup bundles the @binder/* packages and copies migrations to dist/drizzle and docs/guides to dist/guides.
+RUN pnpm --filter @binder/api build
+# Only the API's own production dependencies: everything else it imports is inside the bundle.
+RUN pnpm --filter @binder/api deploy --prod --legacy /out
+
+# --- runtime ------------------------------------------------------------------------------------------
+FROM node:24-bookworm-slim AS runtime
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ocrmypdf tesseract-ocr tesseract-ocr-eng ghostscript qpdf poppler-utils \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    BLOB_ROOT=/data/blobs
+WORKDIR /app
+
+# Same layout as the repository, so `node apps/api/dist/cli.js` works from /app.
+COPY --from=build /out/node_modules apps/api/node_modules
+COPY --from=build /out/package.json apps/api/package.json
+COPY --from=build /repo/apps/api/dist apps/api/dist
+
+# The blob volume is created from this directory, so a fresh named volume is writable by `node`.
+RUN mkdir -p /data/blobs && chown -R node:node /data
+VOLUME /data/blobs
+USER node
+EXPOSE 3000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+  CMD ["node", "-e", "fetch('http://localhost:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+
+CMD ["node", "apps/api/dist/server.js"]
