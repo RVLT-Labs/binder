@@ -9,6 +9,7 @@ import type { Config } from './config'
 import { AppError } from './errors'
 import { health } from './routes/health'
 import { me } from './routes/me'
+import { sync } from './routes/sync'
 import { tenancy } from './routes/tenancy'
 import { tokens } from './routes/tokens'
 
@@ -62,6 +63,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   api.route('/', me)
   api.route('/', tenancy)
   api.route('/', tokens)
+  api.route('/', sync)
   app.route('/api', api)
 
   return app

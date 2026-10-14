@@ -1,0 +1,30 @@
+# PowerSync service config. Only variables prefixed PS_ can be read with !env.
+replication:
+  connections:
+    - type: postgresql
+      uri: !env PS_DATA_SOURCE_URI
+      sslmode: disable
+
+storage:
+  type: postgresql
+  uri: !env PS_STORAGE_SOURCE_URI
+  sslmode: disable
+
+port: 8080
+
+sync_config:
+  path: sync-config.yaml
+
+client_auth:
+  jwks:
+    keys:
+      - kty: oct
+        alg: HS256
+        kid: binder-1
+        k: !env PS_JWT_SECRET
+  audience:
+    - powersync
+
+healthcheck:
+  probes:
+    use_http: true

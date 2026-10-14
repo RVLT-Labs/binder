@@ -1,0 +1,50 @@
+# Local development stack: Postgres (logical replication on) and the PowerSync service.
+# Everything here is dev-only. Defaults are inline so `docker compose up -d` works with no env file;
+# override any of them from the shell or a compose --env-file. See ../.env.example.
+name: binder-dev
+
+services:
+  postgres:
+    image: postgres:17
+    command: postgres -c wal_level=logical
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-binder}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-binder}
+      POSTGRES_DB: ${POSTGRES_DB:-binder}
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  powersync:
+    image: journeyapps/powersync-service:1.27.0
+    command: ['start', '-r', 'unified']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/powersync.yaml
+      # powersync_role is created by postgres/init.sql; its password is dev-only and appears there too.
+      PS_DATA_SOURCE_URI: ${PS_DATA_SOURCE_URI:-postgresql://powersync_role:powersync_dev_password@postgres:5432/binder}
+      # A separate database on the same server, created by postgres/init.sql.
+      PS_STORAGE_SOURCE_URI: ${PS_STORAGE_SOURCE_URI:-postgresql://powersync_role:powersync_dev_password@postgres:5432/powersync_storage}
+      # base64url shared secret; must equal POWERSYNC_JWT_SECRET in the API.
+      PS_JWT_SECRET: ${PS_JWT_SECRET:-YmluZGVyLWRldi1wb3dlcnN5bmMtc2VjcmV0LTMyYnk}
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./powersync:/config:ro
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:8080/probes/liveness').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

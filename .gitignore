@@ -8,3 +8,4 @@ fixtures/private/
 !fixtures/public/**/*.tmix
 .DS_Store
 coverage/
+.data/

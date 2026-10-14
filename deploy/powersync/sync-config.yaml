@@ -1,0 +1,19 @@
+# Sync Streams (config edition 3). Every stream auto-subscribes: a user syncs the shows they are a
+# member of, and everything under them. Archived shows are included in M0; the on-demand archived
+# subscription arrives in M2.
+config:
+  edition: 3
+with:
+  user_shows: SELECT show_id FROM show_memberships WHERE user_id = auth.user_id()
+streams:
+  membership:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM show_memberships WHERE user_id = auth.user_id()
+      - SELECT * FROM shows WHERE id IN user_shows
+  show_data:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM documents WHERE show_id IN user_shows
+      - SELECT * FROM document_versions WHERE show_id IN user_shows
+      - SELECT * FROM pages WHERE show_id IN user_shows
