@@ -1,4 +1,16 @@
-/** Hands a freshly uploaded document version to the background processing pipeline. */
+import type { Db } from '@binder/db'
+import type { BlobStore } from '../blob/BlobStore'
+
+/** Hands work to the background processing pipeline (spec 3.6, 5.1). */
 export interface JobQueue {
+  /** Queue the document job for a freshly uploaded version. */
   enqueueDocumentProcess(versionId: string): Promise<void>
+  /** Queue one page job per page row; called by the document job. */
+  enqueuePageProcess(pageIds: string[]): Promise<void>
+}
+
+export interface ProcessingDeps {
+  db: Db
+  blobs: BlobStore
+  jobs: JobQueue
 }

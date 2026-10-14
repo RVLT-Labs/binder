@@ -11,6 +11,8 @@ declare module 'vitest' {
 
 export interface TestDb {
   db: Db
+  /** Connection string of this file's database, for clients that open their own pool (pg-boss). */
+  url: string
   truncateAll(): Promise<void>
 }
 
@@ -38,6 +40,7 @@ async function create(): Promise<TestDb> {
   await runMigrations(db)
   return {
     db,
+    url: url.toString(),
     async truncateAll() {
       const { rows } = await pool.query<{ tablename: string }>(
         `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,

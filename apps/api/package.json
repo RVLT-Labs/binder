@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.7.7",
+    "@binder/core": "workspace:*",
     "@binder/db": "workspace:*",
     "@binder/shared": "workspace:*",
     "@hono/node-server": "^2.1.0",
@@ -22,6 +23,7 @@
     "jose": "^6.2.12",
     "nodemailer": "^10.1.0",
     "pg": "^8.13.0",
+    "pg-boss": "^12.37.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {

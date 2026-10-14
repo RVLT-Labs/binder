@@ -19,6 +19,43 @@ export function showIdFromKey(key: string): string | null {
   return segments[1]
 }
 
+const versionPrefix = (showId: string, documentId: string, versionId: string) =>
+  `shows/${showId}/documents/${documentId}/versions/${versionId}`
+
 export function originalBlobKey(showId: string, documentId: string, versionId: string): string {
-  return `shows/${showId}/documents/${documentId}/versions/${versionId}/original.pdf`
+  return `${versionPrefix(showId, documentId, versionId)}/original.pdf`
+}
+
+/** The working PDF with an invisible text layer (spec 5.1); everything downstream reads this one. */
+export function searchableBlobKey(showId: string, documentId: string, versionId: string): string {
+  return `${versionPrefix(showId, documentId, versionId)}/searchable.pdf`
+}
+
+export function pageThumbBlobKey(
+  showId: string,
+  documentId: string,
+  versionId: string,
+  index: number,
+): string {
+  return `${versionPrefix(showId, documentId, versionId)}/pages/${index}/thumb.png`
+}
+
+export function pageWordsBlobKey(
+  showId: string,
+  documentId: string,
+  versionId: string,
+  index: number,
+): string {
+  return `${versionPrefix(showId, documentId, versionId)}/pages/${index}/words.json`
+}
+
+/** A cached page render, made on demand (not during processing). */
+export function pageImageBlobKey(
+  showId: string,
+  documentId: string,
+  versionId: string,
+  index: number,
+  maxPx: number,
+): string {
+  return `${versionPrefix(showId, documentId, versionId)}/pages/${index}/image-${maxPx}.jpg`
 }
