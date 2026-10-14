@@ -1,3 +1,4 @@
+import type { SyncUploadRequest } from '@binder/shared'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app'
@@ -17,7 +18,8 @@ sync.get('/sync/token', requireSession, async (c) => {
   return c.json({ token, expiresAt: expiresAt.toISOString(), endpoint: config.POWERSYNC_URL })
 })
 
-const uploadBody = z.object({
+// Typed against the shared wire format so the web connector and this route cannot drift apart.
+const uploadBody: z.ZodType<SyncUploadRequest> = z.object({
   batchId: z.string().min(1).max(200),
   entries: z
     .array(

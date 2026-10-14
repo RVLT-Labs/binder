@@ -1,41 +1,18 @@
 import type { Db } from '@binder/db'
-import type { Actor } from '@binder/shared'
+import type {
+  Actor,
+  SyncCrudEntry,
+  SyncRejection,
+  SyncRejectReason,
+  SyncUploadRequest,
+  SyncUploadResponse,
+} from '@binder/shared'
 import { AppError, type ErrorCode } from '../errors'
 import type { Tx } from '../services/executor'
-import { type CrudOp, SYNC_TABLES } from './policy'
-
-export type { CrudOp } from './policy'
-
-export interface CrudEntry {
-  table: string
-  id: string
-  op: CrudOp
-  data?: Record<string, unknown> | null
-  clientTs?: string
-}
-
-export interface UploadRequest {
-  batchId: string
-  entries: CrudEntry[]
-}
-
-export type RejectReason =
-  | 'unknown_table'
-  | 'unsupported_op'
-  | 'forbidden'
-  | 'not_found'
-  | 'invalid'
-
-export interface Rejection {
-  index: number
-  table: string
-  id: string
-  reason: RejectReason
-  message: string
-}
+import { SYNC_TABLES } from './policy'
 
 /** Service errors that mean "this operation can never succeed": reject it and keep the queue moving. */
-const REJECTABLE: Partial<Record<ErrorCode, RejectReason>> = {
+const REJECTABLE: Partial<Record<ErrorCode, SyncRejectReason>> = {
   forbidden: 'forbidden',
   not_found: 'not_found',
   invalid: 'invalid',
@@ -43,7 +20,7 @@ const REJECTABLE: Partial<Record<ErrorCode, RejectReason>> = {
 
 class Rejected extends Error {
   constructor(
-    readonly reason: RejectReason,
+    readonly reason: SyncRejectReason,
     message: string,
   ) {
     super(message)
@@ -64,7 +41,12 @@ function parseClientTs(value: string | undefined): Date | undefined {
   return new Date(ms)
 }
 
-async function applyEntry(db: Tx, actor: Actor, batchId: string, entry: CrudEntry): Promise<void> {
+async function applyEntry(
+  db: Tx,
+  actor: Actor,
+  batchId: string,
+  entry: SyncCrudEntry,
+): Promise<void> {
   if (!Object.hasOwn(SYNC_TABLES, entry.table)) {
     throw new Rejected('unknown_table', `table ${entry.table} is not writable through sync`)
   }
@@ -85,11 +67,11 @@ async function applyEntry(db: Tx, actor: Actor, batchId: string, entry: CrudEntr
 export async function applyCrudBatch(
   db: Db,
   actor: Actor,
-  req: UploadRequest,
-): Promise<{ applied: number; rejected: Rejection[] }> {
+  req: SyncUploadRequest,
+): Promise<SyncUploadResponse> {
   return db.transaction(async (tx) => {
     let applied = 0
-    const rejected: Rejection[] = []
+    const rejected: SyncRejection[] = []
     for (const [index, entry] of req.entries.entries()) {
       try {
         await tx.transaction((sp) => applyEntry(sp, actor, req.batchId, entry))

@@ -1,5 +1,5 @@
 import { changeLog, documents, showMemberships, shows } from '@binder/db'
-import { type Actor, newId } from '@binder/shared'
+import { type Actor, newId, type SyncCrudEntry } from '@binder/shared'
 import { and, eq } from 'drizzle-orm'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { AppError } from '../src/errors'
@@ -11,7 +11,7 @@ import {
   updateDocument,
   updateShow,
 } from '../src/services'
-import { applyCrudBatch, type CrudEntry } from '../src/sync/apply'
+import { applyCrudBatch } from '../src/sync/apply'
 import { SYNC_TABLES } from '../src/sync/policy'
 import { createTestApp, createTestUser } from './helpers'
 
@@ -63,7 +63,7 @@ async function setup() {
   return { app, deps, db: deps.db, owner, editor, viewer, stranger, show, docId }
 }
 
-const patch = (table: string, id: string, data: Record<string, unknown>): CrudEntry => ({
+const patch = (table: string, id: string, data: Record<string, unknown>): SyncCrudEntry => ({
   table,
   id,
   op: 'PATCH',

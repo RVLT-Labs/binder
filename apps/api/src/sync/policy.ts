@@ -1,10 +1,8 @@
-import type { Actor } from '@binder/shared'
+import type { Actor, SyncCrudOp } from '@binder/shared'
 import { z } from 'zod'
 import { invalid } from '../errors'
 import { updateDocument, updateShow } from '../services'
 import type { Executor } from '../services/executor'
-
-export type CrudOp = 'PUT' | 'PATCH' | 'DELETE'
 
 export interface PatchInput {
   id: string
@@ -15,7 +13,7 @@ export interface PatchInput {
 }
 
 export interface SyncTablePolicy {
-  ops: readonly CrudOp[]
+  ops: readonly SyncCrudOp[]
   writable: readonly string[]
   /** Validate the writable columns and hand them to the owning service. Throws AppError on rejection. */
   patch(db: Executor, actor: Actor, input: PatchInput): Promise<void>
@@ -59,7 +57,7 @@ const sqliteBoolean = z.union([
 const int32 = z.number().int().min(-2147483648).max(2147483647)
 
 function tablePolicy<S extends z.ZodRawShape>(
-  ops: readonly CrudOp[],
+  ops: readonly SyncCrudOp[],
   shape: S,
   apply: (
     db: Executor,
