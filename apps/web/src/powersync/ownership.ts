@@ -1,9 +1,45 @@
+import { newId } from '@binder/shared'
 import type { PowerSyncDatabase } from '@powersync/web'
 import { AppSchema } from './schema'
 
 export type LocalDb = Pick<PowerSyncDatabase, 'getAll' | 'disconnectAndClear'>
 
 const OWNER_KEY = 'binder.localDbOwner'
+/** Kept beside the ownership marker: one id per claim of the local database. */
+const DEVICE_KEY = 'binder.localDbDevice'
+
+/** The device id when storage is blocked, so it is at least stable for this page's lifetime. */
+let memoryDeviceId: string | null = null
+
+function readDevice(): string | null {
+  try {
+    return localStorage.getItem(DEVICE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeDevice(id: string | null): void {
+  memoryDeviceId = id
+  try {
+    if (id) localStorage.setItem(DEVICE_KEY, id)
+    else localStorage.removeItem(DEVICE_KEY)
+  } catch {
+    // Storage blocked: the in-memory id serves this page.
+  }
+}
+
+/**
+ * This local database's id, a UUIDv7 minted when it is claimed for a new owner (and after sign-out),
+ * reused until the next claim. Upload batch ids are `${deviceId()}-${transactionId}`: PowerSync's
+ * transaction counter restarts whenever the database is wiped, and the device id changes with it, so
+ * one user's batch ids never repeat across devices or sign-ins.
+ */
+export function deviceId(): string {
+  const id = readDevice() ?? memoryDeviceId ?? newId()
+  if (id !== memoryDeviceId) writeDevice(id)
+  return id
+}
 
 function readOwner(): string | null {
   try {
@@ -14,6 +50,8 @@ function readOwner(): string | null {
 }
 
 export function writeOwner(userId: string | null): void {
+  // Signing out (null) ends this claim: the next one mints a new device id.
+  if (userId === null) writeDevice(null)
   try {
     if (userId) localStorage.setItem(OWNER_KEY, userId)
     else localStorage.removeItem(OWNER_KEY)
@@ -46,5 +84,6 @@ export async function claimLocalDb(
   if (owner !== userId && (owner !== null || (await hasLocalRows(db)))) {
     await db.disconnectAndClear()
   }
+  if (owner !== userId || readDevice() === null) writeDevice(newId())
   writeOwner(userId)
 }

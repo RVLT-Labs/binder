@@ -425,13 +425,57 @@ describe('POST /api/sync/upload', () => {
         },
       ],
     })
-    const logs = await logRows(db, batchId)
+    // The route logs the client's id under the user's: `${userId}:${clientBatchId}`.
+    const logged = `${owner.id}:${batchId}`
+    const logs = await logRows(db, logged)
     expect(logs.map((l) => [l.tableName, l.via, l.batchId])).toEqual([
-      ['shows', 'sync', batchId],
-      ['documents', 'sync', batchId],
+      ['shows', 'sync', logged],
+      ['documents', 'sync', logged],
     ])
     expect(logs[0].clientTs?.toISOString()).toBe('2026-10-14T09:00:00.000Z')
     expect(logs[1].clientTs).toBeNull()
+  })
+
+  test('HTTP: two users sending the same client batch id are logged under different batch ids; a batch id with ":" is 400', async () => {
+    const { app, db, owner, editor, show, docId } = await setup()
+    const clientBatchId = 'dev-1'
+    const own = await app.request(
+      '/api/sync/upload',
+      post(
+        { cookie: owner.cookie },
+        { batchId: clientBatchId, entries: [patch('shows', show.id, { title: 'B' })] },
+      ),
+    )
+    expect(own.status).toBe(200)
+    const ed = await app.request(
+      '/api/sync/upload',
+      post(
+        { cookie: editor.cookie },
+        { batchId: clientBatchId, entries: [patch('documents', docId, { title: 'Book' })] },
+      ),
+    )
+    expect(ed.status).toBe(200)
+    expect((await logRows(db, `${owner.id}:${clientBatchId}`)).map((l) => l.userId)).toEqual([
+      owner.id,
+    ])
+    expect((await logRows(db, `${editor.id}:${clientBatchId}`)).map((l) => l.userId)).toEqual([
+      editor.id,
+    ])
+    expect(await logRows(db, clientBatchId)).toHaveLength(0)
+
+    for (const batchId of [`${editor.id}:dev-1`, 'reanchor:x', 'has space', 'x'.repeat(101), '']) {
+      const res = await app.request(
+        '/api/sync/upload',
+        post(
+          { cookie: owner.cookie },
+          { batchId, entries: [patch('shows', show.id, { title: 'C' })] },
+        ),
+      )
+      expect(res.status, batchId).toBe(400)
+      expect(((await res.json()) as { error: string }).error).toBe('invalid')
+    }
+    const [s] = await db.select().from(shows).where(eq(shows.id, show.id))
+    expect(s.title).toBe('B')
   })
 
   test('requires a session cookie: no auth and a bearer token are 401', async () => {
@@ -483,6 +527,6 @@ describe('POST /api/sync/upload', () => {
     expect(errors).toHaveBeenCalled()
     const [s] = await db.select().from(shows).where(eq(shows.id, show.id))
     expect(s.title).toBe('A')
-    expect(await logRows(db, batchId)).toHaveLength(0)
+    expect(await logRows(db, `${owner.id}:${batchId}`)).toHaveLength(0)
   })
 })

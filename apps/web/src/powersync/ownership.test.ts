@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { claimLocalDb, type LocalDb } from './ownership'
+import { claimLocalDb, deviceId, type LocalDb, writeOwner } from './ownership'
 
 const OWNER_KEY = 'binder.localDbOwner'
 
@@ -69,4 +69,43 @@ test('keeps caches for the same owner', async () => {
   const clearForeign = vi.fn(async () => {})
   await claimLocalDb(fakeDb(['shows']), 'u1', clearForeign)
   expect(clearForeign).not.toHaveBeenCalled()
+})
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+test('a claim mints a device id that the same owner keeps across reloads', async () => {
+  await claimLocalDb(fakeDb(), 'u1')
+  const first = deviceId()
+  expect(first).toMatch(UUID)
+  await claimLocalDb(fakeDb(['shows']), 'u1')
+  expect(deviceId()).toBe(first)
+})
+
+test('a new owner (the database wiped) gets a new device id', async () => {
+  await claimLocalDb(fakeDb(), 'u1')
+  const first = deviceId()
+  await claimLocalDb(fakeDb(['shows']), 'u2')
+  expect(deviceId()).not.toBe(first)
+  expect(deviceId()).toMatch(UUID)
+})
+
+test('sign-out forgets the device id, so signing in again starts a new one', async () => {
+  await claimLocalDb(fakeDb(), 'u1')
+  const first = deviceId()
+  writeOwner(null)
+  await claimLocalDb(fakeDb(), 'u1')
+  expect(deviceId()).not.toBe(first)
+})
+
+test('the device id still works, and stays stable, when storage is blocked', async () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new DOMException('blocked', 'SecurityError')
+  })
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('blocked', 'SecurityError')
+  })
+  await claimLocalDb(fakeDb(), 'u1')
+  const id = deviceId()
+  expect(id).toMatch(UUID)
+  expect(deviceId()).toBe(id)
 })

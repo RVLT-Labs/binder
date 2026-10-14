@@ -9,6 +9,9 @@ import { readJson } from './json'
 
 export const sync = new Hono<AppEnv>()
 
+/** The grammar of a client batch id (spec 4.12: one batch per sync upload). */
+export const CLIENT_BATCH_ID = /^[A-Za-z0-9_-]{1,100}$/
+
 // Session cookie only: a personal access token may be scoped to a few shows, but a PowerSync token
 // syncs every show the user belongs to, so a bearer token must never be able to mint one.
 sync.get('/sync/token', requireSession, async (c) => {
@@ -20,7 +23,9 @@ sync.get('/sync/token', requireSession, async (c) => {
 
 // Typed against the shared wire format so the web connector and this route cannot drift apart.
 const uploadBody: z.ZodType<SyncUploadRequest> = z.object({
-  batchId: z.string().min(1).max(200),
+  // A client batch id is device-scoped (`${deviceId}-${transactionId}`); it never contains ':', so the
+  // logged `${userId}:${batchId}` cannot be forged to look like another user's or the server's batch.
+  batchId: z.string().regex(CLIENT_BATCH_ID, 'must match /^[A-Za-z0-9_-]{1,100}$/'),
   entries: z
     .array(
       z.object({
@@ -43,7 +48,9 @@ sync.post('/sync/upload', requireSession, async (c) => {
   // biome-ignore lint/style/noNonNullAssertion: requireSession always sets actor
   const actor = { ...c.var.actor!, via: 'sync' as const }
   try {
-    return c.json(await applyCrudBatch(c.var.deps.db, actor, body))
+    // Logged per user, so two users (or devices) reusing a client id never share a batch.
+    const batchId = `${actor.userId}:${body.batchId}`
+    return c.json(await applyCrudBatch(c.var.deps.db, actor, { ...body, batchId }))
   } catch (err) {
     console.error('sync upload failed; batch rolled back for retry', err)
     return c.json({ error: 'unavailable', message: 'Upload failed, retry later' }, 503)

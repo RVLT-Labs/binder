@@ -14,6 +14,7 @@ import type {
 import { UpdateType } from '@powersync/web'
 import { ApiError, api } from '../api/client'
 import { pushNotice } from '../components/noticeStore'
+import { deviceId } from './ownership'
 
 /** The upload wire entry, renamed here so it does not clash with PowerSync's own CrudEntry. */
 export type CrudEntryWire = SyncCrudEntry
@@ -55,7 +56,8 @@ export class ApiConnector implements PowerSyncBackendConnector {
     const tx = await db.getNextCrudTransaction()
     if (!tx) return
     const body: SyncUploadRequest = {
-      batchId: tx.transactionId === undefined ? newId() : String(tx.transactionId),
+      // Device-scoped (the server logs it as `${userId}:${batchId}`); the grammar is [A-Za-z0-9_-].
+      batchId: `${deviceId()}-${tx.transactionId ?? newId()}`,
       entries: toCrudEntries(tx.crud),
     }
     // Non-2xx throws, so PowerSync keeps the transaction queued and retries it.

@@ -2,6 +2,7 @@ import { type CommonPowerSyncDatabase, type CrudEntry, UpdateType } from '@power
 import { beforeEach, expect, test, vi } from 'vitest'
 import { clearNotices, getNotices } from '../components/noticeStore'
 import { ApiConnector, toCrudEntries } from './connector'
+import { deviceId } from './ownership'
 
 beforeEach(() => clearNotices())
 
@@ -51,7 +52,9 @@ test('uploads a transaction, records rejections as notices, and completes it', a
   expect(url).toBe('/api/sync/upload')
   expect(init?.credentials).toBe('include')
   const body = JSON.parse(String(init?.body))
-  expect(body.batchId).toBe('7')
+  // Device-scoped, so a transaction counter restarting after a wipe never reuses an id.
+  expect(body.batchId).toBe(`${deviceId()}-7`)
+  expect(body.batchId).toMatch(/^[A-Za-z0-9_-]{1,100}$/)
   expect(body.entries).toEqual([{ table: 'shows', id: 's1', op: 'PATCH', data: { title: 'Nope' } }])
   expect(complete).toHaveBeenCalledOnce()
   expect(getNotices()).toEqual([
@@ -99,4 +102,16 @@ test('fetchCredentials returns null when signed out', async () => {
     vi.fn(async () => Response.json({ error: 'unauthenticated' }, { status: 401 })),
   )
   expect(await new ApiConnector().fetchCredentials()).toBeNull()
+})
+
+test('without a transaction id the batch id is still device-scoped and fits the server grammar', async () => {
+  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+    Response.json({ applied: 1, rejected: [] }),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  await new ApiConnector().uploadData(fakeDb({ crud: [patch], complete: async () => {} }))
+  const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+  expect(body.batchId.startsWith(`${deviceId()}-`)).toBe(true)
+  expect(body.batchId).toMatch(/^[A-Za-z0-9_-]{1,100}$/)
+  expect(body.batchId).not.toContain(':')
 })
