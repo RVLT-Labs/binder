@@ -36,6 +36,10 @@ function ShowPage() {
       <p>
         <Link to="/shows/$showId/settings" params={{ showId }}>
           Settings
+        </Link>{' '}
+        ·{' '}
+        <Link to="/shows/$showId/activity" params={{ showId }}>
+          Activity
         </Link>
       </p>
       <nav aria-label="Cue lists">

@@ -16,7 +16,7 @@ type Row = Record<string, unknown> & { id: string }
 
 export interface AnnotationEditorProps {
   annotationId: string
-  /** Filled by the annotation's history (Task 12). */
+  /** The History tab, supplied by the document page (src/history/HistoryPanel.tsx). */
   historySlot?: ReactNode
 }
 

@@ -2,6 +2,7 @@ import { useQuery } from '@powersync/react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { blobUrl } from '../blobs/fetchBlob'
+import { AnnotationHistory, CueHistory } from '../history/HistoryPanel'
 import { AnnotationEditor } from '../markup/AnnotationEditor'
 import { CueEditor } from '../markup/CueEditor'
 import { LayerPanel } from '../markup/LayerPanel'
@@ -195,9 +196,19 @@ function MarkupSide({ showId }: { showId: string }) {
     <>
       <SelectionAnnouncer />
       <LayerPanel showId={showId} />
-      {selection?.table === 'cues' && <CueEditor key={selection.id} cueId={selection.id} />}
+      {selection?.table === 'cues' && (
+        <CueEditor
+          key={selection.id}
+          cueId={selection.id}
+          historySlot={<CueHistory cueId={selection.id} />}
+        />
+      )}
       {selection?.table === 'annotations' && (
-        <AnnotationEditor key={selection.id} annotationId={selection.id} />
+        <AnnotationEditor
+          key={selection.id}
+          annotationId={selection.id}
+          historySlot={<AnnotationHistory annotationId={selection.id} />}
+        />
       )}
     </>
   )

@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SettingsTokensRouteImport } from './routes/settings.tokens'
 import { Route as ShowsShowIdRouteImport } from './routes/shows.$showId'
+import { Route as ShowsShowIdActivityRouteImport } from './routes/shows.$showId.activity'
 import { Route as ShowsShowIdCuesRouteImport } from './routes/shows.$showId.cues'
 import { Route as ShowsShowIdSettingsRouteImport } from './routes/shows.$showId.settings'
 import { Route as ShowsShowIdDocsDocIdRouteImport } from './routes/shows.$showId.docs.$docId'
@@ -37,6 +38,11 @@ const ShowsShowIdRoute = ShowsShowIdRouteImport.update({
   path: '/shows/$showId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShowsShowIdActivityRoute = ShowsShowIdActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => ShowsShowIdRoute,
+} as any)
 const ShowsShowIdCuesRoute = ShowsShowIdCuesRouteImport.update({
   id: '/cues',
   path: '/cues',
@@ -58,6 +64,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/settings/tokens': typeof SettingsTokensRoute
   '/shows/$showId': typeof ShowsShowIdRouteWithChildren
+  '/shows/$showId/activity': typeof ShowsShowIdActivityRoute
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/settings/tokens': typeof SettingsTokensRoute
   '/shows/$showId': typeof ShowsShowIdRouteWithChildren
+  '/shows/$showId/activity': typeof ShowsShowIdActivityRoute
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
@@ -77,6 +85,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/settings/tokens': typeof SettingsTokensRoute
   '/shows/$showId': typeof ShowsShowIdRouteWithChildren
+  '/shows/$showId/activity': typeof ShowsShowIdActivityRoute
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
@@ -88,6 +97,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings/tokens'
     | '/shows/$showId'
+    | '/shows/$showId/activity'
     | '/shows/$showId/cues'
     | '/shows/$showId/settings'
     | '/shows/$showId/docs/$docId'
@@ -97,6 +107,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings/tokens'
     | '/shows/$showId'
+    | '/shows/$showId/activity'
     | '/shows/$showId/cues'
     | '/shows/$showId/settings'
     | '/shows/$showId/docs/$docId'
@@ -106,6 +117,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings/tokens'
     | '/shows/$showId'
+    | '/shows/$showId/activity'
     | '/shows/$showId/cues'
     | '/shows/$showId/settings'
     | '/shows/$showId/docs/$docId'
@@ -148,6 +160,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShowsShowIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shows/$showId/activity': {
+      id: '/shows/$showId/activity'
+      path: '/activity'
+      fullPath: '/shows/$showId/activity'
+      preLoaderRoute: typeof ShowsShowIdActivityRouteImport
+      parentRoute: typeof ShowsShowIdRoute
+    }
     '/shows/$showId/cues': {
       id: '/shows/$showId/cues'
       path: '/cues'
@@ -173,12 +192,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface ShowsShowIdRouteChildren {
+  ShowsShowIdActivityRoute: typeof ShowsShowIdActivityRoute
   ShowsShowIdCuesRoute: typeof ShowsShowIdCuesRoute
   ShowsShowIdSettingsRoute: typeof ShowsShowIdSettingsRoute
   ShowsShowIdDocsDocIdRoute: typeof ShowsShowIdDocsDocIdRoute
 }
 
 const ShowsShowIdRouteChildren: ShowsShowIdRouteChildren = {
+  ShowsShowIdActivityRoute: ShowsShowIdActivityRoute,
   ShowsShowIdCuesRoute: ShowsShowIdCuesRoute,
   ShowsShowIdSettingsRoute: ShowsShowIdSettingsRoute,
   ShowsShowIdDocsDocIdRoute: ShowsShowIdDocsDocIdRoute,

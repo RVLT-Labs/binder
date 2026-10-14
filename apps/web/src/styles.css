@@ -554,3 +554,59 @@ body:has(.document-page) #root {
   display: grid;
   gap: 0.25rem;
 }
+
+/* History and activity */
+.history {
+  margin-top: 0.75rem;
+  border-top: 1px solid #d0d5dd;
+  padding-top: 0.5rem;
+}
+.history-list,
+.history-lines,
+.activity-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.history-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.history-entry {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+  font-size: 0.8125rem;
+}
+.history-meta {
+  margin: 0;
+}
+.history-meta time {
+  color: #667085;
+}
+.confirm-dialog {
+  max-width: 24rem;
+}
+.activity-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.activity-filters label {
+  display: grid;
+  gap: 0.25rem;
+}
+.activity-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid #eaecf0;
+}
+.activity-end {
+  height: 1px;
+}

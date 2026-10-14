@@ -18,7 +18,7 @@ const TYPES: Array<{ value: CueType; label: string }> = [
 
 export interface CueEditorProps {
   cueId: string
-  /** Filled by the cue's history (Task 12). */
+  /** The History tab, supplied by the document page (src/history/HistoryPanel.tsx). */
   historySlot?: ReactNode
 }
 
