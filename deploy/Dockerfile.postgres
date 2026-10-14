@@ -1,10 +1,14 @@
-# Postgres 17 with logical replication enabled for PowerSync, and the PowerSync role and storage
+# Postgres 17 (minor pinned; patch releases arrive on rebuild) with logical replication enabled for PowerSync, and the PowerSync role and storage
 # database created on first start. Configuration is baked in so Coolify needs no bind mounts.
-FROM postgres:17
+FROM postgres:17.11
 
 COPY postgres/init-prod.sh /docker-entrypoint-initdb.d/10-powersync.sh
 RUN chmod 0755 /docker-entrypoint-initdb.d/10-powersync.sh
 
 # wal_level=logical is required by PowerSync; one replication slot and WAL sender are needed for it,
 # the rest is headroom for a second sync service, pg_dump --serializable-deferrable and base backups.
-CMD ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10"]
+# max_slot_wal_keep_size caps the WAL a stalled slot can hold: if PowerSync is down for long, pg-boss
+# keeps writing and the retained WAL would otherwise grow until the shared host disk fills. Past the
+# cap the slot is invalidated and PowerSync resyncs from scratch when it returns.
+CMD ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10", \
+     "-c", "max_slot_wal_keep_size=4GB"]

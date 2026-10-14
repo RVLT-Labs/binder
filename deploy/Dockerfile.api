@@ -4,7 +4,7 @@
 ARG PNPM_VERSION=12.11.2
 
 # --- build: workspace install, tsup bundle, production-only node_modules -----------------------------
-FROM node:24-bookworm-slim AS build
+FROM node:24.21-bookworm-slim AS build
 ARG PNPM_VERSION
 RUN npm i -g pnpm@${PNPM_VERSION}
 WORKDIR /repo
@@ -21,7 +21,7 @@ RUN pnpm --filter @binder/api build
 RUN pnpm --filter @binder/api deploy --prod --legacy /out
 
 # --- runtime ------------------------------------------------------------------------------------------
-FROM node:24-bookworm-slim AS runtime
+FROM node:24.21-bookworm-slim AS runtime
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ocrmypdf tesseract-ocr tesseract-ocr-eng ghostscript qpdf poppler-utils \

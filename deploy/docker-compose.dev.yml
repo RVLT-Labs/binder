@@ -5,8 +5,9 @@ name: binder-dev
 
 services:
   postgres:
-    image: postgres:17
-    command: postgres -c wal_level=logical
+    image: postgres:17.11
+    # Same WAL settings as deploy/Dockerfile.postgres.
+    command: postgres -c wal_level=logical -c max_slot_wal_keep_size=4GB
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-binder}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-binder}

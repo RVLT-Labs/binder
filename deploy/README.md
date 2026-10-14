@@ -6,10 +6,10 @@ pre-built images to publish):
 
 | Service | Image | Role |
 | --- | --- | --- |
-| `postgres` | `Dockerfile.postgres` (postgres:17) | App database. `wal_level=logical`; on a fresh volume it creates `powersync_role` and the `powersync_storage` database. Volume `pgdata`. |
+| `postgres` | `Dockerfile.postgres` (postgres:17.11) | App database. `wal_level=logical`, `max_slot_wal_keep_size=4GB`; on a fresh volume it creates `powersync_role` and the `powersync_storage` database. Volume `pgdata`. |
 | `powersync` | `Dockerfile.powersync` (powersync-service 1.27.0) | Sync service, config baked in. Public at the sync hostname. |
-| `api` | `Dockerfile.api` (node 24 + ocrmypdf, tesseract, poppler, qpdf, ghostscript) | Hono API, MCP endpoint, and the pg-boss workers that OCR and render uploads. Runs as `node`. Volume `blobs` at `/data/blobs`. |
-| `web` | `Dockerfile.web` (caddy 2) | The PWA, and a reverse proxy for `/api/*`, `/blobs/*` and `/mcp*` to the API. Public at the app hostname. |
+| `api` | `Dockerfile.api` (node 24.21 + ocrmypdf, tesseract, poppler, qpdf, ghostscript) | Hono API, MCP endpoint, and the pg-boss workers that OCR and render uploads. Runs as `node`. Volume `blobs` at `/data/blobs`. |
+| `web` | `Dockerfile.web` (caddy 2.11) | The PWA, and a reverse proxy for `/api/*`, `/blobs/*` and `/mcp*` to the API. Public at the app hostname. |
 
 Only `web` and `powersync` are routed publicly. Postgres and the API have no published ports.
 
@@ -138,8 +138,15 @@ migrations the dump predates.
 3. The API applies pending migrations when it starts, then the web service restarts. Installed
    clients are offered the new version by the service worker and update when the user accepts.
 
-Moving Postgres to a new major version is not automatic: dump, change the base image in
-`Dockerfile.postgres`, restore into a fresh volume.
+Base images are pinned to a minor version (`postgres:17.11`, `node:24.21-bookworm-slim`,
+`caddy:2.11`, `powersync-service:1.27.0`), so a redeploy only picks up patch releases. Bump them on
+purpose, in a commit. Moving Postgres to a new major version is not automatic: dump, change the base
+image in `Dockerfile.postgres`, restore into a fresh volume.
+
+PowerSync's replication slot keeps WAL until PowerSync has read it. `max_slot_wal_keep_size=4GB` caps
+that, so a long PowerSync outage cannot fill the host's disk; past the cap Postgres invalidates the
+slot and PowerSync rebuilds its buckets from scratch when it is back (clients resync, nothing is
+lost).
 
 ## Notes
 
