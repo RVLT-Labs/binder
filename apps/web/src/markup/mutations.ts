@@ -1,5 +1,11 @@
 import { columnEqual } from '@binder/core'
-import { type CueFields, newId } from '@binder/shared'
+import {
+  type CueFields,
+  canEditLayer,
+  cueFieldsSchema,
+  type MembershipScope,
+  newId,
+} from '@binder/shared'
 import type { AbstractPowerSyncDatabase } from '@powersync/web'
 
 export type MarkupTable = 'cues' | 'annotations'
@@ -17,6 +23,36 @@ export interface LocalEdit {
 export interface EditContext {
   showId: string
   userId: string
+  /** The user's role and department scope: the layer matrix is checked before any write. */
+  scope: MembershipScope
+}
+
+/** A mutation the server would refuse, caught before anything is written. */
+export class MarkupError extends Error {
+  constructor(
+    readonly code: 'invalid' | 'forbidden',
+    message: string,
+  ) {
+    super(message)
+    this.name = 'MarkupError'
+  }
+}
+
+function assertValid(fields: CueFields): void {
+  const parsed = cueFieldsSchema.safeParse(fields)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    throw new MarkupError(
+      'invalid',
+      `${issue?.path.join('.') || 'cue'}: ${issue?.message ?? 'invalid'}`,
+    )
+  }
+}
+
+function assertCanEdit(ctx: EditContext, departmentId: string): void {
+  if (!canEditLayer(ctx.scope, ctx.userId, { kind: 'department', id: departmentId })) {
+    throw new MarkupError('forbidden', "You can't edit cues on that department's layer.")
+  }
 }
 
 export interface MutationOptions {
@@ -44,7 +80,13 @@ export function subscribeLocalEdits(fn: Listener): () => void {
 
 function emit(edits: LocalEdit[], source: EditSource): void {
   if (edits.length === 0) return
-  for (const fn of [...listeners]) fn(edits, source)
+  for (const fn of [...listeners]) {
+    try {
+      fn(edits, source)
+    } catch (e) {
+      console.error('local edit listener failed', e)
+    }
+  }
 }
 
 /** The writable cue columns for `fields`; the anchor is JSON text. */
@@ -130,6 +172,8 @@ export async function insertCue(
   fields: CueFields,
   opts: MutationOptions = {},
 ): Promise<string> {
+  assertValid(fields)
+  assertCanEdit(ctx, fields.departmentId)
   const id = newId()
   const now = new Date().toISOString()
   const row: Record<string, string | number | null> = {
@@ -154,25 +198,33 @@ export async function insertCue(
   return id
 }
 
-/** Writes the changed columns of one cue inside `tx`; null when the row is gone or nothing changed. */
-async function patchInTx(
-  tx: Pick<AbstractPowerSyncDatabase, 'getOptional' | 'execute'>,
+/** Checks one patch against the stored row; returns the row and the columns to write, or null if gone. */
+async function planPatch(
+  tx: Pick<AbstractPowerSyncDatabase, 'getOptional'>,
   ctx: EditContext,
   id: string,
   patch: Partial<CueFields>,
-): Promise<LocalEdit | null> {
+): Promise<{
+  id: string
+  before: Record<string, unknown>
+  changed: Array<[string, unknown]>
+} | null> {
   const before = await readRow(tx, id)
   if (!before) return null
-  const changed = Object.entries(patchColumns(patch)).filter(
-    ([col, value]) => !columnEqual(before[col], value),
+  const current = fromCueRow(before)
+  assertCanEdit(ctx, current.departmentId)
+  const merged = { ...current, ...definedOnly(patch) }
+  assertValid(merged)
+  assertCanEdit(ctx, merged.departmentId)
+  const jsonCols = JSON_COLUMNS.cues
+  const changed = Object.entries(patchColumns(patch)).filter(([col, value]) =>
+    jsonCols.includes(col) ? !columnEqual(before[col], value) : before[col] !== value,
   )
-  if (changed.length === 0) return null
-  const sets = [...changed, ['updated_at', new Date().toISOString()], ['updated_by', ctx.userId]]
-  await tx.execute(`UPDATE cues SET ${sets.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`, [
-    ...sets.map(([, v]) => v),
-    id,
-  ])
-  return { table: 'cues', id, op: 'update', before, after: await readRow(tx, id) }
+  return { id, before, changed }
+}
+
+function definedOnly(patch: Partial<CueFields>): Partial<CueFields> {
+  return Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
 }
 
 export async function updateCue(
@@ -193,10 +245,21 @@ export async function updateCues(
   opts: MutationOptions = {},
 ): Promise<void> {
   const edits = await db.writeTransaction(async (tx) => {
-    const out: LocalEdit[] = []
+    // Plan every patch first so a refused one leaves the whole group unwritten.
+    const plans = []
     for (const { id, patch } of patches) {
-      const edit = await patchInTx(tx, ctx, id, patch)
-      if (edit) out.push(edit)
+      const plan = await planPatch(tx, ctx, id, patch)
+      if (plan && plan.changed.length > 0) plans.push(plan)
+    }
+    const now = new Date().toISOString()
+    const out: LocalEdit[] = []
+    for (const { id, before, changed } of plans) {
+      const sets = [...changed, ['updated_at', now], ['updated_by', ctx.userId]]
+      await tx.execute(`UPDATE cues SET ${sets.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`, [
+        ...sets.map(([, v]) => v),
+        id,
+      ])
+      out.push({ table: 'cues', id, op: 'update', before, after: await readRow(tx, id) })
     }
     return out
   })
@@ -205,13 +268,14 @@ export async function updateCues(
 
 export async function deleteCue(
   db: Db,
-  _ctx: EditContext,
+  ctx: EditContext,
   id: string,
   opts: MutationOptions = {},
 ): Promise<void> {
   const edit = await db.writeTransaction(async (tx) => {
     const before = await readRow(tx, id)
     if (!before) return null
+    assertCanEdit(ctx, String(before.department_id))
     await tx.execute('DELETE FROM cues WHERE id = ?', [id])
     return { table: 'cues', id, op: 'delete', before, after: null } satisfies LocalEdit
   })

@@ -1,5 +1,5 @@
 import type { Anchor, CueFields } from '@binder/shared'
-import { beforeEach, expect, test } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import {
   deleteCue,
   type EditSource,
@@ -7,6 +7,7 @@ import {
   insertCue,
   JSON_COLUMNS,
   type LocalEdit,
+  MarkupError,
   subscribeLocalEdits,
   toCueRow,
   updateCue,
@@ -80,7 +81,7 @@ const fields: CueFields = {
   colour: null,
   anchor,
 }
-const ctx = { showId: 's1', userId: 'u1' }
+const ctx = { showId: 's1', userId: 'u1', scope: { role: 'owner' as const, departments: ['*'] } }
 
 let seen: Array<{ edits: LocalEdit[]; source: EditSource }>
 beforeEach(() => {
@@ -191,4 +192,103 @@ test('unsubscribing stops delivery', async () => {
   off()
   await insertCue(db as never, ctx, fields)
   expect(got).toEqual([1])
+})
+
+test('a throwing listener never fails a committed mutation, and later listeners still hear it', async () => {
+  const { db, rows } = fakeDb()
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const heard: number[] = []
+  const offBad = subscribeLocalEdits(() => {
+    throw new Error('listener bug')
+  })
+  const offGood = subscribeLocalEdits(() => heard.push(1))
+  const id = await insertCue(db as never, ctx, fields)
+  offBad()
+  offGood()
+  expect(rows.has(id)).toBe(true)
+  expect(heard).toEqual([1])
+  expect(errors).toHaveBeenCalled()
+})
+
+test('a text column changing between JSON-looking strings is still written', async () => {
+  const { db, rows } = fakeDb()
+  const id = await insertCue(db as never, ctx, { ...fields, label: '{"a":1}', notes: '[1,2]' })
+  seen.length = 0
+  await updateCue(db as never, ctx, id, { label: '{ "a": 1 }', notes: '[1, 2]' })
+  expect(rows.get(id)).toMatchObject({ label: '{ "a": 1 }', notes: '[1, 2]' })
+  expect(seen[0]?.edits[0]?.after?.label).toBe('{ "a": 1 }')
+})
+
+const lxOnly = { ...ctx, scope: { role: 'editor' as const, departments: ['lx'] } }
+const snd = { ...fields, departmentId: 'snd' }
+
+test('an LX-scoped context cannot insert, update, move or delete an SND cue', async () => {
+  const { db, rows } = fakeDb()
+  await expect(insertCue(db as never, lxOnly, snd)).rejects.toMatchObject({ code: 'forbidden' })
+  expect(rows.size).toBe(0)
+  const sndId = await insertCue(db as never, ctx, snd)
+  const lxId = await insertCue(db as never, ctx, fields)
+  seen.length = 0
+  const snapshot = structuredClone([...rows.values()])
+  await expect(updateCue(db as never, lxOnly, sndId, { label: 'x' })).rejects.toMatchObject({
+    code: 'forbidden',
+  })
+  // moving an LX cue into SND is also refused, and so is moving an SND cue out
+  await expect(updateCue(db as never, lxOnly, lxId, { departmentId: 'snd' })).rejects.toMatchObject(
+    { code: 'forbidden' },
+  )
+  await expect(updateCue(db as never, lxOnly, sndId, { departmentId: 'lx' })).rejects.toMatchObject(
+    { code: 'forbidden' },
+  )
+  await expect(deleteCue(db as never, lxOnly, sndId)).rejects.toMatchObject({ code: 'forbidden' })
+  expect([...rows.values()]).toEqual(snapshot)
+  expect(seen).toEqual([])
+})
+
+test('a batch with one forbidden cue writes none of them', async () => {
+  const { db, rows } = fakeDb()
+  const lxId = await insertCue(db as never, ctx, fields)
+  const sndId = await insertCue(db as never, ctx, snd)
+  seen.length = 0
+  await expect(
+    updateCues(db as never, lxOnly, [
+      { id: lxId, patch: { label: 'changed' } },
+      { id: sndId, patch: { label: 'changed' } },
+    ]),
+  ).rejects.toMatchObject({ code: 'forbidden' })
+  expect(rows.get(lxId)?.label).toBe('Dim')
+  expect(seen).toEqual([])
+})
+
+test('a scoped context may edit its own department', async () => {
+  const { db, rows } = fakeDb()
+  const id = await insertCue(db as never, lxOnly, fields)
+  await updateCue(db as never, lxOnly, id, { label: 'mine' })
+  expect(rows.get(id)?.label).toBe('mine')
+  await deleteCue(db as never, lxOnly, id)
+  expect(rows.has(id)).toBe(false)
+})
+
+test('invalid fields are refused before anything is written', async () => {
+  const { db, rows } = fakeDb()
+  await expect(insertCue(db as never, ctx, { ...fields, minor: 120 })).rejects.toMatchObject({
+    code: 'invalid',
+  })
+  await expect(insertCue(db as never, ctx, { ...fields, label: 'a\u0000b' })).rejects.toMatchObject(
+    { code: 'invalid' },
+  )
+  expect(rows.size).toBe(0)
+  const id = await insertCue(db as never, ctx, fields)
+  seen.length = 0
+  await expect(updateCue(db as never, ctx, id, { minor: 120 })).rejects.toMatchObject({
+    code: 'invalid',
+  })
+  await expect(updateCue(db as never, ctx, id, { label: 'a\u0000b' })).rejects.toMatchObject({
+    code: 'invalid',
+  })
+  expect(rows.get(id)?.minor).toBe(50)
+  expect(seen).toEqual([])
+  const err = await insertCue(db as never, ctx, { ...fields, minor: 120 }).catch((e) => e)
+  expect(err).toBeInstanceOf(MarkupError)
+  expect(err.message).toMatch(/minor/)
 })
