@@ -41,12 +41,17 @@ test('an owner manages departments and member scope; an editor sees them read-on
   await add.getByRole('button', { name: 'Add department' }).click()
   await expect(add.getByRole('alert')).toContainText('already exists')
 
-  // Owner scopes the editor to SND only.
+  // The editor starts scoped to SND (global setup). Owner grants every department, then scopes
+  // the editor back to SND only.
   const bobRow = a
     .getByRole('list', { name: 'Members' })
     .getByRole('listitem')
     .filter({ hasText: users.b.name })
   await expect(bobRow).toBeVisible()
+  await expect(bobRow.getByLabel('All departments')).not.toBeChecked()
+  await bobRow.getByLabel('All departments').click()
+  await expect(bobRow.getByLabel('All departments')).toBeChecked()
+  await expect(bobRow.getByLabel('SND', { exact: true })).toHaveCount(0)
   await bobRow.getByLabel('All departments').click()
   await bobRow.getByLabel('SND', { exact: true }).click()
   await expect(bobRow.getByLabel('SND', { exact: true })).toBeChecked()

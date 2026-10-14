@@ -211,6 +211,21 @@ describe('cue writes', () => {
     expect({ major: first.major, minor: first.minor }).toEqual({ major: 10, minor: 0 })
   })
 
+  test('an auto-suggested number past 9999 is refused as invalid, not inserted', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    await createCue(db, s.actors.owner, {
+      showId: s.show.id,
+      departmentId: s.depts.LX.id,
+      number: { major: 9999, minor: 0 },
+    })
+    // Unplaced, so the suggestion is the next integer after the highest: 10000, out of range.
+    expect(
+      await code(createCue(db, s.actors.owner, { showId: s.show.id, departmentId: s.depts.LX.id })),
+    ).toBe('invalid')
+    expect(await db.select().from(cues).where(eq(cues.showId, s.show.id))).toHaveLength(1)
+  })
+
   test('a client id is used as given; reusing it is conflict; a non-UUID id is invalid', async () => {
     const s = await setupMarkupShow()
     const db = s.deps.db

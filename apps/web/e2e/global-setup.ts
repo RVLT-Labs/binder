@@ -5,7 +5,8 @@ import { ensureFixtures } from '@binder/fixtures'
 import { API_URL, APP_URL, AUTH_DIR, apiEnv, REPO_ROOT, RUN_FILE, type RunData } from './env'
 
 /**
- * Creates three fresh users and two shows against the dev database. Every name carries a run
+ * Creates three fresh users and two shows against the dev database, and scopes B (an editor of the
+ * shared show) to the SND department. Every name carries a run
  * suffix, so the suite can run again and again against the persistent dev stack.
  */
 export default async function globalSetup() {
@@ -42,15 +43,24 @@ export default async function globalSetup() {
 
   const a = await signIn(users.a.email, password)
   const sharedShow = await createShow(a, `Pirates ${run}`)
-  await call(a, 'POST', `/api/shows/${sharedShow.id}/members`, {
-    email: users.b.email,
-    role: 'editor',
-  })
+  const { membership } = await call<{ membership: { id: string } }>(
+    a,
+    'POST',
+    `/api/shows/${sharedShow.id}/members`,
+    { email: users.b.email, role: 'editor' },
+  )
+  const list = await call<{ departments: { id: string; code: string }[] }>(
+    a,
+    'GET',
+    `/api/shows/${sharedShow.id}/departments`,
+  )
+  const departments = Object.fromEntries(list.departments.map((d) => [d.code, d.id]))
+  await call(a, 'PATCH', `/api/memberships/${membership.id}`, { departments: [departments.SND] })
   const c = await signIn(users.c.email, password)
   const cShow = await createShow(c, `Carol's show ${run}`)
 
   mkdirSync(AUTH_DIR, { recursive: true })
-  const data: RunData = { password, users, sharedShow, cShow }
+  const data: RunData = { password, users, sharedShow, departments, cShow }
   writeFileSync(RUN_FILE, JSON.stringify(data, null, 2))
 }
 

@@ -11,7 +11,7 @@ import {
   newId,
 } from '@binder/shared'
 import { and, eq, type InferSelectModel, inArray } from 'drizzle-orm'
-import { conflict, invalid, notFound } from '../errors'
+import { IdTaken, invalid, notFound } from '../errors'
 import { hasNoNul, parseOrInvalid } from '../validation'
 import { logChange } from './changeLog'
 import type { Executor } from './executor'
@@ -152,11 +152,14 @@ export async function createCue(
     await requireLayerEdit(tx, actor, input.showId, { kind: 'department', id: fields.departmentId })
     if (fields.anchor) await assertAnchorTarget(tx, input.showId, fields.anchor)
     const id = input.id ?? newId()
-    if (input.id && (await loadCueRow(tx, id))) throw conflict('A cue with this id already exists')
+    if (input.id && (await loadCueRow(tx, id)))
+      throw new IdTaken('A cue with this id already exists')
     if (!input.number) {
       const n = await numberForNewCue(tx, input.showId, fields.departmentId, fields.anchor)
-      fields.major = n.major
-      fields.minor = n.minor
+      // A suggestion can run past the schema's range (after 9999): refuse it rather than insert it.
+      const checked = parseOrInvalid(cueFieldsSchema.pick({ major: true, minor: true }), n)
+      fields.major = checked.major
+      fields.minor = checked.minor
     }
     let created: Cue
     try {
@@ -165,7 +168,7 @@ export async function createCue(
         .values({ ...fields, id, showId: input.showId, updatedBy: actor.userId })
         .returning()
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict('A cue with this id already exists')
+      if (isUniqueViolation(err)) throw new IdTaken('A cue with this id already exists')
       throw err
     }
     await logChange(tx, {

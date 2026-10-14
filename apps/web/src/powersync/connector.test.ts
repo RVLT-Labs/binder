@@ -1,3 +1,4 @@
+import type { SyncUploadRequest } from '@binder/shared'
 import { type CommonPowerSyncDatabase, type CrudEntry, UpdateType } from '@powersync/web'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { clearNotices, getNotices } from '../components/noticeStore'
@@ -114,4 +115,111 @@ test('without a transaction id the batch id is still device-scoped and fits the 
   expect(body.batchId.startsWith(`${deviceId()}-`)).toBe(true)
   expect(body.batchId).toMatch(/^[A-Za-z0-9_-]{1,100}$/)
   expect(body.batchId).not.toContain(':')
+})
+
+test('clientTs comes from opData.updated_at', () => {
+  const at = '2026-10-15T10:00:00.000Z'
+  expect(
+    toCrudEntries([
+      entry({ op: UpdateType.PUT, table: 'cues', id: 'c', opData: { label: 'A', updated_at: at } }),
+      entry({ op: UpdateType.PATCH, table: 'cues', id: 'c', opData: { label: 'B' } }),
+      entry({ op: UpdateType.DELETE, table: 'cues', id: 'c' }),
+    ]),
+  ).toEqual([
+    { table: 'cues', id: 'c', op: 'PUT', data: { label: 'A', updated_at: at }, clientTs: at },
+    { table: 'cues', id: 'c', op: 'PATCH', data: { label: 'B' } },
+    { table: 'cues', id: 'c', op: 'DELETE' },
+  ])
+})
+
+/** A fake transaction of `n` cue PUTs, and a local database that knows no rows (labels fall back). */
+function bigTx(n: number) {
+  const ids = Array.from({ length: n }, (_, i) => `cue-${i}`)
+  const tx = {
+    crud: ids.map((id) => entry({ op: UpdateType.PUT, table: 'cues', id, opData: { label: id } })),
+    transactionId: 42,
+    complete: vi.fn(async () => {}),
+  }
+  const db = {
+    getNextCrudTransaction: async () => tx,
+    getOptional: async () => null,
+  } as unknown as CommonPowerSyncDatabase
+  return { ids, tx, db }
+}
+
+function recordPosts(respond: (body: SyncUploadRequest, n: number) => Response) {
+  const posts: SyncUploadRequest[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as SyncUploadRequest
+      posts.push(body)
+      return respond(body, posts.length)
+    }),
+  )
+  return posts
+}
+
+test('uploads 1,200 entries as three ordered chunks of 400 under one batch id and completes once', async () => {
+  const { ids, tx, db } = bigTx(1200)
+  const posts = recordPosts((body) => Response.json({ applied: body.entries.length, rejected: [] }))
+  await new ApiConnector().uploadData(db)
+  expect(posts.map((p) => p.entries.length)).toEqual([400, 400, 400])
+  expect(new Set(posts.map((p) => p.batchId))).toEqual(new Set([`${deviceId()}-42`]))
+  expect(posts.map((p) => p.chunk)).toEqual([
+    { index: 0, count: 3 },
+    { index: 1, count: 3 },
+    { index: 2, count: 3 },
+  ])
+  expect(posts.flatMap((p) => p.entries.map((e) => e.id))).toEqual(ids)
+  expect(tx.complete).toHaveBeenCalledTimes(1)
+})
+
+test('a failed second chunk throws and never completes the transaction', async () => {
+  const { tx, db } = bigTx(1000)
+  const posts = recordPosts((body, n) =>
+    n === 2
+      ? Response.json({ error: 'unavailable' }, { status: 503 })
+      : Response.json({ applied: body.entries.length, rejected: [] }),
+  )
+  await expect(new ApiConnector().uploadData(db)).rejects.toThrow(/503/)
+  // The third chunk is never sent; PowerSync retries the whole transaction later.
+  expect(posts.map((p) => p.chunk?.index)).toEqual([0, 1])
+  expect(tx.complete).not.toHaveBeenCalled()
+})
+
+test('rejections from every chunk become notices naming the row, before the transaction completes', async () => {
+  const { tx, db } = bigTx(500)
+  const order: string[] = []
+  tx.complete.mockImplementation(async () => {
+    order.push(`complete after ${getNotices().length} notices`)
+  })
+  recordPosts((body) =>
+    Response.json({
+      applied: body.entries.length - 1,
+      rejected: [
+        {
+          index: 0,
+          table: 'cues',
+          id: body.entries[0].id,
+          reason: 'forbidden',
+          message: 'you cannot edit this layer',
+        },
+      ],
+    }),
+  )
+  await new ApiConnector().uploadData(db)
+  expect(getNotices().map((n) => n.message)).toEqual([
+    'Your change to a cue was not saved: you cannot edit this layer',
+    'Your change to a cue was not saved: you cannot edit this layer',
+  ])
+  expect(order).toEqual(['complete after 2 notices'])
+})
+
+test('a replayed chunk raises no notice and the transaction completes', async () => {
+  const { tx, db } = bigTx(3)
+  recordPosts(() => Response.json({ applied: 0, rejected: [], replay: true }))
+  await new ApiConnector().uploadData(db)
+  expect(getNotices()).toEqual([])
+  expect(tx.complete).toHaveBeenCalledOnce()
 })

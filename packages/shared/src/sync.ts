@@ -13,8 +13,16 @@ export interface SyncCrudEntry {
   clientTs?: string
 }
 
+/** One part of a PowerSync transaction too large for one request; all parts share the batch id. */
+export interface SyncChunk {
+  index: number
+  count: number
+}
+
 export interface SyncUploadRequest {
   batchId: string
+  /** Absent means the whole transaction in one request: chunk 0 of 1. */
+  chunk?: SyncChunk
   entries: SyncCrudEntry[]
 }
 
@@ -24,6 +32,7 @@ export type SyncRejectReason =
   | 'forbidden'
   | 'not_found'
   | 'invalid'
+  | 'conflict'
 
 export interface SyncRejection {
   /** Position of the rejected entry in the request's `entries`. */
@@ -37,4 +46,6 @@ export interface SyncRejection {
 export interface SyncUploadResponse {
   applied: number
   rejected: SyncRejection[]
+  /** This chunk of this batch was applied before (a retry after a lost response): nothing was applied now. */
+  replay?: true
 }

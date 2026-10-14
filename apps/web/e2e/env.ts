@@ -25,8 +25,10 @@ export type UserKey = 'a' | 'b' | 'c'
 export interface RunData {
   password: string
   users: Record<UserKey, { email: string; name: string }>
-  /** The show A owns and B edits; C is not a member. */
+  /** The show A owns and B edits (scoped to the SND department only); C is not a member. */
   sharedShow: { id: string; title: string }
+  /** The shared show's departments: code to id. */
+  departments: Record<string, string>
   /** A show only C belongs to, so C's home screen proves C has synced. */
   cShow: { id: string; title: string }
 }

@@ -26,6 +26,14 @@ const uploadBody: z.ZodType<SyncUploadRequest> = z.object({
   // A client batch id is device-scoped (`${deviceId}-${transactionId}`); it never contains ':', so the
   // logged `${userId}:${batchId}` cannot be forged to look like another user's or the server's batch.
   batchId: z.string().regex(CLIENT_BATCH_ID, 'must match /^[A-Za-z0-9_-]{1,100}$/'),
+  // One part of a transaction split across requests (absent: the whole transaction, chunk 0 of 1).
+  chunk: z
+    .object({
+      index: z.number().int().min(0).max(100_000),
+      count: z.number().int().min(1).max(100_001),
+    })
+    .refine((c) => c.index < c.count, 'index must be below count')
+    .optional(),
   entries: z
     .array(
       z.object({

@@ -57,6 +57,13 @@
       "when": 1792000152663,
       "tag": "0007_cues_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792001061941,
+      "tag": "0008_sync_applied_chunks",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import type { Db } from '@binder/db'
 import type { JobWithMetadata, PgBoss } from 'pg-boss'
 import type { BlobStore } from '../blob/BlobStore'
+import { APPLIED_CHUNK_TTL_MS, deleteAppliedChunksBefore } from '../sync/apply'
 import { markVersionFailed, processDocumentVersion } from './documentJob'
 import { OCRMYPDF_TIMEOUT_MS } from './ocrmypdf'
 import { markPageFailed, processPage } from './pageJob'
@@ -11,6 +12,10 @@ export const PAGE_QUEUE = 'page-process'
 /** pg-boss moves a job here once it has failed or expired on every retry (R45). */
 export const DOCUMENT_DEAD_QUEUE = 'document-process-dead'
 export const PAGE_DEAD_QUEUE = 'page-process-dead'
+/** Maintenance: forgets applied sync chunks once no client could still be retrying them. */
+export const SYNC_CHUNK_GC_QUEUE = 'sync-chunk-gc'
+/** Daily at 03:17 UTC. */
+export const SYNC_CHUNK_GC_CRON = '17 3 * * *'
 
 /**
  * The document job runs OCRmyPDF (killed at its own timeout) plus pdfimages, the copy fallback,
@@ -32,6 +37,7 @@ const QUEUES = [
       deadLetter: DOCUMENT_DEAD_QUEUE,
     },
   },
+  { name: SYNC_CHUNK_GC_QUEUE, options: { retryLimit: 2, retryDelay: 60 } },
   {
     name: PAGE_QUEUE,
     options: {
@@ -78,9 +84,17 @@ export async function handlePageDeadLetter(
   await markPageFailed(deps.db, job.data.pageId, afterRetries('Page processing', job.sourceOutput))
 }
 
+export async function handleSyncChunkGc(
+  deps: Pick<ProcessingDeps, 'db'>,
+  now: Date = new Date(),
+): Promise<void> {
+  await deleteAppliedChunksBefore(deps.db, new Date(now.getTime() - APPLIED_CHUNK_TTL_MS))
+}
+
 /**
- * The pg-boss backed JobQueue (spec 3.6). `start()` creates both queues and starts this process's
- * workers: one document job at a time (OCR is heavy), two page jobs.
+ * The pg-boss backed JobQueue (spec 3.6). `start()` creates the queues and starts this process's
+ * workers: one document job at a time (OCR is heavy), two page jobs, the dead letters, and the daily
+ * `sync-chunk-gc` maintenance job (pg-boss runs a schedule once however many processes declare it).
  */
 export function createJobQueue(
   boss: PgBoss,
@@ -134,6 +148,10 @@ export function createJobQueue(
           if (job) await handlePageDeadLetter(deps, job)
         },
       )
+      await boss.schedule(SYNC_CHUNK_GC_QUEUE, SYNC_CHUNK_GC_CRON)
+      await boss.work(SYNC_CHUNK_GC_QUEUE, { batchSize: 1 }, async () => {
+        await handleSyncChunkGc(deps)
+      })
     },
   }
   const processing: ProcessingDeps = { ...deps, jobs: queue }

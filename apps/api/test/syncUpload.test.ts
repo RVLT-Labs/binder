@@ -151,7 +151,7 @@ describe('applyCrudBatch', () => {
     const result = await applyCrudBatch(db, sync(owner.id), {
       batchId: newId(),
       entries: [
-        patch('cues', newId(), { title: 'x' }),
+        patch('pages', newId(), { title: 'x' }),
         patch('constructor', newId(), { title: 'x' }),
         { table: 'shows', id: show.id, op: 'PUT', data: { title: 'x' } },
         { table: 'shows', id: show.id, op: 'DELETE' },

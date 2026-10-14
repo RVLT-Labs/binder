@@ -31,9 +31,10 @@ function writeDevice(id: string | null): void {
 
 /**
  * This local database's id, a UUIDv7 minted when it is claimed for a new owner (and after sign-out),
- * reused until the next claim. Upload batch ids are `${deviceId()}-${transactionId}`: PowerSync's
- * transaction counter restarts whenever the database is wiped, and the device id changes with it, so
- * one user's batch ids never repeat across devices or sign-ins.
+ * reused until the next claim of a new or empty database. Upload batch ids are
+ * `${deviceId()}-${transactionId}`: PowerSync's transaction counter restarts whenever the database is
+ * wiped or recreated, and the device id changes with it, so one user's batch ids never repeat across
+ * devices, sign-ins, or databases (the server skips a repeated batch id as a replay).
  */
 export function deviceId(): string {
   const id = readDevice() ?? memoryDeviceId ?? newId()
@@ -81,9 +82,14 @@ export async function claimLocalDb(
 ): Promise<void> {
   const owner = readOwner()
   if (owner !== userId) await clearForeignCaches?.()
-  if (owner !== userId && (owner !== null || (await hasLocalRows(db)))) {
+  const empty = !(await hasLocalRows(db))
+  if (owner !== userId && (owner !== null || !empty)) {
     await db.disconnectAndClear()
   }
-  if (owner !== userId || readDevice() === null) writeDevice(newId())
+  // An empty database may be a new one behind a remembered id (its file lost, its storage partition
+  // replaced): its transaction counter restarts, so it needs a new id or its batch ids would repeat
+  // ones the server already applied, and be skipped as replays. With no rows there is no queued
+  // upload, so a new id can never orphan a retry.
+  if (owner !== userId || empty || readDevice() === null) writeDevice(newId())
   writeOwner(userId)
 }

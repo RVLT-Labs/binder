@@ -2,6 +2,7 @@ import {
   newId,
   type SyncCrudEntry,
   type SyncCrudOp,
+  type SyncRejection,
   type SyncUploadRequest,
   type SyncUploadResponse,
 } from '@binder/shared'
@@ -15,6 +16,8 @@ import { UpdateType } from '@powersync/web'
 import { ApiError, api } from '../api/client'
 import { pushNotice } from '../components/noticeStore'
 import { deviceId } from './ownership'
+import { rowLabel } from './rowLabel'
+import { toUploadChunks } from './uploadChunks'
 
 /** The upload wire entry, renamed here so it does not clash with PowerSync's own CrudEntry. */
 export type CrudEntryWire = SyncCrudEntry
@@ -25,16 +28,22 @@ const OPS: Record<UpdateType, SyncCrudOp> = {
   [UpdateType.DELETE]: 'DELETE',
 }
 
+/**
+ * PowerSync's queue entries in the wire format. Every local mutation writes `updated_at`, which
+ * travels as the entry's `clientTs`: the time of the edit, not of the upload.
+ */
 export function toCrudEntries(crud: CrudEntry[]): CrudEntryWire[] {
-  return crud.map((entry) => ({
-    table: entry.table,
-    id: entry.id,
-    op: OPS[entry.op],
-    ...(entry.opData ? { data: entry.opData } : {}),
-  }))
+  return crud.map((entry) => {
+    const updatedAt = entry.opData?.updated_at
+    return {
+      table: entry.table,
+      id: entry.id,
+      op: OPS[entry.op],
+      ...(entry.opData ? { data: entry.opData } : {}),
+      ...(typeof updatedAt === 'string' ? { clientTs: updatedAt } : {}),
+    }
+  })
 }
-
-const NOUNS: Record<string, string> = { shows: 'show', documents: 'document' }
 
 export class ApiConnector implements PowerSyncBackendConnector {
   async fetchCredentials(): Promise<PowerSyncCredentials | null> {
@@ -55,19 +64,25 @@ export class ApiConnector implements PowerSyncBackendConnector {
   async uploadData(db: CommonPowerSyncDatabase): Promise<void> {
     const tx = await db.getNextCrudTransaction()
     if (!tx) return
-    const body: SyncUploadRequest = {
-      // Device-scoped (the server logs it as `${userId}:${batchId}`); the grammar is [A-Za-z0-9_-].
-      batchId: `${deviceId()}-${tx.transactionId ?? newId()}`,
-      entries: toCrudEntries(tx.crud),
+    // Device-scoped (the server logs it as `${userId}:${batchId}`); the grammar is [A-Za-z0-9_-].
+    const batchId = `${deviceId()}-${tx.transactionId ?? newId()}`
+    const chunks = toUploadChunks(toCrudEntries(tx.crud))
+    const rejected: SyncRejection[] = []
+    // In order, one at a time. Non-2xx throws before `complete()`, so PowerSync keeps the whole
+    // transaction queued and retries it; the server recognises chunks it already applied and skips them.
+    for (const [index, entries] of chunks.entries()) {
+      const body: SyncUploadRequest = { batchId, chunk: { index, count: chunks.length }, entries }
+      const response = await api.post<SyncUploadResponse>('/sync/upload', body)
+      rejected.push(...response.rejected)
     }
-    // Non-2xx throws, so PowerSync keeps the transaction queued and retries it.
-    const { rejected } = await api.post<SyncUploadResponse>('/sync/upload', body)
-    for (const r of rejected) {
+    // Named from the local rows, which are still there until the transaction completes.
+    const labels = await Promise.all(rejected.map((r) => rowLabel(db, r.table, r.id)))
+    rejected.forEach((r, i) => {
       pushNotice({
         kind: 'rejection',
-        message: `Your change to a ${NOUNS[r.table] ?? r.table} was not saved: ${r.message}`,
+        message: `Your change to ${labels[i]} was not saved: ${r.message}`,
       })
-    }
+    })
     // Rejected entries are dropped locally; the sync stream then restores the server's value.
     await tx.complete()
   }

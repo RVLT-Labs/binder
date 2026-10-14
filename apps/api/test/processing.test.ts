@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
-import { changeLog, documents, documentVersions, pages } from '@binder/db'
+import { changeLog, documents, documentVersions, pages, syncAppliedChunks } from '@binder/db'
 import { getTestDb } from '@binder/db/testing'
 import { FIXTURES } from '@binder/fixtures'
 import type { OcrMode, WordLayer } from '@binder/shared'
@@ -22,8 +22,11 @@ import {
   DOCUMENT_QUEUE,
   handleDocumentDeadLetter,
   handlePageDeadLetter,
+  handleSyncChunkGc,
   PAGE_DEAD_QUEUE,
   PAGE_QUEUE,
+  SYNC_CHUNK_GC_CRON,
+  SYNC_CHUNK_GC_QUEUE,
 } from '../src/processing/queue'
 import type { ProcessingDeps } from '../src/processing/types'
 import { addDocumentVersion, createDocument } from '../src/services'
@@ -669,6 +672,35 @@ describe('pg-boss job queue', () => {
     } finally {
       await boss.stop({ graceful: true, timeout: 10_000 })
     }
+  }, 60_000)
+
+  test('schedules a daily sync-chunk-gc job that forgets applied chunks older than seven days', async () => {
+    const { url } = await getTestDb()
+    const boss = new PgBoss({ connectionString: url })
+    const errors: unknown[] = []
+    boss.on('error', (err) => errors.push(err))
+    await boss.start()
+    try {
+      await createJobQueue(boss, { db: s.deps.db, blobs: s.deps.blobs }).start()
+      const schedules = await boss.getSchedules(SYNC_CHUNK_GC_QUEUE)
+      expect(schedules.map((x) => [x.name, x.cron])).toEqual([
+        [SYNC_CHUNK_GC_QUEUE, SYNC_CHUNK_GC_CRON],
+      ])
+      expect(SYNC_CHUNK_GC_CRON.split(' ').slice(2)).toEqual(['*', '*', '*'])
+
+      const now = new Date('2026-10-15T03:00:00Z')
+      const day = 24 * 60 * 60 * 1000
+      await s.deps.db.insert(syncAppliedChunks).values([
+        { batchKey: 'gc:old', chunkIndex: 0, appliedAt: new Date(now.getTime() - 8 * day) },
+        { batchKey: 'gc:recent', chunkIndex: 0, appliedAt: new Date(now.getTime() - 6 * day) },
+      ])
+      await handleSyncChunkGc({ db: s.deps.db }, now)
+      const left = await s.deps.db.select().from(syncAppliedChunks)
+      expect(left.map((r) => r.batchKey).filter((k) => k.startsWith('gc:'))).toEqual(['gc:recent'])
+    } finally {
+      await boss.stop({ graceful: true, timeout: 10_000 })
+    }
+    expect(errors).toEqual([])
   }, 60_000)
 
   test('the document job expires only after the OCR timeout, with a margin for the rest of the job', () => {

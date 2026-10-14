@@ -28,6 +28,16 @@ export class AppError extends Error {
   }
 }
 
+/**
+ * A create whose client-chosen id is already taken (including a unique violation lost to a concurrent
+ * create). A `conflict` everywhere; the sync path retries it as a replay of the existing row's create.
+ */
+export class IdTaken extends AppError {
+  constructor(message: string) {
+    super('conflict', message)
+  }
+}
+
 export const unauthenticated = () => new AppError('unauthenticated', 'Authentication required')
 export const forbidden = (msg = 'Forbidden') => new AppError('forbidden', msg)
 export const notFound = (msg = 'Not found') => new AppError('not_found', msg)

@@ -1,4 +1,4 @@
-import type { Db } from '@binder/db'
+import { type Db, syncAppliedChunks } from '@binder/db'
 import type {
   Actor,
   SyncCrudEntry,
@@ -7,15 +7,17 @@ import type {
   SyncUploadRequest,
   SyncUploadResponse,
 } from '@binder/shared'
-import { AppError, type ErrorCode } from '../errors'
-import type { Tx } from '../services/executor'
-import { SYNC_TABLES } from './policy'
+import { lt } from 'drizzle-orm'
+import { AppError, type ErrorCode, IdTaken } from '../errors'
+import type { Executor, Tx } from '../services/executor'
+import { SYNC_TABLES, type WriteInput } from './policy'
 
 /** Service errors that mean "this operation can never succeed": reject it and keep the queue moving. */
 const REJECTABLE: Partial<Record<ErrorCode, SyncRejectReason>> = {
   forbidden: 'forbidden',
   not_found: 'not_found',
   invalid: 'invalid',
+  conflict: 'conflict',
 }
 
 class Rejected extends Error {
@@ -51,18 +53,44 @@ async function applyEntry(
     throw new Rejected('unknown_table', `table ${entry.table} is not writable through sync`)
   }
   const policy = SYNC_TABLES[entry.table]
-  // M0 implements column patches only; PUT and DELETE arrive with the tables that need them.
-  if (entry.op !== 'PATCH' || !policy.ops.includes(entry.op)) {
-    throw new Rejected('unsupported_op', `${entry.op} is not allowed on ${entry.table}`)
+  const unsupported = () =>
+    new Rejected('unsupported_op', `${entry.op} is not allowed on ${entry.table}`)
+  if (!policy.ops.includes(entry.op)) throw unsupported()
+  const input: WriteInput = {
+    id: entry.id,
+    data: entry.data ?? {},
+    batchId,
+    clientTs: parseClientTs(entry.clientTs),
   }
-  const clientTs = parseClientTs(entry.clientTs)
-  await policy.patch(db, actor, { id: entry.id, data: entry.data ?? {}, batchId, clientTs })
+
+  if (entry.op === 'PATCH') {
+    if (!policy.patch) throw unsupported()
+    await policy.patch(db, actor, input)
+  } else if (entry.op === 'DELETE') {
+    if (!policy.remove) throw unsupported()
+    await policy.remove(db, actor, input)
+  } else {
+    if (!policy.put) throw unsupported()
+    const put = (sp: Tx) => (policy.put as NonNullable<typeof policy.put>)(sp, actor, input)
+    try {
+      await db.transaction(put)
+    } catch (err) {
+      // Another transaction created this id between our read and our insert (a concurrent replay):
+      // retry once in a fresh savepoint, where the row exists and the PUT is treated as its replay.
+      if (!(err instanceof IdTaken)) throw err
+      await db.transaction(put)
+    }
+  }
 }
 
 /**
- * Applies a PowerSync upload batch in one transaction, each entry in its own savepoint so a
- * rejected entry rolls back only itself. Permission and validation failures become rejections;
- * any other error aborts the whole batch and propagates so the client retries it.
+ * Applies one chunk of a PowerSync upload batch in one transaction, each entry in its own savepoint
+ * so a rejected entry rolls back only itself. Permission and validation failures become rejections;
+ * any other error aborts the chunk and propagates so the client retries it.
+ *
+ * `req.batchId` is the logged, user-scoped id (`<userId>:<clientBatchId>`). Each chunk of it is
+ * recorded in `sync_applied_chunks` in the same transaction as its writes, so a chunk sent again (a
+ * lost response, or a retry of the whole transaction after a later chunk failed) applies nothing.
  */
 export async function applyCrudBatch(
   db: Db,
@@ -70,6 +98,14 @@ export async function applyCrudBatch(
   req: SyncUploadRequest,
 ): Promise<SyncUploadResponse> {
   return db.transaction(async (tx) => {
+    // A concurrent copy of this chunk waits here until the first commits, then sees the conflict.
+    const recorded = await tx
+      .insert(syncAppliedChunks)
+      .values({ batchKey: req.batchId, chunkIndex: req.chunk?.index ?? 0 })
+      .onConflictDoNothing()
+      .returning({ batchKey: syncAppliedChunks.batchKey })
+    if (recorded.length === 0) return { applied: 0, rejected: [], replay: true }
+
     let applied = 0
     const rejected: SyncRejection[] = []
     for (const [index, entry] of req.entries.entries()) {
@@ -90,4 +126,16 @@ export async function applyCrudBatch(
     }
     return { applied, rejected }
   })
+}
+
+/** How long a chunk is remembered: far longer than any client keeps retrying one upload. */
+export const APPLIED_CHUNK_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+/** Forgets applied chunks recorded before `cutoff`; returns how many were deleted. */
+export async function deleteAppliedChunksBefore(db: Executor, cutoff: Date): Promise<number> {
+  const deleted = await db
+    .delete(syncAppliedChunks)
+    .where(lt(syncAppliedChunks.appliedAt, cutoff))
+    .returning({ batchKey: syncAppliedChunks.batchKey })
+  return deleted.length
 }

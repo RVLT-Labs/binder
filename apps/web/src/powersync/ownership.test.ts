@@ -109,3 +109,13 @@ test('the device id still works, and stays stable, when storage is blocked', asy
   expect(id).toMatch(UUID)
   expect(deviceId()).toBe(id)
 })
+
+test('claiming an empty database mints a new device id, so a recreated database never reuses batch ids', async () => {
+  // Same owner and a remembered device id, but the database itself is new (its transaction counter
+  // restarts at 1): the old id would repeat batch ids the server has already applied.
+  await claimLocalDb(fakeDb(['shows']), 'u1')
+  const first = deviceId()
+  await claimLocalDb(fakeDb(), 'u1')
+  expect(deviceId()).not.toBe(first)
+  expect(deviceId()).toMatch(UUID)
+})

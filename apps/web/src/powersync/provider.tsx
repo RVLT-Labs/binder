@@ -5,12 +5,16 @@ import { forgetSessionUser } from '../auth/session'
 import { clearBlobCache } from '../blobs/fetchBlob'
 import { ApiConnector } from './connector'
 import { createPowerSync } from './db'
+import { installDevHooks } from './devHooks'
 import { claimLocalDb, writeOwner } from './ownership'
 
 let shared: PowerSyncDatabase | undefined
 /** One database per page: it owns a worker and an OPFS file lock. */
 export function getPowerSync(): PowerSyncDatabase {
-  shared ??= createPowerSync()
+  if (!shared) {
+    shared = createPowerSync()
+    installDevHooks(shared)
+  }
   return shared
 }
 
