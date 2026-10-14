@@ -16,6 +16,10 @@ services:
       - POWERSYNC_DB_PASSWORD=${SERVICE_PASSWORD_POWERSYNC}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Backups: nightly pg_dump and a weekly blobs archive land here (Coolify scheduled tasks,
+      # see deploy/README.md). Same host disk, so copy them off-host for disaster recovery.
+      - backups:/backups
+      - blobs:/blobs:ro
     healthcheck:
       # -h localhost: the first-start init phase listens on the unix socket only, so this stays
       # unhealthy until the real server (and the init script) is done.
@@ -28,6 +32,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.powersync
+    # The image declares no port; Traefik needs one to build the route for the sync domain.
+    expose:
+      - '8080'
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,3 +88,4 @@ services:
 volumes:
   pgdata:
   blobs:
+  backups:

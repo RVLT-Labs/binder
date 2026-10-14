@@ -211,3 +211,14 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml \
 deploy/scripts/prod-smoke.sh # health, web, sync, OCR upload, MCP; prints PASS
 docker compose -p binder-prodtest down -v
 ```
+
+## Scheduled backups (configured in Coolify)
+
+Two Coolify scheduled tasks run in the `postgres` container:
+
+| Task | Schedule | Command |
+|---|---|---|
+| binder-db-nightly | `15 3 * * *` | `sh -c 'pg_dump -U binder -Fc binder > /backups/binder-$(date +%u).dump'` (7 rotating daily dumps) |
+| binder-blobs-weekly | `45 3 * * 0` | `sh -c 'tar -czf /backups/blobs-$(( $(date +%V) % 4 )).tgz -C /blobs .'` (4 rotating weekly archives) |
+
+Both write to the `backups` volume on the same host. Copy that volume off-host (for example a nightly rsync or rclone from the host) for disaster recovery. Restore: stop `api`, `pg_restore -U binder -d binder --clean /backups/binder-N.dump`, extract the blobs archive into the `blobs` volume, start `api`.
