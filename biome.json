@@ -5,6 +5,7 @@
       "**",
       "!**/node_modules",
       "!**/dist",
+      "!**/.data",
       "!fixtures/private",
       "!pnpm-lock.yaml",
       "!apps/web/src/routeTree.gen.ts",

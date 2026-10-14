@@ -64,7 +64,12 @@ describe('token services', () => {
     expect(row.tokenHash).not.toBe(token)
     expect(JSON.stringify(row)).not.toContain(token)
     const auth = await authenticateToken(db, token)
-    expect(auth).toEqual({ userId: user.id, tokenId: record.id, showScope: '*' })
+    expect(auth).toEqual({
+      userId: user.id,
+      tokenId: record.id,
+      showScope: '*',
+      expiresAt: null,
+    })
   })
 
   test('unknown tokens do not authenticate', async () => {

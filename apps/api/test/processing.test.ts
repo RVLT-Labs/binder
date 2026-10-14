@@ -60,16 +60,22 @@ if (missing.length > 0) {
 type Setup = Awaited<ReturnType<typeof setupShow>>
 let s: Setup
 let work: string
+const sharedTmp = process.env.TMPDIR
 
 beforeAll(async () => {
   s = await setupShow()
   work = await mkdtemp(join(tmpdir(), 'binder-processing-test-'))
+  // Jobs make their temp directories under os.tmpdir(); a private one keeps the leftover-directory
+  // checks below from seeing other test files' processing running in parallel.
+  process.env.TMPDIR = await mkdtemp(join(work, 'tmp-'))
 })
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
 })
 afterAll(async () => {
+  if (sharedTmp === undefined) delete process.env.TMPDIR
+  else process.env.TMPDIR = sharedTmp
   await rm(work, { recursive: true, force: true })
 })
 

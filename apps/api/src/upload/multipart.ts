@@ -17,7 +17,7 @@ export interface PdfUpload {
 }
 
 /** Counts every request byte and fails the stream past `max`, whatever Content-Length claimed. */
-function byteLimit(max: number): Transform {
+export function byteLimit(max: number): Transform {
   let seen = 0
   return new Transform({
     transform(chunk: Buffer, _enc, cb: TransformCallback) {
@@ -32,7 +32,7 @@ function byteLimit(max: number): Transform {
  * Passes bytes through after checking that the stream starts with `%PDF-`. `onValid` fires once,
  * on the first chunk that settles the question, so callers see a rejection before any byte is stored.
  */
-function pdfMagicCheck(onValid: () => void, onClose: () => void): Transform {
+export function pdfMagicCheck(onValid: () => void, onClose: () => void): Transform {
   let head = Buffer.alloc(0)
   let checked = false
   return new Transform({

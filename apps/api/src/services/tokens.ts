@@ -87,7 +87,12 @@ export async function revokeToken(
 export async function authenticateToken(
   db: Db,
   plain: string,
-): Promise<{ userId: string; tokenId: string; showScope: ShowScope } | null> {
+): Promise<{
+  userId: string
+  tokenId: string
+  showScope: ShowScope
+  expiresAt: Date | null
+} | null> {
   if (!plain.startsWith(TOKEN_PREFIX)) return null
   const [row] = await db
     .select()
@@ -105,7 +110,7 @@ export async function authenticateToken(
         or(isNull(personalAccessTokens.lastUsedAt), lt(personalAccessTokens.lastUsedAt, stale)),
       ),
     )
-  return { userId: row.userId, tokenId: row.id, showScope: row.showScope }
+  return { userId: row.userId, tokenId: row.id, showScope: row.showScope, expiresAt: row.expiresAt }
 }
 
 export function tokenAllowsShow(scope: ShowScope, showId: string): boolean {

@@ -1,0 +1,61 @@
+/**
+ * The MCP parity rule (spec 3.10): every exported service operation is reachable through an MCP
+ * tool, or is listed here as exempt with the reason. `test/mcpParity.test.ts` enforces it.
+ */
+
+export const TOOL_NAMES = [
+  'list_organisations',
+  'create_organisation',
+  'list_shows',
+  'get_show',
+  'create_show',
+  'update_show',
+  'add_show_member',
+  'list_documents',
+  'get_document',
+  'update_document',
+  'upload_document',
+  'get_page',
+  'search_script',
+] as const
+
+export type ToolName = (typeof TOOL_NAMES)[number]
+
+/** Service operation name to the tool that reaches it. Several operations may share one tool. */
+export const OPERATION_TO_TOOL: Record<string, ToolName> = {
+  listOrganisations: 'list_organisations',
+  createOrganisation: 'create_organisation',
+  listShows: 'list_shows',
+  getShow: 'get_show',
+  createShow: 'create_show',
+  updateShow: 'update_show',
+  addShowMember: 'add_show_member',
+  listDocuments: 'list_documents',
+  getDocument: 'get_document',
+  getDocumentVersion: 'get_document',
+  updateDocument: 'update_document',
+  uploadDocumentFromUrl: 'upload_document',
+  createDocument: 'upload_document',
+  addDocumentVersion: 'upload_document',
+  getPage: 'get_page',
+  getPageImage: 'get_page',
+  searchVersion: 'search_script',
+}
+
+const TOKEN_REASON = 'token management stays in the UI so an agent cannot mint credentials'
+const GUARD_REASON = 'internal permission guard called inside other operations, not an operation'
+
+/** Exported service functions that are deliberately not MCP tools, with the reason. */
+export const UI_ONLY_OPERATIONS: Record<string, string> = {
+  createToken: TOKEN_REASON,
+  listTokens: TOKEN_REASON,
+  revokeToken: TOKEN_REASON,
+  logChange: 'internal helper: every write calls it inside its own transaction',
+  getShowRole: GUARD_REASON,
+  requireShowRole: GUARD_REASON,
+  assertShowWritable: GUARD_REASON,
+  assertShowAcceptsUploads: GUARD_REASON,
+  authenticateToken:
+    'auth plumbing: the MCP endpoint itself authenticates the bearer token with it',
+  tokenAllowsShow: 'auth plumbing: a pure token scope predicate, not an operation',
+}

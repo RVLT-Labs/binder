@@ -4,8 +4,9 @@ import { type Actor, type DocumentKind, newId, type OcrMode } from '@binder/shar
 import { asc, eq, type InferSelectModel, sql } from 'drizzle-orm'
 import type { BlobStore } from '../blob/BlobStore'
 import { originalBlobKey } from '../blob/keys'
-import { notFound, payloadTooLarge } from '../errors'
+import { invalid, notFound, payloadTooLarge } from '../errors'
 import type { JobQueue } from '../processing/types'
+import { type FetchPdfOptions, fetchPdf } from '../upload/fetchPdf'
 import { MAX_UPLOAD_BYTES } from '../upload/multipart'
 import { logChange } from './changeLog'
 import type { Executor } from './executor'
@@ -328,4 +329,100 @@ export async function getDocumentVersion(
     .where(eq(pages.documentVersionId, version.id))
     .orderBy(asc(pages.index))
   return { ...version, pages: versionPages }
+}
+
+/**
+ * Any member. A document with its versions (oldest first) and one version's pages: `versionId`
+ * when given (it must belong to the document), else the current version, else the latest.
+ */
+export async function getDocument(
+  db: Executor,
+  actor: Actor,
+  input: { documentId: string; versionId?: string },
+): Promise<{
+  document: Document
+  versions: DocumentVersion[]
+  version: (DocumentVersion & { pages: Page[] }) | null
+}> {
+  const [document] = await db.select().from(documents).where(eq(documents.id, input.documentId))
+  if (!document) throw notFound('Document not found')
+  await requireShowRole(db, actor, document.showId, 'viewer')
+  const versions = await db
+    .select()
+    .from(documentVersions)
+    .where(eq(documentVersions.documentId, document.id))
+    .orderBy(asc(documentVersions.versionNumber))
+  const versionId = input.versionId ?? document.currentVersionId ?? versions.at(-1)?.id
+  if (input.versionId && !versions.some((v) => v.id === input.versionId)) {
+    throw notFound('Version not found')
+  }
+  const version = versionId ? await getDocumentVersion(db, actor, { versionId }) : null
+  return { document, versions, version }
+}
+
+/** The last path segment of a URL without `.pdf`, for default titles and labels. */
+function nameFromUrl(url: string): string {
+  try {
+    const segment = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '')
+    const name = segment.replace(/\.pdf$/i, '').trim()
+    return name.slice(0, 200) || 'Untitled'
+  } catch {
+    return 'Untitled'
+  }
+}
+
+/**
+ * Editor or above. Downloads a PDF from a public http(s) URL (see `fetchPdf` for the SSRF guard,
+ * size cap and timeout) and stores it as a new document, or as the next version of `documentId`.
+ * `kind`, `title` and `ocrMode` apply only to a new document; `label` only to a new version.
+ */
+export async function uploadDocumentFromUrl(
+  db: Executor,
+  blobs: BlobStore,
+  jobs: JobQueue,
+  actor: Actor,
+  input: {
+    showId: string
+    url: string
+    documentId?: string
+    kind?: DocumentKind
+    title?: string
+    label?: string
+    ocrMode?: OcrMode
+  },
+  fetchOptions?: FetchPdfOptions,
+): Promise<{ document: Document; version: DocumentVersion }> {
+  const { documentId, kind } = input
+  if (documentId !== undefined && (kind || input.title || input.ocrMode)) {
+    throw invalid('kind, title and ocrMode apply only to a new document; use update_document')
+  }
+  if (documentId === undefined && input.label) {
+    throw invalid('label applies only to a new version of a document')
+  }
+  if (documentId === undefined && !kind) throw invalid('kind is required for a new document')
+  // Refuse before any outbound request: only editors of an open show may make the server fetch.
+  await assertShowAcceptsUploads(db, actor, input.showId)
+  const file = await fetchPdf(input.url, fetchOptions)
+  try {
+    if (documentId !== undefined) {
+      const version = await addDocumentVersion(db, blobs, jobs, actor, {
+        documentId,
+        showId: input.showId,
+        label: input.label ?? nameFromUrl(input.url),
+        file,
+      })
+      const [document] = await db.select().from(documents).where(eq(documents.id, documentId))
+      return { document, version }
+    }
+    return await createDocument(db, blobs, jobs, actor, {
+      showId: input.showId,
+      kind: kind ?? 'other',
+      title: input.title ?? nameFromUrl(input.url),
+      ocrMode: input.ocrMode,
+      file,
+    })
+  } finally {
+    // A refusal before the blob write leaves the download unread; close it.
+    file.destroy()
+  }
 }

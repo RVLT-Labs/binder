@@ -3,15 +3,20 @@ export {
   addDocumentVersion,
   assertShowAcceptsUploads,
   createDocument,
+  getDocument,
   getDocumentVersion,
   listDocuments,
   updateDocument,
+  uploadDocumentFromUrl,
 } from './documents'
+export { getPage, getPageImage } from './pages'
+export { searchVersion } from './search'
 export {
   addShowMember,
   assertShowWritable,
   createOrganisation,
   createShow,
+  getShow,
   getShowRole,
   listOrganisations,
   listShows,

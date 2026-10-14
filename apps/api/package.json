@@ -16,6 +16,8 @@
     "@binder/db": "workspace:*",
     "@binder/shared": "workspace:*",
     "@hono/node-server": "^2.1.0",
+    "@modelcontextprotocol/hono": "^2.0.2",
+    "@modelcontextprotocol/server": "^2.3.1",
     "better-auth": "^1.7.7",
     "busboy": "^1.6.0",
     "drizzle-orm": "^0.45.0",
@@ -28,6 +30,7 @@
   },
   "devDependencies": {
     "@binder/fixtures": "workspace:*",
+    "@modelcontextprotocol/client": "^2.3.1",
     "@types/busboy": "^1.5.5",
     "@types/nodemailer": "^8.0.2",
     "tsup": "^8.5.0",

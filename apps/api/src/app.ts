@@ -7,6 +7,8 @@ import { signUpGuard } from './auth/middleware'
 import type { BlobStore } from './blob/BlobStore'
 import type { Config } from './config'
 import { AppError } from './errors'
+import { mcpAuth } from './mcp/auth'
+import { createMcpRoutes } from './mcp/server'
 import type { JobQueue } from './processing/types'
 import { blobs } from './routes/blobs'
 import { documents } from './routes/documents'
@@ -71,6 +73,10 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   api.route('/', documents)
   app.route('/api', api)
   app.route('/', blobs)
+
+  // Authenticate before the MCP app parses any body.
+  app.use('/mcp/*', mcpAuth)
+  app.route('/mcp', createMcpRoutes(deps, deps.config))
 
   return app
 }

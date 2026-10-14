@@ -8,3 +8,12 @@ export interface BlobStore {
   /** Absolute filesystem path, for stores that have one (processing jobs shell out to tools). */
   localPath?(key: string): string
 }
+
+/** A whole blob in memory, or null when it does not exist. For small blobs (word layers, page images). */
+export async function readBlobBytes(blobs: BlobStore, key: string): Promise<Buffer | null> {
+  const blob = await blobs.get(key)
+  if (!blob) return null
+  const chunks: Buffer[] = []
+  for await (const chunk of blob.stream) chunks.push(chunk as Buffer)
+  return Buffer.concat(chunks)
+}

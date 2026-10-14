@@ -177,6 +177,22 @@ export async function listShows(
   }
 }
 
+/** Any member. The show with the caller's role and how many members it has. */
+export async function getShow(
+  db: Executor,
+  actor: Actor,
+  input: { showId: string },
+): Promise<Show & { role: Role; memberCount: number }> {
+  const role = await requireShowRole(db, actor, input.showId, 'viewer')
+  const [show] = await db.select().from(shows).where(eq(shows.id, input.showId))
+  if (!show) throw notFound('Show not found')
+  const [{ memberCount }] = await db
+    .select({ memberCount: sql<number>`count(*)::int` })
+    .from(showMemberships)
+    .where(eq(showMemberships.showId, input.showId))
+  return { ...show, role, memberCount }
+}
+
 export async function updateShow(
   db: Executor,
   actor: Actor,

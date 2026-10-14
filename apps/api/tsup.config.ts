@@ -11,5 +11,7 @@ export default defineConfig({
   async onSuccess() {
     // The bundled runMigrations cannot find the db package's folder, so ship it next to the bundle.
     await cp('../../packages/db/drizzle', 'dist/drizzle', { recursive: true })
+    // The MCP guides resource reads these next to the bundle (src/mcp/resources/guides.ts).
+    await cp('../../docs/guides', 'dist/guides', { recursive: true })
   },
 })
