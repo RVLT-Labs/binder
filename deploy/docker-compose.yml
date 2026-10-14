@@ -28,6 +28,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.powersync
+    # The image declares no port; Traefik needs one to build the route for the sync domain.
+    expose:
+      - '8080'
     depends_on:
       postgres:
         condition: service_healthy
