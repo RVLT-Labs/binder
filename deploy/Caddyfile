@@ -22,6 +22,29 @@
 	@notViaTunnel not header_regexp X-Forwarded-For `(?i)(?:^|,)\s*(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}|::1|f[cd][0-9a-f]{0,2}:[0-9a-f:]*|::ffff:(?:10|127)\.[0-9.]+|::ffff:192\.168\.[0-9.]+|::ffff:172\.(?:1[6-9]|2\d|3[01])\.[0-9.]+)\s*$`
 	request_header @notViaTunnel -Cf-Connecting-Ip
 
+	# Browser security headers on every response, the API's included. `defer` applies them as the
+	# response is written, so they replace anything an upstream set.
+	header {
+		defer
+		X-Frame-Options SAMEORIGIN
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+	# The app may only be framed by itself (the tokens page must not be clickjacked).
+	@notBlobs not path /blobs/*
+	header @notBlobs {
+		defer
+		Content-Security-Policy "frame-ancestors 'self'"
+	}
+	# Uploaded PDFs are served inline on the app origin. If one is ever opened as a page, `sandbox`
+	# gives it an opaque origin with no scripts, so it cannot act as the app. The viewer is unaffected:
+	# PDF.js reads blobs with fetch(), and CSP only governs documents.
+	@blobs path /blobs/*
+	header @blobs {
+		defer
+		Content-Security-Policy "sandbox; frame-ancestors 'self'"
+	}
+
 	# JSON-only endpoints, including the unauthenticated auth routes: refuse bodies over 2 MiB here,
 	# before the API reads them (the API enforces the same limit). Uploads keep their 200 MB limit.
 	@jsonOnly path /api/auth/* /mcp /mcp/*

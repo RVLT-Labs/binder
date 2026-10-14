@@ -64,6 +64,20 @@ PDFJS="$(cd "$ROOT/apps/web" && ls dist/pdfjs/wasm 2>/dev/null | head -1 || true
 [ -z "$PDFJS" ] || [ "$(status "$WEB/pdfjs/wasm/$PDFJS")" = 200 ] || fail "/pdfjs/wasm/$PDFJS is not served"
 ok "index.html, SPA fallback, sw.js no-cache; /assets immutable and 404 when missing; /pdfjs served"
 
+step "security headers"
+[ "$(header content-security-policy "$WEB/")" = "frame-ancestors 'self'" ] || fail "index.html lacks CSP frame-ancestors 'self'"
+[ "$(header x-frame-options "$WEB/")" = SAMEORIGIN ] || fail "index.html lacks X-Frame-Options SAMEORIGIN"
+[ "$(header x-content-type-options "$WEB/")" = nosniff ] || fail "index.html lacks X-Content-Type-Options nosniff"
+[ "$(header referrer-policy "$WEB/")" = strict-origin-when-cross-origin ] || fail "index.html lacks Referrer-Policy"
+[ "$(header content-security-policy "$WEB/api/health")" = "frame-ancestors 'self'" ] || fail "API responses lack CSP frame-ancestors"
+WORKER="$("${DC[@]}" exec -T web ls /srv/assets | grep -E '^pdf\.worker.*\.m?js$' | head -1 || true)"
+[ -n "$WORKER" ] || fail "no pdf.worker script in the web image's /srv/assets"
+case "$(header content-type "$WEB/assets/$WORKER")" in
+  text/javascript*|application/javascript*) ;;
+  *) fail "/assets/$WORKER is not served as JavaScript (nosniff would block it)" ;;
+esac
+ok "CSP frame-ancestors, X-Frame-Options, nosniff, Referrer-Policy; pdf worker served as JavaScript"
+
 STAMP="$(date +%s)-$RANDOM"
 EMAIL="smoke-$STAMP@binder.test"
 BINDER_PASSWORD="$(openssl rand -hex 16)"
@@ -119,6 +133,16 @@ OCR="$("${DC[@]}" exec -T postgres psql -U binder -d binder -Atc \
   "select count(*) filter (where ocr_applied), count(*) from pages where document_version_id='$VERSION_ID'")"
 [ "${OCR%%|*}" -ge 1 ] || fail "ready but OCR was not applied to any page ($OCR)"
 ok "version ready; pages with OCR applied|total = $OCR"
+
+step "blobs are sandboxed but still readable by fetch"
+SEARCHABLE="$("${DC[@]}" exec -T postgres psql -U binder -d binder -Atc \
+  "select searchable_key from document_versions where id='$VERSION_ID'")"
+BLOB_URL="$WEB/blobs/$SEARCHABLE"
+curl -fsS -b "$WORK/jar" -D "$WORK/blob-headers" -o "$WORK/blob.pdf" "$BLOB_URL" || fail "GET $BLOB_URL failed"
+grep -qi "^content-security-policy: sandbox; frame-ancestors 'self'" "$WORK/blob-headers" || fail "blob lacks CSP sandbox"
+grep -qi '^x-content-type-options: nosniff' "$WORK/blob-headers" || fail "blob lacks nosniff"
+[ "$(head -c 5 "$WORK/blob.pdf")" = '%PDF-' ] || fail "blob body is not the PDF"
+ok "searchable.pdf: CSP sandbox, nosniff, %PDF- body"
 
 step "MCP with a personal access token"
 PAT="$("${DC[@]}" exec -T api node apps/api/dist/cli.js create-token --email "$EMAIL" --name smoke --scope '*')" \
