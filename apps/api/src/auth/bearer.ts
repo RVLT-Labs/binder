@@ -22,7 +22,11 @@ export const bearerAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     .where(eq(userTable.id, auth.userId))
   if (!u) throw unauthenticated()
   c.set('user', u)
-  c.set('actor', { userId: u.id, via: 'mcp', agent: c.req.header('user-agent') ?? null })
-  c.set('tokenScope', auth.showScope)
+  c.set('actor', {
+    userId: u.id,
+    via: 'mcp',
+    agent: c.req.header('user-agent') ?? null,
+    showScope: auth.showScope,
+  })
   await next()
 }

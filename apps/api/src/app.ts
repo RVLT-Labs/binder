@@ -24,8 +24,6 @@ export type AppEnv = {
     deps: AppDeps
     user?: { id: string; email: string; name: string }
     actor?: Actor
-    /** Set only when authenticated by a personal access token. */
-    tokenScope?: '*' | string[]
   }
 }
 

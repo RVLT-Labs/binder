@@ -184,14 +184,13 @@ describe('token routes and bearer auth', () => {
       c.set('deps', deps)
       await next()
     })
-    probe.get('/probe', requireUser, (c) => c.json({ actor: c.var.actor, scope: c.var.tokenScope }))
+    probe.get('/probe', requireUser, (c) => c.json({ actor: c.var.actor }))
     const { token } = await createToken(db, actor(user.id), { name: 's', showScope: '*' })
     const res = await probe.request('/probe', {
       headers: { authorization: `Bearer ${token}`, 'user-agent': 'agent/9' },
     })
     expect(await res.json()).toEqual({
-      actor: { userId: user.id, via: 'mcp', agent: 'agent/9' },
-      scope: '*',
+      actor: { userId: user.id, via: 'mcp', agent: 'agent/9', showScope: '*' },
     })
   })
 
@@ -271,5 +270,69 @@ describe('token routes and bearer auth', () => {
       expect(res.status, `${method} ${path}`).toBe(401)
       expect(((await res.json()) as { error: string }).error).toBe('unauthenticated')
     }
+  })
+})
+
+describe('token scope enforcement', () => {
+  async function scoped() {
+    const { app, deps, db, user } = await setup()
+    const a = actor(user.id)
+    const org = await createOrganisation(db, a, { name: 'Co' })
+    const showA = await createShow(db, a, { organisationId: org.id, title: 'A' })
+    const showB = await createShow(db, a, { organisationId: org.id, title: 'B' })
+    const mk = async (showScope: '*' | string[]) =>
+      `Bearer ${(await createToken(db, a, { name: 't', showScope })).token}`
+    const call = (auth: string, method: string, path: string, body?: unknown) =>
+      app.request(path, {
+        method,
+        headers: { authorization: auth, 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+    return { app, deps, db, user, org, showA, showB, mk, call }
+  }
+
+  test('list-scoped token is 403 outside its scope and works inside it', async () => {
+    const { showA, showB, mk, call } = await scoped()
+    const t = await mk([showA.id])
+    expect((await call(t, 'PATCH', `/api/shows/${showB.id}`, { title: 'X' })).status).toBe(403)
+    expect(
+      (
+        await call(t, 'POST', `/api/shows/${showB.id}/members`, {
+          email: 'nobody@x.test',
+          role: 'viewer',
+        })
+      ).status,
+    ).toBe(403)
+    expect((await call(t, 'PATCH', `/api/shows/${showA.id}`, { title: 'Y' })).status).toBe(200)
+  })
+
+  test('GET /api/me/shows returns only in-scope shows', async () => {
+    const { showA, mk, call } = await scoped()
+    const res = await call(await mk([showA.id]), 'GET', '/api/me/shows')
+    const body = (await res.json()) as { active: { id: string }[] }
+    expect(body.active.map((s) => s.id)).toEqual([showA.id])
+  })
+
+  test('list-scoped token cannot create orgs or shows', async () => {
+    const { org, showA, mk, call } = await scoped()
+    const t = await mk([showA.id])
+    expect((await call(t, 'POST', '/api/orgs', { name: 'N' })).status).toBe(403)
+    expect((await call(t, 'POST', `/api/orgs/${org.id}/shows`, { title: 'N' })).status).toBe(403)
+  })
+
+  test('a "*" token behaves like a session', async () => {
+    const { org, showB, mk, call } = await scoped()
+    const t = await mk('*')
+    expect((await call(t, 'PATCH', `/api/shows/${showB.id}`, { title: 'Z' })).status).toBe(200)
+    expect((await call(t, 'POST', `/api/orgs/${org.id}/shows`, { title: 'N' })).status).toBe(201)
+    expect((await call(t, 'POST', '/api/orgs', { name: 'N' })).status).toBe(201)
+  })
+
+  test('a valid session cookie wins over a malformed bearer header', async () => {
+    const { app, user } = await setup()
+    const res = await app.request('/api/me', {
+      headers: { cookie: user.cookie, authorization: 'Bearer garbage' },
+    })
+    expect(res.status).toBe(200)
   })
 })

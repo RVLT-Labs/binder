@@ -9,11 +9,19 @@ export type Organisation = InferSelectModel<typeof organisations>
 export type Show = InferSelectModel<typeof shows>
 export type ShowMembership = InferSelectModel<typeof showMemberships>
 
+/** New orgs and shows cannot sit inside a list scope, so only unrestricted actors may create them. */
+function assertUnscopedToken(actor: Actor): void {
+  if (actor.showScope && actor.showScope !== '*') {
+    throw forbidden('token scope does not allow creating organisations or shows')
+  }
+}
+
 export async function createOrganisation(
   db: Db,
   actor: Actor,
   input: { name: string },
 ): Promise<Organisation> {
+  assertUnscopedToken(actor)
   return db.transaction(async (tx) => {
     const [org] = await tx
       .insert(organisations)
@@ -51,11 +59,14 @@ export async function getShowRole(
 /** notFound when the user has no membership (do not reveal the show exists), forbidden when below `min`. */
 export async function requireShowRole(
   db: Executor,
-  userId: string,
+  actor: Actor,
   showId: string,
   min: Role,
 ): Promise<Role> {
-  const role = await getShowRole(db, userId, showId)
+  if (actor.showScope && actor.showScope !== '*' && !actor.showScope.includes(showId)) {
+    throw forbidden('token scope does not include this show')
+  }
+  const role = await getShowRole(db, actor.userId, showId)
   if (!role) throw notFound('Show not found')
   if (!roleAtLeast(role, min)) throw forbidden()
   return role
@@ -86,6 +97,7 @@ export async function createShow(
   actor: Actor,
   input: { organisationId: string; title: string; batchId?: string },
 ): Promise<Show> {
+  assertUnscopedToken(actor)
   const batchId = input.batchId ?? newId()
   return db.transaction(async (tx) => {
     const [member] = await tx
@@ -155,7 +167,10 @@ export async function listShows(
     .innerJoin(shows, eq(shows.id, showMemberships.showId))
     .where(eq(showMemberships.userId, actor.userId))
     .orderBy(shows.createdAt)
-  const items = rows.map((r) => ({ ...r.show, role: r.role }))
+  const scope = actor.showScope
+  const items = rows
+    .filter((r) => !scope || scope === '*' || scope.includes(r.show.id))
+    .map((r) => ({ ...r.show, role: r.role }))
   return {
     active: items.filter((s) => s.status !== 'archived'),
     archived: items.filter((s) => s.status === 'archived'),
@@ -173,7 +188,7 @@ export async function updateShow(
 ): Promise<Show> {
   const batchId = input.batchId ?? newId()
   return db.transaction(async (tx) => {
-    await requireShowRole(tx, actor.userId, input.showId, 'owner')
+    await requireShowRole(tx, actor, input.showId, 'owner')
     const [current] = await tx.select().from(shows).where(eq(shows.id, input.showId))
     if (!current) throw notFound('Show not found')
     assertShowWritable(current, { allowUnarchive: true, patch: input.patch })
@@ -221,7 +236,7 @@ export async function addShowMember(
 ): Promise<ShowMembership> {
   const batchId = input.batchId ?? newId()
   return db.transaction(async (tx) => {
-    await requireShowRole(tx, actor.userId, input.showId, 'owner')
+    await requireShowRole(tx, actor, input.showId, 'owner')
     const [show] = await tx.select().from(shows).where(eq(shows.id, input.showId))
     if (!show) throw notFound('Show not found')
     assertShowWritable(show)

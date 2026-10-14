@@ -5,6 +5,8 @@ export interface Actor {
   userId: string
   via: Via
   agent: string | null
+  /** Show scope of the personal access token behind this actor; absent means unrestricted. */
+  showScope?: '*' | string[]
 }
 
 export type ShowStatus = 'prep' | 'rehearsal' | 'running' | 'archived'
