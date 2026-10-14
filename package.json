@@ -9,7 +9,8 @@
   "scripts": {
     "test": "vitest run",
     "lint": "biome check .",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "fixtures": "node fixtures/scripts/make-fixtures.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",

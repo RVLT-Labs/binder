@@ -1,0 +1,17 @@
+{
+  "name": "@binder/fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./scripts/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "make": "tsx scripts/run.ts"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}
