@@ -1,4 +1,5 @@
 export { logChange } from './changeLog'
+export { updateDocument } from './documents'
 export {
   addShowMember,
   assertShowWritable,

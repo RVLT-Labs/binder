@@ -1,6 +1,9 @@
 import { Hono } from 'hono'
+import { z } from 'zod'
 import type { AppEnv } from '../app'
 import { requireSession } from '../auth/middleware'
+import { invalid } from '../errors'
+import { applyCrudBatch } from '../sync/apply'
 import { mintPowerSyncToken } from '../sync/token'
 
 export const sync = new Hono<AppEnv>()
@@ -12,4 +15,43 @@ sync.get('/sync/token', requireSession, async (c) => {
   // biome-ignore lint/style/noNonNullAssertion: requireSession always sets user
   const { token, expiresAt } = await mintPowerSyncToken(c.var.user!.id, config.POWERSYNC_JWT_SECRET)
   return c.json({ token, expiresAt: expiresAt.toISOString(), endpoint: config.POWERSYNC_URL })
+})
+
+const uploadBody = z.object({
+  batchId: z.string().min(1).max(200),
+  entries: z
+    .array(
+      z.object({
+        table: z.string().min(1).max(100),
+        id: z.string().min(1).max(200),
+        op: z.enum(['PUT', 'PATCH', 'DELETE']),
+        data: z.record(z.string(), z.unknown()).nullish(),
+        // Checked per entry so one bad timestamp rejects that entry instead of the batch.
+        clientTs: z.string().optional(),
+      }),
+    )
+    .max(500),
+})
+
+// Validation and permission failures are 200 with a `rejected` list: a 4xx would block the
+// client's upload queue forever. Only a malformed body (never sent by a well-behaved client) is 400,
+// and only a transient failure is 5xx, so PowerSync retries the batch.
+sync.post('/sync/upload', requireSession, async (c) => {
+  const body = await c.req.json().catch(() => {
+    throw invalid('Request body must be JSON')
+  })
+  const parsed = uploadBody.safeParse(body)
+  if (!parsed.success) {
+    throw invalid(
+      parsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; '),
+    )
+  }
+  // biome-ignore lint/style/noNonNullAssertion: requireSession always sets actor
+  const actor = { ...c.var.actor!, via: 'sync' as const }
+  try {
+    return c.json(await applyCrudBatch(c.var.deps.db, actor, parsed.data))
+  } catch (err) {
+    console.error('sync upload failed; batch rolled back for retry', err)
+    return c.json({ error: 'unavailable', message: 'Upload failed, retry later' }, 503)
+  }
 })

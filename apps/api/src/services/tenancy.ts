@@ -178,12 +178,13 @@ export async function listShows(
 }
 
 export async function updateShow(
-  db: Db,
+  db: Executor,
   actor: Actor,
   input: {
     showId: string
     patch: { title?: string; status?: ShowStatus; settings?: Record<string, unknown> }
     batchId?: string
+    clientTs?: Date
   },
 ): Promise<Show> {
   const batchId = input.batchId ?? newId()
@@ -218,6 +219,7 @@ export async function updateShow(
       op: 'update',
       before,
       after,
+      clientTs: input.clientTs,
     })
     return updated
   })
