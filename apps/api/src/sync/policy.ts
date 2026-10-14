@@ -1,8 +1,14 @@
 import { changeLog } from '@binder/db'
-import { type Actor, cueFieldsSchema, type SyncCrudOp } from '@binder/shared'
-import { and, eq, ne, sql } from 'drizzle-orm'
+import {
+  type Actor,
+  canSeeLayer,
+  cueFieldsSchema,
+  type LayerRef,
+  type SyncCrudOp,
+} from '@binder/shared'
+import { and, eq, ne, type SQL, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { invalid, notFound } from '../errors'
+import { AppError, invalid, notFound } from '../errors'
 import {
   createCue,
   deleteCues,
@@ -92,8 +98,8 @@ function tablePolicy<S extends z.ZodRawShape>(
 
 /**
  * The service field names (camelCase keys of `after`) that other users changed on this row since
- * `since` (by client time, falling back to server time), or, without `since`, since the actor's own
- * newest change to it. A PUT that replays a create skips these, so it never regresses a newer edit.
+ * `since` (by client time, falling back to server time; `since` itself is clamped to server time, see
+ * below), or, without `since`, since the actor's own newest change to it. A PUT that replays a create skips these, so it never regresses a newer edit.
  * `showId` scopes the lookup to the change log's (show_id, row_id, seq) index.
  */
 export async function foreignColumnsSince(
@@ -109,13 +115,19 @@ export async function foreignColumnsSince(
     eq(changeLog.rowId, rowId),
     eq(changeLog.tableName, table),
   )
+  const own = (column: SQL) => sql`(
+    SELECT ${column} FROM ${changeLog} own
+    WHERE own.show_id = ${showId} AND own.row_id = ${rowId}
+      AND own.table_name = ${table} AND own.user_id = ${actorUserId}
+  )`
+  // The client's clock is not trusted to run ahead: `since` is clamped to the server's now and to
+  // when the server logged this actor's newest change to the row (least() skips the NULL when there
+  // is none). A replayed create whose clientTs is a day fast cannot claim to be newer than an edit a
+  // collaborator made after the create arrived.
   const after = since
-    ? sql`coalesce(${changeLog.clientTs}, ${changeLog.serverTs}) > ${since.toISOString()}`
-    : sql`${changeLog.seq} > coalesce((
-        SELECT max(own.seq) FROM ${changeLog} own
-        WHERE own.show_id = ${showId} AND own.row_id = ${rowId}
-          AND own.table_name = ${table} AND own.user_id = ${actorUserId}
-      ), 0)`
+    ? sql`coalesce(${changeLog.clientTs}, ${changeLog.serverTs}) > least(
+        ${since.toISOString()}::timestamptz, now(), ${own(sql`max(own.server_ts)`)})`
+    : sql`${changeLog.seq} > coalesce(${own(sql`max(own.seq)`)}, 0)`
   const rows = await db
     .select({ after: changeLog.after })
     .from(changeLog)
@@ -124,6 +136,28 @@ export async function foreignColumnsSince(
 }
 
 type Meta = { batchId: string; clientTs?: Date }
+
+/** What `rowPolicy` needs of an existing row: its show and, for layered rows, its layer. */
+export interface LoadedRow {
+  showId: string
+  layer?: LayerRef
+}
+
+/**
+ * Whether the actor may know the row exists: a member of its show (within any token scope) and, for
+ * a layered row, able to see that layer (another user's personal layer is invisible).
+ */
+async function canSeeRow(db: Executor, actor: Actor, row: LoadedRow): Promise<boolean> {
+  try {
+    await requireShowRole(db, actor, row.showId, 'viewer')
+  } catch (err) {
+    if (err instanceof AppError && (err.code === 'not_found' || err.code === 'forbidden')) {
+      return false
+    }
+    throw err
+  }
+  return !row.layer || canSeeLayer(actor.userId, row.layer)
+}
 
 /**
  * A table whose rows clients create, patch and delete. PUT is create-or-replay: a PUT for an id that
@@ -137,7 +171,7 @@ export function rowPolicy<S extends z.ZodRawShape>(def: {
   ops: readonly SyncCrudOp[]
   /** writable wire columns with coercion */
   shape: S
-  load(db: Executor, id: string): Promise<{ showId: string } | null>
+  load(db: Executor, id: string): Promise<LoadedRow | null>
   create(
     db: Executor,
     actor: Actor,
@@ -210,8 +244,10 @@ export function rowPolicy<S extends z.ZodRawShape>(def: {
     },
 
     async remove(db, actor, input) {
-      // Already gone: done, and nothing to log, so a replayed DELETE never raises a notice.
-      if (!(await def.load(db, input.id))) return
+      // Already gone: done, and nothing to log, so a replayed DELETE never raises a notice. A row the
+      // actor cannot see answers exactly the same, so DELETE never reveals that an id exists.
+      const existing = await def.load(db, input.id)
+      if (!existing || !(await canSeeRow(db, actor, existing))) return
       await def.remove(db, actor, input.id, meta(input))
     },
   }
@@ -283,7 +319,10 @@ export const SYNC_TABLES: Record<string, SyncTablePolicy> = {
     table: 'cues',
     ops: ['PUT', 'PATCH', 'DELETE'],
     shape: cueShape,
-    load: loadCueRow,
+    load: async (db, id) => {
+      const row = await loadCueRow(db, id)
+      return row && { showId: row.showId, layer: { kind: 'department', id: row.departmentId } }
+    },
     create: (db, actor, id, showId, d, meta) =>
       createCue(db, actor, {
         showId,

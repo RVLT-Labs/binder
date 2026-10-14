@@ -2,10 +2,11 @@ import { changeLog, cues, syncAppliedChunks } from '@binder/db'
 import { type Actor, newId, type SyncCrudEntry } from '@binder/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { z } from 'zod'
 import { conflict } from '../src/errors'
 import { createCue, createShow, getCue, listOrganisations } from '../src/services'
 import { applyCrudBatch, deleteAppliedChunksBefore } from '../src/sync/apply'
-import { SYNC_TABLES } from '../src/sync/policy'
+import { rowPolicy, SYNC_TABLES } from '../src/sync/policy'
 import { APP_ORIGIN } from './helpers'
 import { anchorAt, setupMarkupShow } from './markupHelpers'
 
@@ -523,7 +524,130 @@ describe('PUT', () => {
   })
 })
 
+describe('fix round 1', () => {
+  test("a re-PUT whose clientTs is a day ahead (a skewed clock) still skips a collaborator's edit", async () => {
+    const { db, actors, editor, owner, editorSync, ownerSync, cueRow, logRows } = await setup()
+    const id = newId()
+    await applyCrudBatch(db, editorSync, {
+      batchId: `${editor.id}:skew-1`,
+      entries: [put('cues', id, cueRow({ label: 'A' }), new Date().toISOString())],
+    })
+    await applyCrudBatch(db, ownerSync, {
+      batchId: `${owner.id}:skew-2`,
+      entries: [patch('cues', id, { label: 'B' })],
+    })
+    const ahead = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    expect(
+      await applyCrudBatch(db, editorSync, {
+        batchId: `${editor.id}:skew-3`,
+        entries: [put('cues', id, cueRow({ label: 'A' }), ahead)],
+      }),
+    ).toEqual({ applied: 1, rejected: [] })
+    expect((await getCue(db, actors.owner, { cueId: id })).label).toBe('B')
+    expect((await logRows(id)).map((l) => l.op)).toEqual(['insert', 'update'])
+  })
+
+  test('DELETE of a row the actor cannot see is applied like a missing one: nothing deleted, nothing logged', async () => {
+    const { db, editor, outsider, editorSync, cueRow, rowCount, logRows } = await setup()
+    const id = newId()
+    await applyCrudBatch(db, editorSync, {
+      batchId: `${editor.id}:hide-1`,
+      entries: [put('cues', id, cueRow())],
+    })
+    const outsiderSync: Actor = { userId: outsider.id, via: 'sync', agent: null }
+    const missing = newId()
+    const r = await applyCrudBatch(db, outsiderSync, {
+      batchId: `${outsider.id}:hide-2`,
+      entries: [del('cues', id), del('cues', missing)],
+    })
+    // Indistinguishable: an existing row in a show the outsider is not in answers like a missing id.
+    expect(r).toEqual({ applied: 2, rejected: [] })
+    expect(await rowCount(id)).toBe(1)
+    expect((await logRows(id)).map((l) => l.op)).toEqual(['insert'])
+  })
+
+  test('DELETE of a row the actor can see but not edit is still forbidden', async () => {
+    const { db, editor, editorLx, editorSync, editorLxSync, cueRow, rowCount, depts } =
+      await setup()
+    const id = newId()
+    await applyCrudBatch(db, editorSync, {
+      batchId: `${editor.id}:see-1`,
+      entries: [put('cues', id, cueRow({ department_id: depts.SND.id }))],
+    })
+    const r = await applyCrudBatch(db, editorLxSync, {
+      batchId: `${editorLx.id}:see-2`,
+      entries: [del('cues', id)],
+    })
+    expect(r.rejected.map((x) => x.reason)).toEqual(['forbidden'])
+    expect(await rowCount(id)).toBe(1)
+  })
+
+  test("rowPolicy hides another user's personal-layer row from DELETE; the actor's own personal row is deleted", async () => {
+    const { db, actors, owner, editor, show } = await setup()
+    const removed: string[] = []
+    const rows: Record<string, { showId: string; layer: { kind: 'personal'; id: string } }> = {
+      theirs: { showId: show.id, layer: { kind: 'personal', id: owner.id } },
+      mine: { showId: show.id, layer: { kind: 'personal', id: editor.id } },
+    }
+    const policy = rowPolicy({
+      table: 'notes',
+      ops: ['DELETE'],
+      shape: { text: z.string() },
+      load: async (_db, id) => rows[id] ?? null,
+      create: async () => {},
+      update: async () => {},
+      remove: async (_db, _actor, id) => {
+        removed.push(id)
+      },
+    })
+    const editorSync = viaSync(actors.editor)
+    await policy.remove?.(db, editorSync, { id: 'theirs', batchId: 'x' })
+    await policy.remove?.(db, editorSync, { id: 'gone', batchId: 'x' })
+    await policy.remove?.(db, editorSync, { id: 'mine', batchId: 'x' })
+    expect(removed).toEqual(['mine'])
+  })
+})
+
 describe('chunks', () => {
+  test('a chunk key seen before with different entries is not a replay: it applies and records the new digest', async () => {
+    const { db, actors, editor, editorSync, cueRow, rowCount } = await setup()
+    const [x, y] = [newId(), newId()]
+    const batchId = `${editor.id}:rechunk`
+    expect(
+      await applyCrudBatch(db, editorSync, {
+        batchId,
+        chunk: { index: 0, count: 2 },
+        entries: [put('cues', x, cueRow({ label: 'X' }))],
+      }),
+    ).toEqual({ applied: 1, rejected: [] })
+    // The same transaction retried under new chunk boundaries: chunk 0 now carries x and y.
+    const rechunked = {
+      batchId,
+      chunk: { index: 0, count: 1 },
+      entries: [put('cues', x, cueRow({ label: 'X' })), put('cues', y, cueRow({ label: 'Y' }))],
+    }
+    expect(await applyCrudBatch(db, editorSync, rechunked)).toEqual({ applied: 2, rejected: [] })
+    expect(await rowCount(y)).toBe(1)
+    expect((await getCue(db, actors.owner, { cueId: y })).label).toBe('Y')
+    // That content is now what the key remembers: sending it again is a replay.
+    expect(await applyCrudBatch(db, editorSync, rechunked)).toEqual({
+      applied: 0,
+      rejected: [],
+      replay: true,
+    })
+  })
+
+  test('the digest ignores key order inside entries, so an identical retry is still a replay', async () => {
+    const { db, editor, editorSync, cueRow } = await setup()
+    const id = newId()
+    const batchId = `${editor.id}:order`
+    const data = cueRow()
+    const reversed = Object.fromEntries(Object.entries(data).reverse())
+    await applyCrudBatch(db, editorSync, { batchId, entries: [put('cues', id, data)] })
+    expect(
+      await applyCrudBatch(db, editorSync, { batchId, entries: [put('cues', id, reversed)] }),
+    ).toEqual({ applied: 0, rejected: [], replay: true })
+  })
   test("a replayed chunk is applied once: a collaborator's PATCH between the first apply and the retry survives", async () => {
     const { db, actors, editor, owner, editorSync, ownerSync, cueRow, logRows } = await setup()
     const [x, y] = [newId(), newId()]

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { type Db, syncAppliedChunks } from '@binder/db'
 import type {
   Actor,
@@ -7,7 +8,7 @@ import type {
   SyncUploadRequest,
   SyncUploadResponse,
 } from '@binder/shared'
-import { lt } from 'drizzle-orm'
+import { lt, sql } from 'drizzle-orm'
 import { AppError, type ErrorCode, IdTaken } from '../errors'
 import type { Executor, Tx } from '../services/executor'
 import { SYNC_TABLES, type WriteInput } from './policy'
@@ -83,6 +84,22 @@ async function applyEntry(
   }
 }
 
+/** JSON with object keys sorted at every level, so equal content always serialises the same. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+/** What a chunk's record remembers of its content. */
+export const chunkDigest = (entries: SyncCrudEntry[]): string =>
+  createHash('sha256').update(canonicalJson(entries)).digest('hex')
+
 /**
  * Applies one chunk of a PowerSync upload batch in one transaction, each entry in its own savepoint
  * so a rejected entry rolls back only itself. Permission and validation failures become rejections;
@@ -91,6 +108,10 @@ async function applyEntry(
  * `req.batchId` is the logged, user-scoped id (`<userId>:<clientBatchId>`). Each chunk of it is
  * recorded in `sync_applied_chunks` in the same transaction as its writes, so a chunk sent again (a
  * lost response, or a retry of the whole transaction after a later chunk failed) applies nothing.
+ * The record keeps a digest of the entries: the same key with other entries (the transaction retried
+ * under different chunk boundaries) is not a replay, so it is applied and the digest replaced. That is
+ * safe because entries are idempotent: PUT is create-or-replay, PATCH last writer wins, DELETE of a
+ * missing row is applied.
  */
 export async function applyCrudBatch(
   db: Db,
@@ -99,10 +120,16 @@ export async function applyCrudBatch(
 ): Promise<SyncUploadResponse> {
   return db.transaction(async (tx) => {
     // A concurrent copy of this chunk waits here until the first commits, then sees the conflict.
+    // A row comes back when the chunk is new or its content differs from what the key recorded.
+    const digest = chunkDigest(req.entries)
     const recorded = await tx
       .insert(syncAppliedChunks)
-      .values({ batchKey: req.batchId, chunkIndex: req.chunk?.index ?? 0 })
-      .onConflictDoNothing()
+      .values({ batchKey: req.batchId, chunkIndex: req.chunk?.index ?? 0, digest })
+      .onConflictDoUpdate({
+        target: [syncAppliedChunks.batchKey, syncAppliedChunks.chunkIndex],
+        set: { digest, appliedAt: sql`now()` },
+        setWhere: sql`${syncAppliedChunks.digest} <> excluded.digest`,
+      })
       .returning({ batchKey: syncAppliedChunks.batchKey })
     if (recorded.length === 0) return { applied: 0, rejected: [], replay: true }
 

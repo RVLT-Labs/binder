@@ -1,0 +1,1 @@
+ALTER TABLE "sync_applied_chunks" ADD COLUMN "digest" text DEFAULT '' NOT NULL;

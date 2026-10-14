@@ -4,6 +4,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { clearNotices, getNotices } from '../components/noticeStore'
 import { ApiConnector, toCrudEntries } from './connector'
 import { deviceId } from './ownership'
+import { UPLOAD_CHUNK_MAX_BYTES } from './uploadChunks'
 
 beforeEach(() => clearNotices())
 
@@ -172,6 +173,31 @@ test('uploads 1,200 entries as three ordered chunks of 400 under one batch id an
     { index: 2, count: 3 },
   ])
   expect(posts.flatMap((p) => p.entries.map((e) => e.id))).toEqual(ids)
+  expect(tx.complete).toHaveBeenCalledTimes(1)
+})
+
+test('40 entries of about 100 KB upload in chunks within the byte budget, in order, completing once', async () => {
+  const { ids, tx, db } = bigTx(40)
+  for (const e of tx.crud) e.opData = { notes: 'n'.repeat(100_000) }
+  const sizes: number[] = []
+  const posted: SyncUploadRequest[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init?: RequestInit) => {
+      sizes.push(new TextEncoder().encode(String(init?.body)).length)
+      const body = JSON.parse(String(init?.body)) as SyncUploadRequest
+      posted.push(body)
+      return Response.json({ applied: body.entries.length, rejected: [] })
+    }),
+  )
+  await new ApiConnector().uploadData(db)
+  expect(posted.length).toBeGreaterThan(1)
+  for (const size of sizes) expect(size).toBeLessThanOrEqual(UPLOAD_CHUNK_MAX_BYTES)
+  expect(posted.flatMap((p) => p.entries.map((e) => e.id))).toEqual(ids)
+  expect(posted.map((p) => p.chunk)).toEqual(
+    posted.map((_, index) => ({ index, count: posted.length })),
+  )
+  expect(new Set(posted.map((p) => p.batchId)).size).toBe(1)
   expect(tx.complete).toHaveBeenCalledTimes(1)
 })
 
