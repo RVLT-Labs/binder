@@ -5,6 +5,7 @@ import { newId } from '@binder/shared'
 import { betterAuth } from 'better-auth'
 import { magicLink } from 'better-auth/plugins'
 import type { Config } from '../config'
+import { createOrganisation } from '../services/tenancy'
 import type { SendMail } from './mailer'
 
 export interface AuthOptions {
@@ -35,6 +36,20 @@ export function createAuth({ db, config, sendMail }: AuthOptions) {
         },
       }),
     ],
+    databaseHooks: {
+      user: {
+        create: {
+          // Every user starts with a personal organisation they own.
+          after: async (created) => {
+            await createOrganisation(
+              db,
+              { userId: created.id, via: 'web', agent: null },
+              { name: `${created.name}'s organisation` },
+            )
+          },
+        },
+      },
+    },
     advanced: { database: { generateId: () => newId() } },
   })
 }

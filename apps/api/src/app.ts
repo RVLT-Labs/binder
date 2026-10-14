@@ -9,6 +9,7 @@ import type { Config } from './config'
 import { AppError } from './errors'
 import { health } from './routes/health'
 import { me } from './routes/me'
+import { tenancy } from './routes/tenancy'
 
 export interface AppDeps {
   config: Config
@@ -58,6 +59,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const api = new Hono<AppEnv>()
   api.route('/', health)
   api.route('/', me)
+  api.route('/', tenancy)
   app.route('/api', api)
 
   return app
