@@ -193,9 +193,15 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.0
         version: 2.1.5(hono@4.13.13)
+      drizzle-orm:
+        specifier: ^0.45.0
+        version: 0.45.4(@types/pg@8.23.1)(pg@8.23.1)
       hono:
         specifier: ^4.13.0
         version: 4.13.13
+      pg:
+        specifier: ^8.13.0
+        version: 8.23.1
       zod:
         specifier: ^4.0.0
         version: 4.6.7

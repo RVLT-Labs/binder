@@ -1,3 +1,4 @@
+import { HTTPException } from 'hono/http-exception'
 import { expect, test } from 'vitest'
 import { createApp } from '../src/app'
 import { invalid, notFound } from '../src/errors'
@@ -40,4 +41,21 @@ test('unknown errors become 500 without leaking details', async () => {
   } finally {
     console.error = orig
   }
+})
+
+test('HTTPException keeps its status', async () => {
+  const app = createApp(await testDeps())
+  app.get('/api/big', () => {
+    throw new HTTPException(413, { message: 'too big' })
+  })
+  const res = await app.request('/api/big')
+  expect(res.status).toBe(413)
+  expect(await res.json()).toEqual({ error: 'payload_too_large', message: 'too big' })
+})
+
+test('unknown path returns JSON 404', async () => {
+  const app = createApp(await testDeps())
+  const res = await app.request('/api/nope')
+  expect(res.status).toBe(404)
+  expect(await res.json()).toEqual({ error: 'not_found', message: 'Not found' })
 })

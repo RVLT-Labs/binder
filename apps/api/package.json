@@ -14,7 +14,9 @@
     "@binder/db": "workspace:*",
     "@binder/shared": "workspace:*",
     "@hono/node-server": "^2.1.0",
+    "drizzle-orm": "^0.45.0",
     "hono": "^4.13.0",
+    "pg": "^8.13.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
