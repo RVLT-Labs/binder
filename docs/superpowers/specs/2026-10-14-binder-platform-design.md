@@ -254,6 +254,18 @@ Stamps are chosen from a per-show stamp set (defaults: Enter, Exit, Fly in, Fly 
 
 The channel list is derived from the Mic table, not stored.
 
+### 4.11 Layers
+
+Everyone works on the same script. Each department is a layer, and every user also has a personal layer. A cue belongs to its department's layer. An annotation belongs to either a department layer or the author's personal layer. There is no shared "everyone" layer; a note the whole team should see goes on the author's department layer.
+
+- **Ownership and editing**: an editor can create, move, and delete cues and annotations only on layers for departments in their membership scope. Everyone can edit their own personal layer. Owners can edit every layer.
+- **Visibility**: every member can see every department layer. Visibility toggles per layer are per user and per device, remembered locally. Personal layers are visible only to their owner.
+- **Active layer**: the toolbar has one active layer at a time, which is where new cues and annotations go. Keyboard shortcuts switch it. The active layer is always one the user can edit.
+- **Lock**: a user can lock any visible layer for their session so they cannot accidentally drag someone else's cue. Locking is local and does not affect others.
+- **Appearance**: a layer's colour comes from its department. Cue markers, labels, highlights, and presence outlines all use it, so a page with sound, lighting, and SM work on it reads at a glance.
+- **Print and export**: every export takes a layer selection. The SM prints all layers as the calling script; a lighting designer prints only LX; a clean copy prints none.
+- **Numbering**: numbers are unique per department, never across layers. LX 10 and TM 10 coexist.
+
 ## 5. Script engine
 
 ### 5.1 Upload and processing
@@ -272,7 +284,7 @@ Scores go through the same path. Their text layer will be noisy around notation 
 - Pages render client-side with PDF.js from the cached searchable PDF, in a virtualised vertical list, with zoom from 50 to 400 percent and a thumbnail rail. Collaborators' avatars sit on the thumbnails of pages they are viewing.
 - Cues and annotations render as one SVG overlay per page in PDF user space, with a single transform per page. Hit testing and dragging happen in user space.
 - When snapping is on for the document, dropping a cue within 12 points of a text line snaps its y to the line and captures the text anchor (the nearest word and a quote of up to eight words). A toolbar toggle overrides the document default for the session. The quote doubles as the cue's trigger text on cue sheets.
-- Layer visibility toggles per department and personal layer, remembered per user in local storage.
+- Layer panel: visibility toggle, lock, and active-layer selection per department and personal layer, remembered per user in local storage (see 4.11).
 - Search runs over the cached word layers for every document in the show and jumps to the hit.
 - Keyboard: next and previous cue, place cue in the active department, jump to page.
 
