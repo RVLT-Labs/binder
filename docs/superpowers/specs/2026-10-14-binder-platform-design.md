@@ -239,7 +239,7 @@ Scenes and songs are the columns of the mic plot and the units of the breakdown.
 
 - **Person**: id, show, name, email, phone, job (free text, e.g. "Cast", "LX Op"), headshot blob key, notes.
 - **Character**: id, show, name, short label (up to 12 characters, used on scribble strips), colour, priority (integer, lower is more important, used by the DCA allocator), notes.
-- **CastVariant**: id, show, name (e.g. "Principal", "Mo as Ray"), is default.
+- **CastVariant**: id, show, name (e.g. "Principal", "Swing covers Ray"), is default.
 - **Casting**: character, person, cast variant.
 - **Appearance**: character, script item (scene or song). Means the character is on and live during that item.
 
@@ -321,7 +321,7 @@ Views on the change log:
 **Snapshot**: id, show, binder version (monotonic integer per show, shown as "Binder v12"), name (null for automatic), kind (`manual`, `auto`, `pre-export`, `pre-reanchor`, `pre-restore`), created by, created at, change log sequence at capture, state blob key. The state blob is a JSON materialisation of every show-scoped row at that moment, which is small (a few thousand rows) and makes compare and restore independent of replaying the log.
 
 - **Capture**: manual from the binder menu with a name; automatic once a day when anything changed, before every export, before every re-anchoring, and before every restore. Automatic snapshots older than ninety days are thinned to one per week, except `pre-export`, which are kept while their export record exists.
-- **Compare**: any two snapshots, or a snapshot and now. The diff is by row id across every table: added, removed, changed (with the changed columns). Presented per layer and per table, with cues shown as a cue list diff ("TM 14.50 added", "LX 23 moved p.9 to p.10", "Mic 4 reassigned Mo to Kattie from Song 6").
+- **Compare**: any two snapshots, or a snapshot and now. The diff is by row id across every table: added, removed, changed (with the changed columns). Presented per layer and per table, with cues shown as a cue list diff ("TM 14.50 added", "LX 23 moved p.9 to p.10", "Mic 4 reassigned from the swing to the principal from Song 6").
 - **Restore**: owner only. Computes the writes that turn the current state into the snapshot and applies them through the normal write path in one batch, after taking a `pre-restore` snapshot. Nothing is deleted from history; restore is a forward change. Documents and their versions are not part of a snapshot; only the anchors are, so a restore can point anchors at an older document version that still exists.
 
 **ExportRecord**: id, show, kind (`tmix`, `pdf-script`, `pdf-sheet`, `csv`), filename, cast variant (nullable), layer selection (JSON), snapshot id (the `pre-export` snapshot taken for it), binder version, created by, created at, file blob key, changelog (JSON summary of the snapshot diff against the previous export record of the same kind and variant). Exports are generated on the client; the record and the file upload when online, queued like any other write. The exports panel lists records newest first with "download again" and "what changed since this". The footer of every PDF export and the `designer` field of every `.tmix` carry the binder version and date, so paper and console both say which version they are.
