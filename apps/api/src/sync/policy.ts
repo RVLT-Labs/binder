@@ -25,6 +25,16 @@ export interface SyncTablePolicy {
 const noNul = (s: string) => !s.includes('\u0000')
 const title = z.string().trim().min(1).max(200).refine(noNul, 'must not contain NUL')
 
+/** Walks a JSON value; JSON.stringify escapes NUL, so the strings themselves must be checked. */
+function hasNoNul(value: unknown): boolean {
+  if (typeof value === 'string') return noNul(value)
+  if (Array.isArray(value)) return value.every(hasNoNul)
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value).every(([k, v]) => noNul(k) && hasNoNul(v))
+  }
+  return true
+}
+
 /** SQLite stores jsonb as JSON text. */
 const jsonObject = z.preprocess(
   (v) => {
@@ -35,7 +45,7 @@ const jsonObject = z.preprocess(
       return v
     }
   },
-  z.record(z.string(), z.unknown()).refine((o) => noNul(JSON.stringify(o)), 'must not contain NUL'),
+  z.record(z.string(), z.unknown()).refine(hasNoNul, 'must not contain NUL'),
 )
 
 /** SQLite stores booleans as 0/1. The column is nullable, so null clears it. */

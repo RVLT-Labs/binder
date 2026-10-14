@@ -270,13 +270,49 @@ describe('applyCrudBatch', () => {
         patch('documents', docId, { sort_order: 1.5 }),
         patch('documents', docId, { sort_order: 2 ** 31 }),
         patch('shows', show.id, { title: 'nul\u0000byte' }),
+        patch('shows', show.id, { settings: { k: 'nul\u0000value' } }),
+        patch('shows', show.id, { settings: { 'nul\u0000key': 1 } }),
+        patch('shows', show.id, { settings: { deep: [{ k: ['\u0000'] }] } }),
+        patch('shows', show.id, { settings: '{"k":"\\u0000"}' }),
         { ...patch('shows', show.id, { title: 'B' }), clientTs: 'yesterday' },
       ],
     })
     expect(result.applied).toBe(0)
-    expect(result.rejected.map((r) => r.reason)).toEqual(Array(12).fill('invalid'))
+    expect(result.rejected.map((r) => r.reason)).toEqual(Array(16).fill('invalid'))
     const [s] = await db.select().from(shows).where(eq(shows.id, show.id))
     expect(s).toMatchObject({ title: 'A', status: 'prep', settings: {} })
+  })
+
+  test('clientTs outside 2000-01-01..2100-01-01 rejects only that entry', async () => {
+    const { db, owner, show } = await setup()
+    const batchId = newId()
+    const at = (clientTs: string, title: string) => ({
+      ...patch('shows', show.id, { title }),
+      clientTs,
+    })
+    const result = await applyCrudBatch(db, sync(owner.id), {
+      batchId,
+      entries: [
+        at('-004714-01-01T00:00:00Z', 'ancient'),
+        at('1999-12-31T23:59:59Z', 'early'),
+        at('2100-01-01T00:00:01Z', 'late'),
+        at('+275760-09-13T00:00:00Z', 'far'),
+        at('2000-01-01T00:00:00Z', 'first'),
+        at('2100-01-01T00:00:00Z', 'last'),
+      ],
+    })
+    expect(result.rejected.map((r) => [r.index, r.reason])).toEqual([
+      [0, 'invalid'],
+      [1, 'invalid'],
+      [2, 'invalid'],
+      [3, 'invalid'],
+    ])
+    expect(result.applied).toBe(2)
+    const logs = await logRows(db, batchId)
+    expect(logs.map((l) => l.clientTs?.toISOString())).toEqual([
+      '2000-01-01T00:00:00.000Z',
+      '2100-01-01T00:00:00.000Z',
+    ])
   })
 
   test('a documents PATCH in an archived show is rejected forbidden', async () => {

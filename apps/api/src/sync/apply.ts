@@ -50,12 +50,18 @@ class Rejected extends Error {
   }
 }
 
+// Postgres timestamptz refuses some dates JavaScript accepts; anything outside this window is a
+// broken client clock, rejected so it cannot fail the write and loop the batch.
+const CLIENT_TS_MIN = Date.parse('2000-01-01T00:00:00Z')
+const CLIENT_TS_MAX = Date.parse('2100-01-01T00:00:00Z')
+
 function parseClientTs(value: string | undefined): Date | undefined {
   if (value === undefined) return undefined
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime()))
-    throw new Rejected('invalid', 'clientTs is not a valid timestamp')
-  return date
+  const ms = new Date(value).getTime()
+  if (Number.isNaN(ms) || ms < CLIENT_TS_MIN || ms > CLIENT_TS_MAX) {
+    throw new Rejected('invalid', 'clientTs must be a timestamp between 2000 and 2100')
+  }
+  return new Date(ms)
 }
 
 async function applyEntry(db: Tx, actor: Actor, batchId: string, entry: CrudEntry): Promise<void> {
