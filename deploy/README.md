@@ -54,11 +54,13 @@ TLS; everything behind it is plain HTTP.
    - `APP_ORIGIN=https://binder.rvlt.app` (auth cookies, trusted origin, links in emails)
    - `POWERSYNC_URL=https://binder-sync.rvlt.app` (returned to the web app by `/api/sync/token`)
 
-   Optional: `SMTP_URL=smtp://user:pass@host:587` so magic-link emails are sent; without it they are
-   only logged. Do not set the `SERVICE_*` secrets by hand; Coolify generates them.
+   Optional: `SMTP_URL=smtp://user:pass@host:587` to offer magic-link sign-in. Without it the API
+   does not register magic links at all (the endpoint is 404, the login page hides the option, and no
+   link is ever written to the log); password sign-in still works. Do not set the `SERVICE_*` secrets by hand; Coolify generates them.
 5. **Deploy.** The build takes a few minutes the first time (the API image installs OCR tools).
    Order is enforced by health checks: postgres, then powersync and api, then web. Open
-   `https://binder.rvlt.app/api/health`: it returns `{"ok":true}`.
+   `https://binder.rvlt.app/api/health`: it returns `{"ok":true,"magicLink":false}` (`true` once
+   `SMTP_URL` is set).
 
 ### First owner
 

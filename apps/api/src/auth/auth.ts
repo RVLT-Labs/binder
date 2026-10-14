@@ -4,13 +4,13 @@ import * as schema from '@binder/db'
 import { newId } from '@binder/shared'
 import { betterAuth } from 'better-auth'
 import { magicLink } from 'better-auth/plugins'
-import type { Config } from '../config'
+import { type Config, magicLinkEnabled } from '../config'
 import { createOrganisation } from '../services/tenancy'
 import type { SendMail } from './mailer'
 
 export interface AuthOptions {
   db: Db
-  config: Pick<Config, 'AUTH_SECRET' | 'APP_ORIGIN' | 'ALLOW_SIGNUP'>
+  config: Pick<Config, 'AUTH_SECRET' | 'APP_ORIGIN' | 'ALLOW_SIGNUP' | 'SMTP_URL' | 'NODE_ENV'>
   sendMail: SendMail
   /** Better Auth turns its rate limiter on in production only; tests pass `{ enabled: true }`. */
   rateLimit?: { enabled: boolean }
@@ -45,19 +45,22 @@ export function createAuth({ db, config, sendMail, rateLimit }: AuthOptions) {
     trustedOrigins: [config.APP_ORIGIN],
     emailAndPassword: { enabled: true },
     ...(rateLimit ? { rateLimit } : {}),
-    plugins: [
-      magicLink({
-        // Verifying a link for an unknown email would otherwise create a user, bypassing the sign-up guard.
-        disableSignUp: !config.ALLOW_SIGNUP,
-        sendMagicLink: async ({ email, url }) => {
-          await sendMail({
-            to: email,
-            subject: 'Your Binder sign-in link',
-            text: `Sign in to Binder: ${url}\n\nIf you did not request this, ignore this email.`,
-          })
-        },
-      }),
-    ],
+    // Registered only when a link can be delivered (see magicLinkEnabled); otherwise the endpoint is 404.
+    plugins: magicLinkEnabled(config)
+      ? [
+          magicLink({
+            // Verifying a link for an unknown email would otherwise create a user, bypassing the sign-up guard.
+            disableSignUp: !config.ALLOW_SIGNUP,
+            sendMagicLink: async ({ email, url }) => {
+              await sendMail({
+                to: email,
+                subject: 'Your Binder sign-in link',
+                text: `Sign in to Binder: ${url}\n\nIf you did not request this, ignore this email.`,
+              })
+            },
+          }),
+        ]
+      : [],
     databaseHooks: {
       user: {
         create: {

@@ -33,8 +33,18 @@ header() { curl -sI "$2" | tr -d '\r' | grep -i "^$1:" | head -1 | cut -d' ' -f2
 [ -f "$SCAN_PDF" ] || (cd "$ROOT" && pnpm fixtures >/dev/null) || fail "could not generate fixtures"
 
 step "API health through the web proxy"
-[ "$(curl -s "$WEB/api/health")" = '{"ok":true}' ] || fail "GET $WEB/api/health did not return {\"ok\":true}"
-ok '{"ok":true}'
+HEALTH="$(curl -s "$WEB/api/health")"
+[ "$(printf '%s' "$HEALTH" | json ok)" = true ] || fail "GET $WEB/api/health did not return ok: $HEALTH"
+ok "$HEALTH"
+
+step "magic links only with SMTP (never written to the log)"
+if [ "$(printf '%s' "$HEALTH" | json magicLink)" = false ]; then
+  [ "$(status -H "Origin: $WEB" -H 'content-type: application/json' -d '{"email":"nobody@binder.test"}' \
+    "$WEB/api/auth/sign-in/magic-link")" = 404 ] || fail "magicLink is false but the magic-link endpoint answers"
+  ok "SMTP not configured: magicLink false and the endpoint is 404"
+else
+  ok "SMTP configured: magicLink true"
+fi
 
 step "PowerSync liveness"
 [ "$(status "$SYNC/probes/liveness")" = 200 ] || fail "$SYNC/probes/liveness is not 200"

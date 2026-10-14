@@ -9,9 +9,18 @@ export interface MailMessage {
 
 export type SendMail = (message: MailMessage) => Promise<void>
 
-/** Sends through SMTP when SMTP_URL is set; otherwise logs the message so dev sign-in links are visible. */
-export function createMailer(config: Pick<Config, 'SMTP_URL'>): SendMail {
+/**
+ * Sends through SMTP when SMTP_URL is set. Without it, development logs the whole message so sign-in
+ * links are visible; production logs only that a message was dropped, never its body (a sign-in link
+ * is a credential).
+ */
+export function createMailer(config: Pick<Config, 'SMTP_URL' | 'NODE_ENV'>): SendMail {
   if (!config.SMTP_URL) {
+    if (config.NODE_ENV === 'production') {
+      return async ({ subject }) => {
+        console.warn(`[mail] not sent, SMTP is not configured: subject=${subject}`)
+      }
+    }
     return async ({ to, subject, text }) => {
       console.info(`[mail] to=${to} subject=${subject}\n${text}`)
     }

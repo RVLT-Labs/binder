@@ -12,6 +12,7 @@ const schema = z.object({
   POWERSYNC_URL: z.url(),
   SMTP_URL: z.string().min(1).optional(),
   ALLOW_SIGNUP: bool.default(false),
+  NODE_ENV: z.string().optional(),
 })
 
 export type Config = z.infer<typeof schema>
@@ -25,6 +26,14 @@ export const DEV_SECRETS: Readonly<
 > = {
   AUTH_SECRET: ['dev-only-auth-secret-change-me-0123456789'],
   POWERSYNC_JWT_SECRET: ['YmluZGVyLWRldi1wb3dlcnN5bmMtc2VjcmV0LTMyYnk'],
+}
+
+/**
+ * Magic-link sign-in needs a way to deliver the link. Production without SMTP has none: logging the
+ * link would turn the container log into a store of live credentials, so the feature is off.
+ */
+export function magicLinkEnabled(config: Pick<Config, 'NODE_ENV' | 'SMTP_URL'>): boolean {
+  return config.SMTP_URL !== undefined || config.NODE_ENV !== 'production'
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {

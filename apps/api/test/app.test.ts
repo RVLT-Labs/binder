@@ -8,7 +8,7 @@ test('GET /api/health returns ok', async () => {
   const app = createApp(await testDeps())
   const res = await app.request('/api/health')
   expect(res.status).toBe(200)
-  expect(await res.json()).toEqual({ ok: true })
+  expect(await res.json()).toEqual({ ok: true, magicLink: true })
 })
 
 test('AppError maps to its status and code', async () => {
