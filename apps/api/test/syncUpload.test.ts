@@ -13,7 +13,7 @@ import {
 } from '../src/services'
 import { applyCrudBatch } from '../src/sync/apply'
 import { SYNC_TABLES } from '../src/sync/policy'
-import { createTestApp, createTestUser } from './helpers'
+import { APP_ORIGIN, createTestApp, createTestUser } from './helpers'
 
 let n = 0
 const web = (userId: string): Actor => ({ userId, via: 'web', agent: null })
@@ -208,7 +208,7 @@ describe('applyCrudBatch', () => {
       .where(and(eq(showMemberships.showId, show.id), eq(showMemberships.userId, editor.id)))
     const res = await app.request('/api/sync/upload', {
       method: 'POST',
-      headers: { cookie: editor.cookie, 'content-type': 'application/json' },
+      headers: { cookie: editor.cookie, origin: APP_ORIGIN, 'content-type': 'application/json' },
       body: JSON.stringify({
         batchId: newId(),
         entries: [
@@ -391,7 +391,7 @@ describe('updateDocument', () => {
 describe('POST /api/sync/upload', () => {
   const post = (headers: Record<string, string>, body: unknown) => ({
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
+    headers: { 'content-type': 'application/json', origin: APP_ORIGIN, ...headers },
     body: JSON.stringify(body),
   })
 

@@ -22,12 +22,15 @@ export class RecordingJobs implements JobQueue {
   }
 }
 
+/** The Origin header a browser on the app sends; cookie-authenticated unsafe requests need it. */
+export const APP_ORIGIN = 'http://localhost:5173'
+
 export function testConfig(overrides: Partial<Config> = {}): Config {
   return {
     DATABASE_URL: 'postgres://test:test@localhost:5432/test',
     BLOB_ROOT: mkdtempSync(join(tmpdir(), 'binder-blobs-')),
     PORT: 3000,
-    APP_ORIGIN: 'http://localhost:5173',
+    APP_ORIGIN,
     AUTH_SECRET: 'test-auth-secret-0123456789abcdef',
     POWERSYNC_JWT_SECRET: 'dGVzdC1wb3dlcnN5bmMtc2VjcmV0',
     POWERSYNC_URL: 'http://localhost:8080',

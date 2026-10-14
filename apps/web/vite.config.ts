@@ -3,12 +3,32 @@ import { createRequire } from 'node:module'
 import { dirname, extname, join } from 'node:path'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // The API is same-origin through this proxy, so Better Auth's session cookie is first-party.
 // PowerSync is reached cross-origin with a bearer token from GET /api/sync/token.
 const api = 'http://localhost:3000'
+/** The dev server's origin: the local API's APP_ORIGIN (.env.example). */
+const devOrigin = 'http://localhost:5173'
+const previewPort = 4173
+
+/**
+ * `vite preview` stands in for production's same-origin Caddy, but on its own port, while the local
+ * API (shared with the dev server) only accepts unsafe cookie requests whose Origin is APP_ORIGIN,
+ * the dev origin. So the preview proxy presents the preview origin as the dev origin. Any other
+ * Origin passes through unchanged and is still refused by the API.
+ */
+const previewApi: ProxyOptions = {
+  target: api,
+  configure: (proxy) => {
+    proxy.on('proxyReq', (proxyReq) => {
+      if (proxyReq.getHeader('origin') === `http://localhost:${previewPort}`) {
+        proxyReq.setHeader('origin', devOrigin)
+      }
+    })
+  },
+}
 
 export default defineConfig({
   plugins: [
@@ -24,9 +44,9 @@ export default defineConfig({
   },
   // `vite preview` serves the production build, as the offline e2e needs; same-origin like production.
   preview: {
-    port: 4173,
+    port: previewPort,
     strictPort: true,
-    proxy: { '/api': api, '/blobs': api, '/mcp': api },
+    proxy: { '/api': previewApi, '/blobs': previewApi, '/mcp': previewApi },
   },
   // PowerSync ships its own workers and wasm; pre-bundling breaks their relative imports.
   optimizeDeps: { exclude: ['@powersync/web'] },

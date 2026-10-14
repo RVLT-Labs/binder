@@ -12,7 +12,7 @@ import {
   listShows,
   updateShow,
 } from '../src/services'
-import { createTestApp, createTestUser } from './helpers'
+import { APP_ORIGIN, createTestApp, createTestUser } from './helpers'
 
 let n = 0
 const em = (k: string, i: number) => `${k}${i}@x.test`
@@ -286,7 +286,7 @@ describe('archived shows are read-only', () => {
 describe('tenancy HTTP', () => {
   const json = (cookie: string, method: string, body?: unknown) => ({
     method,
-    headers: { 'content-type': 'application/json', cookie },
+    headers: { 'content-type': 'application/json', origin: APP_ORIGIN, cookie },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 
@@ -373,7 +373,7 @@ describe('tenancy HTTP', () => {
     }
     const bad = await app.request('/api/orgs', {
       method: 'POST',
-      headers: { cookie: owner.cookie, 'content-type': 'application/json' },
+      headers: { cookie: owner.cookie, origin: APP_ORIGIN, 'content-type': 'application/json' },
       body: '{nope',
     })
     expect(bad.status).toBe(400)

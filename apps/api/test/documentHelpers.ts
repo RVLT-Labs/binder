@@ -5,7 +5,7 @@ import type { Actor } from '@binder/shared'
 import type { Hono } from 'hono'
 import type { AppDeps, AppEnv } from '../src/app'
 import { addShowMember, createShow, listOrganisations } from '../src/services'
-import { createTestApp, createTestUser, RecordingJobs } from './helpers'
+import { APP_ORIGIN, createTestApp, createTestUser, RecordingJobs } from './helpers'
 
 // biome-ignore lint/suspicious/noExplicitAny: test helper over arbitrary response bodies
 export type Json = any
@@ -70,7 +70,7 @@ export async function postDocument(
   return asJson(
     await app.request(`/api/shows/${showId}/documents`, {
       method: 'POST',
-      headers: { cookie, ...headers },
+      headers: { cookie, origin: APP_ORIGIN, ...headers },
       body: multipart(fields, file),
     }),
   )
@@ -87,7 +87,7 @@ export async function postVersion(
   return asJson(
     await app.request(`/api/shows/${showId}/documents/${docId}/versions`, {
       method: 'POST',
-      headers: { cookie },
+      headers: { cookie, origin: APP_ORIGIN },
       body: multipart(fields, file),
     }),
   )

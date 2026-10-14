@@ -19,6 +19,7 @@ import {
   postVersion,
   setupShow,
 } from './documentHelpers'
+import { APP_ORIGIN } from './helpers'
 
 const MB = 1024 * 1024
 const libretto = { kind: 'libretto', title: 'Libretto' }
@@ -74,6 +75,7 @@ function streamingUpload(opts: {
       method: 'POST',
       headers: {
         cookie: opts.cookie,
+        origin: APP_ORIGIN,
         'content-type': `multipart/form-data; boundary=${boundary}`,
         'content-length': String(opts.contentLength),
       },
@@ -219,7 +221,7 @@ describe('POST /api/shows/:showId/documents', () => {
     const { app, editor, show } = await setupShow()
     const res = await app.request(`/api/shows/${show.id}/documents`, {
       method: 'POST',
-      headers: { cookie: editor.cookie, 'content-type': 'application/json' },
+      headers: { cookie: editor.cookie, origin: APP_ORIGIN, 'content-type': 'application/json' },
       body: '{}',
     })
     expect(res.status).toBe(400)

@@ -80,14 +80,16 @@ ok "endpoint $ENDPOINT"
 step "a show, replicated to PowerSync"
 ORG_ID="$(curl -fsS -b "$WORK/jar" "$WEB/api/me/orgs" | json organisations.0.id)" || fail "no organisation"
 SHOW_TITLE="Smoke Show $STAMP"
-SHOW_ID="$(curl -fsS -b "$WORK/jar" -H 'content-type: application/json' -d "{\"title\":\"$SHOW_TITLE\"}" \
+[ "$(status -b "$WORK/jar" -H 'Origin: https://evil.rvlt.app' -H 'content-type: application/json' \
+  -d '{"title":"forged"}' "$WEB/api/orgs/$ORG_ID/shows")" = 403 ] || fail "a cookie POST from a foreign Origin was not refused"
+SHOW_ID="$(curl -fsS -b "$WORK/jar" -H "Origin: $WEB" -H 'content-type: application/json' -d "{\"title\":\"$SHOW_TITLE\"}" \
   "$WEB/api/orgs/$ORG_ID/shows" | json show.id)" || fail "create show failed"
 curl -sN --max-time 15 -D "$WORK/headers" -o "$WORK/stream" \
   -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -X POST "$ENDPOINT/sync/stream" -d '{}' || true
 [ "$(head -n1 "$WORK/headers" | awk '{print $2}')" = 200 ] || fail "PowerSync stream was not HTTP 200"
 grep -q "$SHOW_TITLE" "$WORK/stream" || fail "the show did not arrive in the sync stream"
-ok "show $SHOW_ID arrived through PowerSync (JWT secret, role grants and publication all work)"
+ok "foreign-Origin POST refused (403); show $SHOW_ID arrived through PowerSync (JWT secret, role grants and publication all work)"
 
 step "upload the scanned fixture and wait for OCR"
 UP="$(curl -fsS -b "$WORK/jar" -H "Origin: $WEB" -F kind=libretto -F "title=Scan $STAMP" -F ocrMode=auto \

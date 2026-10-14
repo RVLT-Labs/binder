@@ -5,6 +5,7 @@ export type ErrorCode =
   | 'invalid'
   | 'conflict'
   | 'payload_too_large'
+  | 'unsupported_media_type'
 
 const STATUS: Record<ErrorCode, number> = {
   unauthenticated: 401,
@@ -13,6 +14,7 @@ const STATUS: Record<ErrorCode, number> = {
   invalid: 400,
   conflict: 409,
   payload_too_large: 413,
+  unsupported_media_type: 415,
 }
 
 export class AppError extends Error {
@@ -32,3 +34,5 @@ export const notFound = (msg = 'Not found') => new AppError('not_found', msg)
 export const invalid = (msg: string) => new AppError('invalid', msg)
 export const conflict = (msg: string) => new AppError('conflict', msg)
 export const payloadTooLarge = (msg = 'Payload too large') => new AppError('payload_too_large', msg)
+export const unsupportedMediaType = (msg = 'Content-Type must be application/json') =>
+  new AppError('unsupported_media_type', msg)

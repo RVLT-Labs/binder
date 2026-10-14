@@ -2,8 +2,8 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app'
 import { requireSession } from '../auth/middleware'
-import { invalid } from '../errors'
 import { createToken, listTokens, revokeToken } from '../services'
+import { readJson } from './json'
 
 const createBody = z.object({
   name: z.string().trim().min(1).max(100),
@@ -26,16 +26,8 @@ tokens.get('/me/tokens', requireSession, async (c) =>
 )
 
 tokens.post('/me/tokens', requireSession, async (c) => {
-  const body = await c.req.json().catch(() => {
-    throw invalid('Request body must be JSON')
-  })
-  const parsed = createBody.safeParse(body)
-  if (!parsed.success) {
-    throw invalid(
-      parsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; '),
-    )
-  }
-  const result = await createToken(c.var.deps.db, actorOf(c), parsed.data)
+  const parsed = await readJson(c.req, createBody)
+  const result = await createToken(c.var.deps.db, actorOf(c), parsed)
   return c.json(result, 201)
 })
 

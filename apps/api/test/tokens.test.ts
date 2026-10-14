@@ -16,7 +16,7 @@ import {
   revokeToken,
   tokenAllowsShow,
 } from '../src/services'
-import { createTestApp, createTestUser } from './helpers'
+import { APP_ORIGIN, createTestApp, createTestUser } from './helpers'
 
 let n = 0
 const actor = (userId: string): Actor => ({ userId, via: 'web', agent: null })
@@ -44,7 +44,7 @@ async function setup() {
 
 const json = (cookie: string, method: string, body?: unknown) => ({
   method,
-  headers: { cookie, 'content-type': 'application/json' },
+  headers: { cookie, origin: APP_ORIGIN, 'content-type': 'application/json' },
   body: body === undefined ? undefined : JSON.stringify(body),
 })
 
