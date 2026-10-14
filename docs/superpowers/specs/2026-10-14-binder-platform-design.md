@@ -24,6 +24,8 @@ Sound (designer, A1, A2) and lighting are the version one users. Stage managemen
 - Editing works in a venue with no internet and syncs when a connection returns.
 - Two people can work on the same show at once without overwriting each other, and each can see what the other is doing: who is in the binder, which page they are on, which cue they have selected, and their edits as they land.
 - A scanned script is searchable and cues snap to its text, and the PDF itself carries the extracted text so it is searchable outside Binder too.
+- A revised script PDF arrives mid-rehearsal and the cues follow it, with the ones that could not be placed automatically listed for review.
+- Any change can be traced to who made it and when, and undone. The binder can be captured as a named version and restored. Every export says which version it came from.
 - Binder is where a production's documentation lives, not one tool among several.
 - The current workflow (Cuelist markup, print, hand-build one .tmix per cast variant) is replaced end to end.
 
@@ -57,12 +59,12 @@ Sound (designer, A1, A2) and lighting are the version one users. Stage managemen
 - Offline: all reads and writes work without a connection; a show can be made available offline on demand.
 - Real-time: changes from other users appear within a second or two without reload, merged at field level.
 - Presence: who is in the binder, which document and page they are viewing, and which cue or annotation they have selected.
+- Version control, as four features (section 4.12): script revisions with automatic re-anchoring and a review list; a change log on every row with per-row history, an activity feed, and revert; named and automatic snapshots of the whole binder with compare and restore; export records tied to snapshots with a changelog since the previous export.
 
 ### 2.2 Deferred, with the model already supporting them
 
 - Freehand ink with pressure.
 - ETC Eos and QLab cue list export, OSC go to TheatreMix.
-- Script revision re-anchoring (anchors capture text from day one; the re-link operation comes later).
 - Share links.
 - Pages: collaborative rich-text documents inside a binder (see section 11).
 - Native iPad client.
@@ -89,7 +91,7 @@ packages/core must remain free of Node-only and browser-only dependencies so it 
 
 1. The browser holds a SQLite database (wa-sqlite in a worker, OPFS storage) mirrored from Postgres by PowerSync. All reads come from it. All writes go to it first.
 2. PowerSync queues local writes and uploads them to `POST /sync/upload` as batched create, update, and delete operations. An update carries only the columns that changed.
-3. The API validates each operation against the user's membership and department scope, applies accepted operations to Postgres in one transaction as column-level patches, and returns the list of rejected operations with reasons. Because patches are per column, two people editing different fields of the same cue at the same time both win.
+3. The API validates each operation against the user's membership and department scope, applies accepted operations to Postgres in one transaction as column-level patches, writes one ChangeLog row per accepted operation with the before and after values of the touched columns, and returns the list of rejected operations with reasons. Because patches are per column, two people editing different fields of the same cue at the same time both win.
 4. The client discards rejected operations locally and shows a notice. Rejections are expected to be rare (a viewer editing, a revoked membership) and never block the queue.
 5. PowerSync streams Postgres changes back to every connected client whose sync rules include the affected rows.
 
@@ -165,12 +167,13 @@ A new show is seeded with LX, SND, TM, VID, SM, STG, FLY. Departments can be add
 
 ### 4.3 Documents and pages
 
-- **Document**: id, show, kind (`libretto`, `score`, `blocking`, `other`), title, version number, original blob key, searchable blob key (the working PDF with an invisible text layer added, see 5.1), page count, sort order, OCR mode (`auto`, `never`, default `auto`), snap to text (boolean, default true for `libretto` and `other`, false for `score` and `blocking`), processing status (`queued`, `processing`, `ready`, `failed`).
+- **Document**: id, show, kind (`libretto`, `score`, `blocking`, `other`), title, current version (DocumentVersion id), sort order, OCR mode (`auto`, `never`, default `auto`), snap to text (boolean, default true for `libretto` and `other`, false for `score` and `blocking`).
+- **DocumentVersion**: id, document, version number (1, 2, 3 within the document), label (free text, e.g. "V5 18 Aug rehearsal cuts"), original blob key, searchable blob key (the working PDF with an invisible text layer added, see 5.1), page count, uploaded by, uploaded at, processing status (`queued`, `processing`, `ready`, `failed`).
 
-The original upload is kept byte-for-byte and never served to the viewer. Everything (viewing, search, snapping, print export) uses the searchable PDF, which looks identical to the scan.
+A document is the stable identity ("the libretto"); a version is one uploaded PDF of it. Uploading a replacement creates a new version and triggers re-anchoring (5.4). Every version stays viewable read-only. The original upload is kept byte-for-byte and never served to the viewer. Everything (viewing, search, snapping, print export) uses the version's searchable PDF, which looks identical to the scan.
 
 OCR on music notation produces mostly junk, so on score documents the word layer is for search and discovery only. Snapping defaults off there and cues anchor by position.
-- **Page**: id, document, index (zero-based), width and height in PDF points, rotation, thumbnail blob key, word layer blob key, OCR applied (boolean), status (`queued`, `ready`, `failed`).
+- **Page**: id, document version, index (zero-based), width and height in PDF points, rotation, thumbnail blob key, word layer blob key, OCR applied (boolean), status (`queued`, `ready`, `failed`).
 
 The word layer blob is JSON: `{ words: [{ t, x, y, w, h }], lines: [[wordIndex, ...]] }` with boxes in PDF user space (points, origin bottom-left). It is always extracted from the searchable PDF's text layer, so nothing above the pipeline distinguishes scanned pages from text pages.
 
@@ -180,18 +183,21 @@ An anchor is a value type stored inline on the owning row, not a table.
 
 ```
 Anchor {
-  documentId, pageIndex,
+  documentId, documentVersionId, pageIndex,
   x, y,                       // PDF points, origin bottom-left
-  text?: { quote, wordStart, wordEnd }   // optional, captured when snapped to a line
+  text?: { quote, wordStart, wordEnd },  // optional, captured when snapped to a line
+  status: 'ok' | 'approximate' | 'unresolved'   // set by re-anchoring, 'ok' when placed by hand
 }
 ```
 
-Reading order within a document is `(pageIndex ascending, pageHeight minus y ascending)`. Across documents there is no single order; each document is ordered independently.
+An anchor points at a specific document version. When the document's current version changes, re-anchoring (5.4) rewrites anchors to the new version and sets their status. The viewer shows anchors for the version being viewed, so an older version still shows where things were.
+
+Reading order within a document version is `(pageIndex ascending, pageHeight minus y ascending)`. Across documents there is no single order; each document is ordered independently.
 
 ### 4.5 Script structure
 
 - **ScriptItem**: id, show, parent (null for acts), kind (`act`, `scene`, `song`), number (text, e.g. "1", "2a"), title, sort order.
-- **ScriptItemAnchor**: script item, document, pageIndex, y. One per document the item appears in. Position-only, no x.
+- **ScriptItemAnchor**: script item, plus an Anchor value (document, version, page, y, optional text, status). One per document the item appears in. The text field is captured from the heading line when the anchor is placed by snapping, so song and scene starts survive revisions too.
 
 Scenes and songs are the columns of the mic plot and the units of the breakdown. Acts are containers. Resolving a position P in a document to a script item: the scene or song with the greatest start anchor less than or equal to P in that document. If none, P has no item.
 
@@ -266,11 +272,33 @@ Everyone works on the same script. Each department is a layer, and every user al
 - **Print and export**: every export takes a layer selection. The SM prints all layers as the calling script; a lighting designer prints only LX; a clean copy prints none.
 - **Numbering**: numbers are unique per department, never across layers. LX 10 and TM 10 coexist.
 
+### 4.12 Version control
+
+Version control is four features on one foundation. The foundation is the change log; the others read from it or mark points in it.
+
+**ChangeLog**: sequence (per show, monotonic), show, user, client timestamp (when the edit was made, which may be offline), server timestamp (when it arrived), batch id (one sync upload), table, row id, op (`insert`, `update`, `delete`), before (JSON of the touched columns), after (JSON of the touched columns). Append-only, written only by the API write path, never synced to clients. Read through `GET /shows/:id/history` with filters for row, table, layer, user, and time range. Offline, history is unavailable and the UI says so.
+
+Views on the change log:
+
+- **Row history**: on any cue, annotation, person, mic, or assignment, the list of changes with who, when, and the before and after values. "Revert this change" issues an ordinary write restoring the before values, so the revert is itself logged and revertable. Reverting requires edit rights on that row's layer or table.
+- **Activity feed**: the show's change log newest first, grouped by batch and user ("Jayden moved 3 TM cues and relabelled 1, 14:02"), filterable by layer. This is how an SM sees what every department did since they last looked.
+- **Personal undo** is separate: an in-session stack of the user's own edits, applied as new writes. It never undoes someone else's change.
+
+**Snapshot**: id, show, binder version (monotonic integer per show, shown as "Binder v12"), name (null for automatic), kind (`manual`, `auto`, `pre-export`, `pre-reanchor`, `pre-restore`), created by, created at, change log sequence at capture, state blob key. The state blob is a JSON materialisation of every show-scoped row at that moment, which is small (a few thousand rows) and makes compare and restore independent of replaying the log.
+
+- **Capture**: manual from the binder menu with a name; automatic once a day when anything changed, before every export, before every re-anchoring, and before every restore. Automatic snapshots older than ninety days are thinned to one per week, except `pre-export`, which are kept while their export record exists.
+- **Compare**: any two snapshots, or a snapshot and now. The diff is by row id across every table: added, removed, changed (with the changed columns). Presented per layer and per table, with cues shown as a cue list diff ("TM 14.50 added", "LX 23 moved p.9 to p.10", "Mic 4 reassigned Mo to Kattie from Song 6").
+- **Restore**: owner only. Computes the writes that turn the current state into the snapshot and applies them through the normal write path in one batch, after taking a `pre-restore` snapshot. Nothing is deleted from history; restore is a forward change. Documents and their versions are not part of a snapshot; only the anchors are, so a restore can point anchors at an older document version that still exists.
+
+**ExportRecord**: id, show, kind (`tmix`, `pdf-script`, `pdf-sheet`, `csv`), filename, cast variant (nullable), layer selection (JSON), snapshot id (the `pre-export` snapshot taken for it), binder version, created by, created at, file blob key, changelog (JSON summary of the snapshot diff against the previous export record of the same kind and variant). Exports are generated on the client; the record and the file upload when online, queued like any other write. The exports panel lists records newest first with "download again" and "what changed since this". The footer of every PDF export and the `designer` field of every `.tmix` carry the binder version and date, so paper and console both say which version they are.
+
+**Script revisions** are in 5.4.
+
 ## 5. Script engine
 
 ### 5.1 Upload and processing
 
-1. `POST /shows/:id/documents` accepts a PDF up to 200 MB, checked by magic bytes. The API stores the original and creates the Document row as `queued`.
+1. `POST /shows/:id/documents` creates a Document and its first DocumentVersion; `POST /shows/:id/documents/:docId/versions` adds a version to an existing document. Both accept a PDF up to 200 MB, checked by magic bytes, store the original, and create the version row as `queued`.
 2. A document job produces the searchable PDF. With OCR mode `auto` it runs OCRmyPDF with `--redo-ocr --output-type pdf --optimize 0`, which leaves existing vector text untouched, OCRs only image regions, and writes an invisible text layer positioned over the scan. The result looks identical to the upload and is searchable in any PDF reader. With OCR mode `never`, or when the document has no images at all, the searchable PDF is a copy of the original. The job runs with a per-document timeout of thirty minutes and a concurrency of one per container.
 3. Page rows are created from the searchable PDF with dimensions from pdfjs-dist. One page job each then extracts words with pdfjs-dist `getTextContent`, converts items to word boxes in user space, groups lines by vertical overlap sorted left to right, and renders the thumbnail at 160 px wide with poppler.
 4. Processing status rolls up to the Document. Failure on a page sets that page to `failed`; the document still becomes `ready`. Failure of the OCRmyPDF step falls back to a plain copy as the searchable PDF, marks every page OCR applied false, and surfaces a retry action.
@@ -290,7 +318,23 @@ Scores go through the same path. Their text layer will be noisy around notation 
 
 ### 5.3 Print export
 
-pdf-lib in the browser loads the cached searchable PDF and stamps markers, labels, and annotations for the chosen departments onto each page, then downloads. Page size is unchanged and the invisible text layer survives, so the printed script is searchable in Preview or Acrobat. The same path produces a "clean" copy with no markup, which is how a scanned script becomes a searchable PDF for use anywhere.
+pdf-lib in the browser loads the cached searchable PDF and stamps markers, labels, and annotations for the chosen departments onto each page, then downloads. Page size is unchanged and the invisible text layer survives, so the printed script is searchable in Preview or Acrobat. Every page gets a footer with the show title, document and version label, layer selection, binder version, and date. The same path produces a "clean" copy with no markup, which is how a scanned script becomes a searchable PDF for use anywhere. Each export creates an ExportRecord (4.12).
+
+### 5.4 Script revisions and re-anchoring
+
+Uploading a new version of a document runs, after processing finishes:
+
+1. Take a `pre-reanchor` snapshot.
+2. For every anchor on the old version (cues, annotations, script item anchors), find its place in the new version:
+   - With a text anchor: search the new version's word layers for the quote, exact match first, then a normalised match (case, whitespace, punctuation, hyphenation at line ends ignored). One match: anchor there, status `ok` for exact, `approximate` for normalised. Several matches: pick the one closest in relative document position to the old anchor, status `approximate`. None: step 3.
+   - Without a text anchor, or when text matching found nothing: if the page counts are equal, keep page and position, status `approximate`. Otherwise keep the old page and position on the new version if the page exists, status `unresolved`; if it does not exist, place on the last page, status `unresolved`.
+   - x is preserved relative to the matched line's left edge for text matches, and unchanged otherwise.
+3. Write the new anchors through the normal write path, so the change log holds the old anchors and the whole run can be reverted as one batch.
+4. Switch the document's current version. Open the review list.
+
+The review list shows every anchor whose status is not `ok`, grouped by layer, with the old page thumbnail and the new one side by side and the old quote highlighted where it was found or where it was expected. Each item has "accept", "move" (drag on the page), and "revert to old version". Accepting sets status `ok`. The list stays until empty and the document header shows a count of unreviewed anchors.
+
+The version switcher in the viewer shows any version read-only with its anchors as they were. "Compare versions" shows the two versions' pages side by side with a line-level text diff computed from the word layers, so cut and added lines are visible without reading the whole script. Re-anchoring never deletes a cue; a cue that cannot be placed is `unresolved`, not lost.
 
 ## 6. Mic plot, DCA allocation, and TheatreMix
 
@@ -327,7 +371,7 @@ The output is written into the cue's payload `dca` and `warnings`. The allocator
 
 ### 6.4 .tmix writer
 
-Runs in the browser with sql.js, and in Node for tests and a CLI. Produces one file per selected cast variant, named `{show title} - {variant}.tmix`.
+Runs in the browser with sql.js, and in Node for tests and a CLI. Produces one file per selected cast variant, named `{show title} - {variant} - v{binder version}.tmix`, and creates an ExportRecord per file (4.12). The `designer` config value is suffixed with the binder version and date so the console shows which version it is running.
 
 Schema. The DDL is not hand-written. It is captured verbatim from an app-generated TheatreMix 3.4.1 file into a constant in packages/core, including the `skip` column, the twelve DCA column pairs, the two unique indexes, and the malformed-looking `ensembles` column type (`TEXT\`channelProfiles\` TEXT`) that the app itself writes. A test asserts the generated file's `sqlite_master.sql` rows equal the captured strings.
 
@@ -364,11 +408,15 @@ Imports an existing file into a new or empty show: `config` to console config (t
 - **Offline**: the UI shows a persistent sync state (synced, pending with a count, offline). Exports work offline because they run on local data.
 - **Blob miss offline**: a page whose original is not cached shows a placeholder with a "needs connection" message rather than an error.
 - **Export validation**: blocked exports list every problem with a link to the offending cue or mic.
+- **Re-anchoring**: never fails as a whole. Each anchor ends `ok`, `approximate`, or `unresolved`, and the run is one revertable batch.
+- **Restore**: refused with a message if the snapshot references a document version that has since been deleted; everything else restores.
+- **History offline**: the panel says history needs a connection; personal undo still works.
 
 ## 8. Testing
 
 - **packages/core** (Vitest): numbering, display formatting, and block renumbering; anchor ordering; script item resolution; mic plot derivation with overrides; the allocator (stickiness, priority, overflow grouping, pins, exclusions, disjointness, label suggestion); .tmix DDL equality against the captured schema; the validator against the malformed cases in test_tmix_tool.py (missing position 0, duplicate cues, point out of range, uncontrolled channel, bad membership text, missing line check); reader on both schema variants; reader and writer round-trips on private fixtures when present and on synthetic fixtures always.
-- **apps/api** (Vitest with a throwaway Postgres in Docker): auth, membership and department scope on the sync write path, upload validation, page processing on the public fixtures, blob access control.
+- **packages/core, version control**: the re-anchoring matcher on the public libretto against an edited copy (lines cut, lines added, a page inserted, a page removed, a scan with different margins); snapshot diff and restore-write computation; export changelog summaries.
+- **apps/api** (Vitest with a throwaway Postgres in Docker): auth, membership and department scope on the sync write path, change log completeness (every accepted op produces exactly one row with correct before and after), upload validation, page processing on the public fixtures, blob access control, snapshot capture and thinning.
 - **apps/web** (Vitest and Testing Library for components; Playwright end to end): upload a fixture, wait for ready, search a word, place a cue snapped to text, export the marked PDF, generate a .tmix and assert its rows with sql.js.
 - **Manual gate per milestone**: Jayden opens a generated .tmix in TheatreMix 3.4.1 and runs cues.
 
@@ -378,11 +426,11 @@ Fixtures: `fixtures/public/` holds a Gilbert and Sullivan libretto rendered to a
 
 Each milestone gets its own implementation plan and is usable on its own.
 
-- **M0 Foundation**: monorepo, CI, Coolify deploy, auth, organisations, shows, memberships, the sync spike and its go or no-go, document upload and processing, viewer with search and thumbnails, public fixtures.
-- **M1 Script markup**: departments, cues, annotations, overlay editing, snapping and text anchors, cue list views, renumbering, layer visibility, print export, offline prefetch, presence.
-- **M2 Show graph**: script items and anchors, people, characters, cast variants, casting, appearances, mics, assignments, mic plot with overrides, swap and handover sheet, book of faces, contact sheet, breakdown, CSV exports.
-- **M3 TheatreMix**: allocator, TM cue payload editing, .tmix writer with console presets, per-variant export, .tmix reader, private fixture round-trips, manual gate in TheatreMix.
-- **M4 Polish and exports**: cue sheets and run sheets per department, share links, duplicate show, revision re-anchoring, OSC go, Eos and QLab export as scope allows.
+- **M0 Foundation**: monorepo, CI, Coolify deploy, auth, organisations, shows, memberships, the sync spike and its go or no-go, the write path with change log, document and version upload and processing, viewer with search and thumbnails, public fixtures.
+- **M1 Script markup**: departments, layers, cues, annotations, overlay editing, snapping and text anchors, cue list views, renumbering, print export with export records, offline prefetch, presence, row history and activity feed with revert, document versions with re-anchoring, review list, and compare.
+- **M2 Show graph**: script items and anchors, people, characters, cast variants, casting, appearances, mics, assignments, mic plot with overrides, swap and handover sheet, book of faces, contact sheet, breakdown, CSV exports, snapshots with compare and restore.
+- **M3 TheatreMix**: allocator, TM cue payload editing, .tmix writer with console presets, per-variant export with export records and changelogs, .tmix reader, private fixture round-trips, manual gate in TheatreMix.
+- **M4 Polish and exports**: cue sheets and run sheets per department, share links, duplicate show, OSC go, Eos and QLab export as scope allows.
 
 ## 10. Open items resolved during design
 
@@ -402,8 +450,8 @@ Each milestone gets its own implementation plan and is usable on its own.
 
 Version one makes Binder the home of the script, the cues, and the structured show graph. The longer goal is that every piece of production documentation lives in the binder and draws on that graph: not only show-running paperwork but production plans, floorplans, CAD and rigging plans, equipment lists, and design documents. The division of labour with RVLT Flow is: **you build the whole show out in Binder, then Flow does the crewing and the equipment logistics.** In rough order:
 
-- **Pages**: rich-text documents inside a binder (rehearsal reports, production meeting notes, design briefs, risk assessments, production plans) with Google Docs-style simultaneous editing on a Yjs CRDT, and live blocks that embed show graph views (the cast list, a scene's mic plot column, a department's cue list, the equipment list) so a document never goes stale.
-- **Files**: any attachment, not only PDFs (ground plans, lighting plots, CAD exports, Vectorworks and AutoCAD files, costume renders, audio, spreadsheets), stored and shared with the same roles, with PDF and image previews and a per-file version history. Plans get the same annotation overlay as scripts, so a floorplan can carry notes and stamps.
+- **Pages**: rich-text documents inside a binder (rehearsal reports, production meeting notes, design briefs, risk assessments, production plans) with Google Docs-style simultaneous editing on a Yjs CRDT, named versions from the CRDT history, and live blocks that embed show graph views (the cast list, a scene's mic plot column, a department's cue list, the equipment list) so a document never goes stale.
+- **Files**: any attachment, not only PDFs (ground plans, lighting plots, CAD exports, Vectorworks and AutoCAD files, costume renders, audio, spreadsheets), stored and shared with the same roles, with PDF and image previews, and the same Document and DocumentVersion model as scripts so every plan has a version history and annotations re-anchor across revisions. Plans get the same annotation overlay as scripts, so a floorplan can carry notes and stamps.
 - **Equipment list**: a per-department list of what the show needs (mics, packs, consoles, fixtures, playback, comms), built from the show graph where possible (the Mic table already is one) and by hand otherwise. This is the handoff artefact to Flow.
 - **RVLT Flow link**: a show references a Flow job. Binder pushes the equipment list to Flow as the job's line items and reads back availability, conflicts, and confirmed crew. Dates, venue, and client live in Flow and are read into Binder. The boundary is deliberate: Binder never holds stock, prices, or invoices, and Flow never holds cues, scripts, or the show graph.
 - **Schedule**: rehearsal and performance calendar, calls, and which cast variant plays each performance, which also selects the `.tmix` to use that night. Crew calls come from Flow when linked.
