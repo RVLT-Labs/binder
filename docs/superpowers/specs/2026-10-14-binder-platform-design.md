@@ -1,14 +1,18 @@
-# cueapp platform design
+# Binder platform design
 
 Date: 2026-10-14
 Status: approved in conversation, awaiting written review
 Author: Jayden Nawotka with Claude
 
+## 0. Name
+
+The product is **Binder**, by RVLT, a sibling of RVLT Flow. The name is the stage manager's binder: the ring binder of paperwork that holds the whole show. In the UI, each show's workspace is called its binder. The repository is `binder`, packages are scoped `@binder/*`, and the working directory at `/Users/jayden/cueapp` should be renamed to `/Users/jayden/binder` before M0 starts.
+
 ## 1. Purpose
 
-cueapp is a web platform for musical theatre production teams. It imports script and score PDFs, text-based or scanned, lets people annotate them and place cues, manages cues per department, and holds all show documentation as views over a single show graph. Its first integration target is generating TheatreMix show files from the mic plot and the cue points marked on the script.
+Binder is a web platform for musical theatre production teams. It imports script and score PDFs, text-based or scanned, lets people annotate them and place cues, manages cues per department, and holds all show documentation as views over a single show graph. Its first integration target is generating TheatreMix show files from the mic plot and the cue points marked on the script.
 
-The reference competitor is Cuelist (thecuelist.com). Cuelist places cues on a PDF and shares them in real time, but has no OCR, treats cues as drawings rather than data, and holds nothing beyond the script. cueapp keeps Cuelist's strengths (PDF-centred, real-time, per-department layers, print export) and adds the show graph underneath.
+The reference competitor is Cuelist (thecuelist.com). Cuelist places cues on a PDF and shares them in real time, but has no OCR, treats cues as drawings rather than data, and holds nothing beyond the script. Binder keeps Cuelist's strengths (PDF-centred, real-time, per-department layers, print export) and adds the show graph underneath.
 
 ### 1.1 Primary users
 
@@ -16,10 +20,11 @@ Sound (designer, A1, A2) and lighting are the version one users. Stage managemen
 
 ### 1.2 Success criteria for version one
 
-- A real show is run from cueapp: script marked up, cues placed, mic plot built, and the TheatreMix file generated from it rather than by hand.
+- A real show is run from Binder: script marked up, cues placed, mic plot built, and the TheatreMix file generated from it rather than by hand.
 - Editing works in a venue with no internet and syncs when a connection returns.
-- Two people can work on the same show at once without overwriting each other.
-- A scanned script is searchable and cues snap to its text.
+- Two people can work on the same show at once without overwriting each other, and each can see what the other is doing: who is in the binder, which page they are on, which cue they have selected, and their edits as they land.
+- A scanned script is searchable and cues snap to its text, and the PDF itself carries the extracted text so it is searchable outside Binder too.
+- Binder is where a production's documentation lives, not one tool among several.
 - The current workflow (Cuelist markup, print, hand-build one .tmix per cast variant) is replaced end to end.
 
 ### 1.3 Constraints
@@ -33,7 +38,7 @@ Sound (designer, A1, A2) and lighting are the version one users. Stage managemen
 
 - `/Users/jayden/theatremix-skills/`: a working skill with a `.tmix` validator and seed-clone builder, plus references on Jayden's cue style, mic and DCA practice, the verified file format, and scanned score handling. The rules in sections 4.8, 6.3, and 6.4 come from it.
 - `/Users/jayden/hermes-backup-2026-09-06-132644/theatremix_analysis/`: the original schema reverse-engineering.
-- `/Users/jayden/Downloads/35mm-draft-v1/`: an end-to-end generated draft (show.json, cue sheet, mic allocation, .tmix) that is the shape of what cueapp automates.
+- `/Users/jayden/Downloads/35mm-draft-v1/`: an end-to-end generated draft (show.json, cue sheet, mic allocation, .tmix) that is the shape of what Binder automates.
 
 ## 2. Scope
 
@@ -50,14 +55,16 @@ Sound (designer, A1, A2) and lighting are the version one users. Stage managemen
 - TheatreMix: automatic DCA allocation for TM cues, .tmix writer with one file per cast variant, .tmix reader to bootstrap shows from existing files.
 - Exports: PDF (marked script, cue sheets), CSV (cue lists, mic plot), .tmix.
 - Offline: all reads and writes work without a connection; a show can be made available offline on demand.
-- Real-time: changes from other users appear without reload.
+- Real-time: changes from other users appear within a second or two without reload, merged at field level.
+- Presence: who is in the binder, which document and page they are viewing, and which cue or annotation they have selected.
 
 ### 2.2 Deferred, with the model already supporting them
 
 - Freehand ink with pressure.
 - ETC Eos and QLab cue list export, OSC go to TheatreMix.
 - Script revision re-anchoring (anchors capture text from day one; the re-link operation comes later).
-- Presence indicators and share links.
+- Share links.
+- Pages: collaborative rich-text documents inside a binder (see section 11).
 - Native iPad client.
 - Positions, FX, snippets, and channel levels in .tmix output.
 - Server-side full-text search.
@@ -81,8 +88,8 @@ packages/core must remain free of Node-only and browser-only dependencies so it 
 ### 3.2 Data flow
 
 1. The browser holds a SQLite database (wa-sqlite in a worker, OPFS storage) mirrored from Postgres by PowerSync. All reads come from it. All writes go to it first.
-2. PowerSync queues local writes and uploads them to `POST /sync/upload` as batched create, update, and delete operations.
-3. The API validates each operation against the user's membership and department scope, applies accepted operations to Postgres in one transaction, and returns the list of rejected operations with reasons.
+2. PowerSync queues local writes and uploads them to `POST /sync/upload` as batched create, update, and delete operations. An update carries only the columns that changed.
+3. The API validates each operation against the user's membership and department scope, applies accepted operations to Postgres in one transaction as column-level patches, and returns the list of rejected operations with reasons. Because patches are per column, two people editing different fields of the same cue at the same time both win.
 4. The client discards rejected operations locally and shows a notice. Rejections are expected to be rare (a viewer editing, a revoked membership) and never block the queue.
 5. PowerSync streams Postgres changes back to every connected client whose sync rules include the affected rows.
 
@@ -111,11 +118,21 @@ pg-boss on the same Postgres runs document processing jobs inside the API contai
 
 ### 3.7 Deploy
 
-Coolify runs four services and one volume: Postgres, the PowerSync service (open edition, Postgres bucket storage), the API container (which includes the job worker and has poppler and tesseract installed), the static web app behind a reverse proxy, and a disk volume for blobs mounted into the API container. Backups are a nightly Postgres dump plus the blob volume.
+Coolify runs four services and one volume: Postgres, the PowerSync service (open edition, Postgres bucket storage), the API container (which includes the job worker, the presence websocket, and has poppler, tesseract, and OCRmyPDF installed), the static web app behind a reverse proxy, and a disk volume for blobs mounted into the API container. Backups are a nightly Postgres dump plus the blob volume.
 
 ### 3.8 The sync spike
 
 The first task of milestone M0 is a time-boxed spike, five working days at most: PowerSync service on Coolify, a two-table schema, a browser client creating rows offline and seeing them on a second browser online. Exit criteria: offline create and update, sync on reconnect, server-side rejection surfacing in the client, and a Swift SDK smoke test against the same service. If the spike fails, the fallback is ElectricSQL for the read path with TanStack DB on the client, keeping the same API write path. The decision is recorded in docs/superpowers/specs as an addendum.
+
+### 3.9 Real-time collaboration
+
+The target is Google Docs-style: several people in one binder, each seeing the others' edits and positions as they happen, with nobody's work lost. Three mechanisms cover it.
+
+**Data changes** travel through the sync path in 3.2. The target is under two seconds from one client's edit to another's screen when both are online. Every row is its own unit, and updates are column-level patches, so concurrent edits collide only when two people change the same field of the same row within the same second. That case resolves last-writer-wins and the loser sees the winning value appear, which is the behaviour of a shared spreadsheet.
+
+**Presence** does not belong in the database. The API hosts a websocket per show (`/shows/:id/presence`) carrying ephemeral state: user, document, page, selected cue or annotation, and a colour. Clients send on change and every five seconds; the server fans out to the show and drops a user after fifteen seconds of silence. The viewer shows avatars on the thumbnail rail and the page, and a coloured outline on a cue someone else has selected. Presence is best-effort and silently absent offline.
+
+**Long-form text** (cue notes, person notes) is a plain column and merges at field level like everything else. Collaborative character-level editing of long documents is the job of the Pages module in section 11, which uses a text CRDT (Yjs) over the same websocket with updates persisted in Postgres. Binder's data model keeps structured show data and long-form text separate so each gets the right merge semantics.
 
 ## 4. Data model
 
@@ -148,12 +165,14 @@ A new show is seeded with LX, SND, TM, VID, SM, STG, FLY. Departments can be add
 
 ### 4.3 Documents and pages
 
-- **Document**: id, show, kind (`libretto`, `score`, `blocking`, `other`), title, version number, original blob key, page count, sort order, OCR mode (`auto`, `always`, `never`, default `auto`), snap to text (boolean, default true for `libretto` and `other`, false for `score` and `blocking`), processing status (`queued`, `processing`, `ready`, `failed`).
+- **Document**: id, show, kind (`libretto`, `score`, `blocking`, `other`), title, version number, original blob key, searchable blob key (the working PDF with an invisible text layer added, see 5.1), page count, sort order, OCR mode (`auto`, `never`, default `auto`), snap to text (boolean, default true for `libretto` and `other`, false for `score` and `blocking`), processing status (`queued`, `processing`, `ready`, `failed`).
+
+The original upload is kept byte-for-byte and never served to the viewer. Everything (viewing, search, snapping, print export) uses the searchable PDF, which looks identical to the scan.
 
 OCR on music notation produces mostly junk, so on score documents the word layer is for search and discovery only. Snapping defaults off there and cues anchor by position.
-- **Page**: id, document, index (zero-based), width and height in PDF points, rotation, thumbnail blob key, word layer blob key, word source (`embedded`, `ocr`, `merged`, `none`), OCR status.
+- **Page**: id, document, index (zero-based), width and height in PDF points, rotation, thumbnail blob key, word layer blob key, OCR applied (boolean), status (`queued`, `ready`, `failed`).
 
-The word layer blob is JSON: `{ source, words: [{ t, x, y, w, h, conf }], lines: [[wordIndex, ...]] }` with boxes in PDF user space (points, origin bottom-left). This shape is identical whether the words came from embedded text or OCR, so nothing above the pipeline distinguishes scanned pages.
+The word layer blob is JSON: `{ words: [{ t, x, y, w, h }], lines: [[wordIndex, ...]] }` with boxes in PDF user space (points, origin bottom-left). It is always extracted from the searchable PDF's text layer, so nothing above the pipeline distinguishes scanned pages from text pages.
 
 ### 4.4 Anchors
 
@@ -239,20 +258,18 @@ The channel list is derived from the Mic table, not stored.
 
 ### 5.1 Upload and processing
 
-1. `POST /shows/:id/documents` accepts a PDF up to 200 MB, checked by magic bytes. The API stores the original and creates Document and Page rows with dimensions read by pdfjs-dist.
-2. One job per page decides the word source. With OCR mode `auto`, a page is OCR'd when it has an image covering more than half the page area, or fewer than 200 non-whitespace characters of embedded text. Otherwise embedded text is used alone. `always` and `never` override the heuristic.
-3. Embedded words come from pdfjs-dist `getTextContent` in Node, converted to word boxes in user space.
-4. OCR rasterises the page with poppler at 300 dpi and runs tesseract with TSV output. Pixel boxes are scaled by 72/300 and flipped to bottom-left origin.
-5. When both exist they merge: OCR words whose box overlaps an embedded word box by more than half are dropped. Source is recorded as `merged`.
-6. Lines are grouped from words by vertical overlap, sorted left to right.
-7. The thumbnail is rendered at 160 px wide.
-8. Processing status rolls up to the Document. Failure on a page sets that page's OCR status to `failed`; the document still becomes `ready`.
+1. `POST /shows/:id/documents` accepts a PDF up to 200 MB, checked by magic bytes. The API stores the original and creates the Document row as `queued`.
+2. A document job produces the searchable PDF. With OCR mode `auto` it runs OCRmyPDF with `--redo-ocr --output-type pdf --optimize 0`, which leaves existing vector text untouched, OCRs only image regions, and writes an invisible text layer positioned over the scan. The result looks identical to the upload and is searchable in any PDF reader. With OCR mode `never`, or when the document has no images at all, the searchable PDF is a copy of the original. The job runs with a per-document timeout of thirty minutes and a concurrency of one per container.
+3. Page rows are created from the searchable PDF with dimensions from pdfjs-dist. One page job each then extracts words with pdfjs-dist `getTextContent`, converts items to word boxes in user space, groups lines by vertical overlap sorted left to right, and renders the thumbnail at 160 px wide with poppler.
+4. Processing status rolls up to the Document. Failure on a page sets that page to `failed`; the document still becomes `ready`. Failure of the OCRmyPDF step falls back to a plain copy as the searchable PDF, marks every page OCR applied false, and surfaces a retry action.
 
-Cuelist-printed scans (an image per page plus Cuelist's header, footer, and cue labels as embedded text) take the OCR path with merge. The embedded cue labels remain searchable.
+Cuelist-printed scans (an image per page plus Cuelist's header, footer, and cue labels as embedded text) are the reason for `--redo-ocr` over `--skip-text`: the latter would skip those pages entirely because they contain a little text. With `--redo-ocr` the header text is kept and the body is OCR'd.
+
+Scores go through the same path. Their text layer will be noisy around notation and useful around lyrics and titles, which is what search needs.
 
 ### 5.2 Viewer
 
-- Pages render client-side with PDF.js from the cached original, in a virtualised vertical list, with zoom from 50 to 400 percent and a thumbnail rail.
+- Pages render client-side with PDF.js from the cached searchable PDF, in a virtualised vertical list, with zoom from 50 to 400 percent and a thumbnail rail. Collaborators' avatars sit on the thumbnails of pages they are viewing.
 - Cues and annotations render as one SVG overlay per page in PDF user space, with a single transform per page. Hit testing and dragging happen in user space.
 - When snapping is on for the document, dropping a cue within 12 points of a text line snaps its y to the line and captures the text anchor (the nearest word and a quote of up to eight words). A toolbar toggle overrides the document default for the session. The quote doubles as the cue's trigger text on cue sheets.
 - Layer visibility toggles per department and personal layer, remembered per user in local storage.
@@ -261,7 +278,7 @@ Cuelist-printed scans (an image per page plus Cuelist's header, footer, and cue 
 
 ### 5.3 Print export
 
-pdf-lib in the browser loads the cached original and stamps markers, labels, and annotations for the chosen departments onto each page, then downloads. Page size is unchanged. The same path produces a "clean" copy with no markup.
+pdf-lib in the browser loads the cached searchable PDF and stamps markers, labels, and annotations for the chosen departments onto each page, then downloads. Page size is unchanged and the invisible text layer survives, so the printed script is searchable in Preview or Acrobat. The same path produces a "clean" copy with no markup, which is how a scanned script becomes a searchable PDF for use anywhere.
 
 ## 6. Mic plot, DCA allocation, and TheatreMix
 
@@ -350,12 +367,14 @@ Fixtures: `fixtures/public/` holds a Gilbert and Sullivan libretto rendered to a
 Each milestone gets its own implementation plan and is usable on its own.
 
 - **M0 Foundation**: monorepo, CI, Coolify deploy, auth, organisations, shows, memberships, the sync spike and its go or no-go, document upload and processing, viewer with search and thumbnails, public fixtures.
-- **M1 Script markup**: departments, cues, annotations, overlay editing, snapping and text anchors, cue list views, renumbering, layer visibility, print export, offline prefetch.
+- **M1 Script markup**: departments, cues, annotations, overlay editing, snapping and text anchors, cue list views, renumbering, layer visibility, print export, offline prefetch, presence.
 - **M2 Show graph**: script items and anchors, people, characters, cast variants, casting, appearances, mics, assignments, mic plot with overrides, swap and handover sheet, book of faces, contact sheet, breakdown, CSV exports.
 - **M3 TheatreMix**: allocator, TM cue payload editing, .tmix writer with console presets, per-variant export, .tmix reader, private fixture round-trips, manual gate in TheatreMix.
-- **M4 Polish and exports**: cue sheets and run sheets per department, presence, share links, duplicate show, revision re-anchoring, OSC go, Eos and QLab export as scope allows.
+- **M4 Polish and exports**: cue sheets and run sheets per department, share links, duplicate show, revision re-anchoring, OSC go, Eos and QLab export as scope allows.
 
 ## 10. Open items resolved during design
+
+- Name: Binder, by RVLT. Decided after the first draft of this spec.
 
 - Freehand ink: out of v1 by Jayden's choice.
 - Live TheatreMix control: secondary; file generation is primary.
@@ -365,3 +384,17 @@ Each milestone gets its own implementation plan and is usable on its own.
 - Position id 0 and the minimal config set: required by the confirmed 3.4.1 crash and the verified-opening builder in theatremix-skills.
 - ZIP delivery of .tmix files: a workaround for a different delivery channel, not needed in a browser download.
 - Music recognition (OMR) on scores: out of scope. Scores get OCR for search only and position-only cue anchoring.
+- Searchable scans: the OCR output is embedded in the working PDF as an invisible text layer (OCRmyPDF) rather than kept only as a sidecar, so the scan stays visually identical and the text travels with the file.
+
+## 11. Beyond version one: the documentation hub
+
+Version one makes Binder the home of the script, the cues, and the structured show graph. The longer goal is that every piece of production documentation lives in the binder and draws on that graph: not only show-running paperwork but production plans, floorplans, CAD and rigging plans, equipment lists, and design documents. The division of labour with RVLT Flow is: **you build the whole show out in Binder, then Flow does the crewing and the equipment logistics.** In rough order:
+
+- **Pages**: rich-text documents inside a binder (rehearsal reports, production meeting notes, design briefs, risk assessments, production plans) with Google Docs-style simultaneous editing on a Yjs CRDT, and live blocks that embed show graph views (the cast list, a scene's mic plot column, a department's cue list, the equipment list) so a document never goes stale.
+- **Files**: any attachment, not only PDFs (ground plans, lighting plots, CAD exports, Vectorworks and AutoCAD files, costume renders, audio, spreadsheets), stored and shared with the same roles, with PDF and image previews and a per-file version history. Plans get the same annotation overlay as scripts, so a floorplan can carry notes and stamps.
+- **Equipment list**: a per-department list of what the show needs (mics, packs, consoles, fixtures, playback, comms), built from the show graph where possible (the Mic table already is one) and by hand otherwise. This is the handoff artefact to Flow.
+- **RVLT Flow link**: a show references a Flow job. Binder pushes the equipment list to Flow as the job's line items and reads back availability, conflicts, and confirmed crew. Dates, venue, and client live in Flow and are read into Binder. The boundary is deliberate: Binder never holds stock, prices, or invoices, and Flow never holds cues, scripts, or the show graph.
+- **Schedule**: rehearsal and performance calendar, calls, and which cast variant plays each performance, which also selects the `.tmix` to use that night. Crew calls come from Flow when linked.
+- **Reports**: rehearsal and performance report templates generated from the schedule and filled in as Pages.
+- **Native iPad client** on the same backend, with pencil annotation.
+- **Templates**: a show template (departments, stamp set, console config, page templates, standard equipment list) so a new binder starts populated.
