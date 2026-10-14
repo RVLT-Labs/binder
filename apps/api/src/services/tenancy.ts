@@ -107,9 +107,30 @@ export async function createShow(
         updatedBy: actor.userId,
       })
       .returning()
-    await tx
+    const [ownerMembership] = await tx
       .insert(showMemberships)
-      .values({ id: newId(), showId: show.id, userId: actor.userId, role: 'owner' })
+      .values({
+        id: newId(),
+        showId: show.id,
+        userId: actor.userId,
+        role: 'owner',
+        updatedBy: actor.userId,
+      })
+      .returning()
+    await logChange(tx, {
+      showId: show.id,
+      actor,
+      batchId,
+      table: 'show_memberships',
+      rowId: ownerMembership.id,
+      op: 'insert',
+      before: null,
+      after: {
+        userId: ownerMembership.userId,
+        role: ownerMembership.role,
+        departments: ownerMembership.departments,
+      },
+    })
     await logChange(tx, {
       showId: show.id,
       actor,
@@ -224,6 +245,7 @@ export async function addShowMember(
         userId: target.id,
         role: input.role,
         departments,
+        updatedBy: actor.userId,
       })
       .returning()
     await logChange(tx, {

@@ -15,6 +15,13 @@
       "when": 1791981541647,
       "tag": "0001_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791982068931,
+      "tag": "0002_tricky_shiver_man",
+      "breakpoints": true
     }
   ]
 }

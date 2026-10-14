@@ -1,4 +1,4 @@
-import { changeLog } from '@binder/db'
+import { changeLog, showMemberships } from '@binder/db'
 import type { Actor } from '@binder/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, test } from 'vitest'
@@ -88,6 +88,27 @@ describe('tenancy services', () => {
     ).toBe('not_found')
   })
 
+  test('createShow logs the show and the owner membership in one batch', async () => {
+    const { db, owner, show } = await setup()
+    const rows = await db
+      .select()
+      .from(changeLog)
+      .where(eq(changeLog.showId, show.id))
+      .orderBy(changeLog.seq)
+    const showRow = rows.find((r) => r.tableName === 'shows')
+    const memRow = rows.find(
+      (r) => r.tableName === 'show_memberships' && r.after?.userId === owner.id,
+    )
+    if (!showRow || !memRow) throw new Error('missing change log rows')
+    expect(memRow).toMatchObject({ tableName: 'show_memberships', op: 'insert', before: null })
+    expect(memRow.after).toMatchObject({ userId: owner.id, role: 'owner', departments: ['*'] })
+    expect(memRow.batchId).toBe(showRow.batchId)
+    expect(showRow.batchId).toBeTruthy()
+    const [m] = await db.select().from(showMemberships).where(eq(showMemberships.userId, owner.id))
+    expect(m.updatedBy).toBe(owner.id)
+    expect(m.updatedAt).toBeInstanceOf(Date)
+  })
+
   test('createShow logs an insert change', async () => {
     const { db, show } = await setup()
     const rows = await db.select().from(changeLog).where(eq(changeLog.rowId, show.id))
@@ -174,6 +195,7 @@ describe('tenancy services', () => {
       role: 'editor',
     })
     expect(m.departments).toEqual(['*'])
+    expect(m.updatedBy).toBe(owner.id)
     const [row] = await deps.db.select().from(changeLog).where(eq(changeLog.rowId, m.id))
     expect(row).toMatchObject({ tableName: 'show_memberships', op: 'insert', showId: show.id })
   })
@@ -276,6 +298,27 @@ describe('tenancy HTTP', () => {
     )
     expect(res.status).toBe(403)
     expect(((await res.json()) as { error: string }).error).toBe('forbidden')
+  })
+
+  test('every tenancy route rejects a missing session with 401', async () => {
+    const { app } = await setup()
+    const routes = [
+      ['GET', '/api/me/orgs'],
+      ['POST', '/api/orgs'],
+      ['GET', '/api/me/shows'],
+      ['POST', '/api/orgs/o1/shows'],
+      ['PATCH', '/api/shows/s1'],
+      ['POST', '/api/shows/s1/members'],
+    ] as const
+    for (const [method, path] of routes) {
+      const res = await app.request(path, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: method === 'GET' ? undefined : '{}',
+      })
+      expect(res.status, `${method} ${path}`).toBe(401)
+      expect(((await res.json()) as { error: string }).error).toBe('unauthenticated')
+    }
   })
 
   test('routes require a session', async () => {

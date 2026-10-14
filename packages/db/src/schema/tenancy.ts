@@ -50,6 +50,11 @@ export const showMemberships = pgTable(
     role: text('role').$type<Role>().notNull(),
     departments: jsonb('departments').$type<string[]>().notNull().default(['*']),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    updatedBy: text('updated_by').notNull().default('system'),
   },
   (t) => [unique('show_memberships_show_user_unique').on(t.showId, t.userId)],
 )
