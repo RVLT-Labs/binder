@@ -1,0 +1,26 @@
+import type { ManifestOptions } from 'vite-plugin-pwa'
+
+/** Linked from index.html; iOS ignores manifest icons and uses this one for the home screen. */
+export const APPLE_TOUCH_ICON = '/apple-touch-icon.png'
+
+/**
+ * The web app manifest (spec 3.1: an installable PWA; the iPad is a target). vite.config.ts hands it
+ * to vite-plugin-pwa, which writes manifest.webmanifest and links it. Colours are styles.css's: the
+ * page background (#fafafa) while launching and the header (#fff) for the browser chrome. The icons in
+ * public/ are a plain B monogram, safe for a maskable crop.
+ */
+export const webManifest = {
+  name: 'Binder',
+  short_name: 'Binder',
+  description: 'Show binders for theatre: scripts, scores and cues, online and offline.',
+  start_url: '/',
+  scope: '/',
+  display: 'standalone',
+  background_color: '#fafafa',
+  theme_color: '#fff',
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+  ],
+} satisfies Partial<ManifestOptions>

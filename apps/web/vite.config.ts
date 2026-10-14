@@ -5,6 +5,7 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { webManifest } from './src/manifest'
 
 // The API is same-origin through this proxy, so Better Auth's session cookie is first-party.
 // PowerSync is reached cross-origin with a bearer token from GET /api/sync/token.
@@ -91,13 +92,16 @@ function pdfjsAssets(): Plugin {
  * the PDF.js worker and everything under /pdfjs/ (fonts, CMaps and decoders a scan may need), and
  * answers navigations with index.html. Blobs go to the same Cache API cache fetchBlob uses
  * ('blobs-v1'), cache first, so thumbnails read by <img> work offline too. The API is never cached.
- * Registration is manual (src/pwa.ts) and updates wait until the user accepts them.
+ * Registration is manual (src/pwa.ts) and updates wait until the user accepts them. The web app
+ * manifest (src/manifest.ts) makes the app installable.
  */
 function offlineShell(): Plugin[] {
   return VitePWA({
     registerType: 'prompt',
     injectRegister: false,
-    manifest: false,
+    manifest: webManifest,
+    // The icons and manifest are precached with the shell, so an installed app opens offline.
+    includeAssets: ['apple-touch-icon.png'],
     workbox: {
       globPatterns: ['**/*.{html,js,mjs,css,wasm}', 'pdfjs/**/*'],
       maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
