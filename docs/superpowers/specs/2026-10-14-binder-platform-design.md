@@ -504,6 +504,14 @@ Each milestone gets its own implementation plan and is usable on its own.
 - Music recognition (OMR) on scores: out of scope. Scores get OCR for search only and position-only cue anchoring.
 - Searchable scans: the OCR output is embedded in the working PDF as an invisible text layer (OCRmyPDF) rather than kept only as a sidecar, so the scan stays visually identical and the text travels with the file.
 
+### 11.1 M0 implementation notes
+
+Recorded after the M0 foundation build, where the implementation differs from the text above.
+
+- Search scope (5.2): in M0, search runs over the word layers of one document version at a time, the one open in the viewer. Search across every document in the show comes later.
+- Retry actions (5.1 and 8): the action that re-queues a failed page, or retries OCR after a fallback, is not built in M0. It is planned for M1 or M2. Until then a failed page can only be recovered by uploading the document again.
+- Word extraction (5.1): page dimensions and words come from poppler (`pdfinfo` and `pdftotext -bbox-layout`), not pdfjs-dist. The coordinates are converted into the same displayed page space (PDF points, origin bottom-left, after `/Rotate`), so the result is equivalent.
+
 ## 12. Beyond version one: the documentation hub
 
 Version one makes Binder the home of the script, the cues, and the structured show graph. The longer goal is that every piece of production documentation lives in the binder and draws on that graph: not only show-running paperwork but production plans, floorplans, CAD and rigging plans, equipment lists, and design documents. The division of labour with RVLT Flow is: **you build the whole show out in Binder, then Flow does the crewing and the equipment logistics.** In rough order:
