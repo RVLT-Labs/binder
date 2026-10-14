@@ -27,6 +27,9 @@ CREATE TABLE "document_versions" (
 	"uploaded_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"status" text DEFAULT 'queued' NOT NULL,
 	"error" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_by" text DEFAULT 'system' NOT NULL,
 	CONSTRAINT "document_versions_document_number_unique" UNIQUE("document_id","version_number")
 );
 --> statement-breakpoint
@@ -57,6 +60,9 @@ CREATE TABLE "pages" (
 	"ocr_applied" boolean DEFAULT false NOT NULL,
 	"status" text DEFAULT 'queued' NOT NULL,
 	"error" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_by" text DEFAULT 'system' NOT NULL,
 	CONSTRAINT "pages_version_index_unique" UNIQUE("document_version_id","index")
 );
 --> statement-breakpoint

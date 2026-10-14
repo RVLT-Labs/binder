@@ -54,6 +54,13 @@ export const documentVersions = pgTable(
     uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
     status: text('status').$type<VersionStatus>().notNull().default('queued'),
     error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    // Rows written by processing jobs use 'system'.
+    updatedBy: text('updated_by').notNull().default('system'),
   },
   (t) => [
     unique('document_versions_document_number_unique').on(t.documentId, t.versionNumber),
@@ -81,6 +88,13 @@ export const pages = pgTable(
     ocrApplied: boolean('ocr_applied').notNull().default(false),
     status: text('status').$type<PageStatus>().notNull().default('queued'),
     error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    // Rows written by processing jobs use 'system'.
+    updatedBy: text('updated_by').notNull().default('system'),
   },
   (t) => [
     unique('pages_version_index_unique').on(t.documentVersionId, t.index),

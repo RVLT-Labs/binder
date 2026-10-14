@@ -1,6 +1,14 @@
 import { newId } from '@binder/shared'
 import { beforeEach, expect, test } from 'vitest'
-import { organisations, personalAccessTokens, showMemberships, shows } from '../src/schema'
+import {
+  documents,
+  documentVersions,
+  organisations,
+  pages,
+  personalAccessTokens,
+  showMemberships,
+  shows,
+} from '../src/schema'
 import { getTestDb } from './helpers'
 
 beforeEach(async () => {
@@ -59,4 +67,35 @@ test('column defaults: membership departments and token scope', async () => {
   expect(m?.departments).toEqual(['*'])
   expect(t?.showScope).toBe('*')
   expect(t?.revokedAt).toBeNull()
+})
+
+test('pages and document_versions get audit columns by default', async () => {
+  const { db } = await getTestDb()
+  const orgId = newId()
+  const showId = newId()
+  const docId = newId()
+  const versionId = newId()
+  await db.insert(organisations).values({ id: orgId, name: 'TTP' })
+  await db
+    .insert(shows)
+    .values({ id: showId, organisationId: orgId, title: 'Pirates', updatedBy: 'u1' })
+  await db
+    .insert(documents)
+    .values({ id: docId, showId, kind: 'libretto', title: 'Libretto', updatedBy: 'u1' })
+  await db.insert(documentVersions).values({
+    id: versionId,
+    showId,
+    documentId: docId,
+    versionNumber: 1,
+    originalKey: 'k',
+    uploadedBy: 'u1',
+  })
+  await db.insert(pages).values({ id: newId(), showId, documentVersionId: versionId, index: 0 })
+  const [v] = await db.select().from(documentVersions)
+  const [p] = await db.select().from(pages)
+  for (const row of [v, p]) {
+    expect(row?.updatedBy).toBe('system')
+    expect(row?.createdAt).toBeInstanceOf(Date)
+    expect(row?.updatedAt).toBeInstanceOf(Date)
+  }
 })
