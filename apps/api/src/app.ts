@@ -2,15 +2,19 @@ import type { Db } from '@binder/db'
 import type { Actor } from '@binder/shared'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import type { Auth } from './auth/auth'
+import { signUpGuard } from './auth/middleware'
 import type { BlobStore } from './blob/BlobStore'
 import type { Config } from './config'
 import { AppError } from './errors'
 import { health } from './routes/health'
+import { me } from './routes/me'
 
 export interface AppDeps {
   config: Config
   db: Db
   blobs: BlobStore
+  auth: Auth
 }
 
 export type AppEnv = {
@@ -48,8 +52,12 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   app.notFound((c) => c.json({ error: 'not_found', message: 'Not found' }, 404))
 
+  app.use('/api/auth/*', signUpGuard)
+  app.all('/api/auth/*', (c) => c.var.deps.auth.handler(c.req.raw))
+
   const api = new Hono<AppEnv>()
   api.route('/', health)
+  api.route('/', me)
   app.route('/api', api)
 
   return app
