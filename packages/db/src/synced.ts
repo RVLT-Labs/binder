@@ -10,4 +10,5 @@ export const SYNCED_TABLES: readonly string[] = [
   'document_versions',
   'pages',
   'departments',
+  'cues',
 ]

@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "uuidv7": "^1.2.0"
+    "uuidv7": "^1.2.0",
+    "zod": "^4.6.7"
   }
 }

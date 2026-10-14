@@ -1,6 +1,7 @@
 export * from './ids'
 export * from './layers'
 export * from './markup'
+export * from './markupSchemas'
 export * from './roles'
 export * from './sync'
 export * from './types'

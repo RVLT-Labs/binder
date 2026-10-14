@@ -98,6 +98,25 @@ const departments = new Table(
   { indexes: { show: ['show_id'] } },
 )
 
+const cues = new Table(
+  {
+    show_id: column.text,
+    department_id: column.text,
+    major: column.integer,
+    minor: column.integer,
+    label: column.text,
+    anchor: column.text,
+    type: column.text,
+    notes: column.text,
+    colour: column.text,
+    payload: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+    updated_by: column.text,
+  },
+  { indexes: { show: ['show_id'], department: ['department_id'] } },
+)
+
 export const AppSchema = new Schema({
   shows,
   show_memberships,
@@ -105,6 +124,7 @@ export const AppSchema = new Schema({
   document_versions,
   pages,
   departments,
+  cues,
 })
 
 export type Database = (typeof AppSchema)['types']
@@ -113,3 +133,4 @@ export type DocumentRow = Database['documents']
 export type DocumentVersionRow = Database['document_versions']
 export type PageRow = Database['pages']
 export type DepartmentRow = Database['departments']
+export type CueRow = Database['cues']

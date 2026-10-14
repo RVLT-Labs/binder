@@ -18,3 +18,4 @@ streams:
       - SELECT * FROM document_versions WHERE show_id IN user_shows
       - SELECT * FROM pages WHERE show_id IN user_shows
       - SELECT * FROM departments WHERE show_id IN user_shows
+      - SELECT * FROM cues WHERE show_id IN user_shows

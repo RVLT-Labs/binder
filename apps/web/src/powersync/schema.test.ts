@@ -1,4 +1,5 @@
 import {
+  cues,
   departments,
   documents,
   documentVersions,
@@ -12,7 +13,15 @@ import { AppSchema } from './schema'
 
 // Every table PowerSync streams (deploy/powersync/sync-config.yaml). Adding a column on one side
 // without the other must fail here.
-const SYNCED: Table[] = [shows, showMemberships, documents, documentVersions, pages, departments]
+const SYNCED: Table[] = [
+  shows,
+  showMemberships,
+  documents,
+  documentVersions,
+  pages,
+  departments,
+  cues,
+]
 
 test('the client schema lists exactly the synced tables', () => {
   expect(AppSchema.tables.map((t) => t.name).sort()).toEqual(SYNCED.map(getTableName).sort())

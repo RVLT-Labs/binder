@@ -87,6 +87,11 @@ quoting problems. For a local API on plain http, add `"--allow-http"` after the 
 | `list_departments` | read-only | A show's departments (layers): code, name, colour, number format, order, hidden. |
 | `create_department` | write | Add a department. Owners. |
 | `update_department` | write, idempotent | Rename, recolour, reorder, hide, change code or number format. Owners. Departments are never deleted. |
+| `list_cues` | read-only | Cues sorted by department then number, with display number, duplicate flag and anchor. Filter by department, document, placed. Paginated. |
+| `get_cue` | read-only | One cue. |
+| `create_cue` | write | Create a cue on a department layer; the number is suggested from script neighbours when omitted; an anchor `{documentId, pageIndex, x, y}` places it. Editors in scope. |
+| `update_cue` | write, idempotent | Number, label, type, notes, colour, department or anchor (null unplaces). |
+| `delete_cues` | write, destructive | Delete cues, all or nothing. More than ten needs `confirm: true`. |
 | `list_documents` | read-only | A show's documents with versions and processing status (paginated). |
 | `get_document` | read-only | A document, its versions, and one version's page summaries. |
 | `update_document` | write, idempotent | Title, kind, OCR mode, snapToText, sort order. Editors. |

@@ -87,3 +87,15 @@ export const DEFAULT_DEPARTMENTS: readonly DefaultDepartment[] = [
 export const DEPARTMENT_CODE_RE = /^[A-Z][A-Z0-9]{0,7}$/
 export const DEPARTMENT_NAME_MAX = 60
 export const COLOUR_RE = /^#[0-9A-Fa-f]{6}$/
+
+/** The writable fields of a cue (spec 4.4); the web mutations, print and services all use it. */
+export interface CueFields {
+  departmentId: string
+  major: number
+  minor: number
+  label: string
+  type: CueType
+  notes: string
+  colour: string | null
+  anchor: Anchor | null
+}

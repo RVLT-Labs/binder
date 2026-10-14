@@ -43,6 +43,20 @@
       "when": 1791998942452,
       "tag": "0005_departments_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792000152334,
+      "tag": "0006_cues",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792000152663,
+      "tag": "0007_cues_sync",
+      "breakpoints": true
     }
   ]
 }

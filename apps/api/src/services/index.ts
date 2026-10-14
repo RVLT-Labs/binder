@@ -1,4 +1,6 @@
 export { logChange } from './changeLog'
+export type { Cue, CueView } from './cues'
+export { createCue, deleteCues, getCue, listCues, updateCue } from './cues'
 export type { Department } from './departments'
 export { createDepartment, listDepartments, updateDepartment } from './departments'
 export {
