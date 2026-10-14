@@ -130,6 +130,15 @@ Coolify runs four services and one volume: Postgres, the PowerSync service (open
 
 The first task of milestone M0 is a time-boxed spike, five working days at most: PowerSync service on Coolify, a two-table schema, a browser client creating rows offline and seeing them on a second browser online. Exit criteria: offline create and update, sync on reconnect, server-side rejection surfacing in the client, and a Swift SDK smoke test against the same service. If the spike fails, the fallback is ElectricSQL for the read path with TanStack DB on the client, keeping the same API write path. The decision is recorded in docs/superpowers/specs as an addendum.
 
+**Sync spike result, 2026-10-15: GO.** PowerSync (open edition 1.27, Sync Streams edition 3, Postgres bucket storage) with `@powersync/web` 2.4 on wa-sqlite and OPFS, and the API write path from 3.2, passed the browser exit criteria in an automated Playwright run (`apps/web/e2e/sync.spec.ts`, `pnpm --filter @binder/web e2e`) against the dev compose stack:
+
+- Two-user live sync: the owner renames a show and the editor's home screen shows the new title within five seconds.
+- Offline edit, then sync: with the owner's browser offline, a rename applies to local SQLite at once and waits in the upload queue (the header shows "Offline · 1 pending") while the editor still sees the old title; back online, the queued change uploads and reaches the editor within ten seconds.
+- Server-side rejection: an editor's rename (owner-only under 4.1) comes back from `POST /api/sync/upload` in the `rejected` list, surfaces as a notice, and the editor's local row converges back to the server value through the normal sync stream, with no client-side rollback. The owner never sees the rejected title.
+- Cross-user isolation: a third user who is not a member of the show syncs their own show and never receives the shared one.
+
+Not yet covered: offline create, because in M0 no table accepts a sync PUT (shows and documents are created through the API); it is exercised with the first client-created table. Reloading the page while offline needs the PWA shell (Task 16). Playwright's offline switch does not reach PowerSync's shared sync worker, so the run proves the queued upload path but not the stream dropping and reconnecting. The Swift SDK smoke test against the same service is an open manual follow-up for Jayden.
+
 ### 3.9 Real-time collaboration
 
 The target is Google Docs-style: several people in one binder, each seeing the others' edits and positions as they happen, with nobody's work lost. Three mechanisms cover it.
