@@ -14,6 +14,8 @@ export {
 } from './cues/numbering'
 export type { RenumberCue, RenumberResult } from './cues/renumber'
 export { renumberByBlocks } from './cues/renumber'
+export type { SummaryRow } from './history/summarise'
+export { actorLabel, summariseBatch } from './history/summarise'
 export { columnEqual, jsonEqual } from './json/jsonEqual'
 export type { Box, MarkerStyle } from './markup/markers'
 export {

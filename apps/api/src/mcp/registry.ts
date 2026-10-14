@@ -35,6 +35,10 @@ export const TOOL_NAMES = [
   'upload_document',
   'get_page',
   'search_script',
+  'get_history',
+  'get_activity',
+  'revert_change',
+  'revert_batch',
 ] as const
 
 export type ToolName = (typeof TOOL_NAMES)[number]
@@ -76,6 +80,10 @@ export const OPERATION_TO_TOOL: Record<string, ToolName> = {
   getPage: 'get_page',
   getPageImage: 'get_page',
   searchVersion: 'search_script',
+  listHistory: 'get_history',
+  activityFeed: 'get_activity',
+  revertChange: 'revert_change',
+  revertBatch: 'revert_batch',
 }
 
 const TOKEN_REASON = 'token management stays in the UI so an agent cannot mint credentials'

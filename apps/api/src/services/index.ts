@@ -21,10 +21,13 @@ export {
   updateDocument,
   uploadDocumentFromUrl,
 } from './documents'
+export type { ActivityGroup, HistoryEntry } from './history'
+export { activityFeed, listHistory } from './history'
 export { getPage, getPageImage } from './pages'
 export type { PlaceCueAtTextInput, PlaceCueAtTextResult } from './placement'
 export { placeCueAtText } from './placement'
 export { renumberCues } from './renumber'
+export { revertBatch, revertChange } from './revert'
 export { searchVersion } from './search'
 export {
   addShowMember,

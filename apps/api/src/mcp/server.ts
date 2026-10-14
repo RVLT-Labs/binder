@@ -10,6 +10,7 @@ import { registerAnnotationTools } from './tools/annotations'
 import { registerCueTools } from './tools/cues'
 import { registerDepartmentTools } from './tools/departments'
 import { registerDocumentTools } from './tools/documents'
+import { registerHistoryTools } from './tools/history'
 import { registerPageTools } from './tools/pages'
 import { registerSearchTools } from './tools/search'
 import { registerShowTools } from './tools/shows'
@@ -44,6 +45,7 @@ export function createMcpServerFactory(deps: McpDeps): McpServerFactory {
     registerCueTools(server, mcp)
     registerAnnotationTools(server, mcp)
     registerDocumentTools(server, mcp)
+    registerHistoryTools(server, mcp)
     registerPageTools(server, mcp)
     registerSearchTools(server, mcp)
     registerPageResources(server, mcp)
