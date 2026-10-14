@@ -1,4 +1,4 @@
-import type { Anchor, CueType, NumberFormat } from '@binder/shared'
+import type { Anchor, AnnotationType, CueType, LayerKind, NumberFormat } from '@binder/shared'
 import { sql } from 'drizzle-orm'
 import {
   boolean,
@@ -72,5 +72,39 @@ export const cues = pgTable(
     index('cues_show_idx').on(t.showId),
     index('cues_department_idx').on(t.departmentId),
     index('cues_anchor_version_idx').on(sql`(${t.anchor}->>'documentVersionId')`),
+  ],
+)
+
+/**
+ * Marks on a page. `layer_id` is a department id or, for a personal layer, the owner's user id (so
+ * it has no foreign key). Geometry is relative to the anchor, in points. Personal rows are visible
+ * only to their owner: the sync streams, the services and the change log all enforce it.
+ */
+export const annotations = pgTable(
+  'annotations',
+  {
+    id: text('id').primaryKey(),
+    showId: text('show_id')
+      .notNull()
+      .references(() => shows.id, { onDelete: 'cascade' }),
+    layerKind: text('layer_kind').$type<LayerKind>().notNull(),
+    layerId: text('layer_id').notNull(),
+    // One atomic value, so concurrent moves cannot interleave x and y.
+    anchor: jsonb('anchor').$type<Anchor>().notNull(),
+    type: text('type').$type<AnnotationType>().notNull(),
+    geometry: jsonb('geometry').$type<Record<string, number>>().notNull().default({}),
+    text: text('text').notNull().default(''),
+    style: jsonb('style').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    updatedBy: text('updated_by').notNull(),
+  },
+  (t) => [
+    index('annotations_show_idx').on(t.showId),
+    index('annotations_layer_idx').on(t.layerKind, t.layerId),
+    index('annotations_anchor_version_idx').on(sql`(${t.anchor}->>'documentVersionId')`),
   ],
 )

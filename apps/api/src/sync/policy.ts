@@ -1,6 +1,7 @@
 import { changeLog } from '@binder/db'
 import {
   type Actor,
+  annotationObjectSchema,
   canSeeLayer,
   cueFieldsSchema,
   type LayerRef,
@@ -10,13 +11,17 @@ import { and, eq, ne, type SQL, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { AppError, invalid, notFound } from '../errors'
 import {
+  createAnnotation,
   createCue,
+  deleteAnnotations,
   deleteCues,
   requireShowRole,
+  updateAnnotation,
   updateCue,
   updateDocument,
   updateShow,
 } from '../services'
+import { loadAnnotationRow } from '../services/annotations'
 import { loadCueRow } from '../services/cues'
 import type { Executor } from '../services/executor'
 import { hasNoNul, int32, noNul, parseOrInvalid, title } from '../validation'
@@ -215,8 +220,9 @@ export function rowPolicy<S extends z.ZodRawShape>(def: {
         await def.create(db, actor, input.id, showId, data, meta(input))
         return
       }
-      // A replay of a create, never a new row. Members only: anyone else learns nothing.
-      await requireShowRole(db, actor, existing.showId, 'viewer')
+      // A replay of a create, never a new row. Members only, and only of rows they can see: anyone
+      // else gets what an id that does not exist gets.
+      if (!(await canSeeRow(db, actor, existing))) throw notFound(`${def.table} row not found`)
       if (showId !== undefined && showId !== existing.showId) {
         throw invalid('id belongs to another show')
       }
@@ -236,7 +242,11 @@ export function rowPolicy<S extends z.ZodRawShape>(def: {
     },
 
     async patch(db, actor, input) {
-      if (!(await def.load(db, input.id))) throw notFound(`${def.table} row not found`)
+      // A row the actor cannot see answers exactly like a missing one, as DELETE does.
+      const existing = await def.load(db, input.id)
+      if (!existing || !(await canSeeRow(db, actor, existing))) {
+        throw notFound(`${def.table} row not found`)
+      }
       const picked = pickWritable(writable, input.data)
       if (Object.keys(picked).length === 0) throw invalid('no writable columns in patch')
       const data = parseOrInvalid(partial, picked) as Partial<Full>
@@ -278,6 +288,30 @@ const cueFields = (d: CueWire) => ({
   type: d.type,
   notes: d.notes,
   colour: d.colour,
+})
+
+const ann = annotationObjectSchema.shape
+
+/** The writable annotation columns. `show_id` is read by PUT only. JSON columns arrive as text. */
+const annotationShape = {
+  layer_kind: ann.layerKind,
+  layer_id: ann.layerId,
+  anchor: z.preprocess(fromJsonText, ann.anchor),
+  type: ann.type,
+  geometry: z.preprocess(fromJsonText, ann.geometry).optional(),
+  text: ann.text.optional(),
+  style: z.preprocess(fromJsonText, ann.style).optional(),
+}
+type AnnotationWire = Partial<z.output<z.ZodObject<typeof annotationShape>>>
+
+const annotationFields = (d: AnnotationWire) => ({
+  layerKind: d.layer_kind,
+  layerId: d.layer_id,
+  anchor: d.anchor,
+  type: d.type,
+  geometry: d.geometry,
+  text: d.text,
+  style: d.style,
 })
 
 /** The tables a PowerSync client may write, keyed by Postgres table name. */
@@ -339,5 +373,30 @@ export const SYNC_TABLES: Record<string, SyncTablePolicy> = {
     update: (db, actor, id, data, meta) =>
       updateCue(db, actor, { cueId: id, patch: cueFields(data), ...meta }),
     remove: (db, actor, id, meta) => deleteCues(db, actor, { cueIds: [id], ...meta }),
+  }),
+  annotations: rowPolicy({
+    table: 'annotations',
+    ops: ['PUT', 'PATCH', 'DELETE'],
+    shape: annotationShape,
+    load: async (db, id) => {
+      const row = await loadAnnotationRow(db, id)
+      return row && { showId: row.showId, layer: { kind: row.layerKind, id: row.layerId } }
+    },
+    create: (db, actor, id, showId, d, meta) =>
+      createAnnotation(db, actor, {
+        showId,
+        id,
+        layerKind: d.layer_kind,
+        layerId: d.layer_id,
+        anchor: d.anchor,
+        type: d.type,
+        geometry: d.geometry ?? {},
+        text: d.text ?? '',
+        style: d.style ?? {},
+        ...meta,
+      }),
+    update: (db, actor, id, data, meta) =>
+      updateAnnotation(db, actor, { annotationId: id, patch: annotationFields(data), ...meta }),
+    remove: (db, actor, id, meta) => deleteAnnotations(db, actor, { annotationIds: [id], ...meta }),
   }),
 }

@@ -99,3 +99,23 @@ export interface CueFields {
   colour: string | null
   anchor: Anchor | null
 }
+
+/** The writable fields of an annotation (spec 4.4). Geometry is in points, relative to the anchor. */
+export interface AnnotationFields {
+  layerKind: LayerKind
+  layerId: string
+  anchor: Anchor
+  type: AnnotationType
+  geometry: Record<string, number>
+  text: string
+  style: Record<string, unknown>
+}
+
+/** The show's stamp choices: `settings.stampSet` when it is a non-empty list of strings, else the defaults. */
+export function stampSet(settings: Record<string, unknown>): string[] {
+  const set = settings.stampSet
+  if (Array.isArray(set) && set.length > 0 && set.every((s) => typeof s === 'string')) {
+    return [...(set as string[])]
+  }
+  return [...DEFAULT_STAMPS]
+}

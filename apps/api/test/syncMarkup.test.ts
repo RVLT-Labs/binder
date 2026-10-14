@@ -1,4 +1,4 @@
-import { changeLog, cues, syncAppliedChunks } from '@binder/db'
+import { annotations, changeLog, cues, syncAppliedChunks } from '@binder/db'
 import { type Actor, newId, type SyncCrudEntry } from '@binder/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { afterEach, describe, expect, test, vi } from 'vitest'
@@ -60,6 +60,23 @@ async function setup() {
     cueRow,
     rowCount,
     logRows,
+    /** An annotation as the client's local row: JSON columns as text, as SQLite stores them. */
+    annRow: (over: Record<string, unknown> = {}) => ({
+      show_id: s.show.id,
+      layer_kind: 'department',
+      layer_id: s.depts.LX.id,
+      anchor: JSON.stringify(anchorAt(s.docId, s.versionId, 1)),
+      type: 'note',
+      geometry: '{}',
+      text: 'hello',
+      style: '{}',
+      created_at: '2026-10-15T10:00:00.000Z',
+      updated_at: '2026-10-15T10:00:00.000Z',
+      updated_by: 'someone-else',
+      ...over,
+    }),
+    annRows: (id: string) => db.select().from(annotations).where(eq(annotations.id, id)),
+    viewerSync: viaSync(s.actors.viewer),
     editorSync: viaSync(s.actors.editor),
     editorLxSync: viaSync(s.actors.editorLx),
     ownerSync: viaSync(s.actors.owner),
@@ -810,5 +827,254 @@ describe('POST /api/sync/upload', () => {
       const res = await app.request('/api/sync/upload', post(owner.cookie, { ...body, chunk }))
       expect(res.status, JSON.stringify(chunk)).toBe(400)
     }
+  })
+})
+
+describe('annotations', () => {
+  const highlight = (s: Awaited<ReturnType<typeof setup>>, over: Record<string, unknown> = {}) =>
+    s.annRow({
+      layer_kind: 'personal',
+      layer_id: s.viewer.id,
+      type: 'highlight',
+      text: '',
+      anchor: JSON.stringify({
+        ...anchorAt(s.docId, s.versionId, 3),
+        text: { quote: 'to be or', wordStart: 4, wordEnd: 6 },
+      }),
+      ...over,
+    })
+
+  test("a viewer PUTs a personal highlight; another member's DELETE, PATCH and re-PUT of it answer like a missing row", async () => {
+    const s = await setup()
+    const { db, viewer, viewerSync, ownerSync, editorSync, owner, annRows, logRows } = s
+    const id = newId()
+    expect(
+      await applyCrudBatch(db, viewerSync, {
+        batchId: `${viewer.id}:hl-1`,
+        entries: [put('annotations', id, highlight(s), '2026-10-15T10:00:00Z')],
+      }),
+    ).toEqual({ applied: 1, rejected: [] })
+    const [row] = await annRows(id)
+    expect(row).toMatchObject({
+      showId: s.show.id,
+      layerKind: 'personal',
+      layerId: viewer.id,
+      type: 'highlight',
+      geometry: {},
+      style: {},
+      updatedBy: viewer.id,
+    })
+    expect(row.anchor.text).toEqual({ quote: 'to be or', wordStart: 4, wordEnd: 6 })
+    const [created] = await logRows(id)
+    expect(created).toMatchObject({
+      op: 'insert',
+      tableName: 'annotations',
+      via: 'sync',
+      layer: `personal:${viewer.id}`,
+    })
+
+    // Owner and editor: DELETE is applied like a missing row's (nothing happens); PATCH and a
+    // re-PUT of the id are not_found, exactly as for an id that does not exist.
+    const missing = newId()
+    for (const [who, user] of [
+      [ownerSync, owner],
+      [editorSync, s.editor],
+    ] as const) {
+      const r = await applyCrudBatch(db, who, {
+        batchId: `${user.id}:hl-2`,
+        entries: [
+          del('annotations', id),
+          del('annotations', missing),
+          patch('annotations', id, { text: 'stolen' }),
+          patch('annotations', missing, { text: 'stolen' }),
+          put('annotations', id, highlight(s, { text: 'overwritten' })),
+        ],
+      })
+      expect(r.applied).toBe(2)
+      expect(r.rejected.map((x) => [x.index, x.reason])).toEqual([
+        [2, 'not_found'],
+        [3, 'not_found'],
+        [4, 'not_found'],
+      ])
+    }
+    expect((await annRows(id))[0]).toMatchObject({ text: '', layerId: viewer.id })
+    expect(await logRows(id)).toHaveLength(1)
+
+    // The owner of the layer deletes it.
+    expect(
+      await applyCrudBatch(db, viewerSync, {
+        batchId: `${viewer.id}:hl-3`,
+        entries: [del('annotations', id)],
+      }),
+    ).toEqual({ applied: 1, rejected: [] })
+    expect(await annRows(id)).toHaveLength(0)
+    expect((await logRows(id)).map((l) => l.op)).toEqual(['insert', 'delete'])
+  })
+
+  test("a viewer cannot PUT onto another user's personal layer or a department layer", async () => {
+    const s = await setup()
+    const { db, viewer, viewerSync, annRow, annRows } = s
+    const a = newId()
+    const b = newId()
+    const r = await applyCrudBatch(db, viewerSync, {
+      batchId: `${viewer.id}:hl-4`,
+      entries: [
+        put('annotations', a, annRow({ layer_kind: 'personal', layer_id: s.owner.id })),
+        put('annotations', b, annRow()),
+      ],
+    })
+    expect(r.rejected.map((x) => [x.index, x.reason])).toEqual([
+      [0, 'forbidden'],
+      [1, 'forbidden'],
+    ])
+    expect(await annRows(a)).toHaveLength(0)
+    expect(await annRows(b)).toHaveLength(0)
+  })
+
+  test('the LX editor PUTs on LX but not SND; a PATCH moving it to SND is forbidden', async () => {
+    const s = await setup()
+    const { db, editorLx, editorLxSync, annRow, annRows, depts } = s
+    const ok = newId()
+    const denied = newId()
+    const r = await applyCrudBatch(db, editorLxSync, {
+      batchId: `${editorLx.id}:lx-1`,
+      entries: [
+        put('annotations', ok, annRow()),
+        put('annotations', denied, annRow({ layer_id: depts.SND.id })),
+        patch('annotations', ok, { layer_id: depts.SND.id }),
+        patch('annotations', ok, { text: 'edited' }),
+      ],
+    })
+    expect(r.rejected.map((x) => [x.index, x.reason])).toEqual([
+      [1, 'forbidden'],
+      [2, 'forbidden'],
+    ])
+    expect(await annRows(denied)).toHaveLength(0)
+    expect((await annRows(ok))[0]).toMatchObject({ layerId: depts.LX.id, text: 'edited' })
+  })
+
+  test('geometry as JSON text is parsed; geometry that is not an object is invalid', async () => {
+    const s = await setup()
+    const { db, editorLx, editorLxSync, annRow, annRows, logRows } = s
+    const ok = newId()
+    const r = await applyCrudBatch(db, editorLxSync, {
+      batchId: `${editorLx.id}:geo-1`,
+      entries: [
+        put('annotations', ok, annRow({ type: 'rect', text: '', geometry: '{"w":30,"h":12}' })),
+        put('annotations', newId(), annRow({ type: 'rect', text: '', geometry: '[30,12]' })),
+        put('annotations', newId(), annRow({ type: 'rect', text: '', geometry: '"30x12"' })),
+        put('annotations', newId(), annRow({ type: 'rect', text: '', geometry: '{bad' })),
+        put('annotations', newId(), annRow({ type: 'rect', text: '', geometry: 12 })),
+        put('annotations', newId(), annRow({ type: 'rect', text: '', geometry: '{"w":0,"h":3}' })),
+        put(
+          'annotations',
+          newId(),
+          annRow({ type: 'rect', text: '', geometry: '{"w":"3","h":3}' }),
+        ),
+        put('annotations', newId(), annRow({ style: '{"colour":"red"}' })),
+        put('annotations', newId(), annRow({ anchor: '{not json' })),
+        put('annotations', newId(), annRow({ text: 'nul\u0000' })),
+        put('annotations', newId(), annRow({ type: 'laser' })),
+        put('annotations', newId(), annRow({ type: 'highlight', text: '' })),
+      ],
+    })
+    expect(r.rejected.map((x) => [x.index, x.reason])).toEqual(
+      Array.from({ length: 11 }, (_, i) => [i + 1, 'invalid']),
+    )
+    expect(r.applied).toBe(1)
+    expect((await annRows(ok))[0].geometry).toEqual({ w: 30, h: 12 })
+    expect((await logRows(ok))[0].after).toMatchObject({ geometry: { w: 30, h: 12 } })
+
+    // PATCH: JSON text is parsed, an invalid geometry is refused and leaves the row alone.
+    const p = await applyCrudBatch(db, editorLxSync, {
+      batchId: `${editorLx.id}:geo-2`,
+      entries: [
+        patch('annotations', ok, { geometry: '{"w":0,"h":3}' }),
+        patch('annotations', ok, { geometry: '[1]' }),
+        patch('annotations', ok, { geometry: '{"h":8,"w":99}', style: '{"strokeWidth":3}' }),
+      ],
+    })
+    expect(p.rejected.map((x) => x.reason)).toEqual(['invalid', 'invalid'])
+    expect((await annRows(ok))[0]).toMatchObject({
+      geometry: { w: 99, h: 8 },
+      style: { strokeWidth: 3 },
+    })
+  })
+
+  test("a replayed PUT does not overwrite a collaborator's newer text", async () => {
+    const s = await setup()
+    const { db, editorLx, editorLxSync, ownerSync, annRow, annRows } = s
+    const id = newId()
+    const first = '2026-10-15T10:00:00Z'
+    await applyCrudBatch(db, editorLxSync, {
+      batchId: `${editorLx.id}:rp-1`,
+      entries: [put('annotations', id, annRow({ text: 'first' }), first)],
+    })
+    await applyCrudBatch(db, ownerSync, {
+      batchId: `${s.owner.id}:rp-2`,
+      entries: [patch('annotations', id, { text: 'owner edit' })],
+    })
+    const r = await applyCrudBatch(db, editorLxSync, {
+      batchId: `${editorLx.id}:rp-3`,
+      entries: [put('annotations', id, annRow({ text: 'first', geometry: '{}' }), first)],
+    })
+    expect(r).toEqual({ applied: 1, rejected: [] })
+    expect((await annRows(id))[0].text).toBe('owner edit')
+  })
+
+  test('PATCH of a cue or an annotation the actor cannot see answers exactly like a missing row', async () => {
+    const s = await setup()
+    const { db, editor, editorSync, outsider, cueRow, annRow, annRows, rowCount, logRows } = s
+    const cueId = newId()
+    const mine = newId()
+    await applyCrudBatch(db, editorSync, {
+      batchId: `${editor.id}:pv-1`,
+      entries: [
+        put('cues', cueId, cueRow({ label: 'secret' })),
+        put('annotations', mine, annRow({ layer_kind: 'personal', layer_id: editor.id })),
+      ],
+    })
+    const outsiderSync: Actor = { userId: outsider.id, via: 'sync', agent: null }
+    const missing = newId()
+    const results = await Promise.all(
+      [
+        [cueId, missing, 'cues'],
+        [mine, missing, 'annotations'],
+      ].flatMap(([seen, gone, table]) =>
+        [seen, gone].map((id) =>
+          applyCrudBatch(db, outsiderSync, {
+            batchId: `${outsider.id}:pv-${id}`,
+            entries: [patch(table, id, { [table === 'cues' ? 'label' : 'text']: 'x' })],
+          }),
+        ),
+      ),
+    )
+    for (const r of results) {
+      expect(r.applied).toBe(0)
+      expect(r.rejected).toHaveLength(1)
+      expect(r.rejected[0]).toMatchObject({ index: 0, reason: 'not_found' })
+    }
+    // The rejection message of an existing row equals a missing row's, apart from the table name.
+    expect(results[0].rejected[0].message).toBe(results[1].rejected[0].message)
+    expect(results[2].rejected[0].message).toBe(results[3].rejected[0].message)
+    expect(await rowCount(cueId)).toBe(1)
+    expect((await annRows(mine))[0].text).toBe('hello')
+    expect((await logRows(cueId)).map((l) => l.op)).toEqual(['insert'])
+  })
+
+  test("PATCH of another user's personal annotation, even to take it over, is not_found", async () => {
+    const s = await setup()
+    const { db, viewer, viewerSync, ownerSync, annRow, annRows } = s
+    const id = newId()
+    await applyCrudBatch(db, viewerSync, {
+      batchId: `${viewer.id}:pw-1`,
+      entries: [put('annotations', id, annRow({ layer_kind: 'personal', layer_id: viewer.id }))],
+    })
+    const r = await applyCrudBatch(db, ownerSync, {
+      batchId: `${s.owner.id}:pw-2`,
+      entries: [patch('annotations', id, { layer_id: s.owner.id, text: 'mine now' })],
+    })
+    expect(r.rejected.map((x) => x.reason)).toEqual(['not_found'])
+    expect((await annRows(id))[0]).toMatchObject({ layerId: viewer.id, text: 'hello' })
   })
 })

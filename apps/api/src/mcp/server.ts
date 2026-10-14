@@ -6,6 +6,7 @@ import { principalFrom } from './auth'
 import { type McpDeps, mcpContext } from './context'
 import { registerGuideResources } from './resources/guides'
 import { registerPageResources } from './resources/pages'
+import { registerAnnotationTools } from './tools/annotations'
 import { registerCueTools } from './tools/cues'
 import { registerDepartmentTools } from './tools/departments'
 import { registerDocumentTools } from './tools/documents'
@@ -22,7 +23,7 @@ declare module 'hono' {
 
 const INSTRUCTIONS = [
   'Binder holds theatre show binders: shows, their documents (scripts and scores as PDFs with a',
-  'word layer per page), departments (the layers cues and marks live on, like LX or SND) and their cues (numbered per department, anchored to a page position or unplaced). Start with list_shows, then list_documents for a show;',
+  'word layer per page), departments (the layers cues and marks live on, like LX or SND) their cues (numbered per department, anchored to a page position or unplaced) and annotations (notes, shapes, stamps and highlights drawn on a department layer or on your own private personal layer). Start with list_shows, then list_documents for a show;',
   'a document version id is what get_page (see and read a page) and search_script take. Page',
   'indices are zero-based and coordinates are PDF points with the origin at the bottom left.',
   'House rules for cue style, mic and DCA practice and the .tmix format are the binder://guides',
@@ -41,6 +42,7 @@ export function createMcpServerFactory(deps: McpDeps): McpServerFactory {
     registerShowTools(server, mcp)
     registerDepartmentTools(server, mcp)
     registerCueTools(server, mcp)
+    registerAnnotationTools(server, mcp)
     registerDocumentTools(server, mcp)
     registerPageTools(server, mcp)
     registerSearchTools(server, mcp)

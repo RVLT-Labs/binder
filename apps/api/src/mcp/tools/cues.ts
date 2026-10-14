@@ -24,15 +24,15 @@ const NUMBER_DESCRIPTION =
   'The cue number as text with at most two decimals, like "14" or "14.5" (14.50 is the same). ' +
   'Omit on create to take the next number from the neighbours in script order.'
 
-const placement = z.object({
+export const placement = z.object({
   documentId: id('document'),
   pageIndex: z.number().int().min(0).max(100000).describe('Zero-based page index.'),
   x: z.number().finite().min(0).max(14400).describe('PDF points from the left.'),
   y: z.number().finite().min(0).max(14400).describe('PDF points from the bottom.'),
 })
-type Placement = z.infer<typeof placement>
+export type Placement = z.infer<typeof placement>
 
-async function resolveDepartment(
+export async function resolveDepartment(
   db: Executor,
   actor: Actor,
   showId: string,
@@ -44,7 +44,7 @@ async function resolveDepartment(
 }
 
 /** The anchor for a hand placement: the document's current version, status ok. */
-async function anchorFor(db: Executor, actor: Actor, p: Placement): Promise<Anchor> {
+export async function anchorFor(db: Executor, actor: Actor, p: Placement): Promise<Anchor> {
   const { document } = await getDocument(db, actor, { documentId: p.documentId })
   if (!document.currentVersionId) throw invalid('the document has no current version')
   return { ...p, documentVersionId: document.currentVersionId, status: 'ok' }

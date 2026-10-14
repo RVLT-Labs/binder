@@ -11,4 +11,5 @@ export const SYNCED_TABLES: readonly string[] = [
   'pages',
   'departments',
   'cues',
+  'annotations',
 ]

@@ -38,3 +38,26 @@ test('sync-config streams each synced table, and only those', () => {
   expect(streamed.every((t) => t !== undefined)).toBe(true)
   expect([...new Set(streamed)].sort()).toEqual([...SYNCED_TABLES].sort())
 })
+
+test('sync-config streams personal annotations only where layer_id = auth.user_id()', () => {
+  const config = parse(readFileSync(SYNC_CONFIG, 'utf8')) as {
+    streams: Record<string, { queries: string[] }>
+  }
+  const queries = Object.values(config.streams)
+    .flatMap((s) => s.queries)
+    .filter((q) => /\bFROM\s+annotations\b/i.test(q))
+    .map((q) => q.replace(/\s+/g, ' ').trim())
+  // Every annotations query is either department-only or the owner's own personal layer.
+  expect(queries.length).toBeGreaterThanOrEqual(1)
+  for (const q of queries) {
+    const departmentOnly = /\blayer_kind = 'department'/.test(q) && !/personal/.test(q)
+    const ownPersonal =
+      /\blayer_kind = 'personal' AND layer_id = auth\.user_id\(\)/.test(q) && !/department/.test(q)
+    expect(departmentOnly || ownPersonal, `unsafe annotations query: ${q}`).toBe(true)
+  }
+  // Both layers are streamed, and no query leaves the layer open.
+  expect(queries.some((q) => /layer_kind = 'department'/.test(q))).toBe(true)
+  expect(queries.some((q) => /layer_id = auth\.user_id\(\)/.test(q))).toBe(true)
+  // Every query still scopes to the user's shows.
+  for (const q of queries) expect(q).toMatch(/show_id IN user_shows/)
+})

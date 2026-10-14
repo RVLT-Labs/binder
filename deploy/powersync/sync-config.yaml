@@ -19,3 +19,6 @@ streams:
       - SELECT * FROM pages WHERE show_id IN user_shows
       - SELECT * FROM departments WHERE show_id IN user_shows
       - SELECT * FROM cues WHERE show_id IN user_shows
+      # Department layers reach every member; a personal layer reaches only its owner.
+      - SELECT * FROM annotations WHERE show_id IN user_shows AND layer_kind = 'department'
+      - SELECT * FROM annotations WHERE show_id IN user_shows AND layer_kind = 'personal' AND layer_id = auth.user_id()

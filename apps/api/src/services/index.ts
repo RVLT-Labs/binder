@@ -1,3 +1,11 @@
+export type { Annotation } from './annotations'
+export {
+  createAnnotation,
+  deleteAnnotations,
+  getAnnotation,
+  listAnnotations,
+  updateAnnotation,
+} from './annotations'
 export { logChange } from './changeLog'
 export type { Cue, CueView } from './cues'
 export { createCue, deleteCues, getCue, listCues, updateCue } from './cues'

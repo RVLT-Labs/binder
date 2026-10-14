@@ -24,6 +24,23 @@ test('falls back to the table noun for a row that is gone', async () => {
   expect(await rowLabel(broken as unknown as LabelDb, 'cues', 'x')).toBe('a cue')
 })
 
+test('labels an annotation with its layer and type', async () => {
+  const lx = localDb({ type: 'arrow', layer_kind: 'department', code: 'LX' })
+  expect(await rowLabel(lx.db, 'annotations', 'a1')).toBe('LX arrow')
+  expect(lx.getOptional.mock.calls[0][1]).toEqual(['a1'])
+  const own = localDb({ type: 'highlight', layer_kind: 'personal', code: null })
+  expect(await rowLabel(own.db, 'annotations', 'a2')).toBe('personal highlight')
+  // A department this device has not synced: the type alone.
+  const orphan = localDb({ type: 'note', layer_kind: 'department', code: null })
+  expect(await rowLabel(orphan.db, 'annotations', 'a3')).toBe('note')
+})
+
+test('falls back to the annotation noun for a row that is gone', async () => {
+  expect(await rowLabel(localDb(null).db, 'annotations', 'gone')).toBe('an annotation')
+  const broken = { getOptional: async () => Promise.reject(new Error('no such table')) }
+  expect(await rowLabel(broken as unknown as LabelDb, 'annotations', 'x')).toBe('an annotation')
+})
+
 test('other tables keep the M0 noun', async () => {
   const { db, getOptional } = localDb({ title: 'Pirates' })
   expect(await rowLabel(db, 'shows', 's1')).toBe('a show')
