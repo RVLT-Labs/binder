@@ -11,6 +11,14 @@ export {
   suggestCueNumber,
 } from './cues/numbering'
 export { columnEqual, jsonEqual } from './json/jsonEqual'
+export type { Box, MarkerStyle } from './markup/markers'
+export {
+  cueMarkerBox,
+  MARKER_HEIGHT,
+  MARKER_PADDING,
+  markerStyle,
+  markerText,
+} from './markup/markers'
 export { normaliseToken } from './search/normalise'
 export type { DocHit, Hit } from './search/search'
 export { searchDocument, searchWordLayer } from './search/search'
