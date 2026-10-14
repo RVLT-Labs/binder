@@ -6,7 +6,7 @@ import {
   markerText,
 } from '@binder/core'
 import type { CueType, NumberFormat } from '@binder/shared'
-import type { PointerEventHandler } from 'react'
+import type { KeyboardEvent, PointerEventHandler } from 'react'
 import { SvgText } from './SvgText'
 
 export const MARKER_FONT_SIZE = 10
@@ -46,28 +46,66 @@ export interface CueMarkerProps {
   /** Drawn with a move cursor: the user may drag it. */
   movable?: boolean
   onPointerDown?: PointerEventHandler<SVGGElement>
+  /** Enter or Space on the focused marker: select it. */
+  onActivate?: () => void
 }
 
 const asType = (t: MarkerCue['type']): CueType => (t === 'standby' || t === 'warn' ? t : 'go')
+
+/** The marker's text: `LX 10`, `SB LX 10.5`. */
+function textOf(cue: MarkerCue): string {
+  return markerText(
+    asType(cue.type),
+    cue.dept_code,
+    formatCueNumber(cue.major ?? 0, cue.minor ?? 0, cue.dept_number_format),
+  )
+}
+
+/** What a screen reader says for a marker: `LX 10, Sunrise, page 2`. */
+export function cueAccessibleName(cue: MarkerCue): string {
+  return [textOf(cue), cue.label, `page ${cue.anchor.pageIndex + 1}`].filter(Boolean).join(', ')
+}
+
+/**
+ * Moves keyboard focus to a cue's marker once it is drawn: after a scroll its page may mount a
+ * few frames later. Gives up quietly if it never appears (a hidden layer, another version).
+ */
+export function focusCueMarker(id: string, frames = 30): void {
+  const el = document.querySelector<SVGGElement>(`[data-cue-id="${CSS.escape(id)}"]`)
+  if (el) el.focus({ preventScroll: true })
+  else if (frames > 0) requestAnimationFrame(() => focusCueMarker(id, frames - 1))
+}
 
 /**
  * A cue on the page, in displayed space: a box at the anchor in the department colour holding the
  * department code and number, with the cue's label to its right in the same colour.
  */
-export function CueMarker({ cue, selected, movable = false, onPointerDown }: CueMarkerProps) {
+export function CueMarker({
+  cue,
+  selected,
+  movable = false,
+  onPointerDown,
+  onActivate,
+}: CueMarkerProps) {
   const type = asType(cue.type)
-  const text = markerText(
-    type,
-    cue.dept_code,
-    formatCueNumber(cue.major ?? 0, cue.minor ?? 0, cue.dept_number_format),
-  )
+  const text = textOf(cue)
   const box = cueMarkerBox(cue.anchor.x, cue.anchor.y, markerTextWidth(text, MARKER_FONT_SIZE))
   const style = markerStyle(type)
   const colour = cue.dept_colour
   const solid = style.fill === 'solid'
   return (
+    // biome-ignore lint/a11y/useSemanticElements: an SVG marker cannot be an HTML <button>; it carries the button role, focus and keys itself
     <g
       className="cue-marker"
+      role="button"
+      tabIndex={0}
+      aria-label={cueAccessibleName(cue)}
+      aria-pressed={selected}
+      onKeyDown={(e: KeyboardEvent<SVGGElement>) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        onActivate?.()
+      }}
       data-cue-id={cue.id}
       data-cue-label={text}
       data-selected={selected ? 'true' : undefined}

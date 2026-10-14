@@ -14,6 +14,7 @@ import { pushNotice } from '../components/noticeStore'
 import type { PageRow, ShowRow } from '../powersync/schema'
 import type { ViewerHandle } from '../viewer/Viewer'
 import { cueToolState } from './activeDepartment'
+import { focusCueMarker } from './CueMarker'
 import type { LayerState, LayerStore } from './layerState'
 import type { CueRowWithDept, MarkupView } from './markupView'
 import { deleteCue, type EditContext, insertCue, updateCue } from './mutations'
@@ -52,7 +53,12 @@ export interface MarkupSession {
   view: MarkupView
   /** The edit context as of now (the live membership scope), or null until it has synced. */
   editContext(): EditContext | null
-  /** Whether the user may move, edit, and delete this cue now: an editable, unlocked layer of a live show. */
+  /**
+   * Why the user may not move, edit, or delete this cue now (archived show, locked layer, a layer
+   * outside their scope), or null when they may.
+   */
+  whyCantEdit(cue: { department_id: string | null }): string | null
+  /** `whyCantEdit(cue) === null`. */
   canEditCue(cue: { department_id: string | null }): boolean
   /** `words` is the page's word layer when the caller already has it; otherwise it is loaded. */
   placeCue(pageIndex: number, point: Point, type: CueType, words?: WordLayer | null): Promise<void>
@@ -117,28 +123,68 @@ export function MarkupSessionProvider({
     lastActiveDepartment: layers.lastDepartment,
     editable,
     locked: layers.locked,
+    hidden: layers.hidden,
     departmentCode: (id) => departments.find((d) => d.id === id)?.code ?? '?',
   })
   const snap = effectiveSnap(snapDefault, snapOverride)
 
   /** The live edit context: the membership scope as it is now, never a copy from an earlier render. */
   const ctx: EditContext | null = scope && userId ? { showId, userId, scope } : null
-  const latest = useRef({ ctx, readOnly, editable, locked: layers.locked, cueTarget, snap, pages })
-  latest.current = { ctx, readOnly, editable, locked: layers.locked, cueTarget, snap, pages }
+  const departmentCode = (id: string) => departments.find((d) => d.id === id)?.code ?? '?'
+  const now = {
+    ctx,
+    readOnly,
+    editable,
+    locked: layers.locked,
+    cueTarget,
+    snap,
+    pages,
+    departmentCode,
+  }
+  const latest = useRef(now)
+  latest.current = now
 
   const editContext = useCallback(() => latest.current.ctx, [])
 
-  const canEditCue = useCallback((cue: { department_id: string | null }) => {
+  const whyCantEdit = useCallback((cue: { department_id: string | null }) => {
     const now = latest.current
-    if (now.readOnly || !now.ctx || !cue.department_id) return false
+    if (now.readOnly) return now.readOnly
+    const code = now.departmentCode(cue.department_id ?? '')
+    if (!now.ctx || !cue.department_id) return `You can't edit ${code} cues.`
     const layer: LayerRef = { kind: 'department', id: cue.department_id }
     const key = layerKey(layer)
-    return (
-      now.editable.some((l) => layerKey(l) === key) &&
-      !now.locked.includes(key) &&
-      canEditLayer(now.ctx.scope, now.ctx.userId, layer)
-    )
+    if (
+      !now.editable.some((l) => layerKey(l) === key) ||
+      !canEditLayer(now.ctx.scope, now.ctx.userId, layer)
+    ) {
+      return `You can't edit ${code} cues.`
+    }
+    if (now.locked.includes(key)) return `The ${code} layer is locked.`
+    return null
   }, [])
+
+  const canEditCue = useCallback(
+    (cue: { department_id: string | null }) => whyCantEdit(cue) === null,
+    [whyCantEdit],
+  )
+
+  /**
+   * The rights check every move and delete makes itself, whoever calls it: the cue as stored now.
+   * False (with a notice saying why) when it may not change; false quietly when it has gone.
+   */
+  const mayChange = useCallback(
+    async (id: string) => {
+      const row = await db.getOptional<{ department_id: string | null }>(
+        'SELECT department_id FROM cues WHERE id = ?',
+        [id],
+      )
+      if (!row) return false
+      const reason = whyCantEdit(row)
+      if (reason) pushNotice({ kind: 'error', message: reason })
+      return reason === null
+    },
+    [db, whyCantEdit],
+  )
 
   const anchorFor = useCallback(
     async (pageIndex: number, point: Point, loaded?: WordLayer | null) => {
@@ -198,6 +244,7 @@ export function MarkupSessionProvider({
   const moveCue = useCallback(
     async (id: string, pageIndex: number, point: Point) => {
       try {
+        if (!(await mayChange(id))) return
         const anchor = await anchorFor(pageIndex, point)
         const ctxNow = latest.current.ctx
         if (!ctxNow) return
@@ -206,27 +253,30 @@ export function MarkupSessionProvider({
         report(err)
       }
     },
-    [db, anchorFor],
+    [db, anchorFor, mayChange],
   )
 
   const removeCue = useCallback(
     async (id: string) => {
-      const ctxNow = latest.current.ctx
-      if (!ctxNow) return
       try {
+        if (!(await mayChange(id))) return
+        const ctxNow = latest.current.ctx
+        if (!ctxNow) return
         await deleteCue(db, ctxNow, id)
         clearSelection()
       } catch (err) {
         report(err)
       }
     },
-    [db],
+    [db, mayChange],
   )
 
   const showCue = useCallback(
     (cue: CueRowWithDept) => {
       select('cues', cue.id)
       viewer.current?.scrollToPoint(cue.anchor.pageIndex, cue.anchor.y)
+      // Keyboard focus follows the walk, so the selected marker is the one a screen reader is on.
+      focusCueMarker(cue.id)
     },
     [viewer],
   )
@@ -256,6 +306,7 @@ export function MarkupSessionProvider({
     setSnap,
     view,
     editContext,
+    whyCantEdit,
     canEditCue,
     placeCue,
     moveCue,

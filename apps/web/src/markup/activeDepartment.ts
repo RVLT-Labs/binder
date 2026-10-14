@@ -30,6 +30,8 @@ export interface CueToolInput {
   editable: LayerRef[]
   /** Locked layer keys. */
   locked: readonly string[]
+  /** Layer keys the user has hidden on this device. */
+  hidden: readonly string[]
   departmentCode: (id: string) => string
 }
 
@@ -39,8 +41,10 @@ export function cueToolState(input: CueToolInput): { departmentId: string } | { 
   if (!input.active) return { disabled: LOADING_LAYERS_HINT }
   const target = cueTargetDepartment(input.active, input.lastActiveDepartment, input.editable)
   if ('disabled' in target) return target
-  if (input.locked.includes(`department:${target.departmentId}`)) {
-    return { disabled: `The ${input.departmentCode(target.departmentId)} layer is locked.` }
-  }
+  const key = `department:${target.departmentId}`
+  const code = input.departmentCode(target.departmentId)
+  // A cue placed on a hidden layer would vanish as it lands.
+  if (input.hidden.includes(key)) return { disabled: `Show the ${code} layer to place cues on it` }
+  if (input.locked.includes(key)) return { disabled: `The ${code} layer is locked.` }
   return target
 }

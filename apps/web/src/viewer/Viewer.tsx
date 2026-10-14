@@ -148,13 +148,22 @@ export function Viewer({
       const markup = renderOverlay?.(pageIndex, zoom)
       if ((!pageHits || !words) && !markup) return null
       return (
-        <PageOverlay width={page.width} height={page.height} zoom={zoom}>
+        <PageOverlay
+          width={page.width}
+          height={page.height}
+          zoom={zoom}
+          label={markup ? `Page ${pageIndex + 1} markup` : undefined}
+        >
           {pageHits && words && (
-            <SearchHighlights
-              hits={pageHits}
-              words={words}
-              active={activeHit === null ? null : hits[activeHit]}
-            />
+            // Highlights are visual only: the search panel lists the same hits as text.
+            // biome-ignore lint/a11y/noAriaHiddenOnFocusable: a plain SVG group, never focusable
+            <g aria-hidden="true">
+              <SearchHighlights
+                hits={pageHits}
+                words={words}
+                active={activeHit === null ? null : hits[activeHit]}
+              />
+            </g>
           )}
           {markup}
         </PageOverlay>

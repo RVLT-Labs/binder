@@ -1,7 +1,7 @@
 import { formatCueNumber, markerText, parseCueNumber } from '@binder/core'
 import type { CueFields, CueType } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useState } from 'react'
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { pushNotice } from '../components/noticeStore'
 import type { Database } from '../powersync/schema'
 import { useMarkupSession } from './MarkupSession'
@@ -43,13 +43,8 @@ export function CueEditor({ cueId, historySlot }: CueEditorProps) {
   const code = department?.code ?? '?'
   const format = department?.number_format === 'point' ? 'point' : 'decimal'
   const number = formatCueNumber(cue.major, cue.minor, format)
-  const editable = session.canEditCue(row)
-  const departmentLayer = `department:${cue.departmentId}`
-  const reason = session.readOnly
-    ? session.readOnly
-    : session.layers.locked.includes(departmentLayer)
-      ? `The ${code} layer is locked.`
-      : `You can't edit ${code} cues.`
+  const reason = session.whyCantEdit(row)
+  const editable = reason === null
   const choices = session.departments.filter(
     (d) =>
       d.id === cue.departmentId ||
@@ -77,7 +72,9 @@ export function CueEditor({ cueId, historySlot }: CueEditorProps) {
   }
 
   return (
-    <section className="cue-editor" aria-label="Cue editor">
+    // Escape in a field (a choice here; text fields cancel their draft first) leaves the field and
+    // keeps the cue selected; only an Escape outside the form deselects.
+    <section className="cue-editor" aria-label="Cue editor" onKeyDown={leaveFieldOnEscape}>
       <h2>{markerText(cue.type, code, number)}</h2>
       {!editable && <p className="muted">{reason}</p>}
       <fieldset disabled={!editable}>
@@ -147,6 +144,19 @@ export function CueEditor({ cueId, historySlot }: CueEditorProps) {
   )
 }
 
+function leaveFieldOnEscape(e: KeyboardEvent<HTMLElement>) {
+  if (e.key !== 'Escape' || e.defaultPrevented) return
+  const field = e.target
+  if (
+    field instanceof HTMLSelectElement ||
+    field instanceof HTMLInputElement ||
+    field instanceof HTMLTextAreaElement
+  ) {
+    e.preventDefault()
+    field.blur()
+  }
+}
+
 interface CommitInputProps {
   id: string
   value: string
@@ -156,10 +166,15 @@ interface CommitInputProps {
   'aria-describedby'?: string
 }
 
-/** A text field that edits a draft and commits it on blur or Enter; it follows `value` while not focused. */
+/**
+ * A text field that edits a draft and commits it on blur or Enter; Escape throws the draft away and
+ * leaves the field. It follows `value` while not focused.
+ */
 function CommitInput({ value, onCommit, multiline = false, ...aria }: CommitInputProps) {
   const [draft, setDraft] = useState(value)
   const [focused, setFocused] = useState(false)
+  /** Set by Escape so the blur that follows does not commit the abandoned draft. */
+  const cancelled = useRef(false)
   useEffect(() => {
     if (!focused) setDraft(value)
   }, [value, focused])
@@ -169,17 +184,32 @@ function CommitInput({ value, onCommit, multiline = false, ...aria }: CommitInpu
     onFocus: () => setFocused(true),
     onBlur: () => {
       setFocused(false)
-      onCommit(multiline ? draft : draft.trim())
+      if (cancelled.current) cancelled.current = false
+      else onCommit(multiline ? draft : draft.trim())
     },
   }
+  function cancelOnEscape(e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    if (e.key !== 'Escape') return false
+    e.preventDefault()
+    cancelled.current = true
+    setDraft(value)
+    e.currentTarget.blur()
+    return true
+  }
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (cancelOnEscape(e)) return
     if (e.key === 'Enter') {
       e.preventDefault()
       onCommit(draft.trim())
     }
   }
   return multiline ? (
-    <textarea {...common} rows={3} onChange={(e) => setDraft(e.target.value)} />
+    <textarea
+      {...common}
+      rows={3}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={cancelOnEscape}
+    />
   ) : (
     <input {...common} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKeyDown} />
   )

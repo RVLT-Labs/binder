@@ -7,6 +7,7 @@ import { LayerPanel } from '../markup/LayerPanel'
 import { PageMarkup } from '../markup/MarkupOverlay'
 import { MarkupSessionProvider } from '../markup/MarkupSession'
 import { MarkupTools } from '../markup/MarkupTools'
+import { SelectionAnnouncer } from '../markup/SelectionAnnouncer'
 import { useSelection } from '../markup/selection'
 import { useMarkupShortcuts } from '../markup/useMarkupShortcuts'
 import type { DocumentRow, DocumentVersionRow, PageRow } from '../powersync/schema'
@@ -164,6 +165,7 @@ function MarkupSide({ showId }: { showId: string }) {
   const selection = useSelection()
   return (
     <>
+      <SelectionAnnouncer />
       <LayerPanel showId={showId} />
       {selection?.table === 'cues' && <CueEditor key={selection.id} cueId={selection.id} />}
     </>

@@ -1,6 +1,6 @@
-import { render } from '@testing-library/react'
-import { expect, test } from 'vitest'
-import { CueMarker, markerTextWidth } from './CueMarker'
+import { fireEvent, render } from '@testing-library/react'
+import { expect, test, vi } from 'vitest'
+import { CueMarker, cueAccessibleName, markerTextWidth } from './CueMarker'
 import { SvgText } from './SvgText'
 
 test('SvgText counter-flips so text inside the y-up overlay reads upright', () => {
@@ -80,4 +80,44 @@ test('standby markers are dashed outlines on a white backing, and a selected mar
   expect(g.querySelectorAll('text')).toHaveLength(1)
   expect(g.getAttribute('data-selected')).toBe('true')
   expect(g.querySelector('.cue-marker-selection')).not.toBeNull()
+})
+
+test('the accessible name gives the marker text, the label, and the page', () => {
+  expect(cueAccessibleName(cue)).toBe('LX 10.5, Sunrise, page 1')
+  expect(
+    cueAccessibleName({ ...cue, type: 'warn', label: '', anchor: { ...cue.anchor, pageIndex: 1 } }),
+  ).toBe('W LX 10.5, page 2')
+})
+
+test('a marker is a focusable, labelled button that reports whether it is selected', () => {
+  const { getByRole, rerender } = render(
+    <svg aria-label="Page 1 markup">
+      <CueMarker cue={cue} selected={false} />
+    </svg>,
+  )
+  const button = getByRole('button', { name: 'LX 10.5, Sunrise, page 1' })
+  expect(button.getAttribute('tabindex')).toBe('0')
+  expect(button.getAttribute('aria-pressed')).toBe('false')
+  rerender(
+    <svg aria-label="Page 1 markup">
+      <CueMarker cue={cue} selected />
+    </svg>,
+  )
+  expect(
+    getByRole('button', { name: 'LX 10.5, Sunrise, page 1' }).getAttribute('aria-pressed'),
+  ).toBe('true')
+})
+
+test('Enter and Space activate a focused marker; other keys do not', () => {
+  const onActivate = vi.fn()
+  const { getByRole } = render(
+    <svg aria-label="Page 1 markup">
+      <CueMarker cue={cue} selected={false} onActivate={onActivate} />
+    </svg>,
+  )
+  const button = getByRole('button', { name: 'LX 10.5, Sunrise, page 1' })
+  fireEvent.keyDown(button, { key: 'Enter' })
+  fireEvent.keyDown(button, { key: ' ' })
+  fireEvent.keyDown(button, { key: 'a' })
+  expect(onActivate).toHaveBeenCalledTimes(2)
 })

@@ -27,6 +27,29 @@ test('PageOverlay draws in displayed points, y up, over a page box of displayed 
   expect(g.querySelector('circle')).not.toBeNull()
 })
 
+test('an overlay without a label is hidden from assistive technology', () => {
+  const { container } = render(
+    <PageOverlay width={612} height={792} zoom={1}>
+      <circle r="1" />
+    </PageOverlay>,
+  )
+  const svg = container.querySelector('svg') as SVGSVGElement
+  expect(svg.getAttribute('aria-hidden')).toBe('true')
+  expect(svg.getAttribute('role')).toBeNull()
+})
+
+test('a labelled overlay is a named group that assistive technology can enter', () => {
+  const { getByRole } = render(
+    <PageOverlay width={612} height={792} zoom={1} label="Page 2 markup">
+      {/* biome-ignore lint/a11y/useSemanticElements: stands in for an SVG cue marker */}
+      <g role="button" aria-label="LX 10" tabIndex={0} />
+    </PageOverlay>,
+  )
+  const group = getByRole('group', { name: 'Page 2 markup' })
+  expect(group.getAttribute('aria-hidden')).toBeNull()
+  expect(getByRole('button', { name: 'LX 10' })).toBeTruthy()
+})
+
 test('SearchHighlights draws a rect per matched word in displayed coordinates', () => {
   const hits = [
     { pageIndex: 0, lineIndex: 0, wordStart: 1, wordEnd: 2, snippet: 'Pirate King' },

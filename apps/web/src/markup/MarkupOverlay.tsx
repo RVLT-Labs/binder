@@ -3,6 +3,8 @@ import type { WordLayer } from '@binder/shared'
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useRef,
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
@@ -46,10 +48,20 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const selection = useSelection()
   const { tool, cueType } = useTool()
   const [ghost, setGhost] = useState<Ghost | null>(null)
+  /** The drag in progress from this page, if any. */
+  const drag = useRef<{ id: string; stop: () => void } | null>(null)
   const pageIndex = page.index ?? 0
   const size = { width: page.width ?? 0, height: page.height ?? 0 }
   const cues = session.view.cuesByPage.get(pageIndex) ?? []
   const placing = tool === 'cue' && !('disabled' in session.cueTarget)
+
+  // A cue that disappears mid-drag (deleted elsewhere, its layer hidden) ends the drag at once.
+  useEffect(() => {
+    const dragged = drag.current
+    if (dragged && !cues.some((c) => c.id === dragged.id)) dragged.stop()
+  }, [cues])
+  // So does the page leaving the list.
+  useEffect(() => () => drag.current?.stop(), [])
 
   /** The pointer on this page, in displayed points. */
   function pointOf(e: ReactMouseEvent<Element>) {
@@ -92,11 +104,17 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
       dragging = true
       setGhost({ cue, x: ev.clientX, y: ev.clientY })
     }
-    const end = (ev: PointerEvent) => {
-      target.removeEventListener('pointermove', move)
-      target.removeEventListener('pointerup', end)
-      target.removeEventListener('pointercancel', end)
+    // Listening on the window, not the marker: if the marker goes mid-drag (a collaborator deleted
+    // the cue) the release still ends the drag.
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      if (drag.current?.stop === stop) drag.current = null
       setGhost(null)
+    }
+    const end = (ev: PointerEvent) => {
+      stop()
       if (!dragging || ev.type === 'pointercancel') return
       const drop = pageAt(ev.clientX, ev.clientY)
       const dropPage = drop ? session.pages[drop.pageIndex] : undefined
@@ -107,9 +125,11 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
       })
       void session.moveCue(cue.id, drop.pageIndex, point)
     }
-    target.addEventListener('pointermove', move)
-    target.addEventListener('pointerup', end)
-    target.addEventListener('pointercancel', end)
+    drag.current?.stop()
+    drag.current = { id: cue.id, stop }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
   }
 
   return (
@@ -142,6 +162,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
             selected={selected}
             movable={movable}
             onPointerDown={(e) => onMarkerDown(e, cue)}
+            onActivate={() => select('cues', cue.id)}
           />
         )
       })}

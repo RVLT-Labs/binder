@@ -194,9 +194,10 @@ test('A places an LX cue snapped to a line on page 1 and B sees it within 5s', a
     expect(row?.anchor?.text?.quote.length).toBeGreaterThan(0)
     expect(row?.anchor?.status).toBe('ok')
 
-    // B's device draws it, upright, within five seconds.
+    // B's device draws it, upright, within five seconds, as a named control.
     const bMarker = marker(b.page, id)
     await expect(bMarker).toBeVisible({ timeout: 5_000 })
+    await expect(b.page.getByRole('button', { name: 'LX 10, page 1', exact: true })).toBeVisible()
     const number = bMarker.locator('text').first()
     await expect(number).toHaveText('LX 10')
     const scaleY = await number.evaluate((t: SVGTextElement) => t.getCTM()?.d ?? 0)
@@ -229,6 +230,22 @@ test('A places an LX cue snapped to a line on page 1 and B sees it within 5s', a
     await expect(number).toHaveText('LX 10.5', { timeout: 5_000 })
     const renumbered = await localCue(b.page, id)
     expect([renumbered?.major, renumbered?.minor]).toEqual([10, 50])
+    await expect(
+      b.page.getByRole('button', { name: 'LX 10.5, Sunrise, page 1', exact: true }),
+    ).toBeVisible()
+
+    // Escape in a field abandons the draft and keeps the cue selected; a second Escape deselects.
+    const labelField = editor.getByLabel('Label')
+    await labelField.fill('Abandoned draft')
+    await labelField.press('Escape')
+    await expect(labelField).toHaveValue('Sunrise')
+    await expect(labelField).not.toBeFocused()
+    await expect(marker(a.page, id)).toHaveAttribute('data-selected', 'true')
+    await a.page.waitForTimeout(500)
+    expect((await localCue(a.page, id))?.label).toBe('Sunrise')
+    await a.page.keyboard.press('Escape')
+    await expect(selected(a.page)).toHaveCount(0)
+    await expect(editor).toHaveCount(0)
   })
 })
 
@@ -394,10 +411,36 @@ test('keyboard: c places a cue in the active layer at the pointer, ] selects the
     expect(ordered).toContain(id)
     await a.page.keyboard.press('Escape')
     await expect(selected(a.page)).toHaveCount(0)
+
+    // Markers are reachable without a pointer: Tab from the pages lands on the first, Enter selects
+    // it, and the choice is announced.
+    await a.page.getByRole('region', { name: 'Pages' }).focus()
+    await a.page.keyboard.press('Tab')
+    const focused = a.page.locator('[data-cue-id]:focus')
+    await expect(focused).toHaveAttribute('data-cue-id', ordered[0] ?? '')
+    await expect(focused).toHaveAttribute('role', 'button')
+    await a.page.keyboard.press('Enter')
+    expect(await selectedId(a.page)).toBe(ordered[0])
+    await expect(focused).toHaveAttribute('aria-pressed', 'true')
+    const name = (await focused.getAttribute('aria-label')) ?? ''
+    await expect(a.page.getByRole('status').filter({ hasText: 'Selected' })).toHaveText(
+      `Selected ${name}`,
+    )
+    await a.page.keyboard.press('Escape')
+    await expect(selected(a.page)).toHaveCount(0)
+    await expect(a.page.getByRole('status').filter({ hasText: 'selected' })).toHaveText(
+      'No cue selected',
+    )
+
     await a.page.keyboard.press(']')
     expect(await selectedId(a.page)).toBe(ordered[0])
     await a.page.keyboard.press(']')
     expect(await selectedId(a.page)).toBe(ordered[1])
+    // Focus follows the walk.
+    await expect(a.page.locator('[data-cue-id]:focus')).toHaveAttribute(
+      'data-cue-id',
+      ordered[1] ?? '',
+    )
     await a.page.keyboard.press('[')
     expect(await selectedId(a.page)).toBe(ordered[0])
     for (let i = 0; i < ordered.indexOf(id); i++) await a.page.keyboard.press(']')
@@ -439,10 +482,18 @@ test('hiding LX hides its markers and survives a reload', async ({ browser }) =>
     await expect(a.page.getByText('The LX layer is locked.', { exact: true }).first()).toBeVisible()
     await layers.getByLabel('Lock LX').uncheck()
     await expect(a.page.getByRole('button', { name: 'Cue tool' })).toBeEnabled()
+    await layers.getByLabel('Active layer SND').check()
 
     await layers.getByLabel('Show LX').uncheck()
     await expect(marker(a.page, lx)).toHaveCount(0)
     await expect(marker(a.page, snd)).toBeVisible()
+    // The cue tool will not place onto a hidden layer, where the cue would vanish as it lands.
+    const tool = a.page.getByRole('button', { name: 'Cue tool' })
+    await expect(layers.getByLabel('Active layer SND')).toBeChecked()
+    await expect(tool).toBeEnabled()
+    await layers.getByLabel('Active layer LX').check()
+    await expect(tool).toBeDisabled()
+    await expect(tool).toHaveAccessibleDescription('Show the LX layer to place cues on it')
     // Hidden markers are gone from the keyboard walk too: no LX marker is drawn at all.
     await expect(a.page.locator('[data-cue-label^="LX "]')).toHaveCount(0)
 
@@ -453,7 +504,41 @@ test('hiding LX hides its markers and survives a reload', async ({ browser }) =>
     await expect(marker(a.page, lx)).toHaveCount(0)
     expect(await localCue(a.page, lx)).not.toBeNull()
 
+    await expect(a.page.getByRole('button', { name: 'Cue tool' })).toBeDisabled()
+
     await layers.getByLabel('Show LX').check()
     await expect(marker(a.page, lx)).toBeVisible()
+    await expect(a.page.getByRole('button', { name: 'Cue tool' })).toBeEnabled()
+  })
+})
+
+test('a drag ends cleanly when a collaborator deletes the cue mid-drag', async ({ browser }) => {
+  await withUsers(browser, ['owner', 'sndEditor'], async ([a, b]) => {
+    await a.page.getByLabel('Active layer SND').check()
+    const id = await placeWithTool(a.page, 0, lineOf((await pageText(a.page, 0)).words, 14))
+    await expect(marker(b.page, id)).toBeVisible({ timeout: 5_000 })
+
+    // A picks the selected marker up and holds it.
+    const from = await a.page.locator(`[data-cue-id="${id}"] rect.cue-marker-box`).boundingBox()
+    if (!from) throw new Error('marker not on screen')
+    await a.page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await a.page.mouse.down()
+    await a.page.mouse.move(from.x + 60, from.y + 80, { steps: 6 })
+    await expect(a.page.locator('.cue-drag-ghost')).toBeVisible()
+
+    // B (SND editor) deletes it meanwhile.
+    await marker(b.page, id).click()
+    await b.page.keyboard.press('Delete')
+    await expect.poll(() => localCue(b.page, id)).toBeNull()
+
+    // A's drag ends as the cue goes, and the release afterwards does nothing.
+    await expect(marker(a.page, id)).toHaveCount(0, { timeout: 5_000 })
+    await expect(a.page.locator('.cue-drag-ghost')).toHaveCount(0)
+    await a.page.mouse.move(from.x + 90, from.y + 120, { steps: 4 })
+    await a.page.mouse.up()
+    await expect(a.page.locator('.cue-drag-ghost')).toHaveCount(0)
+    await a.page.waitForTimeout(500)
+    expect(await localCue(a.page, id)).toBeNull()
+    await expect(a.page.getByRole('alert')).toHaveCount(0)
   })
 })

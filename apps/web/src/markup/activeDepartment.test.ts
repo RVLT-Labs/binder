@@ -42,6 +42,7 @@ describe('cueToolState', () => {
     lastActiveDepartment: null,
     editable: [lx, me],
     locked: [] as string[],
+    hidden: [] as string[],
     departmentCode: (id: string) => id.toUpperCase(),
   }
 
@@ -66,6 +67,17 @@ describe('cueToolState', () => {
     expect(cueToolState({ ...base, active: me, editable: [me] })).toEqual({
       disabled: NO_DEPARTMENT_HINT,
     })
+  })
+
+  test('a hidden target layer disables it: a cue placed there would be invisible', () => {
+    expect(cueToolState({ ...base, hidden: ['department:lx'] })).toEqual({
+      disabled: 'Show the LX layer to place cues on it',
+    })
+    expect(
+      cueToolState({ ...base, active: me, lastActiveDepartment: 'lx', hidden: ['department:lx'] }),
+    ).toEqual({ disabled: 'Show the LX layer to place cues on it' })
+    // Hiding some other layer changes nothing.
+    expect(cueToolState({ ...base, hidden: ['department:snd'] })).toEqual({ departmentId: 'lx' })
   })
 
   test('a locked target layer disables it and says which', () => {
