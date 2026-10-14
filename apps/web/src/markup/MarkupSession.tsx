@@ -1,4 +1,11 @@
-import { type CueType, canEditLayer, type LayerRef, layerKey, type WordLayer } from '@binder/shared'
+import {
+  type CueType,
+  canEditLayer,
+  type LayerRef,
+  layerKey,
+  PERSONAL_LAYER_COLOUR,
+  type WordLayer,
+} from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
 import {
   createContext,
@@ -13,7 +20,7 @@ import {
 import { pushNotice } from '../components/noticeStore'
 import type { PageRow, ShowRow } from '../powersync/schema'
 import type { ViewerHandle } from '../viewer/Viewer'
-import { cueToolState } from './activeDepartment'
+import { annotationToolState, cueToolState } from './activeDepartment'
 import { focusCueMarker } from './CueMarker'
 import type { LayerState, LayerStore } from './layerState'
 import type { CueRowWithDept, MarkupView } from './markupView'
@@ -21,16 +28,23 @@ import { deleteCue, type EditContext, insertCue, updateCue } from './mutations'
 import { anchorAt, numberAt } from './placement'
 import { clearSelection, select } from './selection'
 import { effectiveSnap, loadSnapOverride, saveSnapOverride } from './snapPref'
+import { readStamps } from './stampSettings'
+import { type AnnotationActions, useAnnotationActions } from './useAnnotationActions'
 import type { DepartmentRow } from './useDepartments'
 import { useLayers } from './useLayers'
 import { useMarkup } from './useMarkup'
 import { loadWordLayer } from './wordLayers'
 
+const annotationLayer = (a: { layer_kind: string | null; layer_id: string | null }): LayerRef => ({
+  kind: a.layer_kind === 'personal' ? 'personal' : 'department',
+  id: a.layer_id ?? '',
+})
+
 export const ARCHIVED_HINT = 'This show is archived, so its markup is read-only.'
 
 type Point = { x: number; y: number }
 
-export interface MarkupSession {
+export interface MarkupSession extends AnnotationActions {
   showId: string
   documentId: string
   versionId: string
@@ -48,6 +62,10 @@ export interface MarkupSession {
   readOnly: string | null
   /** Where the cue tool places cues, or why it is disabled. */
   cueTarget: { departmentId: string } | { disabled: string }
+  /** Where the annotation tools draw (the active layer), or why they are disabled. */
+  annotationTarget: { layer: LayerRef } | { disabled: string }
+  /** The show's stamp set (its own, else the defaults). */
+  stamps: string[]
   snap: boolean
   setSnap(on: boolean): void
   view: MarkupView
@@ -60,6 +78,13 @@ export interface MarkupSession {
   whyCantEdit(cue: { department_id: string | null }): string | null
   /** `whyCantEdit(cue) === null`. */
   canEditCue(cue: { department_id: string | null }): boolean
+  /** As `whyCantEdit`, for an annotation's layer (department or personal). */
+  whyCantEditAnnotation(a: { layer_kind: string | null; layer_id: string | null }): string | null
+  canEditAnnotation(a: { layer_kind: string | null; layer_id: string | null }): boolean
+  /** `LX`, or `Personal`: how a layer is named to the user. */
+  layerName(layer: LayerRef): string
+  /** The layer's colour: a department's own, or the personal layer's grey. */
+  layerColour(layer: LayerRef): string
   /** `words` is the page's word layer when the caller already has it; otherwise it is loaded. */
   placeCue(pageIndex: number, point: Point, type: CueType, words?: WordLayer | null): Promise<void>
   moveCue(id: string, pageIndex: number, point: Point): Promise<void>
@@ -107,8 +132,8 @@ export function MarkupSessionProvider({
   const db = usePowerSync()
   const { userId, scope, departments, editable, active, state: layers, store } = useLayers(showId)
   const view = useMarkup(showId, versionId)
-  const { data: shows } = useQuery<Pick<ShowRow, 'status'>>(
-    'SELECT status FROM shows WHERE id = ?',
+  const { data: shows } = useQuery<Pick<ShowRow, 'status' | 'settings'>>(
+    'SELECT status, settings FROM shows WHERE id = ?',
     [showId],
   )
   const [snapOverride, setSnapOverride] = useState(() => loadSnapOverride(documentId))
@@ -117,6 +142,7 @@ export function MarkupSessionProvider({
   useEffect(() => () => clearSelection(), [])
 
   const readOnly = shows[0]?.status === 'archived' ? ARCHIVED_HINT : null
+  const departmentName = (id: string) => departments.find((d) => d.id === id)?.code ?? '?'
   const cueTarget = cueToolState({
     readOnly,
     active,
@@ -124,49 +150,92 @@ export function MarkupSessionProvider({
     editable,
     locked: layers.locked,
     hidden: layers.hidden,
-    departmentCode: (id) => departments.find((d) => d.id === id)?.code ?? '?',
+    departmentCode: departmentName,
   })
+  const layerName = (layer: LayerRef) =>
+    layer.kind === 'personal' ? 'Personal' : departmentName(layer.id)
+  const annotationTarget = annotationToolState({
+    readOnly,
+    active,
+    editable,
+    locked: layers.locked,
+    hidden: layers.hidden,
+    layerName,
+  })
+  const stamps = readStamps(shows[0]?.settings)
   const snap = effectiveSnap(snapDefault, snapOverride)
 
   /** The live edit context: the membership scope as it is now, never a copy from an earlier render. */
   const ctx: EditContext | null = scope && userId ? { showId, userId, scope } : null
-  const departmentCode = (id: string) => departments.find((d) => d.id === id)?.code ?? '?'
   const now = {
     ctx,
     readOnly,
     editable,
     locked: layers.locked,
     cueTarget,
+    annotationTarget,
     snap,
     pages,
-    departmentCode,
+    layerName,
   }
   const latest = useRef(now)
   latest.current = now
 
   const editContext = useCallback(() => latest.current.ctx, [])
 
-  const whyCantEdit = useCallback((cue: { department_id: string | null }) => {
+  /** Why the layer cannot be changed now (archived show, outside scope, locked), or null. */
+  const whyCantEditLayer = useCallback((layer: LayerRef, noun: 'cues' | 'annotations') => {
     const now = latest.current
     if (now.readOnly) return now.readOnly
-    const code = now.departmentCode(cue.department_id ?? '')
-    if (!now.ctx || !cue.department_id) return `You can't edit ${code} cues.`
-    const layer: LayerRef = { kind: 'department', id: cue.department_id }
+    const name = now.layerName(layer)
+    const refusal =
+      layer.kind === 'personal'
+        ? "You can't edit another person's personal layer."
+        : `You can't edit ${name} ${noun}.`
+    if (!now.ctx || !layer.id) return refusal
     const key = layerKey(layer)
     if (
       !now.editable.some((l) => layerKey(l) === key) ||
       !canEditLayer(now.ctx.scope, now.ctx.userId, layer)
     ) {
-      return `You can't edit ${code} cues.`
+      return refusal
     }
-    if (now.locked.includes(key)) return `The ${code} layer is locked.`
+    if (now.locked.includes(key)) return `The ${name} layer is locked.`
     return null
   }, [])
+
+  const whyCantEdit = useCallback(
+    (cue: { department_id: string | null }) =>
+      whyCantEditLayer({ kind: 'department', id: cue.department_id ?? '' }, 'cues'),
+    [whyCantEditLayer],
+  )
 
   const canEditCue = useCallback(
     (cue: { department_id: string | null }) => whyCantEdit(cue) === null,
     [whyCantEdit],
   )
+
+  const whyCantEditAnnotation = useCallback(
+    (a: { layer_kind: string | null; layer_id: string | null }) =>
+      whyCantEditLayer(annotationLayer(a), 'annotations'),
+    [whyCantEditLayer],
+  )
+  const canEditAnnotation = useCallback(
+    (a: { layer_kind: string | null; layer_id: string | null }) =>
+      whyCantEditAnnotation(a) === null,
+    [whyCantEditAnnotation],
+  )
+
+  const annotations = useAnnotationActions({
+    db,
+    documentId,
+    versionId,
+    now: latest,
+    whyCantEditLayer: useCallback(
+      (layer) => whyCantEditLayer(layer, 'annotations'),
+      [whyCantEditLayer],
+    ),
+  })
 
   /**
    * The rights check every move and delete makes itself, whoever calls it: the cue as stored now.
@@ -302,12 +371,22 @@ export function MarkupSessionProvider({
     store,
     readOnly,
     cueTarget,
+    annotationTarget,
+    stamps,
     snap,
     setSnap,
     view,
     editContext,
     whyCantEdit,
     canEditCue,
+    whyCantEditAnnotation,
+    canEditAnnotation,
+    layerName,
+    layerColour: (layer) =>
+      layer.kind === 'personal'
+        ? PERSONAL_LAYER_COLOUR
+        : (departments.find((d) => d.id === layer.id)?.colour ?? PERSONAL_LAYER_COLOUR),
+    ...annotations,
     placeCue,
     moveCue,
     removeCue,

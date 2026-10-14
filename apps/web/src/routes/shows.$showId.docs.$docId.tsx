@@ -2,6 +2,7 @@ import { useQuery } from '@powersync/react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useRef } from 'react'
 import { blobUrl } from '../blobs/fetchBlob'
+import { AnnotationEditor } from '../markup/AnnotationEditor'
 import { CueEditor } from '../markup/CueEditor'
 import { LayerPanel } from '../markup/LayerPanel'
 import { PageMarkup } from '../markup/MarkupOverlay'
@@ -160,7 +161,7 @@ function MarkupKeys() {
   return null
 }
 
-/** Layers, and the selected cue's editor. */
+/** Layers, and the selected cue's or annotation's editor. */
 function MarkupSide({ showId }: { showId: string }) {
   const selection = useSelection()
   return (
@@ -168,6 +169,9 @@ function MarkupSide({ showId }: { showId: string }) {
       <SelectionAnnouncer />
       <LayerPanel showId={showId} />
       {selection?.table === 'cues' && <CueEditor key={selection.id} cueId={selection.id} />}
+      {selection?.table === 'annotations' && (
+        <AnnotationEditor key={selection.id} annotationId={selection.id} />
+      )}
     </>
   )
 }

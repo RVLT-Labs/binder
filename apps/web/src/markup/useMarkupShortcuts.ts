@@ -31,7 +31,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 /**
  * The viewer's markup keys while a document is open: `]` and `[` walk the shown cues, `c` places
  * a cue at the pointer, `g` jumps to a page, `1`-`9` pick the active layer, Delete removes the
- * selected cue, Escape deselects. Undo and redo arrive with the undo stack.
+ * selected cue or annotation, Escape deselects. Undo and redo arrive with the undo stack.
  */
 export function useMarkupShortcuts(): void {
   const current = { session: useMarkupSession(), selection: useSelection(), tool: useTool() }
@@ -82,6 +82,16 @@ export function useMarkupShortcuts(): void {
           break
         }
         case 'delete': {
+          if (selection?.table === 'annotations') {
+            const id = selection.id
+            let row: { layer_kind: string | null; layer_id: string | null } | undefined
+            for (const rows of session.view.annotationsByPage.values()) {
+              row = rows.find((r) => r.id === id) ?? row
+            }
+            if (!row || !session.canEditAnnotation(row)) return
+            void session.removeAnnotation(id)
+            break
+          }
           const cue = selectedCue ? session.view.ordered.find((c) => c.id === selectedCue) : null
           if (!cue || !session.canEditCue(cue)) return
           void session.removeCue(cue.id)

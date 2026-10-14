@@ -70,3 +70,21 @@ test('a field still commits on Enter', () => {
   fireEvent.keyDown(label, { key: 'Enter' })
   expect(updateCue).toHaveBeenCalledWith({}, expect.anything(), 'c1', { label: 'Sunset' })
 })
+
+test('Escape in the Number field clears a stale error as it restores the stored value', () => {
+  const { getByLabelText, queryByRole } = render(<CueEditor cueId="c1" />)
+  const number = getByLabelText('Number') as HTMLInputElement
+  number.focus()
+  fireEvent.change(number, { target: { value: 'ten' } })
+  fireEvent.blur(number)
+  expect(queryByRole('alert')?.textContent).toMatch(/Cue numbers look like/)
+  // Back in the field with the bad draft still there, Escape abandons it.
+  number.focus()
+  const escapeKey = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+  act(() => {
+    number.dispatchEvent(escapeKey)
+  })
+  expect(number.value).toBe('10')
+  expect(queryByRole('alert')).toBeNull()
+  expect(updateCue).not.toHaveBeenCalled()
+})

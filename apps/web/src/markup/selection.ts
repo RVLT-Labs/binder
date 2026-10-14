@@ -26,3 +26,17 @@ export const clearSelection = (): void => set(null)
 export function useSelection(): Selection {
   return useSyncExternalStore(subscribe, () => current)
 }
+
+let fresh: string | null = null
+
+/** Marks a row just created, so its editor can take focus once (a new note wants its text typed). */
+export function markFresh(id: string): void {
+  fresh = id
+}
+
+/** True once for the row `markFresh` named. */
+export function takeFresh(id: string): boolean {
+  if (fresh !== id) return false
+  fresh = null
+  return true
+}

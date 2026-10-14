@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  annotationToolState,
   cueTargetDepartment,
   cueToolState,
   LOADING_LAYERS_HINT,
@@ -83,6 +84,61 @@ describe('cueToolState', () => {
   test('a locked target layer disables it and says which', () => {
     expect(cueToolState({ ...base, locked: ['department:lx'] })).toEqual({
       disabled: 'The LX layer is locked.',
+    })
+  })
+})
+
+describe('annotationToolState', () => {
+  const lx = { kind: 'department' as const, id: 'lx' }
+  const me = { kind: 'personal' as const, id: 'u1' }
+  const base = {
+    readOnly: null,
+    active: lx as typeof lx | typeof me | null,
+    editable: [lx, me],
+    locked: [] as string[],
+    hidden: [] as string[],
+    layerName: (l: { kind: string; id: string }) => (l.kind === 'personal' ? 'Personal' : 'LX'),
+  }
+
+  test('draws on the active layer, department or personal', () => {
+    expect(annotationToolState(base)).toEqual({ layer: lx })
+    expect(annotationToolState({ ...base, active: me })).toEqual({ layer: me })
+  })
+
+  test('an archived show disables it with the read-only reason', () => {
+    expect(annotationToolState({ ...base, readOnly: 'archived!' })).toEqual({
+      disabled: 'archived!',
+    })
+  })
+
+  test('it waits for the membership to sync', () => {
+    expect(annotationToolState({ ...base, active: null, editable: [] })).toEqual({
+      disabled: LOADING_LAYERS_HINT,
+    })
+  })
+
+  test('a hidden active layer disables it: a shape drawn there would be invisible', () => {
+    expect(annotationToolState({ ...base, hidden: ['department:lx'] })).toEqual({
+      disabled: 'Show the LX layer to draw on it',
+    })
+    expect(annotationToolState({ ...base, active: me, hidden: ['personal:u1'] })).toEqual({
+      disabled: 'Show the Personal layer to draw on it',
+    })
+    expect(annotationToolState({ ...base, hidden: ['department:snd'] })).toEqual({ layer: lx })
+  })
+
+  test('a locked active layer disables it and says which', () => {
+    expect(annotationToolState({ ...base, locked: ['department:lx'] })).toEqual({
+      disabled: 'The LX layer is locked.',
+    })
+    expect(annotationToolState({ ...base, active: me, locked: ['personal:u1'] })).toEqual({
+      disabled: 'The Personal layer is locked.',
+    })
+  })
+
+  test('a layer the user cannot edit is never a target', () => {
+    expect(annotationToolState({ ...base, editable: [me] })).toEqual({
+      disabled: "You can't edit the LX layer.",
     })
   })
 })

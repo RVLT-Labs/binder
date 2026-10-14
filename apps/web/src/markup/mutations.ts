@@ -1,8 +1,11 @@
 import { columnEqual } from '@binder/core'
 import {
+  type AnnotationFields,
+  annotationFieldsSchema,
   type CueFields,
   canEditLayer,
   cueFieldsSchema,
+  type LayerKind,
   type MembershipScope,
   newId,
 } from '@binder/shared'
@@ -278,6 +281,161 @@ export async function deleteCue(
     assertCanEdit(ctx, String(before.department_id))
     await tx.execute('DELETE FROM cues WHERE id = ?', [id])
     return { table: 'cues', id, op: 'delete', before, after: null } satisfies LocalEdit
+  })
+  if (edit) emit([edit], opts.source ?? 'user')
+}
+
+// ---- Annotations ----------------------------------------------------------------------------
+
+function assertValidAnnotation(fields: AnnotationFields, mode: 'create' | 'update'): void {
+  const parsed = annotationFieldsSchema(mode).safeParse(fields)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    throw new MarkupError(
+      'invalid',
+      `${issue?.path.join('.') || 'annotation'}: ${issue?.message ?? 'invalid'}`,
+    )
+  }
+}
+
+function assertCanEditAnnotationLayer(ctx: EditContext, kind: LayerKind, id: string): void {
+  if (!canEditLayer(ctx.scope, ctx.userId, { kind, id })) {
+    throw new MarkupError('forbidden', "You can't edit annotations on that layer.")
+  }
+}
+
+/** The writable annotation columns for `fields`; anchor, geometry and style are JSON text. */
+export function toAnnotationRow(fields: AnnotationFields): Record<string, string> {
+  return {
+    layer_kind: fields.layerKind,
+    layer_id: fields.layerId,
+    anchor: JSON.stringify(fields.anchor),
+    type: fields.type,
+    geometry: JSON.stringify(fields.geometry),
+    text: fields.text,
+    style: JSON.stringify(fields.style),
+  }
+}
+
+const ANNOTATION_COLUMN: Record<keyof AnnotationFields, string> = {
+  layerKind: 'layer_kind',
+  layerId: 'layer_id',
+  anchor: 'anchor',
+  type: 'type',
+  geometry: 'geometry',
+  text: 'text',
+  style: 'style',
+}
+
+/** The annotation fields held by a local `annotations` row. */
+export function fromAnnotationRow(row: Record<string, unknown>): AnnotationFields {
+  return {
+    layerKind: row.layer_kind === 'personal' ? 'personal' : 'department',
+    layerId: String(row.layer_id),
+    anchor: parseJson(row.anchor) as AnnotationFields['anchor'],
+    type: row.type as AnnotationFields['type'],
+    geometry: (parseJson(row.geometry) ?? {}) as AnnotationFields['geometry'],
+    text: String(row.text ?? ''),
+    style: (parseJson(row.style) ?? {}) as AnnotationFields['style'],
+  }
+}
+
+async function readAnnotation(
+  tx: Pick<AbstractPowerSyncDatabase, 'getOptional'>,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  return tx.getOptional<Record<string, unknown>>('SELECT * FROM annotations WHERE id = ?', [id])
+}
+
+/** Places a new annotation; resolves to its id. */
+export async function insertAnnotation(
+  db: Db,
+  ctx: EditContext,
+  fields: AnnotationFields,
+  opts: MutationOptions = {},
+): Promise<string> {
+  assertValidAnnotation(fields, 'create')
+  assertCanEditAnnotationLayer(ctx, fields.layerKind, fields.layerId)
+  const id = newId()
+  const now = new Date().toISOString()
+  const row: Record<string, string> = {
+    id,
+    show_id: ctx.showId,
+    ...toAnnotationRow(fields),
+    created_at: now,
+    updated_at: now,
+    updated_by: ctx.userId,
+  }
+  const cols = Object.keys(row)
+  const edit = await db.writeTransaction(async (tx) => {
+    await tx.execute(
+      `INSERT INTO annotations (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+      cols.map((c) => row[c]),
+    )
+    const after = await readAnnotation(tx, id)
+    return { table: 'annotations', id, op: 'insert', before: null, after } satisfies LocalEdit
+  })
+  emit([edit], opts.source ?? 'user')
+  return id
+}
+
+/** Changes some fields of an annotation; the merged row is validated and both layers must be editable. */
+export async function updateAnnotation(
+  db: Db,
+  ctx: EditContext,
+  id: string,
+  patch: Partial<AnnotationFields>,
+  opts: MutationOptions = {},
+): Promise<void> {
+  const edit = await db.writeTransaction(async (tx) => {
+    const before = await readAnnotation(tx, id)
+    if (!before) return null
+    const current = fromAnnotationRow(before)
+    assertCanEditAnnotationLayer(ctx, current.layerKind, current.layerId)
+    const defined = Object.fromEntries(
+      Object.entries(patch).filter(([, v]) => v !== undefined),
+    ) as Partial<AnnotationFields>
+    const merged = { ...current, ...defined }
+    // Re-anchoring can leave a highlight unbound, so a stored row is held to the update rules.
+    assertValidAnnotation(merged, 'update')
+    assertCanEditAnnotationLayer(ctx, merged.layerKind, merged.layerId)
+    const next = toAnnotationRow(merged)
+    const jsonCols = JSON_COLUMNS.annotations
+    const changed = (Object.keys(defined) as Array<keyof AnnotationFields>)
+      .map((key) => [ANNOTATION_COLUMN[key], next[ANNOTATION_COLUMN[key]]] as const)
+      .filter(([col, value]) =>
+        jsonCols.includes(col) ? !columnEqual(before[col], value) : before[col] !== value,
+      )
+    if (changed.length === 0) return null
+    const sets = [...changed, ['updated_at', new Date().toISOString()], ['updated_by', ctx.userId]]
+    await tx.execute(
+      `UPDATE annotations SET ${sets.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`,
+      [...sets.map(([, v]) => v), id],
+    )
+    return {
+      table: 'annotations',
+      id,
+      op: 'update',
+      before,
+      after: await readAnnotation(tx, id),
+    } satisfies LocalEdit
+  })
+  if (edit) emit([edit], opts.source ?? 'user')
+}
+
+export async function deleteAnnotation(
+  db: Db,
+  ctx: EditContext,
+  id: string,
+  opts: MutationOptions = {},
+): Promise<void> {
+  const edit = await db.writeTransaction(async (tx) => {
+    const before = await readAnnotation(tx, id)
+    if (!before) return null
+    const { layerKind, layerId } = fromAnnotationRow(before)
+    assertCanEditAnnotationLayer(ctx, layerKind, layerId)
+    await tx.execute('DELETE FROM annotations WHERE id = ?', [id])
+    return { table: 'annotations', id, op: 'delete', before, after: null } satisfies LocalEdit
   })
   if (edit) emit([edit], opts.source ?? 'user')
 }

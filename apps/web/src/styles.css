@@ -473,3 +473,18 @@ body:has(.document-page) #root {
   stroke: #1d4ed8;
   stroke-width: 2.5;
 }
+.annotation-shape {
+  outline: none;
+}
+.annotation-shape:focus-visible .annotation-rect,
+.annotation-shape:focus-visible .annotation-ellipse,
+.annotation-shape:focus-visible .annotation-line,
+.annotation-shape:focus-visible .annotation-note,
+.annotation-shape:focus-visible .annotation-stamp,
+.annotation-shape:focus-visible .annotation-highlight {
+  stroke: #1d4ed8;
+  stroke-width: 2.5;
+}
+.annotation-editor .cue-quote {
+  margin: 0.25rem 0;
+}

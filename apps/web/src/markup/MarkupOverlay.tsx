@@ -1,5 +1,5 @@
 import { formatCueNumber, markerText } from '@binder/core'
-import type { WordLayer } from '@binder/shared'
+import type { LayerRef, WordLayer } from '@binder/shared'
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -9,16 +9,17 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import type { PageRow } from '../powersync/schema'
+import { AnnotationPreview, AnnotationShape, toShapeAnnotation } from './AnnotationShape'
 import { CueMarker } from './CueMarker'
+import { useDragSlot } from './dragGesture'
+import { Handles } from './Handles'
 import { useMarkupSession } from './MarkupSession'
-import type { CueRowWithDept } from './markupView'
+import type { AnnotationRow, CueRowWithDept } from './markupView'
 import { pageAt, toPagePoint } from './pagePoint'
 import { clearSelection, select, useSelection } from './selection'
-import { useTool } from './tools'
+import { isDragTool, useTool } from './tools'
+import { rowKey, useAnnotationGestures } from './useAnnotationGestures'
 import { useWordLayer } from './wordLayers'
-
-/** Pointer travel, in CSS pixels, before a press on a selected cue becomes a drag. */
-const DRAG_THRESHOLD = 3
 
 export interface MarkupOverlayProps {
   page: PageRow
@@ -38,30 +39,41 @@ function sheetOf(el: Element): Element | null {
   return el.closest('[data-page-index]')
 }
 
+const layerOf = (row: AnnotationRow): LayerRef => ({
+  kind: row.layer_kind === 'personal' ? 'personal' : 'department',
+  id: row.layer_id ?? '',
+})
+
 /**
- * Cue markers for one page, drawn inside its PageOverlay (displayed space, y up), and the surface
- * that takes the cue tool's clicks. The overlay's SVG ignores the pointer, so everything here that
- * takes one opts back in.
+ * Annotations and cue markers for one page, drawn inside its PageOverlay (displayed space, y up),
+ * and the surface that takes the placing and drawing tools' pointer. The overlay's SVG ignores the
+ * pointer, so everything here that takes one opts back in.
  */
 export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const session = useMarkupSession()
   const selection = useSelection()
-  const { tool, cueType } = useTool()
+  const { tool, cueType, rebind } = useTool()
   const [ghost, setGhost] = useState<Ghost | null>(null)
-  /** The drag in progress from this page, if any. */
-  const drag = useRef<{ id: string; stop: () => void } | null>(null)
+  /** The one drag in progress from this page: a cue marker, a shape, a handle, or a drawing. */
+  const slot = useDragSlot()
+  const root = useRef<SVGGElement>(null)
   const pageIndex = page.index ?? 0
   const size = { width: page.width ?? 0, height: page.height ?? 0 }
   const cues = session.view.cuesByPage.get(pageIndex) ?? []
+  const annotations = session.view.annotationsByPage.get(pageIndex) ?? []
   const placing = tool === 'cue' && !('disabled' in session.cueTarget)
+  const annotating =
+    tool !== 'select' && tool !== 'cue' && !('disabled' in session.annotationTarget)
+  const dragging = rebind !== null || (annotating && isDragTool(tool))
+  const gestures = useAnnotationGestures({ pageIndex, size, words, session, slot, root })
+  const { preview } = gestures
 
-  // A cue that disappears mid-drag (deleted elsewhere, its layer hidden) ends the drag at once.
+  // A row that disappears mid-drag (deleted elsewhere, its layer hidden) ends the drag at once.
   useEffect(() => {
-    const dragged = drag.current
-    if (dragged && !cues.some((c) => c.id === dragged.id)) dragged.stop()
-  }, [cues])
+    slot.endIfGone((id) => cues.some((c) => c.id === id) || annotations.some((a) => a.id === id))
+  }, [slot, cues, annotations])
   // So does the page leaving the list.
-  useEffect(() => () => drag.current?.stop(), [])
+  useEffect(() => () => slot.stop(), [slot])
 
   /** The pointer on this page, in displayed points. */
   function pointOf(e: ReactMouseEvent<Element>) {
@@ -84,6 +96,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
     const point = pointOf(e)
     if (!point) return
     if (placing) void session.placeCue(pageIndex, point, cueType, words)
+    else if (gestures.placeByClick(point) || dragging) return
     else clearSelection()
   }
 
@@ -94,54 +107,53 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
     select('cues', cue.id)
     // Only an already selected cue drags, so a tap or a scroll that starts on a marker never moves it.
     if (!wasSelected || !session.canEditCue(cue)) return
-    const target = e.currentTarget
-    const start = { x: e.clientX, y: e.clientY }
-    let dragging = false
-    target.setPointerCapture(e.pointerId)
-    const move = (ev: PointerEvent) => {
-      if (!dragging && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < DRAG_THRESHOLD)
-        return
-      dragging = true
-      setGhost({ cue, x: ev.clientX, y: ev.clientY })
-    }
-    // Listening on the window, not the marker: if the marker goes mid-drag (a collaborator deleted
-    // the cue) the release still ends the drag.
-    const stop = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', end)
-      window.removeEventListener('pointercancel', end)
-      if (drag.current?.stop === stop) drag.current = null
-      setGhost(null)
-    }
-    const end = (ev: PointerEvent) => {
-      stop()
-      if (!dragging || ev.type === 'pointercancel') return
-      const drop = pageAt(ev.clientX, ev.clientY)
-      const dropPage = drop ? session.pages[drop.pageIndex] : undefined
-      if (!drop || !dropPage) return
-      const point = toPagePoint({ x: ev.clientX, y: ev.clientY }, drop.rect, {
-        width: dropPage.width ?? 0,
-        height: dropPage.height ?? 0,
-      })
-      void session.moveCue(cue.id, drop.pageIndex, point)
-    }
-    drag.current?.stop()
-    drag.current = { id: cue.id, stop }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', end)
-    window.addEventListener('pointercancel', end)
+    slot.begin(cue.id, {
+      pointerId: e.pointerId,
+      start: { x: e.clientX, y: e.clientY },
+      capture: e.currentTarget,
+      onMove: (ev) => setGhost({ cue, x: ev.clientX, y: ev.clientY }),
+      onDrop: (ev) => {
+        const drop = pageAt(ev.clientX, ev.clientY)
+        const dropPage = drop ? session.pages[drop.pageIndex] : undefined
+        if (!drop || !dropPage) return
+        const point = toPagePoint({ x: ev.clientX, y: ev.clientY }, drop.rect, {
+          width: dropPage.width ?? 0,
+          height: dropPage.height ?? 0,
+        })
+        void session.moveCue(cue.id, drop.pageIndex, point)
+      },
+      onStop: () => setGhost(null),
+    })
   }
+
+  /** The row as drawn: while a gesture on it is under way, its preview stands in for the stored fields. */
+  const display = (row: AnnotationRow) => {
+    const shape = toShapeAnnotation(row)
+    // Only while the stored row is still as the gesture found it; once it differs the write landed.
+    if (preview?.kind !== 'edit' || preview.id !== row.id || preview.base !== rowKey(row))
+      return shape
+    return { ...shape, anchor: { ...shape.anchor, ...preview.anchor }, geometry: preview.geometry }
+  }
+  const draftColour =
+    'layer' in session.annotationTarget ? session.layerColour(session.annotationTarget.layer) : ''
+  const selectedRow =
+    selection?.table === 'annotations' ? annotations.find((a) => a.id === selection.id) : undefined
+  const handlesFor =
+    selectedRow && tool === 'select' && !rebind && session.canEditAnnotation(selectedRow)
+      ? selectedRow
+      : undefined
 
   return (
     // Hover is tracked over the surface and the markers alike, for placing a cue from the keyboard.
     <g
+      ref={root}
       className="markup-overlay"
       onPointerMove={track}
       onPointerLeave={() => {
         if (session.hover.current?.pageIndex === pageIndex) session.hover.current = null
       }}
     >
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the page surface takes pointer placement; the keyboard places cues with c */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the page surface takes pointer placement and drawing; the keyboard places cues with c */}
       <rect
         className="markup-surface"
         x={0}
@@ -149,9 +161,49 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
         width={size.width}
         height={size.height}
         fill="transparent"
-        style={{ pointerEvents: 'auto', cursor: placing ? 'crosshair' : 'default' }}
+        style={{
+          pointerEvents: 'auto',
+          cursor: placing || annotating || rebind ? 'crosshair' : 'default',
+          // A drawing drag on a touch screen draws instead of scrolling the page.
+          touchAction: dragging ? 'none' : undefined,
+          userSelect: 'none',
+        }}
         onClick={onSurfaceClick}
+        onPointerDown={gestures.onSurfaceDown}
       />
+      {annotations.map((row) => {
+        const layer = layerOf(row)
+        const selected = selection?.table === 'annotations' && selection.id === row.id
+        return (
+          <AnnotationShape
+            key={row.id}
+            annotation={display(row)}
+            layerColour={session.layerColour(layer)}
+            layerName={session.layerName(layer)}
+            words={words}
+            selected={selected}
+            movable={
+              selected &&
+              tool === 'select' &&
+              row.type !== 'highlight' &&
+              session.canEditAnnotation(row)
+            }
+            interactive={tool === 'select' && !rebind}
+            onPointerDown={(e) => gestures.onShapeDown(e, row, selected)}
+            onActivate={() => select('annotations', row.id)}
+          />
+        )
+      })}
+      {preview?.kind === 'draft' && (
+        <AnnotationPreview annotation={preview.shape} layerColour={draftColour} words={words} />
+      )}
+      {handlesFor && (
+        <Handles
+          annotation={display(handlesFor)}
+          zoom={zoom}
+          onHandleDown={(handle, e) => gestures.onHandleDown(handle, e, handlesFor)}
+        />
+      )}
       {cues.map((cue) => {
         const selected = selection?.table === 'cues' && selection.id === cue.id
         const movable = selected && session.canEditCue(cue)

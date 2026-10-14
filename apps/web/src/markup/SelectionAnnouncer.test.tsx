@@ -14,8 +14,21 @@ const cue = {
   dept_colour: '#F5A623',
   dept_number_format: 'decimal',
 }
+const note = {
+  id: 'a1',
+  layer_kind: 'personal',
+  layer_id: 'u1',
+  anchor: { pageIndex: 0, x: 10, y: 10 },
+  type: 'note',
+  geometry: '{}',
+  text: 'Cover the gap',
+  style: '{}',
+}
 vi.mock('./MarkupSession', () => ({
-  useMarkupSession: () => ({ view: { ordered: [cue] } }),
+  useMarkupSession: () => ({
+    view: { ordered: [cue], annotationsByPage: new Map([[0, [note]]]) },
+    layerName: (l: { kind: string }) => (l.kind === 'personal' ? 'Personal' : 'LX'),
+  }),
 }))
 
 afterEach(() => act(() => clearSelection()))
@@ -29,4 +42,21 @@ test('selection changes are announced politely', () => {
   expect(status.textContent).toBe('Selected LX 10, Sunrise, page 2')
   act(() => clearSelection())
   expect(status.textContent).toBe('No cue selected')
+})
+
+test('an annotation selection is announced by its layer, type and words', () => {
+  const { getByRole } = render(<SelectionAnnouncer />)
+  const status = getByRole('status')
+  act(() => select('annotations', 'a1'))
+  expect(status.textContent).toBe('Selected Personal note: Cover the gap, page 1')
+  act(() => clearSelection())
+  expect(status.textContent).toBe('No annotation selected')
+})
+
+test('moving from a cue to an annotation announces the new selection', () => {
+  const { getByRole } = render(<SelectionAnnouncer />)
+  const status = getByRole('status')
+  act(() => select('cues', 'c1'))
+  act(() => select('annotations', 'a1'))
+  expect(status.textContent).toBe('Selected Personal note: Cover the gap, page 1')
 })

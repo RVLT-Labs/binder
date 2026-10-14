@@ -5,12 +5,18 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { clearNotices, getNotices } from '../components/noticeStore'
 import type { PageRow } from '../powersync/schema'
 import { type MarkupSession, MarkupSessionProvider, useMarkupSession } from './MarkupSession'
-import { deleteCue, updateCue } from './mutations'
+import {
+  deleteAnnotation,
+  deleteCue,
+  insertAnnotation,
+  updateAnnotation,
+  updateCue,
+} from './mutations'
 
 const db = { getOptional: vi.fn(), getAll: vi.fn() }
 vi.mock('@powersync/react', () => ({
   usePowerSync: () => db,
-  useQuery: () => ({ data: [{ status: 'prep' }] }),
+  useQuery: () => ({ data: [{ status: 'prep', settings: '{"stampSet":["Hold","Go"]}' }] }),
 }))
 vi.mock('./useMarkup', () => ({
   useMarkup: () => ({ cuesByPage: new Map(), annotationsByPage: new Map(), ordered: [] }),
@@ -19,12 +25,21 @@ vi.mock('./mutations', async (original) => ({
   ...(await original<typeof import('./mutations')>()),
   deleteCue: vi.fn(async () => {}),
   updateCue: vi.fn(async () => {}),
+  insertAnnotation: vi.fn(async () => 'new-id'),
+  updateAnnotation: vi.fn(async () => {}),
+  deleteAnnotation: vi.fn(async () => {}),
 }))
 
 const lx: LayerRef = { kind: 'department', id: 'lx' }
 const snd: LayerRef = { kind: 'department', id: 'snd' }
 const me: LayerRef = { kind: 'personal', id: 'u1' }
-let layers: { scopeDepartments: string[]; editable: LayerRef[]; locked: string[] }
+let layers: {
+  scopeDepartments: string[]
+  editable: LayerRef[]
+  locked: string[]
+  hidden?: string[]
+  active?: LayerRef
+}
 vi.mock('./useLayers', () => ({
   useLayers: () => ({
     userId: 'u1',
@@ -34,8 +49,13 @@ vi.mock('./useLayers', () => ({
       { id: 'snd', code: 'SND', hidden: 0 },
     ],
     editable: layers.editable,
-    active: layers.editable[0],
-    state: { hidden: [], active: null, locked: layers.locked, lastDepartment: null },
+    active: layers.active ?? layers.editable[0],
+    state: {
+      hidden: layers.hidden ?? [],
+      active: null,
+      locked: layers.locked,
+      lastDepartment: null,
+    },
     store: {},
   }),
 }))
@@ -66,7 +86,11 @@ function renderSession(): MarkupSession {
 
 beforeEach(() => {
   layers = { scopeDepartments: ['lx', 'snd'], editable: [lx, snd, me], locked: [] }
-  db.getOptional.mockResolvedValue({ department_id: 'lx' })
+  db.getOptional.mockResolvedValue({
+    department_id: 'lx',
+    layer_kind: 'department',
+    layer_id: 'lx',
+  })
   clearNotices()
 })
 afterEach(() => vi.clearAllMocks())
@@ -106,4 +130,115 @@ test('a cue that has gone (deleted by someone else) is left alone without a noti
   expect(updateCue).not.toHaveBeenCalled()
   expect(deleteCue).not.toHaveBeenCalled()
   expect(getNotices()).toEqual([])
+})
+
+const annotationRow = (kind: 'department' | 'personal', id: string) => ({
+  layer_kind: kind,
+  layer_id: id,
+})
+
+test('removeAnnotation deletes on an editable, unlocked layer and on the user’s own personal layer', async () => {
+  await renderSession().removeAnnotation('a1')
+  expect(deleteAnnotation).toHaveBeenCalledOnce()
+  db.getOptional.mockResolvedValue(annotationRow('personal', 'u1'))
+  await renderSession().removeAnnotation('a2')
+  expect(deleteAnnotation).toHaveBeenCalledTimes(2)
+})
+
+test('removeAnnotation refuses a locked layer, whoever calls it, and says why', async () => {
+  db.getOptional.mockResolvedValue(annotationRow('department', 'lx'))
+  layers.locked = ['department:lx']
+  await renderSession().removeAnnotation('a1')
+  expect(deleteAnnotation).not.toHaveBeenCalled()
+  expect(getNotices().map((n) => n.message)).toEqual(['The LX layer is locked.'])
+})
+
+test('editAnnotation refuses a layer outside the user’s scope', async () => {
+  db.getOptional.mockResolvedValue(annotationRow('department', 'lx'))
+  layers = { scopeDepartments: ['snd'], editable: [snd, me], locked: [] }
+  await renderSession().editAnnotation('a1', { geometry: { w: 5, h: 5 } })
+  expect(updateAnnotation).not.toHaveBeenCalled()
+  expect(getNotices().map((n) => n.message)).toEqual(["You can't edit LX annotations."])
+})
+
+test('nobody edits another user’s personal layer', async () => {
+  db.getOptional.mockResolvedValue(annotationRow('personal', 'someone-else'))
+  await renderSession().editAnnotation('a1', { text: 'x' })
+  await renderSession().removeAnnotation('a1')
+  expect(updateAnnotation).not.toHaveBeenCalled()
+  expect(deleteAnnotation).not.toHaveBeenCalled()
+  expect(getNotices()).toHaveLength(2)
+})
+
+test('editAnnotation moves an annotation to another layer only if both are editable and unlocked', async () => {
+  db.getOptional.mockResolvedValue(annotationRow('department', 'lx'))
+  layers.locked = ['department:snd']
+  await renderSession().editAnnotation('a1', { layerKind: 'department', layerId: 'snd' })
+  expect(updateAnnotation).not.toHaveBeenCalled()
+  expect(getNotices().map((n) => n.message)).toEqual(['The SND layer is locked.'])
+  layers.locked = []
+  await renderSession().editAnnotation('a1', { layerKind: 'personal', layerId: 'u1' })
+  expect(updateAnnotation).toHaveBeenCalledOnce()
+})
+
+test('an annotation that has gone is left alone without a notice', async () => {
+  db.getOptional.mockResolvedValue(null)
+  const session = renderSession()
+  await session.editAnnotation('a1', { text: 'x' })
+  await session.removeAnnotation('a1')
+  expect(updateAnnotation).not.toHaveBeenCalled()
+  expect(deleteAnnotation).not.toHaveBeenCalled()
+  expect(getNotices()).toEqual([])
+})
+
+test('placeAnnotation draws on the active layer, placed by hand', async () => {
+  const id = await renderSession().placeAnnotation({
+    type: 'rect',
+    pageIndex: 0,
+    point: { x: 10, y: 20 },
+    geometry: { w: 30, h: 40 },
+  })
+  expect(id).toBe('new-id')
+  expect(insertAnnotation).toHaveBeenCalledOnce()
+  expect(vi.mocked(insertAnnotation).mock.calls[0]?.[2]).toEqual({
+    layerKind: 'department',
+    layerId: 'lx',
+    anchor: { documentId: 'd1', documentVersionId: 'v1', pageIndex: 0, x: 10, y: 20, status: 'ok' },
+    type: 'rect',
+    geometry: { w: 30, h: 40 },
+    text: '',
+    style: {},
+  })
+})
+
+test('placeAnnotation draws on the personal layer when it is active', async () => {
+  layers.active = me
+  await renderSession().placeAnnotation({
+    type: 'note',
+    pageIndex: 1,
+    point: { x: 1, y: 2 },
+    text: 'Note',
+  })
+  expect(vi.mocked(insertAnnotation).mock.calls[0]?.[2]).toMatchObject({
+    layerKind: 'personal',
+    layerId: 'u1',
+    text: 'Note',
+  })
+})
+
+test('placeAnnotation does nothing while the active layer is locked or hidden', async () => {
+  layers.locked = ['department:lx']
+  expect(
+    await renderSession().placeAnnotation({ type: 'rect', pageIndex: 0, point: { x: 1, y: 1 } }),
+  ).toBeNull()
+  layers.locked = []
+  layers.hidden = ['department:lx']
+  expect(
+    await renderSession().placeAnnotation({ type: 'rect', pageIndex: 0, point: { x: 1, y: 1 } }),
+  ).toBeNull()
+  expect(insertAnnotation).not.toHaveBeenCalled()
+})
+
+test('the session offers the show’s stamp set', () => {
+  expect(renderSession().stamps).toEqual(['Hold', 'Go'])
 })

@@ -1,9 +1,10 @@
 import { formatCueNumber, markerText, parseCueNumber } from '@binder/core'
 import type { CueFields, CueType } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useId, useState } from 'react'
 import { pushNotice } from '../components/noticeStore'
 import type { Database } from '../powersync/schema'
+import { CommitInput, leaveFieldOnEscape } from './CommitInput'
 import { useMarkupSession } from './MarkupSession'
 import { fromCueRow, updateCue } from './mutations'
 
@@ -84,6 +85,7 @@ export function CueEditor({ cueId, historySlot }: CueEditorProps) {
             id={`${ids}-number`}
             value={number}
             onCommit={saveNumber}
+            onCancel={() => setNumberError(null)}
             aria-invalid={numberError ? true : undefined}
             aria-describedby={numberError ? errorId : undefined}
           />
@@ -141,76 +143,5 @@ export function CueEditor({ cueId, historySlot }: CueEditorProps) {
       </fieldset>
       {historySlot}
     </section>
-  )
-}
-
-function leaveFieldOnEscape(e: KeyboardEvent<HTMLElement>) {
-  if (e.key !== 'Escape' || e.defaultPrevented) return
-  const field = e.target
-  if (
-    field instanceof HTMLSelectElement ||
-    field instanceof HTMLInputElement ||
-    field instanceof HTMLTextAreaElement
-  ) {
-    e.preventDefault()
-    field.blur()
-  }
-}
-
-interface CommitInputProps {
-  id: string
-  value: string
-  onCommit: (value: string) => void
-  multiline?: boolean
-  'aria-invalid'?: boolean
-  'aria-describedby'?: string
-}
-
-/**
- * A text field that edits a draft and commits it on blur or Enter; Escape throws the draft away and
- * leaves the field. It follows `value` while not focused.
- */
-function CommitInput({ value, onCommit, multiline = false, ...aria }: CommitInputProps) {
-  const [draft, setDraft] = useState(value)
-  const [focused, setFocused] = useState(false)
-  /** Set by Escape so the blur that follows does not commit the abandoned draft. */
-  const cancelled = useRef(false)
-  useEffect(() => {
-    if (!focused) setDraft(value)
-  }, [value, focused])
-  const common = {
-    ...aria,
-    value: draft,
-    onFocus: () => setFocused(true),
-    onBlur: () => {
-      setFocused(false)
-      if (cancelled.current) cancelled.current = false
-      else onCommit(multiline ? draft : draft.trim())
-    },
-  }
-  function cancelOnEscape(e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
-    if (e.key !== 'Escape') return false
-    e.preventDefault()
-    cancelled.current = true
-    setDraft(value)
-    e.currentTarget.blur()
-    return true
-  }
-  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (cancelOnEscape(e)) return
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      onCommit(draft.trim())
-    }
-  }
-  return multiline ? (
-    <textarea
-      {...common}
-      rows={3}
-      onChange={(e) => setDraft(e.target.value)}
-      onKeyDown={cancelOnEscape}
-    />
-  ) : (
-    <input {...common} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKeyDown} />
   )
 }

@@ -1,4 +1,4 @@
-import type { LayerRef } from '@binder/shared'
+import { type LayerRef, layerKey } from '@binder/shared'
 
 export const NO_DEPARTMENT_HINT =
   "Cues go on a department layer, and you can't edit any in this show."
@@ -47,4 +47,33 @@ export function cueToolState(input: CueToolInput): { departmentId: string } | { 
   if (input.hidden.includes(key)) return { disabled: `Show the ${code} layer to place cues on it` }
   if (input.locked.includes(key)) return { disabled: `The ${code} layer is locked.` }
   return target
+}
+
+export interface AnnotationToolInput {
+  readOnly: string | null
+  /** Null until the membership has synced. */
+  active: LayerRef | null
+  editable: LayerRef[]
+  locked: readonly string[]
+  hidden: readonly string[]
+  /** `LX`, `Personal`: how the layer is named in messages. */
+  layerName: (layer: LayerRef) => string
+}
+
+/** Where the annotation tools draw now (always the active layer, department or personal), or why they cannot. */
+export function annotationToolState(
+  input: AnnotationToolInput,
+): { layer: LayerRef } | { disabled: string } {
+  if (input.readOnly) return { disabled: input.readOnly }
+  const layer = input.active
+  if (!layer) return { disabled: LOADING_LAYERS_HINT }
+  const key = layerKey(layer)
+  const name = input.layerName(layer)
+  if (!input.editable.some((l) => layerKey(l) === key)) {
+    return { disabled: `You can't edit the ${name} layer.` }
+  }
+  // A shape drawn on a hidden layer would vanish as it lands.
+  if (input.hidden.includes(key)) return { disabled: `Show the ${name} layer to draw on it` }
+  if (input.locked.includes(key)) return { disabled: `The ${name} layer is locked.` }
+  return { layer }
 }
