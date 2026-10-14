@@ -82,12 +82,29 @@ const pages = new Table(
   { indexes: { version: ['document_version_id', 'index'] } },
 )
 
+const departments = new Table(
+  {
+    show_id: column.text,
+    code: column.text,
+    name: column.text,
+    colour: column.text,
+    number_format: column.text,
+    sort_order: column.integer,
+    hidden: column.integer,
+    created_at: column.text,
+    updated_at: column.text,
+    updated_by: column.text,
+  },
+  { indexes: { show: ['show_id'] } },
+)
+
 export const AppSchema = new Schema({
   shows,
   show_memberships,
   documents,
   document_versions,
   pages,
+  departments,
 })
 
 export type Database = (typeof AppSchema)['types']
@@ -95,3 +112,4 @@ export type ShowRow = Database['shows']
 export type DocumentRow = Database['documents']
 export type DocumentVersionRow = Database['document_versions']
 export type PageRow = Database['pages']
+export type DepartmentRow = Database['departments']

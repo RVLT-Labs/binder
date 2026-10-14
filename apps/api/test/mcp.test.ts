@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import { changeLog } from '@binder/db'
 import { FIXTURES } from '@binder/fixtures'
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import type { Client } from '@modelcontextprotocol/client'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { pageImageBlobKey } from '../src/blob/keys'
@@ -12,6 +12,7 @@ import { processPage } from '../src/processing/pageJob'
 import { createDocument, createShow, createToken, listOrganisations } from '../src/services'
 import { type Json, setupShow } from './documentHelpers'
 import { RecordingJobs } from './helpers'
+import { callTool, connectMcp } from './mcpHelpers'
 import { findMissingTools, skipWithoutTools } from './tools'
 
 const skipPages = skipWithoutTools(
@@ -35,34 +36,13 @@ const clients: Client[] = []
 
 const MCP_URL = 'http://localhost/mcp'
 
-/** A real SDK client whose HTTP requests go straight into the Hono app. */
 async function connect(token: string, era: 'legacy' | 'auto' = 'legacy'): Promise<Client> {
-  const client = new Client(
-    { name: 'test-client', version: '1.0.0' },
-    { versionNegotiation: { mode: era } },
-  )
-  const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
-    fetch: async (input, init) => {
-      const headers = new Headers(init?.headers)
-      headers.set('authorization', `Bearer ${token}`)
-      headers.set('user-agent', 'test-client/1.0')
-      headers.set('host', 'localhost')
-      return s.app.fetch(new Request(input, { ...init, headers }))
-    },
-  })
-  await client.connect(transport)
+  const client = await connectMcp(s.app, token, undefined, era)
   clients.push(client)
   return client
 }
 
-async function call(client: Client, name: string, args: Record<string, unknown>) {
-  // biome-ignore lint/suspicious/noExplicitAny: results are checked field by field
-  return (await client.callTool({ name, arguments: args })) as any as {
-    isError?: boolean
-    content: Json[]
-    structuredContent?: Json
-  }
-}
+const call = callTool
 
 const errorText = (r: { content: Json[] }) => r.content.map((c) => c.text ?? '').join('\n')
 

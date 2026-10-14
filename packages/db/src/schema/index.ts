@@ -1,4 +1,5 @@
 export * from './auth'
 export * from './changeLog'
 export * from './documents'
+export * from './markup'
 export * from './tenancy'

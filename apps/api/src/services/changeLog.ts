@@ -11,6 +11,8 @@ export interface ChangeEntry {
   op: 'insert' | 'update' | 'delete'
   before: Record<string, unknown> | null
   after: Record<string, unknown> | null
+  /** A layerKey for rows that belong to a layer; omitted or null for everything else. */
+  layer?: string | null
   clientTs?: Date
 }
 
@@ -28,5 +30,6 @@ export async function logChange(tx: Executor, e: ChangeEntry): Promise<void> {
     op: e.op,
     before: e.before,
     after: e.after,
+    layer: e.layer ?? null,
   })
 }

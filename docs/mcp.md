@@ -80,7 +80,13 @@ quoting problems. For a local API on plain http, add `"--allow-http"` after the 
 | `get_show` | read-only | One show with your role and its member count. |
 | `create_show` | write | New show, in `organisationId` or your first organisation. Unscoped tokens only. |
 | `update_show` | write, idempotent | Title, status, settings. Owners. |
-| `add_show_member` | write | Add a user by email with a role. Owners. |
+| `add_show_member` | write | Add a user by email with a role and optional department scope (codes or ids). Owners. Needs `confirm: true`. |
+| `update_show_member` | write, idempotent | Role and department scope (codes, ids or `*`). Owners. Granting or removing owner needs `confirm: true`. |
+| `remove_show_member` | destructive | Remove a member. Owners. Needs `confirm: true`; the last owner stays. |
+| `list_show_members` | read-only | Members with role and department scope; emails for owners only. |
+| `list_departments` | read-only | A show's departments (layers): code, name, colour, number format, order, hidden. |
+| `create_department` | write | Add a department. Owners. |
+| `update_department` | write, idempotent | Rename, recolour, reorder, hide, change code or number format. Owners. Departments are never deleted. |
 | `list_documents` | read-only | A show's documents with versions and processing status (paginated). |
 | `get_document` | read-only | A document, its versions, and one version's page summaries. |
 | `update_document` | write, idempotent | Title, kind, OCR mode, snapToText, sort order. Editors. |
@@ -88,7 +94,8 @@ quoting problems. For a local API on plain http, add `"--allow-http"` after the 
 | `get_page` | read-only | A page as a JPEG (at most 1600 px on the long side) plus its word layer. |
 | `search_script` | read-only | Phrase search over a version, with page, snippet and the first word's box. |
 
-No tool is marked destructive: M0 has no delete operations.
+Only `remove_show_member` is marked destructive. Hard-to-reverse calls return `CONFIRMATION_REQUIRED` with a
+plain-language summary and change nothing until called again with `confirm: true` (spec 3.10).
 
 `get_page` returns a text block (a header line and the page's text), an `image/jpeg` block, and
 `structuredContent` with the page size in PDF points, `text`, `words` as compact

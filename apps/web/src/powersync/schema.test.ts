@@ -1,11 +1,18 @@
-import { documents, documentVersions, pages, showMemberships, shows } from '@binder/db/schema'
+import {
+  departments,
+  documents,
+  documentVersions,
+  pages,
+  showMemberships,
+  shows,
+} from '@binder/db/schema'
 import { getTableColumns, getTableName, type Table } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { AppSchema } from './schema'
 
 // Every table PowerSync streams (deploy/powersync/sync-config.yaml). Adding a column on one side
 // without the other must fail here.
-const SYNCED: Table[] = [shows, showMemberships, documents, documentVersions, pages]
+const SYNCED: Table[] = [shows, showMemberships, documents, documentVersions, pages, departments]
 
 test('the client schema lists exactly the synced tables', () => {
   expect(AppSchema.tables.map((t) => t.name).sort()).toEqual(SYNCED.map(getTableName).sort())

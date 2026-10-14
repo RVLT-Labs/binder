@@ -10,22 +10,23 @@ import {
   listShows,
   updateShow,
 } from '../services'
+import { email, jsonRecord, memberDepartments, title } from '../validation'
 import { readJson } from './json'
 
 const status = z.enum(['prep', 'rehearsal', 'running', 'archived'])
 const role = z.enum(['owner', 'editor', 'viewer'])
 
-const orgBody = z.object({ name: z.string().trim().min(1).max(200) })
-const showBody = z.object({ title: z.string().trim().min(1).max(200) })
+const orgBody = z.object({ name: title })
+const showBody = z.object({ title })
 const patchBody = z.object({
-  title: z.string().trim().min(1).max(200).optional(),
+  title: title.optional(),
   status: status.optional(),
-  settings: z.record(z.string(), z.unknown()).optional(),
+  settings: jsonRecord.optional(),
 })
 const memberBody = z.object({
-  email: z.string().email(),
+  email,
   role,
-  departments: z.array(z.string().min(1)).min(1).optional(),
+  departments: memberDepartments.optional(),
 })
 
 export const tenancy = new Hono<AppEnv>()

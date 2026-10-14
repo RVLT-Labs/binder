@@ -15,9 +15,14 @@ export const changeLog = pgTable(
     batchId: text('batch_id'),
     tableName: text('table_name').notNull(),
     rowId: text('row_id').notNull(),
+    /** A layerKey (`department:<id>`, `personal:<userId>`), or null for rows outside layers. */
+    layer: text('layer'),
     op: text('op').$type<'insert' | 'update' | 'delete'>().notNull(),
     before: jsonb('before').$type<Record<string, unknown> | null>(),
     after: jsonb('after').$type<Record<string, unknown> | null>(),
   },
-  (t) => [index('change_log_show_seq_idx').on(t.showId, t.seq)],
+  (t) => [
+    index('change_log_show_seq_idx').on(t.showId, t.seq),
+    index('change_log_show_row_seq_idx').on(t.showId, t.rowId, t.seq),
+  ],
 )

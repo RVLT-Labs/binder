@@ -8,13 +8,16 @@ import {
   getShow,
   listOrganisations,
   listShows,
+  requireShowRole,
   updateShow,
 } from '../../services'
+import { email, jsonRecord, memberDepartments, title } from '../../validation'
+import { CONFIRM_DESCRIPTION, confirmationRequired } from '../confirm'
 import type { McpContext } from '../context'
 import { guarded, jsonResult, pageArgs, paginate } from '../results'
+import { DEPARTMENTS_DESCRIPTION, resolveDepartmentRefs } from './departments'
 
 const id = (what: string) => z.string().min(1).describe(`The ${what} id.`)
-const title = z.string().trim().min(1).max(200)
 const showStatus = z.enum(['prep', 'rehearsal', 'running', 'archived'])
 const role = z.enum(['owner', 'editor', 'viewer'])
 
@@ -138,7 +141,7 @@ export function registerShowTools(server: McpServer, mcp: McpContext): void {
         showId: id('show'),
         title: title.optional(),
         status: showStatus.optional(),
-        settings: z.record(z.string(), z.unknown()).optional().describe('Replaces all settings.'),
+        settings: jsonRecord.optional().describe('Replaces all settings.'),
       }),
       annotations: UPDATE,
     },
@@ -153,16 +156,32 @@ export function registerShowTools(server: McpServer, mcp: McpContext): void {
       title: 'Add show member',
       description:
         'Adds an existing Binder user to a show by email with a role: owner, editor or viewer. ' +
-        'departments limits an editor to those departments (default all). Owners only. Returns ' +
-        'the membership.',
+        'departments limits an editor to those departments, by code (like LX) or id (default ' +
+        'all). Owners only. Returns CONFIRMATION_REQUIRED until called with confirm: true, since ' +
+        'it gives someone access to the show. Returns the membership.',
       inputSchema: z.object({
         showId: id('show'),
-        email: z.email(),
+        email,
         role,
-        departments: z.array(z.string().min(1)).min(1).optional(),
+        departments: memberDepartments.optional().describe(DEPARTMENTS_DESCRIPTION),
+        confirm: z.boolean().optional().describe(CONFIRM_DESCRIPTION),
       }),
       annotations: CREATE,
     },
-    guarded(async (args, ctx) => jsonResult(await addShowMember(db, mcp.actor(ctx), args))),
+    guarded(async ({ confirm, departments, ...args }, ctx) => {
+      const actor = mcp.actor(ctx)
+      // Owner check first: a non-owner is told forbidden, and nobody can probe emails unconfirmed.
+      await requireShowRole(db, actor, args.showId, 'owner')
+      if (confirm !== true) {
+        return confirmationRequired(
+          `This adds ${args.email} to the show as ${args.role}, giving them access to every document and layer they can see.`,
+        )
+      }
+      const resolved =
+        departments === undefined
+          ? undefined
+          : await resolveDepartmentRefs(db, actor, args.showId, departments)
+      return jsonResult(await addShowMember(db, actor, { ...args, departments: resolved }))
+    }),
   )
 }

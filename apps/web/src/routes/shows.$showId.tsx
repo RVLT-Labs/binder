@@ -31,6 +31,11 @@ function ShowPage() {
       </p>
       <h1>{show.title}</h1>
       <OfflineButton showId={showId} />
+      <p>
+        <Link to="/shows/$showId/settings" params={{ showId }}>
+          Settings
+        </Link>
+      </p>
       <DocumentList showId={showId} canUpload={canUpload} />
     </>
   )

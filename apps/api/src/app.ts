@@ -12,6 +12,7 @@ import { mcpAuth } from './mcp/auth'
 import { createMcpRoutes } from './mcp/server'
 import type { JobQueue } from './processing/types'
 import { blobs } from './routes/blobs'
+import { departments } from './routes/departments'
 import { documents } from './routes/documents'
 import { health } from './routes/health'
 import { me } from './routes/me'
@@ -75,6 +76,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   api.route('/', health)
   api.route('/', me)
   api.route('/', tenancy)
+  api.route('/', departments)
   api.route('/', tokens)
   api.route('/', sync)
   api.route('/', documents)

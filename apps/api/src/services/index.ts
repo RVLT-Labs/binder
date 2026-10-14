@@ -1,4 +1,6 @@
 export { logChange } from './changeLog'
+export type { Department } from './departments'
+export { createDepartment, listDepartments, updateDepartment } from './departments'
 export {
   addDocumentVersion,
   assertShowAcceptsUploads,
@@ -19,9 +21,12 @@ export {
   getShow,
   getShowRole,
   listOrganisations,
+  listShowMembers,
   listShows,
+  removeShowMember,
   requireShowRole,
   updateShow,
+  updateShowMember,
 } from './tenancy'
 export {
   authenticateToken,

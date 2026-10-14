@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { invalid } from '../errors'
 import { updateDocument, updateShow } from '../services'
 import type { Executor } from '../services/executor'
+import { hasNoNul, int32, title } from '../validation'
 
 export interface PatchInput {
   id: string
@@ -17,20 +18,6 @@ export interface SyncTablePolicy {
   writable: readonly string[]
   /** Validate the writable columns and hand them to the owning service. Throws AppError on rejection. */
   patch(db: Executor, actor: Actor, input: PatchInput): Promise<void>
-}
-
-// Postgres rejects NUL in text and jsonb; a value it would refuse must be rejected, not retried.
-const noNul = (s: string) => !s.includes('\u0000')
-const title = z.string().trim().min(1).max(200).refine(noNul, 'must not contain NUL')
-
-/** Walks a JSON value; JSON.stringify escapes NUL, so the strings themselves must be checked. */
-function hasNoNul(value: unknown): boolean {
-  if (typeof value === 'string') return noNul(value)
-  if (Array.isArray(value)) return value.every(hasNoNul)
-  if (value !== null && typeof value === 'object') {
-    return Object.entries(value).every(([k, v]) => noNul(k) && hasNoNul(v))
-  }
-  return true
 }
 
 /** SQLite stores jsonb as JSON text. */
@@ -53,8 +40,6 @@ const sqliteBoolean = z.union([
   z.literal(1).transform(() => true),
   z.null(),
 ])
-
-const int32 = z.number().int().min(-2147483648).max(2147483647)
 
 function tablePolicy<S extends z.ZodRawShape>(
   ops: readonly SyncCrudOp[],
