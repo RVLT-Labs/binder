@@ -1,4 +1,8 @@
 export { compareReadingOrder } from './anchors/order'
+export type { QuoteMatch, StreamWord } from './anchors/quote'
+export { anchorAtMatch, buildWordStream, findQuote, normaliseForMatch } from './anchors/quote'
+export { lineCentreY, snapToLine } from './anchors/snap'
+export type { VersionText } from './anchors/types'
 export {
   compareCueNumbers,
   findDuplicateNumbers,

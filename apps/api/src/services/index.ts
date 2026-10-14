@@ -22,6 +22,8 @@ export {
   uploadDocumentFromUrl,
 } from './documents'
 export { getPage, getPageImage } from './pages'
+export type { PlaceCueAtTextInput, PlaceCueAtTextResult } from './placement'
+export { placeCueAtText } from './placement'
 export { searchVersion } from './search'
 export {
   addShowMember,

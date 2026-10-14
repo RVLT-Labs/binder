@@ -6,25 +6,15 @@ import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { pageImageBlobKey } from '../src/blob/keys'
 import { TOOL_NAMES } from '../src/mcp/registry'
-import { processDocumentVersion } from '../src/processing/documentJob'
 import { jpegSize } from '../src/processing/jpeg'
-import { processPage } from '../src/processing/pageJob'
 import { createDocument, createShow, createToken, listOrganisations } from '../src/services'
 import { type Json, setupShow } from './documentHelpers'
 import { RecordingJobs } from './helpers'
 import { callTool, connectMcp } from './mcpHelpers'
-import { findMissingTools, skipWithoutTools } from './tools'
+import { missingTools, processVersion } from './processingHelpers'
+import { skipWithoutTools } from './tools'
 
-const skipPages = skipWithoutTools(
-  'MCP processed-page tests',
-  findMissingTools([
-    ['pdfinfo', ['-v']],
-    ['pdftoppm', ['-v']],
-    ['pdftotext', ['-v']],
-    ['pdfimages', ['-v']],
-    ['ocrmypdf', ['--version']],
-  ]),
-)
+const skipPages = skipWithoutTools('MCP processed-page tests', missingTools)
 
 type Setup = Awaited<ReturnType<typeof setupShow>>
 let s: Setup
@@ -64,8 +54,7 @@ beforeAll(async () => {
   versionId = version.id
   if (!skipPages) {
     const deps = { db: s.deps.db, blobs: s.deps.blobs, jobs: new RecordingJobs() }
-    await processDocumentVersion(deps, version.id)
-    await Promise.all(deps.jobs.enqueuedPages.map((id) => processPage(deps, id)))
+    await processVersion(deps, version.id)
   }
 })
 

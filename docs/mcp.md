@@ -92,6 +92,7 @@ quoting problems. For a local API on plain http, add `"--allow-http"` after the 
 | `create_cue` | write | Create a cue on a department layer; the number is suggested from script neighbours when omitted; an anchor `{documentId, pageIndex, x, y}` places it. Editors in scope. |
 | `update_cue` | write, idempotent | Number, label, type, notes, colour, department or anchor (null unplaces). |
 | `delete_cues` | write, destructive | Delete cues, all or nothing. More than ten needs `confirm: true`. |
+| `place_cue_at_text` | write | Anchor a cue where a quoted line occurs in the script. Ambiguous quotes return the matches; call again with `occurrence` or `nearPageIndex`. |
 | `list_annotations` | read-only | A show's annotations (note, rect, ellipse, line, arrow, stamp, highlight): every department layer plus your own personal layer, never anyone else's. Filter by layer (`personal`, a department code or id, or a layer key) and document. Paginated. |
 | `get_annotation` | read-only | One annotation; another user's personal annotation is `not_found`. |
 | `create_annotation` | write | Draw on `personal` or a department layer you can edit. The anchor `{documentId, pageIndex, x, y}` (plus `text` for a highlight) is placed on the document's current version; geometry is in points, relative to the anchor. |

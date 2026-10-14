@@ -4,7 +4,15 @@ import { type Anchor, type CueFields, cueFieldsSchema } from '@binder/shared'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import { invalid } from '../../errors'
-import { createCue, deleteCues, getCue, getDocument, listCues, updateCue } from '../../services'
+import {
+  createCue,
+  deleteCues,
+  getCue,
+  getDocument,
+  listCues,
+  placeCueAtText,
+  updateCue,
+} from '../../services'
 import type { Executor } from '../../services/executor'
 import { CONFIRM_DESCRIPTION, CONFIRM_THRESHOLD, confirmationRequired } from '../confirm'
 import type { McpContext } from '../context'
@@ -57,7 +65,7 @@ function numberOf(text: string): { major: number; minor: number } {
 }
 
 export function registerCueTools(server: McpServer, mcp: McpContext): void {
-  const { db } = mcp.deps
+  const { db, blobs } = mcp.deps
 
   server.registerTool(
     'list_cues',
@@ -132,6 +140,60 @@ export function registerCueTools(server: McpServer, mcp: McpContext): void {
         anchor: anchor ? await anchorFor(db, actor, anchor) : undefined,
       })
       return jsonResult(await getCue(db, actor, { cueId: cue.id }))
+    }),
+  )
+
+  server.registerTool(
+    'place_cue_at_text',
+    {
+      title: 'Place cue at text',
+      description:
+        'Places a cue on a department layer where a line of the script occurs, so you can mark up ' +
+        'a script without pixel coordinates. Quote the text as it appears in the document ' +
+        '(case, punctuation and a hyphenated line end are forgiven when there is no exact match). ' +
+        'The document defaults to the libretto. Returns {status: "placed", cue, match} with the ' +
+        'cue anchored at the first word of the quote. If the quote appears more than once nothing ' +
+        'is written and you get {status: "ambiguous", matches: [{occurrence, pageIndex, snippet}]}: ' +
+        'call again with occurrence (1-based, from that list) or nearPageIndex (the occurrence ' +
+        'nearest that page). A quote that is nowhere in the document is an error. Without a ' +
+        'number the next one is chosen from the department neighbours in script order. You need ' +
+        'edit rights on the department layer.',
+      inputSchema: z.object({
+        showId: id('show'),
+        department: z.string().min(1).describe(DEPARTMENT_DESCRIPTION),
+        quote: z
+          .string()
+          .min(1)
+          .max(2000)
+          .describe('A few words of the script as they appear on the page, in reading order.'),
+        documentId: id('document').optional().describe('Defaults to the show libretto.'),
+        occurrence: z
+          .number()
+          .int()
+          .min(1)
+          .max(100000)
+          .optional()
+          .describe('Which occurrence to use when the quote appears more than once (1-based).'),
+        nearPageIndex: z
+          .number()
+          .int()
+          .min(0)
+          .max(100000)
+          .optional()
+          .describe('When the quote appears more than once, the zero-based page to be nearest to.'),
+        number: z.string().optional().describe(NUMBER_DESCRIPTION),
+        label: fields.label.optional(),
+        type: fields.type.optional(),
+        notes: fields.notes.optional(),
+      }),
+      annotations: CREATE,
+    },
+    guarded(async ({ number, ...rest }, ctx) => {
+      const result = await placeCueAtText(db, blobs, mcp.actor(ctx), {
+        ...rest,
+        number: number === undefined ? undefined : numberOf(number),
+      })
+      return jsonResult(result)
     }),
   )
 
