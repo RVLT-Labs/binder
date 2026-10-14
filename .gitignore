@@ -9,3 +9,6 @@ fixtures/private/
 .DS_Store
 coverage/
 .data/
+apps/web/e2e/.auth/
+apps/web/test-results/
+apps/web/playwright-report/
