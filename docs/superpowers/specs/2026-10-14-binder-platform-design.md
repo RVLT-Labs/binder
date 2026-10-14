@@ -6,7 +6,7 @@ Author: Jayden Nawotka with Claude
 
 ## 0. Name
 
-The product is **Binder**, by RVLT, a sibling of RVLT Flow. The name is the stage manager's binder: the ring binder of paperwork that holds the whole show. In the UI, each show's workspace is called its binder. The repository is `binder`, packages are scoped `@binder/*`, and the working directory at `/Users/jayden/cueapp` should be renamed to `/Users/jayden/binder` before M0 starts.
+The product is **Binder**, by RVLT, a sibling of RVLT Flow. The name is the stage manager's binder: the ring binder of paperwork that holds the whole show. In the UI, each show's workspace is called its binder. Packages are scoped `@binder/*`. The working directory stays at `/Users/jayden/cueapp` for now; renaming it to `binder` is a later housekeeping step with no code impact.
 
 ## 1. Purpose
 
