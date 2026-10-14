@@ -111,6 +111,7 @@ function DocumentPage() {
       ) : (
         <Viewer
           key={version.id}
+          versionId={version.id}
           pdfUrl={blobUrl(version.searchable_key)}
           pages={viewerPages}
           versionLabel={versionName(version)}

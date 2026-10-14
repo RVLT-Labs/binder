@@ -9,6 +9,11 @@ export function Notices() {
       {notices.map((n) => (
         <li key={n.id} role="alert" className={`notice notice-${n.kind}`}>
           <span>{n.message}</span>
+          {n.action && (
+            <button type="button" onClick={n.action.run}>
+              {n.action.label}
+            </button>
+          )}
           <button type="button" onClick={() => dismissNotice(n.id)} aria-label="Dismiss notice">
             ×
           </button>

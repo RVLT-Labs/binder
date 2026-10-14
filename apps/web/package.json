@@ -9,9 +9,12 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test -c e2e/playwright.config.ts"
+    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "e2e:offline": "playwright test -c e2e/playwright.offline.config.ts",
+    "e2e:all": "pnpm e2e && pnpm e2e:offline"
   },
   "dependencies": {
+    "@binder/core": "workspace:*",
     "@binder/shared": "workspace:*",
     "@powersync/react": "^2.0.2",
     "@powersync/web": "^2.4.2",
@@ -34,6 +37,8 @@
     "@vitejs/plugin-react": "^6.1.2",
     "drizzle-orm": "^0.45.0",
     "jsdom": "^30.1.2",
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "vite-plugin-pwa": "^2.0.0",
+    "workbox-window": "^7.4.1"
   }
 }

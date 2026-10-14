@@ -1,6 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   type KeyboardEventHandler,
+  type ReactNode,
   type Ref,
   useEffect,
   useImperativeHandle,
@@ -29,6 +30,8 @@ export interface PageListProps {
   pdf: PDFDocumentProxy
   pages: readonly ListPage[]
   zoom: number
+  /** Drawn over each mounted page in its box, e.g. a PageOverlay. `pageIndex` is zero-based. */
+  overlay?: (pageIndex: number) => ReactNode
   /** Zero-based page to open at. Read on mount only. */
   initialPage?: number
   /** Called with the zero-based page at the top of the view whenever it changes. */
@@ -46,6 +49,7 @@ export function PageList({
   pdf,
   pages,
   zoom,
+  overlay,
   initialPage = 0,
   onVisiblePage,
   onKeyDown,
@@ -127,7 +131,9 @@ export function PageList({
                 zoom={zoom}
                 width={page.width}
                 height={page.height}
-              />
+              >
+                {overlay?.(item.index)}
+              </PageCanvas>
             </div>
           )
         })}

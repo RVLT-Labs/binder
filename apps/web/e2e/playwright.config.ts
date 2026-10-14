@@ -3,6 +3,7 @@ import { API_URL, APP_URL, apiEnv, REPO_ROOT } from './env'
 
 const reuse = !process.env.CI
 
+/** The suite against the dev servers. The offline spec is excluded: see playwright.offline.config.ts. */
 export default defineConfig({
   testDir: '.',
   globalSetup: './global-setup.ts',
@@ -13,7 +14,8 @@ export default defineConfig({
   timeout: 90_000,
   use: {
     baseURL: APP_URL,
-    // The PWA service worker arrives in Task 16; keep it out of these specs until then.
+    // The dev server registers no service worker; the offline spec runs against a production build
+    // in its own config (playwright.offline.config.ts), and nothing else should meet one.
     serviceWorkers: 'block',
     trace: 'retain-on-failure',
   },
@@ -22,6 +24,7 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
+      testIgnore: /offline\.spec\.ts/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },

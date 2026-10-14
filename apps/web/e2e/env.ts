@@ -6,6 +6,8 @@ export const AUTH_DIR = join(import.meta.dirname, '.auth')
 export const RUN_FILE = join(AUTH_DIR, 'run.json')
 export const API_URL = 'http://localhost:3000'
 export const APP_URL = 'http://localhost:5173'
+/** `vite preview` of the production build, which carries the service worker. */
+export const PREVIEW_URL = 'http://localhost:4173'
 
 /** The dev values from .env.example: the API the e2e suite starts runs against the dev compose stack. */
 export function apiEnv(): Record<string, string> {

@@ -40,6 +40,28 @@ export async function fetchBlob(url: string): Promise<Response> {
   return res
 }
 
+/**
+ * Makes sure a blob is in the cache that fetchBlob reads, downloading it if it is not. Unlike
+ * fetchBlob it waits for the copy to be stored and throws when it cannot be, so the caller knows
+ * the blob really is available offline. Resolves to what it did.
+ */
+export async function storeBlob(url: string): Promise<'cached' | 'fetched'> {
+  const cache = await openCache()
+  if (!cache) throw new Error('this browser cannot store files for offline use')
+  try {
+    if (await cache.match(url)) return 'cached'
+  } catch {
+    // Treated as a miss; the put below decides whether storing works.
+  }
+  const res = await fetch(url, { credentials: 'include' })
+  if (res.status !== 200) {
+    void res.body?.cancel()
+    throw new Error(`the server answered ${res.status}`)
+  }
+  await cache.put(url, res)
+  return 'fetched'
+}
+
 /** Removes every cached blob, so the next user of this browser cannot read the last user's files. */
 export async function clearBlobCache(): Promise<void> {
   try {

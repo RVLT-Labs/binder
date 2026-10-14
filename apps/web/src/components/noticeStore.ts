@@ -2,8 +2,10 @@ import { useSyncExternalStore } from 'react'
 
 export interface Notice {
   id: number
-  kind: 'rejection' | 'error'
+  kind: 'rejection' | 'error' | 'info'
   message: string
+  /** A button beside the message, e.g. "Reload". */
+  action?: { label: string; run: () => void }
 }
 
 let notices: readonly Notice[] = []

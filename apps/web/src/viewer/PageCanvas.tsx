@@ -1,12 +1,16 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { pageGeometry } from './coords'
-import { type PDFDocumentProxy, type PDFPageProxy, RenderingCancelledException } from './pdfjs'
+import {
+  type PDFDocumentProxy,
+  type PDFPageProxy,
+  RenderingCancelledException,
+  type RenderTask,
+} from './pdfjs'
 import { createRenderQueue } from './renderQueue'
+import { renderScale } from './renderScale'
 
 /** Shared by every page on screen: at most two renders run at once. */
 const queue = createRenderQueue(2)
-
-const MAX_PIXEL_RATIO = 2
 
 export interface PageCanvasProps {
   pdf: PDFDocumentProxy
@@ -40,32 +44,44 @@ export function PageCanvas({ pdf, pageIndex, zoom, width, height, children }: Pa
       (page) => {
         if (!active) return
         pageRef.current = page
-        cancelRender = queue.enqueue(key, () => {
-          const scale = zoom * Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO)
-          // PDF.js applies the page's /Rotate, so this viewport matches the displayed size.
-          const viewport = page.getViewport({ scale })
-          const canvas = document.createElement('canvas')
-          canvas.width = Math.floor(viewport.width)
-          canvas.height = Math.floor(viewport.height)
-          canvas.className = 'page-canvas'
-          canvas.setAttribute('role', 'img')
-          canvas.setAttribute('aria-label', `Page ${pageIndex + 1}`)
-          const task = page.render({ canvas, viewport })
-          task.promise.then(
-            () => {
-              if (!active || !host.current) return releaseCanvas(canvas)
-              swapCanvas(host.current, canvas)
-              setError(null)
-            },
-            (err: unknown) => {
+        cancelRender = queue.enqueue(
+          key,
+          () => {
+            const scale = renderScale({ width, height }, zoom, window.devicePixelRatio)
+            // PDF.js applies the page's /Rotate, so this viewport matches the displayed size.
+            const viewport = page.getViewport({ scale })
+            const canvas = document.createElement('canvas')
+            canvas.width = Math.floor(viewport.width)
+            canvas.height = Math.floor(viewport.height)
+            canvas.className = 'page-canvas'
+            canvas.setAttribute('role', 'img')
+            canvas.setAttribute('aria-label', `Page ${pageIndex + 1}`)
+            let task: RenderTask
+            try {
+              task = page.render({ canvas, viewport })
+            } catch (err) {
               releaseCanvas(canvas)
-              if (active && !(err instanceof RenderingCancelledException)) {
-                setError(err instanceof Error ? err.message : String(err))
-              }
-            },
-          )
-          return task
-        })
+              throw err
+            }
+            task.promise.then(
+              () => {
+                if (!active || !host.current) return releaseCanvas(canvas)
+                swapCanvas(host.current, canvas)
+                setError(null)
+              },
+              (err: unknown) => {
+                releaseCanvas(canvas)
+                if (active && !(err instanceof RenderingCancelledException)) {
+                  setError(err instanceof Error ? err.message : String(err))
+                }
+              },
+            )
+            return task
+          },
+          (err) => {
+            if (active) setError(err instanceof Error ? err.message : String(err))
+          },
+        )
       },
       (err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : String(err))
@@ -75,7 +91,7 @@ export function PageCanvas({ pdf, pageIndex, zoom, width, height, children }: Pa
       active = false
       cancelRender?.()
     }
-  }, [pdf, pageIndex, zoom, key])
+  }, [pdf, pageIndex, zoom, width, height, key])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: evicts the page when it is replaced, not only on unmount
   useEffect(() => {

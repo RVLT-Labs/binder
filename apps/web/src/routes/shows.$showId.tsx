@@ -2,6 +2,7 @@ import { useQuery } from '@powersync/react'
 import { createFileRoute, Link, Outlet, useChildMatches } from '@tanstack/react-router'
 import { useSessionUser } from '../auth/session'
 import { DocumentList } from '../documents/DocumentList'
+import { OfflineButton } from '../offline/OfflineButton'
 import type { ShowRow } from '../powersync/schema'
 
 export const Route = createFileRoute('/shows/$showId')({ component: ShowPage })
@@ -29,6 +30,7 @@ function ShowPage() {
         <Link to="/">← Shows</Link>
       </p>
       <h1>{show.title}</h1>
+      <OfflineButton showId={showId} />
       <DocumentList showId={showId} canUpload={canUpload} />
     </>
   )

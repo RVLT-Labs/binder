@@ -7,14 +7,16 @@ export interface QueuedTask {
 export interface RenderQueue {
   /**
    * Runs `run` when a slot is free. A key names one canvas: enqueueing it again cancels its earlier
-   * render, pending or running. Returns a function that cancels this render.
+   * render, pending or running. Returns a function that cancels this render. If `run` throws,
+   * `onError` is told (unless this render was cancelled first); the slot is freed either way.
    */
-  enqueue(key: string, run: () => QueuedTask): () => void
+  enqueue(key: string, run: () => QueuedTask, onError: (error: unknown) => void): () => void
 }
 
 interface Entry {
   key: string
   run: () => QueuedTask
+  onError: (error: unknown) => void
   task?: QueuedTask
   cancelled: boolean
 }
@@ -36,8 +38,9 @@ export function createRenderQueue(maxConcurrent = 2): RenderQueue {
       running.add(entry)
       try {
         entry.task = entry.run()
-      } catch {
+      } catch (err) {
         release(entry)
+        entry.onError(err)
         continue
       }
       const done = () => {
@@ -59,10 +62,10 @@ export function createRenderQueue(maxConcurrent = 2): RenderQueue {
   }
 
   return {
-    enqueue(key, run) {
+    enqueue(key, run, onError) {
       const previous = latest.get(key)
       if (previous) cancel(previous)
-      const entry: Entry = { key, run, cancelled: false }
+      const entry: Entry = { key, run, onError, cancelled: false }
       latest.set(key, entry)
       pending.push(entry)
       pump()

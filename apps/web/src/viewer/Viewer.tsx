@@ -1,3 +1,4 @@
+import type { DocHit } from '@binder/core'
 import {
   type KeyboardEvent,
   useCallback,
@@ -7,8 +8,12 @@ import {
   useRef,
   useState,
 } from 'react'
+import { SearchPanel } from '../search/SearchPanel'
+import { useDocumentSearch } from '../search/useDocumentSearch'
 import { fitWidthZoom, viewerKeyAction, zoomIn, zoomOut } from './controls'
 import { PageList, type PageListHandle } from './PageList'
+import { PageOverlay } from './PageOverlay'
+import { SearchHighlights } from './SearchHighlights'
 import { ThumbnailRail } from './ThumbnailRail'
 import { usePdfDocument } from './usePdfDocument'
 import { ViewerToolbar } from './ViewerToolbar'
@@ -26,6 +31,8 @@ export interface ViewerPage {
 }
 
 export interface ViewerProps {
+  /** The version being shown; its text is what search looks through. */
+  versionId: string
   /** The version's searchable PDF. */
   pdfUrl: string
   pages: readonly ViewerPage[]
@@ -37,13 +44,23 @@ export interface ViewerProps {
 }
 
 /** Toolbar, thumbnail rail, and the virtualised page list for one ready document version. */
-export function Viewer({ pdfUrl, pages, versionLabel, initialPage, onPageChange }: ViewerProps) {
+export function Viewer({
+  versionId,
+  pdfUrl,
+  pages,
+  versionLabel,
+  initialPage,
+  onPageChange,
+}: ViewerProps) {
   const { pdf, status, error } = usePdfDocument(pdfUrl)
   const firstPage = Math.min(Math.max(0, initialPage), pages.length - 1)
   const [current, setCurrent] = useState(firstPage)
   /** Where the page list opens once the PDF has loaded; jumps before then land here. */
   const [openAt, setOpenAt] = useState(firstPage)
   const [zoom, setZoom] = useState<number | null>(null)
+  const documentSearch = useDocumentSearch(versionId)
+  const [hits, setHits] = useState<DocHit[]>([])
+  const [activeHit, setActiveHit] = useState<number | null>(null)
   const area = useRef<HTMLDivElement>(null)
   const list = useRef<PageListHandle>(null)
 
@@ -70,6 +87,39 @@ export function Viewer({ pdfUrl, pages, versionLabel, initialPage, onPageChange 
       setCurrent(target)
     },
     [pages.length],
+  )
+
+  const hitsByPage = useMemo(() => {
+    const byPage = new Map<number, DocHit[]>()
+    for (const hit of hits) byPage.set(hit.pageIndex, [...(byPage.get(hit.pageIndex) ?? []), hit])
+    return byPage
+  }, [hits])
+
+  const activateHit = useCallback(
+    (found: readonly DocHit[], index: number) => {
+      setActiveHit(index)
+      goTo(found[index].pageIndex)
+    },
+    [goTo],
+  )
+
+  const overlay = useCallback(
+    (pageIndex: number) => {
+      const pageHits = hitsByPage.get(pageIndex)
+      const words = documentSearch.layers?.get(pageIndex)?.words
+      const page = pages[pageIndex]
+      if (!pageHits || !words || zoom === null) return null
+      return (
+        <PageOverlay width={page.width} height={page.height} zoom={zoom}>
+          <SearchHighlights
+            hits={pageHits}
+            words={words}
+            active={activeHit === null ? null : hits[activeHit]}
+          />
+        </PageOverlay>
+      )
+    },
+    [hitsByPage, documentSearch.layers, pages, zoom, activeHit, hits],
   )
 
   function onKeyDown(e: KeyboardEvent<HTMLElement>) {
@@ -108,6 +158,7 @@ export function Viewer({ pdfUrl, pages, versionLabel, initialPage, onPageChange 
               pdf={pdf}
               pages={pages}
               zoom={zoom}
+              overlay={overlay}
               initialPage={openAt}
               onVisiblePage={setCurrent}
               onKeyDown={onKeyDown}
@@ -116,6 +167,19 @@ export function Viewer({ pdfUrl, pages, versionLabel, initialPage, onPageChange 
             <p className="viewer-message">Loading PDF…</p>
           )}
         </div>
+        <SearchPanel
+          search={documentSearch.search}
+          loading={documentSearch.loading}
+          unavailable={documentSearch.unavailable}
+          hits={hits}
+          active={activeHit}
+          onResults={(found, jump) => {
+            setHits(found)
+            setActiveHit(null)
+            if (jump && found.length > 0) activateHit(found, 0)
+          }}
+          onActivate={(index) => activateHit(hits, index)}
+        />
       </div>
     </div>
   )
