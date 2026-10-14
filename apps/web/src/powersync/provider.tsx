@@ -14,28 +14,67 @@ export function getPowerSync(): PowerSyncDatabase {
   return shared
 }
 
+function messageOf(err: unknown): string {
+  // DOMException is not an Error everywhere (jsdom, older WebKit), but always has a message.
+  const message = (err as { message?: unknown } | null)?.message
+  return typeof message === 'string' && message ? message : String(err)
+}
+
 /**
  * Provides the local database to the signed-in user's screens and connects it. Nothing renders
- * until the database is claimed for this user, so a previous user's rows are never shown.
+ * until the database is claimed for this user, so a previous user's rows are never shown. If the
+ * browser cannot open local storage at all (no OPFS in a private window, a quota error, a worker that
+ * fails to load), it says so instead of leaving a blank page.
  */
 export function PowerSyncProvider({ userId, children }: { userId: string; children: ReactNode }) {
-  const [db] = useState(getPowerSync)
+  const [opened] = useState<{ db: PowerSyncDatabase } | { error: string }>(() => {
+    try {
+      return { db: getPowerSync() }
+    } catch (err) {
+      return { error: messageOf(err) }
+    }
+  })
+  const db = 'db' in opened ? opened.db : null
   const [claimedFor, setClaimedFor] = useState<string | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!db) return
     let cancelled = false
     void (async () => {
-      await claimLocalDb(db, userId, clearBlobCache)
+      try {
+        await claimLocalDb(db, userId, clearBlobCache)
+      } catch (err) {
+        console.error('could not open the local database', err)
+        if (!cancelled) setFailure(messageOf(err))
+        return
+      }
       if (cancelled) return
       setClaimedFor(userId)
-      await db.connect(new ApiConnector())
+      try {
+        await db.connect(new ApiConnector())
+      } catch (err) {
+        // The app still works on local data; PowerSync reports sync trouble through its status.
+        console.error('could not connect the sync service', err)
+      }
     })()
     return () => {
       cancelled = true
     }
   }, [db, userId])
 
-  if (claimedFor !== userId) return null
+  const error = 'error' in opened ? opened.error : failure
+  if (error !== null) {
+    return (
+      <main className="page">
+        <p role="alert">
+          This browser could not open Binder's local storage: {error}. Binder keeps shows on this
+          device, so it needs a normal (not private) window with site storage allowed.
+        </p>
+      </main>
+    )
+  }
+  if (!db || claimedFor !== userId) return null
   return <PowerSyncContext.Provider value={db}>{children}</PowerSyncContext.Provider>
 }
 
