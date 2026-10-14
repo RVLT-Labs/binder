@@ -13,6 +13,13 @@
 }
 
 :80 {
+	# JSON-only endpoints, including the unauthenticated auth routes: refuse bodies over 2 MiB here,
+	# before the API reads them (the API enforces the same limit). Uploads keep their 200 MB limit.
+	@jsonOnly path /api/auth/* /mcp /mcp/*
+	request_body @jsonOnly {
+		max_size 2MiB
+	}
+
 	# flush_interval -1 streams responses as they are produced (MCP's streamable HTTP, large blobs).
 	handle /api/* {
 		reverse_proxy api:3000 {

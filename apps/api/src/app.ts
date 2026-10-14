@@ -1,6 +1,7 @@
 import type { Db } from '@binder/db'
 import type { Actor } from '@binder/shared'
-import { Hono } from 'hono'
+import { Hono, type MiddlewareHandler } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { HTTPException } from 'hono/http-exception'
 import type { Auth } from './auth/auth'
 import { signUpGuard } from './auth/middleware'
@@ -61,6 +62,12 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   app.notFound((c) => c.json({ error: 'not_found', message: 'Not found' }, 404))
 
+  // JSON bodies are small; only the PDF upload routes (which enforce their own 200 MB limit while
+  // streaming) take large ones. Applies to the unauthenticated auth endpoints and MCP too.
+  app.use('/api/*', jsonBodyLimit)
+  app.use('/mcp', jsonBodyLimit)
+  app.use('/mcp/*', jsonBodyLimit)
+
   app.use('/api/auth/*', signUpGuard)
   app.all('/api/auth/*', (c) => c.var.deps.auth.handler(c.req.raw))
 
@@ -80,3 +87,13 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   return app
 }
+
+export const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
+
+/** POST /api/shows/:showId/documents and POST /api/shows/:showId/documents/:docId/versions. */
+const UPLOAD_PATH = /^\/api\/shows\/[^/]+\/documents(?:\/[^/]+\/versions)?\/?$/
+
+const limit = bodyLimit({ maxSize: MAX_JSON_BODY_BYTES })
+
+const jsonBodyLimit: MiddlewareHandler<AppEnv> = (c, next) =>
+  c.req.method === 'POST' && UPLOAD_PATH.test(c.req.path) ? next() : limit(c, next)
