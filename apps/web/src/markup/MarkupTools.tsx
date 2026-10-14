@@ -1,5 +1,6 @@
 import type { CueType } from '@binder/shared'
 import { useId } from 'react'
+import { useUndo } from '../undo/useUndo'
 import { useMarkupSession } from './MarkupSession'
 import { StampPicker } from './StampPicker'
 import { setStamp, setTool, type Tool, useTool } from './tools'
@@ -21,6 +22,7 @@ const ANNOTATION_TOOLS: Array<{ tool: Tool; label: string }> = [
 export function MarkupTools() {
   const session = useMarkupSession()
   const { tool, cueType, stamp } = useTool()
+  const undo = useUndo(session.showId)
   const hintId = useId()
   const annotationHintId = useId()
   const disabled = 'disabled' in session.cueTarget ? session.cueTarget.disabled : null
@@ -31,6 +33,22 @@ export function MarkupTools() {
 
   return (
     <fieldset className="markup-tools" aria-label="Markup tools">
+      <button
+        type="button"
+        aria-label="Undo"
+        disabled={!undo.canUndo}
+        onClick={() => void undo.undo()}
+      >
+        Undo
+      </button>
+      <button
+        type="button"
+        aria-label="Redo"
+        disabled={!undo.canRedo}
+        onClick={() => void undo.redo()}
+      >
+        Redo
+      </button>
       <button type="button" aria-pressed={tool === 'select'} onClick={() => setTool('select')}>
         Select
       </button>

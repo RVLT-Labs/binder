@@ -1,7 +1,7 @@
 import type { Anchor, WordLayer } from '@binder/shared'
 import { expect, type Page, test } from '@playwright/test'
 import { readRun } from './env'
-import { clientPoint, pageText, withUsers } from './markupHelpers'
+import { clientPoint, lineOf, pageText, withUsers } from './markupHelpers'
 
 /**
  * Annotations on the short libretto: drawn with the viewer's tools into the local PowerSync
@@ -617,6 +617,87 @@ test('a viewer draws on their personal layer only, and a hidden layer disables t
       await expect(shape(v.page, id)).toBeVisible()
     } finally {
       await clean(v.page, made)
+    }
+  })
+})
+
+/** A cue's label in a page's local database, or undefined when the cue is not there. */
+async function cueLabel(page: Page, id: string): Promise<string | undefined> {
+  const [row] = await query<{ label: string }>(page, 'SELECT label FROM cues WHERE id = ?', [id])
+  return row?.label
+}
+
+test('undo restores a deleted cue; undo after B relabels the cue is blocked with a notice', async ({
+  browser,
+}) => {
+  const { libretto } = readRun()
+  await withUsers(browser, ['owner', 'lxEditor'], async ([a, b]) => {
+    let id = ''
+    try {
+      await a.page.getByLabel('Active layer LX').check()
+      const line = lineOf((await pageText(a.page, 0)).words, 5)
+      const cueIds = async () =>
+        (
+          await query<{ id: string }>(
+            a.page,
+            `SELECT id FROM cues WHERE json_extract(anchor, '$.documentVersionId') = ?`,
+            [libretto.versionId],
+          )
+        ).map((r) => r.id)
+      const before = await cueIds()
+      const at = await clientPoint(a.page, 0, line.x, line.centre + 2)
+      await a.page.mouse.move(at.x, at.y)
+      await a.page.keyboard.press('c')
+      await expect.poll(async () => (await cueIds()).length).toBe(before.length + 1)
+      id = (await cueIds()).find((c) => !before.includes(c)) ?? ''
+      const marker = (page: Page) => page.locator(`[data-cue-id="${id}"]`)
+      await expect(marker(a.page)).toHaveAttribute('data-selected', 'true')
+      await expect(marker(b.page)).toBeVisible({ timeout: 10_000 })
+
+      const undo = a.page.getByRole('button', { name: 'Undo', exact: true })
+      const redo = a.page.getByRole('button', { name: 'Redo', exact: true })
+      await expect(undo).toBeEnabled()
+      await expect(redo).toBeDisabled()
+
+      // Delete, then Undo brings the same cue (same id) back, here and on B.
+      await a.page.keyboard.press('Delete')
+      await expect(marker(a.page)).toHaveCount(0)
+      await expect(marker(b.page)).toHaveCount(0, { timeout: 10_000 })
+      await undo.click()
+      await expect(marker(a.page)).toBeVisible()
+      await expect(marker(b.page)).toBeVisible({ timeout: 10_000 })
+      await expect(redo).toBeEnabled()
+
+      // B (LX editor) relabels the cue.
+      await marker(b.page).click()
+      const editor = b.page.getByRole('region', { name: 'Cue editor' })
+      await editor.getByLabel('Label').fill('Relabelled by B')
+      await editor.getByLabel('Label').press('Enter')
+      await expect.poll(() => cueLabel(a.page, id), { timeout: 10_000 }).toBe('Relabelled by B')
+
+      // A's next undo (the placement) would remove B's work: blocked, with a notice, nothing lost.
+      await a.page.locator('body').click({ position: { x: 5, y: 5 } })
+      await a.page.keyboard.press('Control+z')
+      await expect(a.page.getByRole('alert')).toContainText(
+        "Can't undo: someone else has changed this since",
+      )
+      expect(await cueLabel(a.page, id)).toBe('Relabelled by B')
+      await expect(marker(a.page)).toBeVisible()
+      // The blocked entry left the stack.
+      await expect(undo).toBeDisabled()
+
+      // Redo the undone delete is still its own entry... which would now remove B's work: the
+      // stack never reapplies over someone else's change.
+      await redo.click()
+      await expect(a.page.getByRole('alert').last()).toContainText("Can't redo")
+      expect(await cueLabel(a.page, id)).toBe('Relabelled by B')
+    } finally {
+      if (id) {
+        await a.page.evaluate(async (cueId) => {
+          await window.__binder?.db.execute('DELETE FROM cues WHERE id = ?', [cueId])
+        }, id)
+        await uploaded(a.page)
+      }
     }
   })
 })

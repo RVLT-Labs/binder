@@ -81,6 +81,11 @@ export function subscribeLocalEdits(fn: Listener): () => void {
   }
 }
 
+/** Tells listeners about writes made outside these mutations (the undo stack's own). */
+export function emitLocalEdits(edits: LocalEdit[], source: EditSource): void {
+  emit(edits, source)
+}
+
 function emit(edits: LocalEdit[], source: EditSource): void {
   if (edits.length === 0) return
   for (const fn of [...listeners]) {

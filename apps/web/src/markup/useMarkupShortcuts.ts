@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useUndo } from '../undo/useUndo'
 import { useMarkupSession } from './MarkupSession'
 import { stepCue } from './markupView'
 import { clearSelection, useSelection } from './selection'
@@ -31,17 +32,20 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 /**
  * The viewer's markup keys while a document is open: `]` and `[` walk the shown cues, `c` places
  * a cue at the pointer, `g` jumps to a page, `1`-`9` pick the active layer, Delete removes the
- * selected cue or annotation, Escape deselects. Undo and redo arrive with the undo stack.
+ * selected cue or annotation, Escape deselects, Mod+Z and Mod+Shift+Z undo and redo
+ * the user's own edits (never while a text field has focus, where the browser's own undo applies).
  */
 export function useMarkupShortcuts(): void {
-  const current = { session: useMarkupSession(), selection: useSelection(), tool: useTool() }
+  const session = useMarkupSession()
+  const undo = useUndo(session.showId)
+  const current = { session, selection: useSelection(), tool: useTool(), undo }
   // The listener stays attached; it reads what is current when a key arrives.
   const latest = useRef(current)
   latest.current = current
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      const { session, selection, tool } = latest.current
+      const { session, selection, tool, undo } = latest.current
       if (e.defaultPrevented || e.repeat) return
       const action = resolveShortcut({
         key: e.key,
@@ -97,6 +101,12 @@ export function useMarkupShortcuts(): void {
           void session.removeCue(cue.id)
           break
         }
+        case 'undo':
+          void undo.undo()
+          break
+        case 'redo':
+          void undo.redo()
+          break
         case 'deselect':
           if (!selection) return
           clearSelection()
