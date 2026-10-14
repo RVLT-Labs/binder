@@ -1,27 +1,22 @@
 import { columnEqual } from '@binder/core'
-import { changeLog, departments, documents, shows } from '@binder/db'
+import { annotations, changeLog, cues, departments, documents, shows } from '@binder/db'
 import {
   type Actor,
   type AnnotationFields,
   type CueFields,
+  isLayerVisibleTo,
   newId,
-  parseLayerKey,
   type RevertResult,
 } from '@binder/shared'
 import { and, desc, eq } from 'drizzle-orm'
-import { AppError, conflict, invalid, notFound } from '../errors'
+import { AppError, conflict, IdTaken, invalid, notFound } from '../errors'
 import { hasNoNul } from '../validation'
-import {
-  createAnnotation,
-  deleteAnnotations,
-  loadAnnotationRow,
-  updateAnnotation,
-} from './annotations'
-import { createCue, deleteCues, loadCueRow, updateCue } from './cues'
+import { createAnnotation, deleteAnnotations, updateAnnotation } from './annotations'
+import { createCue, deleteCues, updateCue } from './cues'
 import { updateDepartment } from './departments'
 import { updateDocument } from './documents'
 import type { Executor } from './executor'
-import { requireShowRole, updateShow } from './tenancy'
+import { assertShowWritable, requireShowRole, updateShow } from './tenancy'
 
 type LogRow = typeof changeLog.$inferSelect
 type Columns = Record<string, unknown>
@@ -43,12 +38,6 @@ class DryRunComplete extends Error {
   }
 }
 
-/** The owner of the personal layer a row is tagged with, or null for rows outside personal layers. */
-function layerOwner(row: LogRow): string | null {
-  const ref = row.layer ? parseLayerKey(row.layer) : null
-  return ref?.kind === 'personal' ? ref.id : null
-}
-
 /**
  * The user whose personal layer an annotation move names (a personal-to-department move is logged
  * on the destination layer, with the former personal layer in `before`), or null.
@@ -61,11 +50,8 @@ function columnOwner(row: LogRow): string | null {
   return null
 }
 
-/** Rows on another user's personal layer are not part of what this reader can see. */
-const visibleRow = (row: LogRow, actor: Actor): boolean => {
-  const owner = layerOwner(row)
-  return owner === null || owner === actor.userId
-}
+/** Rows on another user's personal layer are not part of what this reader can see (fails closed). */
+const visibleRow = (row: LogRow, actor: Actor): boolean => isLayerVisibleTo(row.layer, actor.userId)
 
 /** A visible row whose revert would land on another user's personal layer is not_found. */
 function assertNotOthersPersonal(row: LogRow, actor: Actor): void {
@@ -81,24 +67,34 @@ function assertRevertable(row: LogRow): void {
   }
 }
 
+/**
+ * The row as it is now, locked (`FOR UPDATE`) until the revert transaction ends: a concurrent
+ * commit to a column between this read and the service's write would otherwise be overwritten
+ * without a conflict. Under READ COMMITTED a locked read returns the latest committed version.
+ */
 async function loadCurrent(tx: Executor, row: LogRow): Promise<Columns | null> {
+  const first = async (query: PromiseLike<unknown[]>) =>
+    ((await query)[0] ?? null) as Columns | null
   switch (row.tableName) {
     case 'cues':
-      return (await loadCueRow(tx, row.rowId)) as Columns | null
+      return first(tx.select().from(cues).where(eq(cues.id, row.rowId)).for('update'))
     case 'annotations':
-      return (await loadAnnotationRow(tx, row.rowId)) as Columns | null
+      return first(tx.select().from(annotations).where(eq(annotations.id, row.rowId)).for('update'))
     case 'departments':
-      return ((await tx.select().from(departments).where(eq(departments.id, row.rowId)))[0] ??
-        null) as Columns | null
+      return first(tx.select().from(departments).where(eq(departments.id, row.rowId)).for('update'))
     case 'documents':
-      return ((await tx.select().from(documents).where(eq(documents.id, row.rowId)))[0] ??
-        null) as Columns | null
+      return first(tx.select().from(documents).where(eq(documents.id, row.rowId)).for('update'))
     case 'shows':
-      return ((await tx.select().from(shows).where(eq(shows.id, row.rowId)))[0] ??
-        null) as Columns | null
+      return first(tx.select().from(shows).where(eq(shows.id, row.rowId)).for('update'))
     default:
       return null
   }
+}
+
+/** Locks every row the revert will touch in a fixed order (table, id), so concurrent reverts cannot deadlock. */
+async function lockRows(tx: Executor, rows: LogRow[]): Promise<void> {
+  const keys = new Map(rows.map((r) => [`${r.tableName}\u0000${r.rowId}`, r]))
+  for (const key of [...keys.keys()].sort()) await loadCurrent(tx, keys.get(key) as LogRow)
 }
 
 const driftOf = (current: Columns, values: Columns | null): string[] =>
@@ -177,6 +173,13 @@ async function writeCreate(tx: Executor, actor: Actor, row: LogRow, batchId: str
   }
 }
 
+/** Archived shows are read-only (spec 4.1): refused before any row is looked at. */
+async function assertWritable(tx: Executor, showId: string): Promise<void> {
+  const [show] = await tx.select({ status: shows.status }).from(shows).where(eq(shows.id, showId))
+  if (!show) throw notFound('Show not found')
+  assertShowWritable(show)
+}
+
 /**
  * Reverts `rows` (newest first) through the owning services in the caller's transaction. Any throw
  * rolls the whole call back, so a conflict or a refused row writes nothing.
@@ -191,6 +194,7 @@ async function revertRows(
     assertRevertable(row)
     assertNotOthersPersonal(row, actor)
   }
+  await lockRows(tx, rows)
   const batchId = newId()
   const skipped: RevertResult['skipped'] = []
   let reverted = 0
@@ -245,7 +249,15 @@ async function revertRows(
         skipped.push({ seq: row.seq, reason: 'already-reverted' })
         continue
       }
-      await writeCreate(tx, actor, row, batchId)
+      try {
+        await writeCreate(tx, actor, row, batchId)
+      } catch (err) {
+        // Someone created this id after the read above: it exists again.
+        if (!(err instanceof IdTaken)) throw err
+        if (!opts.force) throw conflict(`${row.tableName} ${row.rowId}: row exists again`)
+        skipped.push({ seq: row.seq, reason: 'already-reverted' })
+        continue
+      }
       reverted++
     }
   }
@@ -298,6 +310,7 @@ export async function revertChange(
       throw err
     }
     if (!visibleRow(row, actor)) throw notFound('Change not found')
+    await assertWritable(tx, row.showId)
     return revertRows(tx, actor, [row], { force: input.force === true, single: true })
   })
   return result
@@ -319,6 +332,7 @@ export async function revertBatch(
     throw invalid('ids must not contain NUL')
   return transact(db, input.dryRun === true, async (tx) => {
     await requireShowRole(tx, actor, input.showId, 'viewer')
+    await assertWritable(tx, input.showId)
     const rows = (
       await tx
         .select()

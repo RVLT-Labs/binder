@@ -1,7 +1,7 @@
 import { annotations, changeLog, cues, departments, documents, shows } from '@binder/db'
 import { type Actor, type AnnotationFields, newId } from '@binder/shared'
 import { and, eq } from 'drizzle-orm'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { AppError } from '../src/errors'
 import {
   createAnnotation,
@@ -629,6 +629,123 @@ describe('revertBatch', () => {
   })
 })
 
+/** Resolves once some backend is waiting on a lock. */
+const waitForLock = (s: Setup) =>
+  vi.waitFor(
+    async () => {
+      const { rows } = await s.deps.db.$client.query(
+        `SELECT count(*)::int AS n FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+      )
+      expect(rows[0].n).toBeGreaterThan(0)
+    },
+    { timeout: 5_000, interval: 20 },
+  )
+
+describe('concurrency', () => {
+  test('a commit to a drifted column that lands while a revert waits is seen as drift (conflict), not overwritten', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const cue = await mkCue(s, s.actors.owner, 'LX', { label: 'a' })
+    await updateCue(db, s.actors.owner, { cueId: cue.id, patch: { label: 'b' } })
+    const seq = await lastSeq(s, cue.id, 'update')
+
+    let release = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    let held = () => {}
+    const holding = new Promise<void>((r) => {
+      held = r
+    })
+    // A collaborator's edit is in flight: the row is locked and not yet committed.
+    const holder = db.transaction(async (tx) => {
+      await updateCue(tx, s.actors.editor, { cueId: cue.id, patch: { label: 'c' } })
+      held()
+      await gate
+    })
+    await holding
+    const reverting = code(revertChange(db, s.actors.owner, { seq }))
+    await waitForLock(s)
+    release()
+    await holder
+    expect(await reverting).toBe('conflict')
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).label).toBe('c')
+  })
+
+  test('two batch reverts that touch the same rows in opposite orders do not deadlock', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const a = await mkCue(s, s.actors.owner, 'LX', { label: 'a0', notes: 'a0' })
+    const b = await mkCue(s, s.actors.owner, 'LX', { label: 'b0', notes: 'b0' })
+    // newest first, the owner's batch reverts b then a; the editor's reverts a then b
+    await updateCue(db, s.actors.owner, { cueId: a.id, patch: { label: 'a1' }, batchId: 'ob' })
+    await updateCue(db, s.actors.owner, { cueId: b.id, patch: { label: 'b1' }, batchId: 'ob' })
+    await updateCue(db, s.actors.editor, { cueId: b.id, patch: { notes: 'b1' }, batchId: 'eb' })
+    await updateCue(db, s.actors.editor, { cueId: a.id, patch: { notes: 'a1' }, batchId: 'eb' })
+    const results = await Promise.allSettled([
+      revertBatch(db, s.actors.owner, { showId: s.show.id, batchId: 'ob', userId: s.owner.id }),
+      revertBatch(db, s.actors.owner, { showId: s.show.id, batchId: 'eb', userId: s.editor.id }),
+    ])
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled'])
+    expect(await getCue(db, s.actors.owner, { cueId: a.id })).toMatchObject({
+      label: 'a0',
+      notes: 'a0',
+    })
+    expect(await getCue(db, s.actors.owner, { cueId: b.id })).toMatchObject({
+      label: 'b0',
+      notes: 'b0',
+    })
+  })
+
+  test('a delete revert that loses the re-create race to another create is conflict ("row exists again"), not a 500', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const cue = await mkCue(s, s.actors.owner, 'LX', { label: 'original' })
+    await deleteCues(db, s.actors.owner, { cueIds: [cue.id] })
+    const seq = await lastSeq(s, cue.id, 'delete')
+
+    let release = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    let held = () => {}
+    const holding = new Promise<void>((r) => {
+      held = r
+    })
+    // Someone else re-creates the same id and has not committed yet, so the revert sees no row.
+    const holder = db.transaction(async (tx) => {
+      await createCue(tx, s.actors.editor, {
+        showId: s.show.id,
+        id: cue.id,
+        departmentId: s.depts.LX.id,
+        number: { major: cue.major, minor: cue.minor },
+        label: 'recreated by someone else',
+      })
+      held()
+      await gate
+    })
+    await holding
+    const before = await totalLogs(s)
+    const reverting = revertChange(db, s.actors.owner, { seq }).then(
+      () => null,
+      (e) => e,
+    )
+    await waitForLock(s)
+    release()
+    await holder
+    const err = await reverting
+    expect(err).toBeInstanceOf(AppError)
+    expect(err.code).toBe('conflict')
+    expect(err.message).toContain('row exists again')
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).label).toBe(
+      'recreated by someone else',
+    )
+    // only the holder's insert was logged
+    expect(await totalLogs(s)).toBe(before + 1)
+  })
+})
+
 describe('personal layers', () => {
   test("reverting a change on someone else's personal annotation is not_found", async () => {
     const s = await setupMarkupShow()
@@ -761,6 +878,74 @@ describe('guards', () => {
     }
     expect((await getCue(db, s.actors.owner, { cueId: cue.id })).label).toBe('b')
     expect(await totalLogs(s)).toBe(before)
+  })
+
+  test('an archived show refuses every revert before it looks at the rows: drift, non-revertable, or all skipped', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const drifted = await mkCue(s, s.actors.owner, 'LX', { label: 'a' })
+    await updateCue(db, s.actors.owner, { cueId: drifted.id, patch: { label: 'b' }, batchId: 'dr' })
+    await updateCue(db, s.actors.editor, { cueId: drifted.id, patch: { label: 'c' } })
+    const driftSeq = await lastSeq(s, drifted.id, 'update')
+    const gone = await mkCue(s, s.actors.owner, 'LX', { batchId: 'skip' })
+    await deleteCues(db, s.actors.owner, { cueIds: [gone.id] })
+    const insertSeq = await lastSeq(s, gone.id, 'insert')
+    const deptInsert = await lastSeq(s, s.depts.LX.id, 'insert')
+    await updateShow(db, s.actors.owner, { showId: s.show.id, patch: { status: 'archived' } })
+    const before = await totalLogs(s)
+
+    // drift would be conflict; a department insert would be invalid; both are forbidden here
+    expect(await code(revertChange(db, s.actors.owner, { seq: driftSeq }))).toBe('forbidden')
+    expect(await code(revertChange(db, s.actors.owner, { seq: deptInsert }))).toBe('forbidden')
+    // the insert's row is gone: it would only be skipped, and the batch would succeed with reverted 0
+    expect(await code(revertChange(db, s.actors.owner, { seq: insertSeq }))).toBe('forbidden')
+    for (const input of [
+      { batchId: 'dr', userId: s.owner.id },
+      { batchId: 'skip', userId: s.owner.id },
+    ]) {
+      for (const dryRun of [false, true]) {
+        expect(
+          await code(revertBatch(db, s.actors.owner, { showId: s.show.id, ...input, dryRun })),
+        ).toBe('forbidden')
+      }
+    }
+    // a non-member still gets not_found, not a hint that the show is archived
+    const outsider: Actor = { userId: s.outsider.id, via: 'web', agent: null }
+    expect(await code(revertChange(db, outsider, { seq: driftSeq }))).toBe('not_found')
+    expect(
+      await code(
+        revertBatch(db, outsider, { showId: s.show.id, batchId: 'skip', userId: s.owner.id }),
+      ),
+    ).toBe('not_found')
+    expect(await totalLogs(s)).toBe(before)
+  })
+
+  test('a log row on a malformed personal layer ("personal:" with no id) is private to everyone', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const [row] = await db
+      .insert(changeLog)
+      .values({
+        showId: s.show.id,
+        userId: s.editor.id,
+        via: 'web',
+        batchId: 'odd',
+        tableName: 'cues',
+        rowId: newId(),
+        op: 'delete',
+        before: { label: 'x' },
+        after: null,
+        layer: 'personal:',
+      })
+      .returning()
+    expect(await code(revertChange(db, s.actors.owner, { seq: row.seq }))).toBe('not_found')
+    expect(
+      await code(
+        revertBatch(db, s.actors.owner, { showId: s.show.id, batchId: 'odd', userId: s.editor.id }),
+      ),
+    ).toBe('not_found')
+    const history = await listHistory(db, s.actors.owner, { showId: s.show.id, rowId: row.rowId })
+    expect(history.entries).toEqual([])
   })
 
   test('viewers can read history but cannot revert shared layers; non-members and unknown seqs are not_found', async () => {

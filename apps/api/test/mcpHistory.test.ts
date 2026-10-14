@@ -243,9 +243,19 @@ describe('get_history and get_activity', () => {
       rowId: note.id,
     })
     expect(seenByViewer.structuredContent?.entries).toHaveLength(1)
-    const feed = await callTool(owner, 'get_activity', { showId: s.show.id, limit: 200 })
-    expect(JSON.stringify(feed.structuredContent)).not.toContain('private to the viewer')
-    expect(feed.structuredContent?.groups.some((g: { toSeq: number }) => g.toSeq > 0)).toBe(true)
+    // the feed has other people's groups, but none of them contains the note's insert
+    const [noteRow] = await s.deps.db.select().from(changeLog).where(eq(changeLog.rowId, note.id))
+    type Group = { fromSeq: number; toSeq: number; summary: string }
+    const covers = (g: Group) => g.fromSeq <= noteRow.seq && noteRow.seq <= g.toSeq
+    const ownerFeed = await callTool(owner, 'get_activity', { showId: s.show.id, limit: 200 })
+    const ownerGroups = ownerFeed.structuredContent?.groups as Group[]
+    expect(ownerGroups.length).toBeGreaterThan(0)
+    expect(ownerGroups.filter(covers)).toEqual([])
+    expect(JSON.stringify(ownerFeed.structuredContent)).not.toContain('private to the viewer')
+    // while the note's own author sees the group that holds it
+    const viewerFeed = await callTool(viewer, 'get_activity', { showId: s.show.id, limit: 200 })
+    const viewerGroups = (viewerFeed.structuredContent?.groups ?? []) as Group[]
+    expect(viewerGroups.filter(covers)).toHaveLength(1)
 
     for (const [tool, args] of [
       ['get_history', {}],
@@ -256,7 +266,8 @@ describe('get_history and get_activity', () => {
       const denied = await callTool(scoped, tool, { showId: s.show.id, ...args })
       expect(resultText(denied), tool).toMatch(/^forbidden:/)
     }
-    // revert_change has no showId: a seq in a show the token cannot see answers like a missing one
+    // revert_change has no showId: R27 answers an out-of-scope token with forbidden (not not_found),
+    // while a member who simply cannot see the row gets not_found
     const [row] = await s.deps.db.select().from(changeLog).where(eq(changeLog.rowId, note.id))
     expect(resultText(await callTool(scoped, 'revert_change', { seq: row.seq }))).toMatch(
       /^forbidden:/,

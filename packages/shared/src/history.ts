@@ -60,3 +60,15 @@ export function redactPersonalLayer(
   if (columns.layerId === undefined || columns.layerId === viewerId) return columns
   return { ...columns, layerId: null }
 }
+
+/**
+ * The privacy predicate for a change log row's `layer` (spec 4.11): rows outside layers and on
+ * department layers are visible to every member; a row on a personal layer only to its owner. It
+ * fails closed: any layer starting with `personal:` is private unless it is exactly
+ * `personal:<viewer id>`, so a malformed `personal:` is private to everyone. The history SQL
+ * filter (`apps/api/src/services/history.ts`) expresses the same rule and the two must agree.
+ */
+export function isLayerVisibleTo(layer: string | null, viewerId: string): boolean {
+  if (layer === null || !layer.startsWith('personal:')) return true
+  return viewerId !== '' && layer === `personal:${viewerId}`
+}
