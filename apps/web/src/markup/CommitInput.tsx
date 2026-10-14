@@ -24,6 +24,7 @@ export interface CommitInputProps {
   /** Escape threw the draft away and restored the stored value. */
   onCancel?: () => void
   multiline?: boolean
+  disabled?: boolean
   'aria-label'?: string
   'aria-invalid'?: boolean
   'aria-describedby'?: string

@@ -19,6 +19,9 @@ export function realDb() {
     },
   }
   const db = {
+    async getAll(sql: string, params: unknown[] = []) {
+      return sqlite.prepare(sql).all(...(params as never[])) as Array<Record<string, unknown>>
+    },
     async writeTransaction<T>(fn: (t: typeof tx) => Promise<T>): Promise<T> {
       sqlite.exec('BEGIN')
       try {

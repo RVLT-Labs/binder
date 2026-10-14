@@ -2,6 +2,7 @@ import { useQuery } from '@powersync/react'
 import { createFileRoute, Link, Outlet, useChildMatches } from '@tanstack/react-router'
 import { useSessionUser } from '../auth/session'
 import { DocumentList } from '../documents/DocumentList'
+import { useDepartments } from '../markup/useDepartments'
 import { OfflineButton } from '../offline/OfflineButton'
 import type { ShowRow } from '../powersync/schema'
 
@@ -16,6 +17,7 @@ function ShowPage() {
     'SELECT role FROM show_memberships WHERE show_id = ? AND user_id = ?',
     [showId, user?.id ?? ''],
   )
+  const departments = useDepartments(showId)
   const children = useChildMatches()
   const show = data[0]
   if (isLoading) return <p>Loading…</p>
@@ -36,6 +38,20 @@ function ShowPage() {
           Settings
         </Link>
       </p>
+      <nav aria-label="Cue lists">
+        <h2>Cue lists</h2>
+        <ul className="cue-list-links">
+          {departments
+            .filter((d) => !d.hidden)
+            .map((d) => (
+              <li key={d.id}>
+                <Link to="/shows/$showId/cues" params={{ showId }} search={{ department: d.id }}>
+                  {d.code} cue list
+                </Link>
+              </li>
+            ))}
+        </ul>
+      </nav>
       <DocumentList showId={showId} canUpload={canUpload} />
     </>
   )

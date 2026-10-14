@@ -1,12 +1,12 @@
 import { useQuery } from '@powersync/react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { blobUrl } from '../blobs/fetchBlob'
 import { AnnotationEditor } from '../markup/AnnotationEditor'
 import { CueEditor } from '../markup/CueEditor'
 import { LayerPanel } from '../markup/LayerPanel'
 import { PageMarkup } from '../markup/MarkupOverlay'
-import { MarkupSessionProvider } from '../markup/MarkupSession'
+import { MarkupSessionProvider, useMarkupSession } from '../markup/MarkupSession'
 import { MarkupTools } from '../markup/MarkupTools'
 import { SelectionAnnouncer } from '../markup/SelectionAnnouncer'
 import { useSelection } from '../markup/selection'
@@ -19,6 +19,8 @@ interface DocumentSearch {
   v?: string
   /** One-based page to open at. */
   p?: number
+  /** A cue to select and scroll to once the markup has loaded (from the cue list). */
+  cue?: string
 }
 
 function positiveInt(value: unknown): number | undefined {
@@ -30,6 +32,7 @@ export const Route = createFileRoute('/shows/$showId/docs/$docId')({
   validateSearch: (search: Record<string, unknown>): DocumentSearch => ({
     v: typeof search.v === 'string' && search.v ? search.v : undefined,
     p: positiveInt(search.p),
+    cue: typeof search.cue === 'string' && search.cue ? search.cue : undefined,
   }),
   component: DocumentPage,
 })
@@ -40,7 +43,7 @@ function versionName(v: DocumentVersionRow): string {
 
 function DocumentPage() {
   const { showId, docId } = Route.useParams()
-  const { v, p } = Route.useSearch()
+  const { v, p, cue } = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
   const viewer = useRef<ViewerHandle>(null)
   const { data: docs, isLoading } = useQuery<DocumentRow>(
@@ -137,6 +140,16 @@ function DocumentPage() {
           viewer={viewer}
         >
           <MarkupKeys />
+          <FocusCue
+            cueId={cue}
+            onDone={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, cue: undefined }),
+                replace: true,
+                resetScroll: false,
+              })
+            }
+          />
           <Viewer
             ref={viewer}
             versionId={version.id}
@@ -153,6 +166,20 @@ function DocumentPage() {
       )}
     </div>
   )
+}
+
+/** Selects and scrolls to the cue the URL names, once, as soon as the markup has loaded it. */
+function FocusCue({ cueId, onDone }: { cueId: string | undefined; onDone: () => void }) {
+  const session = useMarkupSession()
+  const handled = useRef<string | null>(null)
+  const target = cueId ? session.view.ordered.find((c) => c.id === cueId) : undefined
+  useEffect(() => {
+    if (!cueId || !target || handled.current === cueId) return
+    handled.current = cueId
+    session.showCue(target)
+    onDone()
+  }, [cueId, target, session, onDone])
+  return null
 }
 
 /** The markup keys, live while a version is open. */

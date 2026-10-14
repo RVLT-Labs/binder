@@ -24,6 +24,7 @@ export {
 export { getPage, getPageImage } from './pages'
 export type { PlaceCueAtTextInput, PlaceCueAtTextResult } from './placement'
 export { placeCueAtText } from './placement'
+export { renumberCues } from './renumber'
 export { searchVersion } from './search'
 export {
   addShowMember,

@@ -41,7 +41,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    proxy: { '/api': api, '/blobs': api },
+    proxy: { '/api': api, '/blobs': api, '/mcp': api },
   },
   // `vite preview` serves the production build, as the offline e2e needs; same-origin like production.
   preview: {

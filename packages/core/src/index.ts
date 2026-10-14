@@ -3,6 +3,8 @@ export type { QuoteMatch, StreamWord } from './anchors/quote'
 export { anchorAtMatch, buildWordStream, findQuote, normaliseForMatch } from './anchors/quote'
 export { lineCentreY, snapToLine } from './anchors/snap'
 export type { VersionText } from './anchors/types'
+export type { CueListFlag, CueListRow } from './cues/cueList'
+export { cueListRows } from './cues/cueList'
 export {
   compareCueNumbers,
   findDuplicateNumbers,
@@ -10,6 +12,8 @@ export {
   parseCueNumber,
   suggestCueNumber,
 } from './cues/numbering'
+export type { RenumberCue, RenumberResult } from './cues/renumber'
+export { renumberByBlocks } from './cues/renumber'
 export { columnEqual, jsonEqual } from './json/jsonEqual'
 export type { Box, MarkerStyle } from './markup/markers'
 export {

@@ -11,6 +11,7 @@ import {
   getDocument,
   listCues,
   placeCueAtText,
+  renumberCues,
   updateCue,
 } from '../../services'
 import type { Executor } from '../../services/executor'
@@ -194,6 +195,49 @@ export function registerCueTools(server: McpServer, mcp: McpContext): void {
         number: number === undefined ? undefined : numberOf(number),
       })
       return jsonResult(result)
+    }),
+  )
+
+  server.registerTool(
+    'renumber_cues',
+    {
+      title: 'Renumber cues from script order',
+      description:
+        "Renumbers one department's cues anchored in one document by script order (page, then top " +
+        'to bottom): the first cue takes the block size (default 10) and the rest the following ' +
+        'integers, and minors reset to zero. Cues in a long scene that overflow a block spill into ' +
+        'points and are flagged. Unplaced cues, the 0 range (line checks) and other documents are ' +
+        'untouched, and importing never renumbers. Name the department with departmentId, or with ' +
+        'department (code or id) and showId. You need edit rights on the department layer. It is ' +
+        'one revertable batch. Returns {changed, flagged: [{cueId, reason}]}.',
+      inputSchema: z.object({
+        departmentId: id('department').optional(),
+        showId: id('show').optional().describe('Required with department.'),
+        department: z.string().min(1).optional().describe(DEPARTMENT_DESCRIPTION),
+        documentId: id('document'),
+        blockSize: z
+          .number()
+          .int()
+          .min(2)
+          .max(1000)
+          .optional()
+          .describe('The block each group starts on, default 10.'),
+      }),
+      annotations: UPDATE,
+    },
+    guarded(async ({ departmentId, showId, department, documentId, blockSize }, ctx) => {
+      const actor = mcp.actor(ctx)
+      if ((departmentId === undefined) === (department === undefined)) {
+        throw invalid('give either departmentId, or department with showId')
+      }
+      let resolved = departmentId
+      if (resolved === undefined) {
+        if (showId === undefined) throw invalid('department needs showId')
+        resolved = await resolveDepartment(db, actor, showId, department as string)
+      }
+      return jsonResult(
+        await renumberCues(db, actor, { departmentId: resolved, documentId, blockSize }),
+      )
     }),
   )
 
