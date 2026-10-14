@@ -31,8 +31,11 @@ class FakeXhr {
     this.onabort?.()
   }
   respond(status: number, body: unknown) {
+    this.respondText(status, JSON.stringify(body))
+  }
+  respondText(status: number, text: string) {
     this.status = status
-    this.responseText = JSON.stringify(body)
+    this.responseText = text
     this.onload?.()
   }
 }
@@ -115,4 +118,37 @@ test('closing the dialog mid-upload aborts the request', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
   unmount()
   expect(FakeXhr.last.aborted).toBe(true)
+})
+
+const PROXY_MESSAGE = 'Files over 100 MB cannot be uploaded through the current proxy.'
+
+test('a file over 100 MB is refused before anything is sent', () => {
+  const big = new File(['%PDF-1.7'], 'Huge.pdf', { type: 'application/pdf' })
+  Object.defineProperty(big, 'size', { value: 100 * 1024 * 1024 + 1 })
+  const before = FakeXhr.last
+  render(<UploadDialog showId="s1" target={{ kind: 'document' }} onClose={() => {}} />)
+  fireEvent.change(screen.getByLabelText('PDF file'), { target: { files: [big] } })
+  fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
+  expect(FakeXhr.last).toBe(before)
+  expect(screen.getByRole('alert').textContent).toContain(PROXY_MESSAGE)
+})
+
+test("a 413 from the proxy (not the API's JSON) explains the 100 MB limit", async () => {
+  render(<UploadDialog showId="s1" target={{ kind: 'document' }} onClose={() => {}} />)
+  chooseFile()
+  fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
+  await act(async () =>
+    FakeXhr.last.respondText(413, '<html><body>413 Request Entity Too Large</body></html>'),
+  )
+  expect(screen.getByRole('alert').textContent).toBe(PROXY_MESSAGE)
+})
+
+test("a 413 from the API keeps the API's own message", async () => {
+  render(<UploadDialog showId="s1" target={{ kind: 'document' }} onClose={() => {}} />)
+  chooseFile()
+  fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
+  await act(async () =>
+    FakeXhr.last.respond(413, { error: 'payload_too_large', message: 'The file is over 200 MB' }),
+  )
+  expect(screen.getByRole('alert').textContent).toBe('The file is over 200 MB')
 })

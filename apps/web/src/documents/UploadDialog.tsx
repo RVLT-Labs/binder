@@ -1,6 +1,11 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 
-const MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+/**
+ * The API accepts 200 MB, but Cloudflare's proxy in front of it stops request bodies at 100 MB, so
+ * larger files are refused here before any bytes are sent.
+ */
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+const PROXY_LIMIT_MESSAGE = 'Files over 100 MB cannot be uploaded through the current proxy.'
 
 export type UploadTarget =
   | { kind: 'document' }
@@ -44,7 +49,7 @@ export function UploadDialog({ showId, target, onClose }: UploadDialogProps) {
     e.preventDefault()
     if (!file) return
     if (file.size > MAX_UPLOAD_BYTES) {
-      setError('The file is larger than the 200 MB upload limit.')
+      setError(`This file is ${Math.ceil(file.size / (1024 * 1024))} MB. ${PROXY_LIMIT_MESSAGE}`)
       return
     }
     // The server reads the text fields before the file, so the file part goes last.
@@ -187,7 +192,8 @@ function serverMessage(xhr: XMLHttpRequest): string {
     const message = JSON.parse(xhr.responseText)?.message
     if (typeof message === 'string' && message) return message
   } catch {
-    // Not JSON: fall through.
+    // Not JSON: the response came from a proxy, not the API.
   }
+  if (xhr.status === 413) return PROXY_LIMIT_MESSAGE
   return `Upload failed (${xhr.status}).`
 }

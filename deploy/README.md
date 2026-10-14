@@ -144,7 +144,9 @@ Moving Postgres to a new major version is not automatic: dump, change the base i
 ## Notes
 
 - Uploads are capped at 200 MB by the API, but Cloudflare's proxy caps request bodies at 100 MB on
-  Free and Pro plans. Larger PDFs need a plan with a higher limit.
+  Free and Pro plans, so the upload dialog refuses files over 100 MB before sending (and explains a
+  proxy 413 the same way). Larger PDFs need a plan with a higher limit and a matching change to
+  `MAX_UPLOAD_BYTES` in `apps/web/src/documents/UploadDialog.tsx`.
 - Client IPs: the chain is Cloudflare tunnel, Traefik, Caddy, API. Caddy trusts private ranges so it
   keeps the forwarded address, and the API's rate limiter reads `CF-Connecting-IP` first, then
   `X-Forwarded-For`. This is only safe because the API is reachable solely through those proxies; do
