@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-router'
 import { authClient } from '../auth/client'
 import { useSessionUser } from '../auth/session'
+import { signOutAndClear } from '../auth/signOut'
 import { Notices } from '../components/Notices'
 import { clearNotices } from '../components/noticeStore'
 import { SyncStatus } from '../components/SyncStatus'
@@ -54,13 +55,17 @@ function SignOut() {
   return (
     <button
       type="button"
-      onClick={async () => {
-        await clearLocalData()
-        await authClient.signOut()
-        clearNotices()
-        queryClient.clear()
-        await navigate({ to: '/login' })
-      }}
+      onClick={() =>
+        signOutAndClear({
+          signOut: () => authClient.signOut(),
+          clearLocalData,
+          clearCache: () => {
+            clearNotices()
+            queryClient.clear()
+          },
+          toLogin: () => navigate({ to: '/login' }),
+        })
+      }
     >
       Sign out
     </button>

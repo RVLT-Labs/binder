@@ -3,8 +3,7 @@ import type { PowerSyncDatabase } from '@powersync/web'
 import { type ReactNode, useEffect, useState } from 'react'
 import { ApiConnector } from './connector'
 import { createPowerSync } from './db'
-
-const OWNER_KEY = 'binder.localDbOwner'
+import { claimLocalDb, writeOwner } from './ownership'
 
 let shared: PowerSyncDatabase | undefined
 /** One database per page: it owns a worker and an OPFS file lock. */
@@ -13,38 +12,20 @@ export function getPowerSync(): PowerSyncDatabase {
   return shared
 }
 
-function readOwner(): string | null {
-  try {
-    return localStorage.getItem(OWNER_KEY)
-  } catch {
-    return null
-  }
-}
-
-function writeOwner(userId: string | null) {
-  try {
-    if (userId) localStorage.setItem(OWNER_KEY, userId)
-    else localStorage.removeItem(OWNER_KEY)
-  } catch {
-    // Storage blocked: the clear-on-sign-out path still protects the next user.
-  }
-}
-
 /**
- * Connects the local database for the signed-in user. If the local file belongs to someone else
- * (a different user signed in on this browser without signing out), it is wiped first so one
- * user's synced rows can never be shown to another.
+ * Provides the local database to the signed-in user's screens and connects it. Nothing renders
+ * until the database is claimed for this user, so a previous user's rows are never shown.
  */
 export function PowerSyncProvider({ userId, children }: { userId: string; children: ReactNode }) {
   const [db] = useState(getPowerSync)
+  const [claimedFor, setClaimedFor] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const owner = readOwner()
-      if (owner && owner !== userId) await db.disconnectAndClear()
+      await claimLocalDb(db, userId)
       if (cancelled) return
-      writeOwner(userId)
+      setClaimedFor(userId)
       await db.connect(new ApiConnector())
     })()
     return () => {
@@ -52,10 +33,11 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
     }
   }, [db, userId])
 
+  if (claimedFor !== userId) return null
   return <PowerSyncContext.Provider value={db}>{children}</PowerSyncContext.Provider>
 }
 
-/** Sign-out: stop syncing and delete every local row and queued upload. */
+/** After sign-out: stop syncing and delete every local row and queued upload. */
 export async function clearLocalData(): Promise<void> {
   await getPowerSync().disconnectAndClear()
   writeOwner(null)
