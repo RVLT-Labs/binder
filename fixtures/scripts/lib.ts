@@ -50,8 +50,8 @@ export async function textToPdf(text: string, opts: TextToPdfOptions): Promise<U
   const leading = (h - 2 * margin) / opts.linesPerPage
 
   const lines: string[] = []
-  for (const raw of toWinAnsi(text).split('\n')) {
-    const line = raw.replace(/\s+$/, '')
+  for (const raw of text.split('\n')) {
+    const line = toWinAnsi(raw).replace(/\s+$/, '')
     if (font.widthOfTextAtSize(line, opts.fontSize) <= maxWidth) {
       lines.push(line)
       continue
