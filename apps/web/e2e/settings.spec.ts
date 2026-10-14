@@ -53,6 +53,9 @@ test('an owner manages departments and member scope; an editor sees them read-on
   await bobRow.getByLabel('LX', { exact: true }).click()
   await expect(bobRow.getByLabel('SND', { exact: true })).toBeChecked()
   await expect(bobRow.getByLabel('LX', { exact: true })).not.toBeChecked()
+  // The last department cannot be unticked (that would widen the scope), and says why.
+  await expect(bobRow.getByLabel('SND', { exact: true })).toBeDisabled()
+  await expect(bobRow).toContainText("choose 'All departments'")
 
   await b.reload()
   await expect(

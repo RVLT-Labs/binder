@@ -1,3 +1,4 @@
+import { changeLog } from '@binder/db'
 import type { Client } from '@modelcontextprotocol/client'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { createToken, listDepartments, listShowMembers } from '../src/services'
@@ -225,5 +226,49 @@ describe('member tools', () => {
     const removed = await callTool(owner, 'remove_show_member', { membershipId, confirm: true })
     expect(removed.isError).toBeFalsy()
     expect((await members()).some((m) => m.userId === extra.id)).toBe(false)
+  })
+})
+
+describe('token scoped to another show', () => {
+  test('every department and member tool is forbidden for this show and writes nothing', async () => {
+    const { createShow, listOrganisations } = await import('../src/services')
+    const [org] = await listOrganisations(s.deps.db, s.ownerActor)
+    const elsewhere = await createShow(s.deps.db, s.ownerActor, {
+      organisationId: org.id,
+      title: 'Elsewhere',
+    })
+    const { token } = await createToken(s.deps.db, s.ownerActor, {
+      name: 'scoped',
+      showScope: [elsewhere.id],
+    })
+    const scoped = await connectMcp(s.app, token)
+    clients.push(scoped)
+
+    const lx = (await listDepartments(s.deps.db, s.ownerActor, { showId: s.show.id })).find(
+      (d) => d.code === 'LX',
+    )
+    const membershipId = await membershipOf(s.editor.id)
+    const beforeMembers = await members()
+    const beforeDepartments = await listDepartments(s.deps.db, s.ownerActor, { showId: s.show.id })
+    const logBefore = (await s.deps.db.select().from(changeLog)).length
+
+    const calls: Array<[string, Record<string, unknown>]> = [
+      ['list_departments', { showId: s.show.id }],
+      ['create_department', { showId: s.show.id, code: 'NOPE', name: 'Nope', colour: '#123456' }],
+      ['update_show_member', { membershipId, role: 'viewer' }],
+      ['update_show_member', { membershipId, departments: [lx?.id] }],
+      ['remove_show_member', { membershipId, confirm: true }],
+    ]
+    for (const [name, args] of calls) {
+      const res = await callTool(scoped, name, args)
+      expect(res.isError, name).toBe(true)
+      expect(resultText(res), name).toMatch(/^forbidden:/)
+    }
+
+    expect(await members()).toEqual(beforeMembers)
+    expect(await listDepartments(s.deps.db, s.ownerActor, { showId: s.show.id })).toEqual(
+      beforeDepartments,
+    )
+    expect((await s.deps.db.select().from(changeLog)).length).toBe(logBefore)
   })
 })

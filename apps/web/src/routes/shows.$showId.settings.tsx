@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { type FormEvent, useState } from 'react'
 import { api } from '../api/client'
+import { canUncheckDepartment, LAST_DEPARTMENT_HINT, nextScope } from '../markup/memberScope'
 import { type DepartmentRow, useDepartments } from '../markup/useDepartments'
 import { useMembership } from '../markup/useMembership'
 
@@ -258,11 +259,8 @@ function MemberRow({
   })
   const all = member.departments.includes('*')
   const toggle = (id: string, on: boolean) => {
-    const next = on
-      ? [...member.departments.filter((d) => d !== '*'), id]
-      : member.departments.filter((d) => d !== id)
-    // A scope cannot be empty; clearing the last department goes back to all of them.
-    save.mutate({ departments: next.length > 0 ? next : ['*'] })
+    const next = nextScope(member.departments, id, on)
+    if (next) save.mutate({ departments: next })
   }
   if (!editable) {
     return (
@@ -304,15 +302,30 @@ function MemberRow({
           </label>
           {!all &&
             departments.map((d) => (
-              <label key={d.id}>
+              <label
+                key={d.id}
+                title={
+                  member.departments.includes(d.id) &&
+                  !canUncheckDepartment(member.departments, d.id)
+                    ? LAST_DEPARTMENT_HINT
+                    : undefined
+                }
+              >
                 <input
                   type="checkbox"
                   checked={member.departments.includes(d.id)}
+                  disabled={
+                    member.departments.includes(d.id) &&
+                    !canUncheckDepartment(member.departments, d.id)
+                  }
                   onChange={(e) => toggle(d.id, e.target.checked)}
                 />{' '}
                 {d.code}
               </label>
             ))}
+          {!all && member.departments.length === 1 && (
+            <span className="muted">{LAST_DEPARTMENT_HINT}</span>
+          )}
         </fieldset>
       )}
       {error && <span role="alert"> {error}</span>}
