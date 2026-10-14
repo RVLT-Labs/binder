@@ -8,6 +8,15 @@ import { createAuth } from '../src/auth/auth'
 import type { SendMail } from '../src/auth/mailer'
 import { DiskBlobStore } from '../src/blob/DiskBlobStore'
 import type { Config } from '../src/config'
+import type { JobQueue } from '../src/processing/types'
+
+/** Records enqueued version ids instead of processing them. */
+export class RecordingJobs implements JobQueue {
+  readonly enqueued: string[] = []
+  async enqueueDocumentProcess(versionId: string): Promise<void> {
+    this.enqueued.push(versionId)
+  }
+}
 
 export function testConfig(overrides: Partial<Config> = {}): Config {
   return {
@@ -34,6 +43,7 @@ export async function testDeps(
     db,
     blobs: new DiskBlobStore(config.BLOB_ROOT),
     auth: createAuth({ db, config, sendMail }),
+    jobs: new RecordingJobs(),
     ...overrides,
   }
 }

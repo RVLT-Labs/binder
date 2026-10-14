@@ -7,6 +7,9 @@ import { signUpGuard } from './auth/middleware'
 import type { BlobStore } from './blob/BlobStore'
 import type { Config } from './config'
 import { AppError } from './errors'
+import type { JobQueue } from './processing/types'
+import { blobs } from './routes/blobs'
+import { documents } from './routes/documents'
 import { health } from './routes/health'
 import { me } from './routes/me'
 import { sync } from './routes/sync'
@@ -18,6 +21,7 @@ export interface AppDeps {
   db: Db
   blobs: BlobStore
   auth: Auth
+  jobs: JobQueue
 }
 
 export type AppEnv = {
@@ -64,7 +68,9 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   api.route('/', tenancy)
   api.route('/', tokens)
   api.route('/', sync)
+  api.route('/', documents)
   app.route('/api', api)
+  app.route('/', blobs)
 
   return app
 }

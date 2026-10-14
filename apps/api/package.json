@@ -16,6 +16,7 @@
     "@binder/shared": "workspace:*",
     "@hono/node-server": "^2.1.0",
     "better-auth": "^1.7.7",
+    "busboy": "^1.6.0",
     "drizzle-orm": "^0.45.0",
     "hono": "^4.13.0",
     "jose": "^6.2.12",
@@ -24,6 +25,8 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@binder/fixtures": "workspace:*",
+    "@types/busboy": "^1.5.5",
     "@types/nodemailer": "^8.0.2",
     "tsup": "^8.5.0",
     "tsx": "^4.20.0"

@@ -18,3 +18,7 @@ export function showIdFromKey(key: string): string | null {
   if (segments[0] !== 'shows' || !segments[1]) return null
   return segments[1]
 }
+
+export function originalBlobKey(showId: string, documentId: string, versionId: string): string {
+  return `shows/${showId}/documents/${documentId}/versions/${versionId}/original.pdf`
+}

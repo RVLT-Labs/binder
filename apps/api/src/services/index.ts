@@ -1,5 +1,12 @@
 export { logChange } from './changeLog'
-export { updateDocument } from './documents'
+export {
+  addDocumentVersion,
+  assertShowAcceptsUploads,
+  createDocument,
+  getDocumentVersion,
+  listDocuments,
+  updateDocument,
+} from './documents'
 export {
   addShowMember,
   assertShowWritable,
