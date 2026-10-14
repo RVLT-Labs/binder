@@ -14,6 +14,8 @@ Binder is a web platform for musical theatre production teams. It imports script
 
 The reference competitor is Cuelist (thecuelist.com). Cuelist places cues on a PDF and shares them in real time, but has no OCR, treats cues as drawings rather than data, and holds nothing beyond the script. Binder keeps Cuelist's strengths (PDF-centred, real-time, per-department layers, print export) and adds the show graph underneath.
 
+Binder is AI-first. Everything a person can do in the binder, an agent can do through Binder's MCP server: read pages as images and text, search the script, place and move cues, annotate, build the show graph, run the allocator, generate exports, and work with history. The rule that makes this true is structural (section 3.10): every capability is implemented once in a service layer, and the web UI, the sync write path, and the MCP server are three clients of it. A capability is not done until it is in the MCP.
+
 ### 1.1 Primary users
 
 Sound (designer, A1, A2) and lighting are the version one users. Stage management, directors, and production managers are supported by the same model and roles but are not the design centre of version one.
@@ -57,6 +59,7 @@ Sound (designer, A1, A2) and lighting are the version one users. Stage managemen
 - TheatreMix: automatic DCA allocation for TM cues, .tmix writer with one file per cast variant, .tmix reader to bootstrap shows from existing files.
 - Exports: every native document to PDF and to Excel or CSV; the marked script to PDF; `.tmix`.
 - Multi-show: a user works in several shows at once and can see and export archived ones.
+- MCP server: every capability in this list is exposed as MCP tools and resources in the same milestone it ships in the UI, authenticated as a specific user, logged in history as that user acting through a named agent.
 - Offline: all reads and writes work without a connection; a show can be made available offline on demand.
 - Real-time: changes from other users appear within a second or two without reload, merged at field level.
 - Presence: who is in the binder, which document and page they are viewing, and which cue or annotation they have selected.
@@ -81,7 +84,7 @@ A TypeScript monorepo managed with pnpm workspaces.
 | Package | Role |
 |---|---|
 | apps/web | React and Vite single-page app, installable PWA, PDF.js viewer, SVG overlay, local SQLite via PowerSync |
-| apps/api | Node with Hono. Auth, uploads, blob serving, sync write path, sync token minting, OCR job queue and worker |
+| apps/api | Node with Hono. Auth, uploads, blob serving, sync write path, sync token minting, OCR job queue and worker, the service layer, and the MCP server |
 | packages/db | Drizzle schema and migrations for Postgres, plus the PowerSync sync rules and the client schema derived from the same source |
 | packages/core | Pure domain logic with no I/O: cue sorting and numbering, anchor ordering, mic plot derivation, DCA allocation, .tmix reader and writer, PDF coordinate maths, CSV export |
 | packages/shared | Zod schemas and types shared by web and api |
@@ -113,7 +116,7 @@ Better Auth with email and password plus magic link. Sessions are cookies. The A
 
 ### 3.5 Storage
 
-A `BlobStore` interface with `put`, `get`, `delete`, and `exists`. Version one implements it on a disk volume. An S3-compatible implementation (MinIO) is a drop-in later. Blob keys follow `shows/{showId}/documents/{documentId}/original.pdf`, `.../pages/{index}/thumb.png`, `.../pages/{index}/words.json`.
+A `BlobStore` interface with `put`, `get`, `delete`, and `exists`. Version one implements it on a disk volume. An S3-compatible implementation (MinIO) is a drop-in later. Blob keys follow `shows/{showId}/documents/{documentId}/versions/{versionId}/original.pdf`, `.../versions/{versionId}/searchable.pdf`, `.../versions/{versionId}/pages/{index}/thumb.png`, `.../versions/{versionId}/pages/{index}/words.json`. The show id in the key is what the blob route checks membership against.
 
 ### 3.6 Jobs
 
@@ -137,6 +140,22 @@ The target is Google Docs-style: several people in one binder, each seeing the o
 
 **Long-form text** (cue notes, person notes) is a plain column and merges at field level like everything else. Collaborative character-level editing of long documents is the job of the Pages module in section 12, which uses a text CRDT (Yjs) over the same websocket with updates persisted in Postgres. Binder's data model keeps structured show data and long-form text separate so each gets the right merge semantics.
 
+### 3.10 AI-first: the service layer and the MCP server
+
+**Service layer.** Every operation on a binder is a function in `apps/api/src/services/` with the shape `operation(ctx: Actor, input): Promise<Result>`, where `Actor` is `{ userId, via: 'web' | 'sync' | 'mcp', agent: string | null }`. The function checks permissions, performs the change inside a transaction, writes the change log, and returns typed data. HTTP routes, the sync upload path, and MCP tools are thin adapters over these functions and contain no logic of their own. A test asserts that every service operation is registered as an MCP tool (or deliberately listed as UI-only, with a reason), so the parity rule is enforced rather than remembered.
+
+**MCP server.** Lives in the API at `POST /mcp` using the Streamable HTTP transport, so remote agents (Claude Desktop, Claude Code, Hermes, anything MCP-capable) connect over the network; local stdio clients use the standard `mcp-remote` bridge. Authentication in version one is a personal access token (section 4.1) sent as a bearer token, scoped to all of the user's shows or to a list of shows, created from the user's settings page. OAuth 2.1 as a provider is a follow-up once the token path is proven.
+
+**Attribution.** Every change made through the MCP is logged as the token's user with `via = 'mcp'` and `agent` set to the client's declared name and version, so history reads "Jayden via Claude Code" and the activity feed can filter agent edits.
+
+**Tool design.** Few, strong tools grouped by domain, each with a Zod input schema, a one-paragraph description written for an agent, pagination on list tools, and results that return ids the agent can use in the next call. Reads of a page return the rendered page as an image (JPEG, at most 1600 px on the long side) alongside its word layer, so an agent can both see and read a page. The AI-native placement tool `place_cue_at_text` takes a quote and a department and anchors a cue where that text occurs, with disambiguation when the quote appears more than once; it is how an agent marks up a script without pixel coordinates. Operations that are hard to reverse (restore a snapshot, delete a document, delete more than ten rows in one call) return `CONFIRMATION_REQUIRED` with a plain-language summary unless called with `confirm: true`, the same gate RVLT Flow uses.
+
+**Resources and prompts.** Pages, word layers, exports, and snapshots are also exposed as MCP resources with `binder://` URIs for clients that prefer reading to calling. Prompts ship with the workflows Jayden already runs by hand: "mark up this script for TheatreMix", "build the mic plot from the breakdown", "review cues against the score".
+
+**Agent workflows.** The theatremix-script-building skill in `/Users/jayden/theatremix-skills/` is the first consumer of the MCP. Its procedure maps onto tools step by step: upload the script and evidence, read pages, build the beat ledger as script items and appearances, model performers and mics as people, characters, casting, and assignments, place TM cues with `place_cue_at_text`, run the allocator, validate, and export the `.tmix` with its paperwork as export records. The skill's reference guides (Jayden's cue style, mic and DCA practice, the verified file format) move into the repository under `docs/guides/` and are served as MCP resources at `binder://guides/{slug}`, so the rules travel with the product and every agent, not just one skill, works to them. The skill itself is updated to call Binder instead of writing files, and its validator rules live in packages/core so the skill and the app cannot drift apart.
+
+**By milestone.** M0: shows, documents and versions, pages (image and words), search, upload, tokens, guides as resources. M1: departments and layers, cues including `place_cue_at_text`, annotations, renumbering, history, document versions and re-anchoring review. M2: people, characters, casting, script items, appearances, mics, assignments, mic plot, overrides, snapshots. M3: allocation, TheatreMix export and import, export records. M4: cue sheets, share links, OSC.
+
 ## 4. Data model
 
 All show-scoped tables carry `show_id`, `created_at`, `updated_at`, `updated_by`. Soft delete is not used; deletes are real and sync as deletes.
@@ -148,6 +167,7 @@ All show-scoped tables carry `show_id`, `created_at`, `updated_at`, `updated_by`
 - **OrgMembership**: user, organisation, role (`owner`, `member`).
 - **Show**: id, organisation, title, status (`prep`, `rehearsal`, `running`, `archived`), settings JSON.
 - **ShowMembership**: user, show, role (`owner`, `editor`, `viewer`), departments (array of department ids, or the literal `*`).
+- **PersonalAccessToken**: id, user, name, token hash (SHA-256 of a random 32-byte token shown once at creation), show scope (`*` or a list of show ids), created at, last used at, expires at (nullable), revoked at (nullable). Used by the MCP server (3.10) and by scripts. A token never grants more than its user has.
 
 A user belongs to any number of shows across any number of organisations, and works in several at once. The home screen lists every show the user is a member of, active shows first and archived shows in their own section, with search. Switching shows is instant because each active show is already in the local database. An archived show stays fully readable and exportable, and its history, snapshots, and export records stay intact; it is read-only for everyone until an owner unarchives it. Archived shows are not synced to the local database by default to keep it small; opening one fetches it, and "make available offline" works on it like any other show.
 
@@ -178,7 +198,9 @@ A document is the stable identity ("the libretto"); a version is one uploaded PD
 OCR on music notation produces mostly junk, so on score documents the word layer is for search and discovery only. Snapping defaults off there and cues anchor by position.
 - **Page**: id, document version, index (zero-based), width and height in PDF points, rotation, thumbnail blob key, word layer blob key, OCR applied (boolean), status (`queued`, `ready`, `failed`).
 
-The word layer blob is JSON: `{ words: [{ t, x, y, w, h }], lines: [[wordIndex, ...]] }` with boxes in PDF user space (points, origin bottom-left). It is always extracted from the searchable PDF's text layer, so nothing above the pipeline distinguishes scanned pages from text pages.
+The word layer blob is JSON: `{ words: [{ t, x, y, w, h }], lines: [[wordIndex, ...]] }` with boxes in displayed page space. It is always extracted from the searchable PDF's text layer, so nothing above the pipeline distinguishes scanned pages from text pages.
+
+Coordinate convention for everything in Binder (word boxes, anchors, annotation geometry): **displayed page space**, which is PDF points with the origin at the bottom-left of the page as the viewer shows it, after the page's `/Rotate` has been applied. A page's stored width and height are its displayed dimensions. For an unrotated page this is identical to PDF user space; for a rotated page the print exporter applies the inverse rotation when stamping.
 
 ### 4.4 Anchors
 
@@ -187,7 +209,7 @@ An anchor is a value type stored inline on the owning row, not a table.
 ```
 Anchor {
   documentId, documentVersionId, pageIndex,
-  x, y,                       // PDF points, origin bottom-left
+  x, y,                       // displayed page space (4.3): points, origin bottom-left
   text?: { quote, wordStart, wordEnd },  // optional, captured when snapped to a line
   status: 'ok' | 'approximate' | 'unresolved'   // set by re-anchoring, 'ok' when placed by hand
 }
@@ -279,12 +301,12 @@ Everyone works on the same script. Each department is a layer, and every user al
 
 Version control is four features on one foundation. The foundation is the change log; the others read from it or mark points in it.
 
-**ChangeLog**: sequence (per show, monotonic), show, user, client timestamp (when the edit was made, which may be offline), server timestamp (when it arrived), batch id (one sync upload), table, row id, op (`insert`, `update`, `delete`), before (JSON of the touched columns), after (JSON of the touched columns). Append-only, written only by the API write path, never synced to clients. Read through `GET /shows/:id/history` with filters for row, table, layer, user, and time range. Offline, history is unavailable and the UI says so.
+**ChangeLog**: sequence (per show, monotonic), show, user, via (`web`, `sync`, `mcp`), agent (the MCP client name and version, null otherwise), client timestamp (when the edit was made, which may be offline), server timestamp (when it arrived), batch id (one sync upload or one MCP call), table, row id, op (`insert`, `update`, `delete`), before (JSON of the touched columns), after (JSON of the touched columns). Append-only, written only by the API write path, never synced to clients. Read through `GET /shows/:id/history` with filters for row, table, layer, user, and time range. Offline, history is unavailable and the UI says so.
 
 Views on the change log:
 
 - **Row history**: on any cue, annotation, person, mic, or assignment, the list of changes with who, when, and the before and after values. "Revert this change" issues an ordinary write restoring the before values, so the revert is itself logged and revertable. Reverting requires edit rights on that row's layer or table.
-- **Activity feed**: the show's change log newest first, grouped by batch and user ("Jayden moved 3 TM cues and relabelled 1, 14:02"), filterable by layer. This is how an SM sees what every department did since they last looked.
+- **Activity feed**: the show's change log newest first, grouped by batch and user ("Jayden moved 3 TM cues and relabelled 1, 14:02", "Jayden via Claude Code placed 42 TM cues, 09:15"), filterable by layer and by human or agent. This is how an SM sees what every department did since they last looked.
 - **Personal undo** is separate: an in-session stack of the user's own edits, applied as new writes. It never undoes someone else's change.
 
 **Snapshot**: id, show, binder version (monotonic integer per show, shown as "Binder v12"), name (null for automatic), kind (`manual`, `auto`, `pre-export`, `pre-reanchor`, `pre-restore`), created by, created at, change log sequence at capture, state blob key. The state blob is a JSON materialisation of every show-scoped row at that moment, which is small (a few thousand rows) and makes compare and restore independent of replaying the log.
@@ -443,6 +465,7 @@ Rules that apply to all of them:
 - **packages/core** (Vitest): numbering, display formatting, and block renumbering; anchor ordering; script item resolution; mic plot derivation with overrides; the allocator (stickiness, priority, overflow grouping, pins, exclusions, disjointness, label suggestion); .tmix DDL equality against the captured schema; the validator against the malformed cases in test_tmix_tool.py (missing position 0, duplicate cues, point out of range, uncontrolled channel, bad membership text, missing line check); reader on both schema variants; reader and writer round-trips on private fixtures when present and on synthetic fixtures always.
 - **packages/core, version control**: the re-anchoring matcher on the public libretto against an edited copy (lines cut, lines added, a page inserted, a page removed, a scan with different margins); snapshot diff and restore-write computation; export changelog summaries.
 - **apps/api** (Vitest with a throwaway Postgres in Docker): auth, membership and department scope on the sync write path, change log completeness (every accepted op produces exactly one row with correct before and after), upload validation, page processing on the public fixtures, blob access control, snapshot capture and thinning.
+- **MCP** (Vitest with the SDK's in-memory transport): every tool called through a real client against the service layer; the parity test that every service operation has a tool or a listed exemption; token scope enforcement; the confirmation gate; attribution in the change log.
 - **apps/web** (Vitest and Testing Library for components; Playwright end to end): upload a fixture, wait for ready, search a word, place a cue snapped to text, export the marked PDF, generate a .tmix and assert its rows with sql.js.
 - **Manual gate per milestone**: Jayden opens a generated .tmix in TheatreMix 3.4.1 and runs cues.
 
@@ -452,7 +475,7 @@ Fixtures: `fixtures/public/` holds a Gilbert and Sullivan libretto rendered to a
 
 Each milestone gets its own implementation plan and is usable on its own.
 
-- **M0 Foundation**: monorepo, CI, Coolify deploy, auth, organisations, shows, memberships, the sync spike and its go or no-go, the write path with change log, document and version upload and processing, viewer with search and thumbnails, public fixtures.
+- **M0 Foundation**: monorepo, CI, Coolify deploy, auth, organisations, shows, memberships, personal access tokens, the service layer, the sync spike and its go or no-go, the write path with change log, document and version upload and processing, viewer with search and thumbnails, the MCP server with the M0 tools, public fixtures.
 - **M1 Script markup**: departments, layers, cues, annotations, overlay editing, snapping and text anchors, cue list views, renumbering, print export with export records, offline prefetch, presence, row history and activity feed with revert, document versions with re-anchoring, review list, and compare.
 - **M2 Show graph**: script items and anchors, people, characters, cast variants, casting, appearances, mics, assignments, mic plot with overrides, swap and handover sheet, book of faces, contact sheet, breakdown, CSV exports, snapshots with compare and restore.
 - **M3 TheatreMix**: allocator, TM cue payload editing, .tmix writer with console presets, per-variant export with export records and changelogs, .tmix reader, private fixture round-trips, manual gate in TheatreMix.
@@ -484,3 +507,6 @@ Version one makes Binder the home of the script, the cues, and the structured sh
 - **Reports**: rehearsal and performance report templates generated from the schedule and filled in as Pages.
 - **Native iPad client** on the same backend, with pencil annotation.
 - **Templates**: a show template (departments, stamp set, console config, page templates, standard equipment list) so a new binder starts populated.
+- **In-app assistant**: a chat panel inside the binder that uses the same MCP tools as external agents, so "place standbys for every LX go in act one" or "who is unmiked in the finale" is answerable without leaving the page.
+- **Show build from evidence**: the assistant's headline workflow and the in-app version of the theatremix-script-building skill. Given a script, a score, track sheets, and any other evidence uploaded to the binder, it proposes the script structure, characters, appearances, mic allocation, TM cue points with triggers, and the DCA plan. Every proposed row carries its evidence (document, page, quote, confidence) and conflicts between sources are listed rather than resolved silently, matching the skill's evidence standard. Nothing is written until Jayden reviews the proposal; applying it is one batch in history attributed to the assistant, so it can be reverted as a whole. The output is the same `.tmix` and paperwork the skill produces today, generated from the binder instead of from files.
+- **OAuth provider** for the MCP server so third-party agents connect with a consent screen instead of a pasted token.
