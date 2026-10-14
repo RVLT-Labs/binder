@@ -9,7 +9,9 @@ import type { ShowRow } from '../powersync/schema'
 export const Route = createFileRoute('/')({ component: HomePage })
 
 function HomePage() {
-  const { data: shows, isLoading } = usePowerSyncQuery<ShowRow>('SELECT * FROM shows ORDER BY title')
+  const { data: shows, isLoading } = usePowerSyncQuery<ShowRow>(
+    'SELECT * FROM shows ORDER BY title',
+  )
   const active = shows.filter((s) => s.status !== 'archived')
   const archived = shows.filter((s) => s.status === 'archived')
 
