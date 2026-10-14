@@ -1,4 +1,5 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { degrees, PDFDocument, StandardFonts } from 'pdf-lib'
 import { newDoc, rasterisePages, sizeOf, textToPdf } from './lib.ts'
 import { FIXTURES, GENERATED_DIR } from './paths.ts'
@@ -39,27 +40,48 @@ async function exists(path: string): Promise<boolean> {
   )
 }
 
+/** Writes to a temp name beside the target, then renames: rename is the only publication step. */
+async function publish(path: string, bytes: Uint8Array): Promise<void> {
+  const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(tmp, bytes)
+    await rename(tmp, path)
+  } catch (err) {
+    await rm(tmp, { force: true })
+    throw err
+  }
+}
+
 async function generate(): Promise<void> {
   await mkdir(GENERATED_DIR, { recursive: true })
   const text = await readFile(FIXTURES.librettoText, 'utf8')
-  await writeFile(
+  // The libretto first: the scan and mixed PDFs are rasterised from it.
+  await publish(
     FIXTURES.librettoPdf,
     await textToPdf(text, { pageSize: 'A4', fontSize: 11, linesPerPage: 48 }),
   )
-  await writeFile(
+  await publish(
     FIXTURES.scanPdf,
     await rasterisePages(FIXTURES.librettoPdf, [1, 2, 3, 4, 5, 6, 7, 8], 150),
   )
-  await writeFile(FIXTURES.mixedPdf, await makeMixedPdf())
+  await publish(FIXTURES.mixedPdf, await makeMixedPdf())
 }
 
-/** Generates the fixtures when any is missing. Output is deterministic in content. */
-export async function ensureFixtures(): Promise<typeof FIXTURES> {
-  const present = await Promise.all(
-    [FIXTURES.librettoPdf, FIXTURES.scanPdf, FIXTURES.mixedPdf].map(exists),
-  )
-  if (!present.every(Boolean)) await generate()
-  return FIXTURES
+let inflight: Promise<typeof FIXTURES> | undefined
+
+/**
+ * Generates the fixtures when any is missing. Output is deterministic in content. Files are
+ * published by atomic rename, and concurrent calls in one process share one run.
+ */
+export function ensureFixtures(): Promise<typeof FIXTURES> {
+  inflight ??= (async () => {
+    const present = await Promise.all(
+      [FIXTURES.librettoPdf, FIXTURES.scanPdf, FIXTURES.mixedPdf].map(exists),
+    )
+    if (!present.every(Boolean)) await generate()
+    return FIXTURES
+  })()
+  return inflight
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
