@@ -53,9 +53,10 @@ Sound (designer, A1, A2) and lighting are the version one users. Stage managemen
 - Annotations: text notes, cue markers with standby, warn, go styling, shapes, arrows, stamps. Department layers and a personal layer.
 - Cue list views per department, auto numbering from script order, print export to PDF.
 - Show graph: people, characters, casting with cast variants, appearances per scene or song, mics, mic assignments per scene range.
-- Derived documents: mic plot, mic swap and handover sheet, book of faces, contact sheet, scene and song breakdown, per-department cue sheets and run sheets.
+- Native documents, built in the app from the show graph rather than uploaded: mic plot, mic swap and handover sheet, book of faces, contact sheet, scene and song breakdown, per-department cue sheets and run sheets. The script and score are the only uploaded PDFs in version one (section 7).
 - TheatreMix: automatic DCA allocation for TM cues, .tmix writer with one file per cast variant, .tmix reader to bootstrap shows from existing files.
-- Exports: PDF (marked script, cue sheets), CSV (cue lists, mic plot), .tmix.
+- Exports: every native document to PDF and to Excel or CSV; the marked script to PDF; `.tmix`.
+- Multi-show: a user works in several shows at once and can see and export archived ones.
 - Offline: all reads and writes work without a connection; a show can be made available offline on demand.
 - Real-time: changes from other users appear within a second or two without reload, merged at field level.
 - Presence: who is in the binder, which document and page they are viewing, and which cue or annotation they have selected.
@@ -66,7 +67,7 @@ Sound (designer, A1, A2) and lighting are the version one users. Stage managemen
 - Freehand ink with pressure.
 - ETC Eos and QLab cue list export, OSC go to TheatreMix.
 - Share links.
-- Pages: collaborative rich-text documents inside a binder (see section 11).
+- Pages: collaborative rich-text documents inside a binder (see section 12).
 - Native iPad client.
 - Positions, FX, snippets, and channel levels in .tmix output.
 - Server-side full-text search.
@@ -101,8 +102,8 @@ Identifiers are UUIDv7 generated on the client so rows can be created offline.
 
 ### 3.3 Sync rules
 
-- Global bucket per user: their user row, organisation memberships, show memberships, and the show rows those memberships point to.
-- Show bucket per show membership: every show-scoped table filtered by show id.
+- Global bucket per user: their user row, organisation memberships, show memberships, and the show rows those memberships point to, including archived shows so the home screen can list them.
+- Show bucket per show membership: every show-scoped table filtered by show id. Archived shows are excluded unless the user has opened them on this device or marked them available offline.
 
 Row-level write rules live in the API, not in sync rules.
 
@@ -134,7 +135,7 @@ The target is Google Docs-style: several people in one binder, each seeing the o
 
 **Presence** does not belong in the database. The API hosts a websocket per show (`/shows/:id/presence`) carrying ephemeral state: user, document, page, selected cue or annotation, and a colour. Clients send on change and every five seconds; the server fans out to the show and drops a user after fifteen seconds of silence. The viewer shows avatars on the thumbnail rail and the page, and a coloured outline on a cue someone else has selected. Presence is best-effort and silently absent offline.
 
-**Long-form text** (cue notes, person notes) is a plain column and merges at field level like everything else. Collaborative character-level editing of long documents is the job of the Pages module in section 11, which uses a text CRDT (Yjs) over the same websocket with updates persisted in Postgres. Binder's data model keeps structured show data and long-form text separate so each gets the right merge semantics.
+**Long-form text** (cue notes, person notes) is a plain column and merges at field level like everything else. Collaborative character-level editing of long documents is the job of the Pages module in section 12, which uses a text CRDT (Yjs) over the same websocket with updates persisted in Postgres. Binder's data model keeps structured show data and long-form text separate so each gets the right merge semantics.
 
 ## 4. Data model
 
@@ -147,6 +148,8 @@ All show-scoped tables carry `show_id`, `created_at`, `updated_at`, `updated_by`
 - **OrgMembership**: user, organisation, role (`owner`, `member`).
 - **Show**: id, organisation, title, status (`prep`, `rehearsal`, `running`, `archived`), settings JSON.
 - **ShowMembership**: user, show, role (`owner`, `editor`, `viewer`), departments (array of department ids, or the literal `*`).
+
+A user belongs to any number of shows across any number of organisations, and works in several at once. The home screen lists every show the user is a member of, active shows first and archived shows in their own section, with search. Switching shows is instant because each active show is already in the local database. An archived show stays fully readable and exportable, and its history, snapshots, and export records stay intact; it is read-only for everyone until an owner unarchives it. Archived shows are not synced to the local database by default to keep it small; opening one fetches it, and "make available offline" works on it like any other show.
 
 Permissions:
 
@@ -400,7 +403,30 @@ Export is blocked, with a list linking to each offending cue or mic, when any er
 
 Imports an existing file into a new or empty show: `config` to console config (target console, DCAs, designer, venue only; credentials are dropped), `profiles` to mics keyed by the `channel` column (name as a Person, label split on `/` into Characters, cast under the default variant), `cues` to unplaced TM cues with every assignment written as `pin` and `groups` overrides so the re-exported file matches the import. Numbers are preserved exactly, including the older per-song point style. Both observed schema variants (with and without `skip`) are readable. Cue columns the writer does not produce (positions, profiles, FX, snippets, QLab, levels, scenes, colour) are kept in the cue payload's `imported` field so nothing is silently lost, and re-export writes them back unchanged. A round-trip test asserts that import followed by export reproduces the cue and profile rows of each private fixture.
 
-## 7. Error handling
+## 7. Native documents and exports
+
+The script and score are PDFs because that is how they arrive. Everything else in the binder is built in the app as a view over the show graph, so it is never out of date and never retyped. Each native document has a screen for working in it and exports to paper and spreadsheet formats.
+
+| Document | Built from | Screen | Exports |
+|---|---|---|---|
+| Mic plot | Mics, assignments, casting, appearances, overrides | Grid, mics by script items, editable cells | PDF (landscape grid), XLSX |
+| Swap and handover sheet | MicAssignment boundaries | List in script order | PDF, XLSX |
+| Book of faces | People with headshots, casting | Photo grid with name and roles, filter by cast or crew | PDF |
+| Contact sheet | People | Table | PDF, XLSX, CSV |
+| Scene and song breakdown | Script items, appearances, casting | Grid, characters by script items | PDF, XLSX |
+| Cue sheet (per department) | Cues, anchors, payloads | Table in cue order with page and trigger text | PDF, XLSX, CSV |
+| Run sheet (per department) | Cues of type standby and go, script items | Running order with page references | PDF |
+| Cast list | Characters, casting, cast variants | Table per variant | PDF, XLSX, CSV |
+| Export history | ExportRecords | List with download and changelog | none |
+
+Rules that apply to all of them:
+
+- PDF exports are laid out for A4 and Letter, chosen per show, and carry the footer from 5.3 with the binder version.
+- XLSX is generated with one sheet per table and real cell types (numbers as numbers), so it opens cleanly in Excel and Google Sheets. CSV is UTF-8 with a byte order mark so Excel reads it.
+- Every export creates an ExportRecord (4.12) and runs on the client, so it works offline.
+- A native document shows the cast variant it is rendering for, where that matters, and the export filename includes it.
+
+## 8. Error handling
 
 - **Sync rejection**: the API returns rejected operations with a reason code; the client reverts the local row and shows a notice naming the row. Never a blocked queue.
 - **Conflicts**: last write wins per row by server arrival. Cue number collisions are a warning, not an error.
@@ -412,7 +438,7 @@ Imports an existing file into a new or empty show: `config` to console config (t
 - **Restore**: refused with a message if the snapshot references a document version that has since been deleted; everything else restores.
 - **History offline**: the panel says history needs a connection; personal undo still works.
 
-## 8. Testing
+## 9. Testing
 
 - **packages/core** (Vitest): numbering, display formatting, and block renumbering; anchor ordering; script item resolution; mic plot derivation with overrides; the allocator (stickiness, priority, overflow grouping, pins, exclusions, disjointness, label suggestion); .tmix DDL equality against the captured schema; the validator against the malformed cases in test_tmix_tool.py (missing position 0, duplicate cues, point out of range, uncontrolled channel, bad membership text, missing line check); reader on both schema variants; reader and writer round-trips on private fixtures when present and on synthetic fixtures always.
 - **packages/core, version control**: the re-anchoring matcher on the public libretto against an edited copy (lines cut, lines added, a page inserted, a page removed, a scan with different margins); snapshot diff and restore-write computation; export changelog summaries.
@@ -422,7 +448,7 @@ Imports an existing file into a new or empty show: `config` to console config (t
 
 Fixtures: `fixtures/public/` holds a Gilbert and Sullivan libretto rendered to a text PDF from Project Gutenberg and a scanned vocal score from IMSLP, committed. `fixtures/private/` is gitignored and populated by a script that copies the WAKA, 35MM, Spring Chicken, and Songs for a New World materials from their known paths.
 
-## 9. Milestones
+## 10. Milestones
 
 Each milestone gets its own implementation plan and is usable on its own.
 
@@ -432,7 +458,7 @@ Each milestone gets its own implementation plan and is usable on its own.
 - **M3 TheatreMix**: allocator, TM cue payload editing, .tmix writer with console presets, per-variant export with export records and changelogs, .tmix reader, private fixture round-trips, manual gate in TheatreMix.
 - **M4 Polish and exports**: cue sheets and run sheets per department, share links, duplicate show, OSC go, Eos and QLab export as scope allows.
 
-## 10. Open items resolved during design
+## 11. Open items resolved during design
 
 - Name: Binder, by RVLT. Decided after the first draft of this spec.
 
@@ -446,13 +472,13 @@ Each milestone gets its own implementation plan and is usable on its own.
 - Music recognition (OMR) on scores: out of scope. Scores get OCR for search only and position-only cue anchoring.
 - Searchable scans: the OCR output is embedded in the working PDF as an invisible text layer (OCRmyPDF) rather than kept only as a sidecar, so the scan stays visually identical and the text travels with the file.
 
-## 11. Beyond version one: the documentation hub
+## 12. Beyond version one: the documentation hub
 
 Version one makes Binder the home of the script, the cues, and the structured show graph. The longer goal is that every piece of production documentation lives in the binder and draws on that graph: not only show-running paperwork but production plans, floorplans, CAD and rigging plans, equipment lists, and design documents. The division of labour with RVLT Flow is: **you build the whole show out in Binder, then Flow does the crewing and the equipment logistics.** In rough order:
 
 - **Pages**: rich-text documents inside a binder (rehearsal reports, production meeting notes, design briefs, risk assessments, production plans) with Google Docs-style simultaneous editing on a Yjs CRDT, named versions from the CRDT history, and live blocks that embed show graph views (the cast list, a scene's mic plot column, a department's cue list, the equipment list) so a document never goes stale.
 - **Files**: any attachment, not only PDFs (ground plans, lighting plots, CAD exports, Vectorworks and AutoCAD files, costume renders, audio, spreadsheets), stored and shared with the same roles, with PDF and image previews, and the same Document and DocumentVersion model as scripts so every plan has a version history and annotations re-anchor across revisions. Plans get the same annotation overlay as scripts, so a floorplan can carry notes and stamps.
-- **Equipment list**: a per-department list of what the show needs (mics, packs, consoles, fixtures, playback, comms), built from the show graph where possible (the Mic table already is one) and by hand otherwise. This is the handoff artefact to Flow.
+- **Equipment list and patch**: a per-department list of what the show needs (mics, packs, consoles, fixtures, playback, comms), built from the show graph where possible (the Mic table already is one) and by hand otherwise, plus the sound department's input patch, output patch, and cable list as native documents replacing the Project Book spreadsheet. This is the handoff artefact to Flow.
 - **RVLT Flow link**: a show references a Flow job. Binder pushes the equipment list to Flow as the job's line items and reads back availability, conflicts, and confirmed crew. Dates, venue, and client live in Flow and are read into Binder. The boundary is deliberate: Binder never holds stock, prices, or invoices, and Flow never holds cues, scripts, or the show graph.
 - **Schedule**: rehearsal and performance calendar, calls, and which cast variant plays each performance, which also selects the `.tmix` to use that night. Crew calls come from Flow when linked.
 - **Reports**: rehearsal and performance report templates generated from the schedule and filled in as Pages.
