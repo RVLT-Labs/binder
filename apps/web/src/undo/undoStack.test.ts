@@ -241,3 +241,32 @@ describe('current edit rights (M1-R9)', () => {
     expect(m.has(id)).toBe(false)
   })
 })
+
+describe('review fixes', () => {
+  test('rights are checked before the row state: a locked layer reports not-editable even when the row is gone or changed', async () => {
+    const guarded = new UndoStack(m.apply, 100, () => 'The LX layer is locked.')
+    guarded.record([insert(base)]) // row never stored: would be row-gone
+    expect(await guarded.undo()).toEqual({ status: 'blocked', reason: 'not-editable' })
+    expect(guarded.lastBlockedMessage).toBe('The LX layer is locked.')
+    m.set(id, { ...base, label: 'X' }) // would be changed-by-someone-else
+    guarded.record([insert(base)])
+    expect(await guarded.undo()).toEqual({ status: 'blocked', reason: 'not-editable' })
+  })
+
+  test('a transaction that rejects keeps the group on the stack it came from', async () => {
+    m.set(id, base)
+    stack.record([insert(base)])
+    m.transaction.mockRejectedValueOnce(new Error('disk full'))
+    await expect(stack.undo()).rejects.toThrow('disk full')
+    expect(stack.canUndo).toBe(true)
+    expect(stack.canRedo).toBe(false)
+    expect(await stack.undo()).toEqual({ status: 'done' })
+    expect(m.has(id)).toBe(false)
+
+    m.transaction.mockRejectedValueOnce(new Error('disk full'))
+    await expect(stack.redo()).rejects.toThrow('disk full')
+    expect(stack.canRedo).toBe(true)
+    expect(await stack.redo()).toEqual({ status: 'done' })
+    expect(m.has(id)).toBe(true)
+  })
+})

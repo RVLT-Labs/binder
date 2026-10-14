@@ -1,15 +1,18 @@
 import { usePowerSync } from '@powersync/react'
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useLayoutEffect, useState, useSyncExternalStore } from 'react'
 import { pushNotice } from '../components/noticeStore'
 import { useMarkupSession } from '../markup/MarkupSession'
 import { type LocalEdit, subscribeLocalEdits } from '../markup/mutations'
 import { powersyncApply } from './powersyncApply'
+
+type Db = ReturnType<typeof usePowerSync>
+
 import { type EditGuard, type UndoOutcome, UndoStack } from './undoStack'
 
 interface Entry {
   stack: UndoStack
-  /** The current rights check, replaced on every render of the session that owns the hook. */
-  guard: { current: EditGuard }
+  /** The mounted session's database, user, and rights check: refreshed on every commit. */
+  live: { db: Db; userId: string; guard: EditGuard }
   busy: boolean
   version: number
   listeners: Set<() => void>
@@ -18,6 +21,36 @@ interface Entry {
 /** One stack per user and show for the page's lifetime: leaving a document and returning keeps it. */
 const entries = new Map<string, Entry>()
 let stopRecording: (() => void) | null = null
+
+/**
+ * The stack for a user and show, created on first use. Another user's stacks are dropped: a
+ * sign-in change starts clean. Called from commit effects, which are safe to repeat.
+ */
+function entryFor(key: string, userId: string, live: Entry['live']): Entry {
+  for (const other of [...entries.keys()])
+    if (!other.startsWith(`${userId}:`)) entries.delete(other)
+  let found = entries.get(key)
+  if (!found) {
+    const created: Entry = {
+      stack: undefined as unknown as UndoStack,
+      live,
+      busy: false,
+      version: 0,
+      listeners: new Set(),
+    }
+    created.stack = new UndoStack(
+      powersyncApply(
+        () => created.live.db,
+        () => created.live.userId,
+      ),
+      100,
+      (table, row) => created.live.guard(table, row),
+    )
+    entries.set(key, created)
+    found = created
+  }
+  return found
+}
 
 function bump(entry: Entry) {
   entry.version++
@@ -68,36 +101,34 @@ export function useUndo(showId: string): Undo {
   const userId = session.userId
   const key = userId ? `${userId}:${showId}` : null
 
-  const sessionRef = useRef(session)
-  sessionRef.current = session
+  // The shared entry is found or created after commit, never during render.
+  const [entry, setEntry] = useState<Entry | null>(null)
 
-  let entry = key ? entries.get(key) : undefined
-  if (key && userId && !entry) {
-    const guard = {
-      current: ((table, row) =>
+  useLayoutEffect(() => {
+    if (!key || !userId) {
+      setEntry(null)
+      return
+    }
+    // The newest committed session is the live one, so undo always checks the rights as they are.
+    const live: Entry['live'] = {
+      db,
+      userId,
+      guard: (table, row) =>
         table === 'cues'
-          ? sessionRef.current.whyCantEdit(row as { department_id: string | null })
-          : sessionRef.current.whyCantEditAnnotation(
+          ? session.whyCantEdit(row as { department_id: string | null })
+          : session.whyCantEditAnnotation(
               row as { layer_kind: string | null; layer_id: string | null },
-            )) as EditGuard,
+            ),
     }
-    const created: Entry = {
-      stack: new UndoStack(powersyncApply(db, userId), 100, (t, r) => guard.current(t, r)),
-      guard,
-      busy: false,
-      version: 0,
-      listeners: new Set(),
-    }
-    for (const other of [...entries.keys()])
-      if (!other.startsWith(`${userId}:`)) entries.delete(other)
-    entries.set(key, created)
-    entry = created
-  }
-  const current = entry
+    const found = entryFor(key, userId, live)
+    found.live = live
+    setEntry(found)
+  })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     ensureRecording()
   }, [])
+  const current = entry
 
   const subscribe = useCallback(
     (fn: () => void) => {

@@ -81,7 +81,14 @@ export class UndoStack {
   async undo(): Promise<UndoOutcome> {
     const group = this.undoable.pop()
     if (!group) return { status: 'empty' }
-    const outcome = await this.run([...group].reverse(), 'undo')
+    let outcome: UndoOutcome
+    try {
+      outcome = await this.run([...group].reverse(), 'undo')
+    } catch (err) {
+      // The write failed, so nothing changed: the group is still the next thing to undo.
+      this.undoable.push(group)
+      throw err
+    }
     if (outcome.status === 'done') {
       this.redoable.push(group)
       if (this.redoable.length > this.limit) this.redoable.shift()
@@ -92,7 +99,13 @@ export class UndoStack {
   async redo(): Promise<UndoOutcome> {
     const group = this.redoable.pop()
     if (!group) return { status: 'empty' }
-    const outcome = await this.run(group.map(inverse), 'redo')
+    let outcome: UndoOutcome
+    try {
+      outcome = await this.run(group.map(inverse), 'redo')
+    } catch (err) {
+      this.redoable.push(group)
+      throw err
+    }
     if (outcome.status === 'done') {
       this.undoable.push(group)
       if (this.undoable.length > this.limit) this.undoable.shift()
@@ -130,7 +143,13 @@ export class UndoStack {
       const current = virtual.has(key)
         ? (virtual.get(key) ?? null)
         : await this.apply.read(e.table, e.id)
-      let target: Row | null = null
+      // Current rights come first: a locked or archived layer is reported as such, whatever else
+      // has happened to the row.
+      const refusal = this.refusal(e.table, [current, e.before, e.after])
+      if (refusal !== null) {
+        this.lastBlockedMessage = refusal
+        return { blocked: { status: 'blocked', reason: 'not-editable' } }
+      }
       let next: Row | null = current
 
       if (e.op === 'insert') {
@@ -138,7 +157,6 @@ export class UndoStack {
         if (!e.after || !equalRows(e.table, current, e.after)) return changed
         steps.push({ kind: 'remove', table: e.table, id: e.id })
         next = null
-        target = current
       } else if (e.op === 'update') {
         if (!current) return gone
         const after = e.after ?? {}
@@ -152,29 +170,22 @@ export class UndoStack {
         if (Object.keys(cols).length === 0) return changed
         steps.push({ kind: 'update', table: e.table, id: e.id, cols })
         next = { ...current, ...cols }
-        target = next
       } else {
         if (current) return changed
         if (!e.before) return gone
         steps.push({ kind: 'insert', table: e.table, row: e.before })
         next = e.before
-        target = e.before
       }
 
-      const refusal = this.refusal(e.table, current, target)
-      if (refusal !== null) {
-        this.lastBlockedMessage = refusal
-        return { blocked: { status: 'blocked', reason: 'not-editable' } }
-      }
       virtual.set(key, next)
     }
     return { steps }
   }
 
-  /** The guard's reason for the stored row or the row about to be written, or null. */
-  private refusal(table: MarkupTable, current: Row | null, target: Row | null): string | null {
+  /** The guard's reason for the first of these rows it refuses, or null. */
+  private refusal(table: MarkupTable, rows: Array<Row | null>): string | null {
     if (!this.guard) return null
-    for (const row of [current, target]) {
+    for (const row of rows) {
       if (!row) continue
       const why = this.guard(table, row)
       if (why !== null) return why

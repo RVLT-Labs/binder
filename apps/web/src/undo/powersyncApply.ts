@@ -13,12 +13,19 @@ type Db = { writeTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> } & Part
  * connector uploads in chunks; once it commits, its writes are announced as `undo` or `redo` edits
  * so they are never recorded as new user edits.
  */
-export function powersyncApply(db: Db, userId: string): ApplyFns {
+export function powersyncApply(
+  dbOrGet: Db | (() => Db),
+  userOrGet: string | (() => string),
+): ApplyFns {
+  // Callers that outlive a component pass getters, so each write uses the current database and user.
+  const getDb = () => (typeof dbOrGet === 'function' ? dbOrGet() : dbOrGet)
+  const getUser = () => (typeof userOrGet === 'function' ? userOrGet() : userOrGet)
   let tx: Tx | null = null
   let edits: LocalEdit[] = []
 
   const reader = (): Pick<Tx, 'getOptional'> => {
-    const r = tx ?? (db.getOptional ? (db as Pick<Tx, 'getOptional'>) : null)
+    const d = getDb()
+    const r = tx ?? (d.getOptional ? (d as Pick<Tx, 'getOptional'>) : null)
     if (!r) throw new Error('undo read outside a transaction')
     return r
   }
@@ -33,7 +40,7 @@ export function powersyncApply(db: Db, userId: string): ApplyFns {
     read,
     async insert(table, row) {
       const now = new Date().toISOString()
-      const full: Row = { ...row, updated_at: now, updated_by: userId }
+      const full: Row = { ...row, updated_at: now, updated_by: getUser() }
       const cols = Object.keys(full)
       await active().execute(
         `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
@@ -52,7 +59,7 @@ export function powersyncApply(db: Db, userId: string): ApplyFns {
       const sets: Array<[string, unknown]> = [
         ...Object.entries(cols),
         ['updated_at', new Date().toISOString()],
-        ['updated_by', userId],
+        ['updated_by', getUser()],
       ]
       await active().execute(
         `UPDATE ${table} SET ${sets.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`,
@@ -68,7 +75,7 @@ export function powersyncApply(db: Db, userId: string): ApplyFns {
     async transaction(fn, source = 'undo') {
       edits = []
       try {
-        await db.writeTransaction(async (t) => {
+        await getDb().writeTransaction(async (t) => {
           tx = t
           try {
             await fn()
