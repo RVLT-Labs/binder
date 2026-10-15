@@ -147,17 +147,45 @@ function reanchorWith(a: Anchor, from: VersionText, target: Target): Anchor {
   return positional(a, from, target.to)
 }
 
+/** One anchor, never throwing: a failure while matching falls back to the positional result. */
+function reanchorSafely(a: Anchor, from: VersionText, target: Target): Anchor {
+  try {
+    return reanchorWith(a, from, target)
+  } catch {
+    try {
+      return { ...positional(a, from, target.to), status: 'unresolved' }
+    } catch {
+      const out: Anchor = {
+        ...a,
+        documentVersionId: target.to.versionId,
+        pageIndex: Math.max(0, Math.min(a.pageIndex, target.to.pageCount - 1)),
+        status: 'unresolved',
+      }
+      if (a.text) out.text = { quote: a.text.quote, wordStart: -1, wordEnd: -1 }
+      return out
+    }
+  }
+}
+
+function targetOf(to: VersionText): Target {
+  try {
+    return { to, stream: buildWordStream(to.layers) }
+  } catch {
+    return { to, stream: [] } // every anchor then falls back by position
+  }
+}
+
 /**
  * Moves one anchor from version `from` to version `to` (spec 5.4): its quote is found in the new
  * text (exact: ok; normalised or several matches: approximate), otherwise it falls back to its page
- * position and is approximate (same page count) or unresolved. Never throws for a malformed anchor.
+ * position and is approximate (same page count) or unresolved. Never throws.
  */
 export function reanchor(anchor: Anchor, from: VersionText, to: VersionText): Anchor {
-  return reanchorWith(anchor, from, { to, stream: buildWordStream(to.layers) })
+  return reanchorSafely(anchor, from, targetOf(to))
 }
 
 /** `reanchor` for many anchors, building the target word stream once. Same length and order out as in. */
 export function reanchorAll(anchors: Anchor[], from: VersionText, to: VersionText): Anchor[] {
-  const target = { to, stream: buildWordStream(to.layers) }
-  return anchors.map((a) => reanchorWith(a, from, target))
+  const target = targetOf(to)
+  return anchors.map((a) => reanchorSafely(a, from, target))
 }

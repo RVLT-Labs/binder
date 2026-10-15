@@ -294,6 +294,26 @@ describe('reanchor on small texts', () => {
     expect(r.text).toEqual({ quote: 'the lantern glows softly', wordStart: 6, wordEnd: 9 })
   })
 
+  test('equally near matches: the earliest wins', () => {
+    const dims = { versionId: 'v', linesPerPage: 5, top: 763, height: 1024 }
+    const lines = (at: number[]) =>
+      Array.from({ length: 20 }, (_, k) => (at.includes(k) ? 'echo of the bell' : `pad${k} x`))
+    const f = versionFromLines(lines([5]), dims)
+    const t = versionFromLines(lines([0, 10]), { ...dims, versionId: 'v2' })
+    const a: Anchor = {
+      documentId: 'doc',
+      documentVersionId: 'v',
+      pageIndex: 1,
+      x: LEFT,
+      y: lineCentreY(f.layers.get(1) as WordLayer, 0),
+      text: { quote: 'echo of the bell', wordStart: 0, wordEnd: 3 },
+      status: 'ok',
+    }
+    const r = reanchor(a, f, t)
+    expect(r.status).toBe('approximate')
+    expect(r.pageIndex).toBe(0)
+  })
+
   test('an exact single match is ok, and the result keeps documentId', () => {
     const to = versionFromLines([...filler(3, 'z'), ...base], { versionId: 'v2', linesPerPage: 10 })
     const r = reanchor(quoteAnchor(12, 'the lantern glows softly'), from, to)
@@ -441,6 +461,35 @@ describe('reanchorAll', () => {
     expect(out[6]?.pageIndex).toBe(good.pageIndex)
   })
 
+  test('a failure while re-anchoring one anchor leaves the others placed and that one unresolved', () => {
+    const to = versionFromLines(
+      edit((l) => l.splice(200, 40)),
+      { versionId: 'v2' },
+    )
+    const badPage = (picked[10] as Picked).anchor.pageIndex
+    const layers = new Map(old.layers)
+    layers.get = (k: number) => {
+      if (k === badPage) throw new Error('boom')
+      return Map.prototype.get.call(layers, k)
+    }
+    const flaky = { ...old, layers } as VersionText
+    const out = reanchorAll(all, flaky, to)
+    const healthy = reanchorAll(all, old, to)
+    expect(out).toHaveLength(all.length)
+    all.forEach((a, k) => {
+      if (a.pageIndex === badPage && a.text) {
+        expect(out[k]?.status).toBe('unresolved')
+        expect(out[k]?.pageIndex).toBe(badPage)
+        expect(out[k]?.text?.wordStart).toBe(-1)
+      } else {
+        expect(out[k]).toEqual(healthy[k])
+      }
+    })
+    expect(
+      out.some((r, k) => (all[k] as Anchor).pageIndex === badPage && r.status === 'unresolved'),
+    ).toBe(true)
+  })
+
   test('versions without layers or pages do not throw', () => {
     const bare: VersionText = {
       versionId: 'v2',
@@ -482,7 +531,7 @@ describe('reanchorAll', () => {
     const t0 = performance.now()
     const out = reanchorAll(many, old, to)
     const ms = performance.now() - t0
-    console.log(`reanchorAll: 500 anchors, ${pirates.length} lines, ${ms.toFixed(0)} ms`)
+    expect(ms).toBeLessThan(5000)
     expect(out).toHaveLength(500)
     const ok = out.filter((r) => r.status === 'ok').length
     expect(ok).toBeGreaterThan(400)
