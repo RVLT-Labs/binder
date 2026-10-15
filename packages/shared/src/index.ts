@@ -1,3 +1,4 @@
+export * from './colour'
 export * from './exportFiles'
 export * from './history'
 export * from './ids'

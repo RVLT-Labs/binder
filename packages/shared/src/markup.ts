@@ -96,13 +96,13 @@ export interface DefaultDepartment {
 
 /** Seeded into every new show, in this order; the sort order is the index times ten. */
 export const DEFAULT_DEPARTMENTS: readonly DefaultDepartment[] = [
-  { code: 'LX', name: 'Lighting', colour: '#F5A623', numberFormat: 'decimal' },
-  { code: 'SND', name: 'Sound', colour: '#4A90E2', numberFormat: 'decimal' },
-  { code: 'TM', name: 'TheatreMix', colour: '#9B51E0', numberFormat: 'point' },
-  { code: 'VID', name: 'Video', colour: '#2BB0A6', numberFormat: 'decimal' },
-  { code: 'SM', name: 'Stage management', colour: '#D0021B', numberFormat: 'decimal' },
-  { code: 'STG', name: 'Stage', colour: '#8B572A', numberFormat: 'decimal' },
-  { code: 'FLY', name: 'Flys', colour: '#417505', numberFormat: 'decimal' },
+  { code: 'LX', name: 'Lighting', colour: '#C9811F', numberFormat: 'decimal' },
+  { code: 'SND', name: 'Sound', colour: '#2F6BD6', numberFormat: 'decimal' },
+  { code: 'TM', name: 'TheatreMix', colour: '#7A5CD0', numberFormat: 'point' },
+  { code: 'VID', name: 'Video', colour: '#C2487E', numberFormat: 'decimal' },
+  { code: 'SM', name: 'Stage management', colour: '#1C8B83', numberFormat: 'decimal' },
+  { code: 'STG', name: 'Stage', colour: '#CC5E2E', numberFormat: 'decimal' },
+  { code: 'FLY', name: 'Flys', colour: '#6E8C12', numberFormat: 'decimal' },
 ]
 
 /** A department code: a letter then up to seven letters or digits, upper case. */
