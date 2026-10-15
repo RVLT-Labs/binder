@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { DialogFooter, DialogHeader, DialogShell } from '@/components/ui/dialog-shell'
+import { closeModal, openModal } from '@/lib/modalDialog'
 import type { ConfirmFn } from './types'
 
 /**
@@ -13,10 +14,14 @@ export function useConfirm(
 ): { confirm: ConfirmFn; dialog: ReactNode } {
   const ref = useRef<HTMLDialogElement>(null)
   const resolver = useRef<((ok: boolean) => void) | null>(null)
+  // What had focus when the question was asked: where focus goes back to once it is answered.
+  const opener = useRef<HTMLElement | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const titleId = useId()
 
   const settle = useCallback((ok: boolean) => {
+    // Close the dialog itself, then hand focus back: unmounting an open modal does neither.
+    closeModal(ref.current, opener.current)
     resolver.current?.(ok)
     resolver.current = null
     setMessage(null)
@@ -27,6 +32,8 @@ export function useConfirm(
       new Promise<boolean>((resolve) => {
         resolver.current?.(false)
         resolver.current = resolve
+        const active = document.activeElement
+        opener.current = active instanceof HTMLElement && active !== document.body ? active : null
         setMessage(text)
       }),
     [],
@@ -35,9 +42,7 @@ export function useConfirm(
   useEffect(() => {
     const el = ref.current
     if (message === null || !el || el.open) return
-    // jsdom has no showModal; the dialog is then just open.
-    if (typeof el.showModal === 'function') el.showModal()
-    else el.setAttribute('open', '')
+    openModal(el)
   }, [message])
 
   // Leaving with a question unanswered declines it.

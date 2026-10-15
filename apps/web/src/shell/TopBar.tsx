@@ -64,7 +64,9 @@ export function TopBar({
           {shown.map((crumb, i) => {
             const last = i === shown.length - 1
             return (
-              <li key={crumb.label} className="flex min-w-0 items-center gap-1.5">
+              // By position: a document can share its show's title, and the trail never reorders.
+              // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat
+              <li key={i} className="flex min-w-0 items-center gap-1.5">
                 {i > 0 && (
                   <span aria-hidden className="text-faint">
                     /

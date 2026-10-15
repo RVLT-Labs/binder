@@ -29,11 +29,10 @@ function RootLayout() {
   )
 }
 
-/** The shell around the screens above a show: the shows list and the account's own pages. */
+/** The shell around the account's own pages. The shows home and a show draw their own shell. */
 const SHOWS_ROOT: Crumb = { label: 'Shows', link: { to: '/' }, phoneOnly: true }
 
 function crumbsFor(pathname: string): Crumb[] {
-  if (pathname === '/') return [{ label: 'Shows' }]
   if (pathname === '/settings/tokens') return [SHOWS_ROOT, { label: 'Personal access tokens' }]
   return [SHOWS_ROOT, { label: 'Binder' }]
 }
@@ -41,8 +40,9 @@ function crumbsFor(pathname: string): Crumb[] {
 function SignedIn() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const account = useAccount()
-  // A show's screens are drawn by the show route, which knows the show for the rail and the crumbs.
-  if (pathname.startsWith('/shows/')) return <Outlet />
+  // A show's screens are drawn by the show route, which knows the show for the rail and the crumbs;
+  // the shows home draws its own too, for the one primary action in the top bar.
+  if (pathname === '/' || pathname.startsWith('/shows/')) return <Outlet />
   return (
     <AppShell crumbs={crumbsFor(pathname)} account={account}>
       <Outlet />

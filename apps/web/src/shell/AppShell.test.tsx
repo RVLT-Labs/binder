@@ -345,3 +345,28 @@ describe('AccountMenu', () => {
     expect(window.confirm).not.toHaveBeenCalled()
   })
 })
+
+describe('TopBar breadcrumbs', () => {
+  it('draws two crumbs that share a label, keyed by position', async () => {
+    setWidth(1280)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // A document titled like its show.
+    await renderAt(
+      '/shows/s1/docs/d1',
+      <AppShell
+        showId="s1"
+        crumbs={[
+          { label: 'Shows', link: { to: '/' }, phoneOnly: true },
+          { label: 'Hamilton', link: { to: '/shows/$showId', params: { showId: 's1' } } },
+          { label: 'Hamilton' },
+        ]}
+        account={account()}
+      >
+        <p>page</p>
+      </AppShell>,
+    )
+    const trail = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(within(trail).getAllByText('Hamilton')).toHaveLength(2)
+    expect(error.mock.calls.flat().join(' ')).not.toMatch(/same key/)
+  })
+})

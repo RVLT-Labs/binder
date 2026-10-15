@@ -1,4 +1,8 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useId, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { cn, focusRing } from '@/lib/utils'
 import { authClient } from './client'
 
 export interface LoginFormProps {
@@ -8,9 +12,11 @@ export interface LoginFormProps {
 }
 
 export function LoginForm({ magicLink, onSignedIn }: LoginFormProps) {
+  const emailId = useId()
+  const passwordId = useId()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<{ text: string; failed: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function signIn(e: FormEvent) {
@@ -20,7 +26,7 @@ export function LoginForm({ magicLink, onSignedIn }: LoginFormProps) {
     const { error } = await authClient.signIn.email({ email, password })
     setBusy(false)
     if (error) {
-      setMessage(error.message ?? 'Sign-in failed')
+      setMessage({ text: error.message ?? 'Sign-in failed', failed: true })
       return
     }
     await onSignedIn()
@@ -28,49 +34,68 @@ export function LoginForm({ magicLink, onSignedIn }: LoginFormProps) {
 
   async function sendLink() {
     if (!email) {
-      setMessage('Enter your email first')
+      setMessage({ text: 'Enter your email first', failed: true })
       return
     }
     setBusy(true)
     const { error } = await authClient.signIn.magicLink({ email, callbackURL: '/' })
     setBusy(false)
     setMessage(
-      error ? (error.message ?? 'Could not send the link') : `Sign-in link sent to ${email}`,
+      error
+        ? { text: error.message ?? 'Could not send the link', failed: true }
+        : { text: `Sign-in link sent to ${email}`, failed: false },
     )
   }
 
   return (
     <>
-      <form onSubmit={signIn}>
-        <label>
-          Email
-          <input
+      <form onSubmit={signIn} className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor={emailId}>Email</Label>
+          <Input
+            id={emailId}
             type="email"
             autoComplete="username"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-        </label>
-        <label>
-          Password
-          <input
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor={passwordId}>Password</Label>
+          <Input
+            id={passwordId}
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-        </label>
-        <button type="submit" disabled={busy || !password}>
+        </div>
+        <Button type="submit" size="lg" className="mt-1 w-full" disabled={busy || !password}>
           Sign in
-        </button>
+        </Button>
         {magicLink && (
-          <button type="button" disabled={busy} onClick={sendLink}>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={sendLink}
+            className={cn(
+              'mx-auto min-h-11 rounded-sm px-2 text-[14px] font-semibold text-ink-2 underline decoration-line-2 decoration-2 underline-offset-4 hover:text-ink disabled:cursor-not-allowed disabled:opacity-45',
+              focusRing,
+            )}
+          >
             Email me a sign-in link
           </button>
         )}
       </form>
-      {message && <p role="status">{message}</p>}
+      {message && (
+        <p
+          role="status"
+          className={cn('mt-3 text-center text-[13px]', message.failed ? 'text-red' : 'text-ink-2')}
+        >
+          {message.text}
+        </p>
+      )}
     </>
   )
 }
