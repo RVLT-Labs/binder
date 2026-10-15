@@ -197,8 +197,11 @@ export async function runPrintExport(
     seen.add(key)
     if (layer.kind === 'personal') {
       if (layer.id !== ctx.userId) throw new Error('You can only print your own personal layer.')
-    } else if (!known.has(layer.id)) {
-      throw new Error('That department is not part of this show.')
+    } else {
+      const department = known.get(layer.id)
+      if (!department) throw new Error('That department is not part of this show.')
+      // The dialog never offers a hidden department; refuse it here too rather than print it.
+      if (department.hidden) throw new Error(`The ${department.code} layer is hidden.`)
     }
     layers.push(layer)
   }
@@ -280,9 +283,8 @@ export async function runPrintExport(
   const { buildStampItems, layerSelectionLabel, stampScript } = await import('./printCore')
 
   const id = newId()
-  const labelled = departments.filter(
-    (d) => !d.hidden || picked.has(layerKey({ kind: 'department', id: d.id })),
-  )
+  // Hidden departments are refused above, so the footer's "all layers" is over the visible ones.
+  const labelled = departments.filter((d) => !d.hidden)
   const layerLabel = layerSelectionLabel(layers, labelled)
   const documentLabel = `${document.title} v${version.version_number}`
   const items = buildStampItems({

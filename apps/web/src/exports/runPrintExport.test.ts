@@ -192,16 +192,24 @@ test('a clean copy stamps nothing but the footer', async () => {
   expect((await PDFDocument.load(result.bytes)).getPageCount()).toBe(2)
 })
 
-test("refuses another person's personal layer and departments that are not in the show", async () => {
-  const bad = [
-    [{ kind: 'personal', id: OTHER }],
-    [{ kind: 'department', id: 'd-elsewhere' }],
-  ] as LayerRef[][]
-  for (const layers of bad) {
+test("refuses another person's personal layer, unknown departments, and hidden ones", async () => {
+  // A good PDF is available, so only the layer check can stop each of these.
+  const source = await sourcePdf()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(source as BlobPart, { status: 200 })),
+  )
+  const bad: Array<[LayerRef[], RegExp]> = [
+    [[{ kind: 'personal', id: OTHER }], /own personal layer/],
+    [[{ kind: 'department', id: 'd-elsewhere' }], /not part of this show/],
+    // A hidden department is never printed, even if a caller names it.
+    [[dept('d-lx'), dept('d-old')], /OLD layer is hidden/],
+  ]
+  for (const [layers, message] of bad) {
     const download = vi.fn()
     await expect(
       runPrintExport(fakeDb(), ctx, { documentId: 'doc-1', versionId: 'v1', layers }, { download }),
-    ).rejects.toThrow()
+    ).rejects.toThrow(message)
     expect(download).not.toHaveBeenCalled()
   }
 })

@@ -5,7 +5,7 @@ import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'rea
 import { pushNotice } from '../components/noticeStore'
 import { useMarkupSession } from '../markup/MarkupSession'
 import { useOnline } from '../offline/useOnline'
-import { flushForSession } from './flusher'
+import { flushSoon } from './flusher'
 import { runPrintExport } from './runPrintExport'
 
 /** The layers the dialog offers, in the order it lists them. */
@@ -98,7 +98,7 @@ export function PrintDialog({ documentId, versionId, onClose }: PrintDialogProps
           : `Downloaded ${filename}. It will be recorded in Exports when you are back online.`,
       })
       // Right after queueing: a no-op offline, and the online event takes over when it returns.
-      void flushForSession()
+      flushSoon()
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

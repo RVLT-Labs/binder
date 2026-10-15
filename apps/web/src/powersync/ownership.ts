@@ -73,7 +73,10 @@ async function hasLocalRows(db: LocalDb): Promise<boolean> {
  * Makes the local database the signed-in user's before it is shown or synced. A database marked
  * as another user's, or holding rows with no marker at all (storage partly cleared), is wiped, so
  * on a shared machine one user's rows never appear for the next. `clearForeignCaches` runs whenever
- * the recorded owner is not this user, for caches that hold no rows to detect (cached blobs).
+ * the recorded owner is not this user, for caches that hold no rows to detect (cached blobs) and for
+ * the previous user's export outbox: their queued PDFs can hold their personal layer, and this user
+ * must neither see nor upload them. The download already happened on their turn; only the
+ * still-unrecorded ExportRecord is lost.
  */
 export async function claimLocalDb(
   db: LocalDb,

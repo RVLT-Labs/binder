@@ -40,6 +40,17 @@ export async function fetchBlob(url: string): Promise<Response> {
   return res
 }
 
+/** Whether the blob is already stored on this device, so it can be read with no network. */
+export async function isBlobCached(url: string): Promise<boolean> {
+  const cache = await openCache()
+  if (!cache) return false
+  try {
+    return (await cache.match(url)) !== undefined
+  } catch {
+    return false
+  }
+}
+
 /**
  * Makes sure a blob is in the cache that fetchBlob reads, downloading it if it is not. Unlike
  * fetchBlob it waits for the copy to be stored and throws when it cannot be, so the caller knows

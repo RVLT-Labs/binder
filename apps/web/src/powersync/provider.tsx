@@ -3,6 +3,7 @@ import type { PowerSyncDatabase } from '@powersync/web'
 import { type ReactNode, useEffect, useState } from 'react'
 import { forgetSessionUser } from '../auth/session'
 import { clearBlobCache } from '../blobs/fetchBlob'
+import { clearOtherOutboxes } from '../exports/outbox'
 import { ApiConnector } from './connector'
 import { createPowerSync } from './db'
 import { installDevHooks } from './devHooks'
@@ -47,7 +48,11 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
     let cancelled = false
     void (async () => {
       try {
-        await claimLocalDb(db, userId, clearBlobCache)
+        await claimLocalDb(db, userId, async () => {
+          await clearBlobCache()
+          // Exports another user left waiting to upload go too (see clearOtherOutboxes).
+          await clearOtherOutboxes(userId)
+        })
       } catch (err) {
         console.error('could not open the local database', err)
         if (!cancelled) setFailure(messageOf(err))

@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { afterSignIn } from '../auth/afterSignIn'
 import { authCapabilitiesQueryKey, fetchAuthCapabilities } from '../auth/capabilities'
 import { LoginForm } from '../auth/LoginForm'
 import { meQueryKey } from '../auth/session'
@@ -21,10 +22,12 @@ function LoginPage() {
       <h1>Sign in to Binder</h1>
       <LoginForm
         magicLink={capabilities.data?.magicLink === true}
-        onSignedIn={async () => {
-          await queryClient.invalidateQueries({ queryKey: meQueryKey })
-          await navigate({ to: '/' })
-        }}
+        onSignedIn={() =>
+          afterSignIn({
+            refreshSession: () => queryClient.invalidateQueries({ queryKey: meQueryKey }),
+            toHome: () => navigate({ to: '/' }),
+          })
+        }
       />
     </main>
   )

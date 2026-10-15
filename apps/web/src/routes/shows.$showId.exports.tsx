@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { blobUrl } from '../blobs/fetchBlob'
+import { DownloadAgain } from '../exports/DownloadAgain'
 import { useExports, useLayerLabeller } from '../exports/useExports'
 import { formatWhen } from '../history/time'
 import { useOnline } from '../offline/useOnline'
@@ -59,10 +59,7 @@ function ExportsPage() {
               </div>
               <div className="export-actions">
                 {r.file_key && (
-                  // `download` makes the browser save the file; the server serves it inline.
-                  <a href={blobUrl(r.file_key)} download={r.filename ?? 'export.pdf'}>
-                    Download again
-                  </a>
+                  <DownloadAgain fileKey={r.file_key} filename={r.filename ?? 'export.pdf'} />
                 )}
                 {r.created_at && (
                   <Link

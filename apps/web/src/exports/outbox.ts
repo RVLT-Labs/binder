@@ -40,6 +40,7 @@ export interface FlushResult {
   dropped: number
 }
 
+const OUTBOX_DB_PREFIX = 'binder-exports-'
 const stores = new Map<string, OutboxStore>()
 
 /**
@@ -49,7 +50,7 @@ const stores = new Map<string, OutboxStore>()
 export function idbOutboxStore(userId: string): OutboxStore {
   let store = stores.get(userId)
   if (!store) {
-    const idb = createStore(`binder-exports-${userId}`, 'pending')
+    const idb = createStore(`${OUTBOX_DB_PREFIX}${userId}`, 'pending')
     store = {
       put: (p) => set(p.id, p, idb),
       list: () => values<PendingExport>(idb),
@@ -92,12 +93,46 @@ export async function pendingExports(
     .sort((a, b) => a.meta.createdAt.localeCompare(b.meta.createdAt) || a.id.localeCompare(b.id))
 }
 
-/** Deletes every pending export of the user (sign-out). */
+/**
+ * Deletes every pending export of the user (sign-out). A flush running for that store is cancelled
+ * first: it makes no further post, so a sign-out racing a flush can never send the user's file under
+ * whoever signs in next. (A request already on the wire cannot be recalled.)
+ */
 export async function clearOutbox(
   userId: string,
   store: OutboxStore = idbOutboxStore(userId),
 ): Promise<void> {
+  cancelRun(store)
   await store.clear()
+  changed()
+}
+
+/**
+ * Empties every user's outbox except `keepUserId`'s: run when the device's local database changes
+ * owner (see `claimLocalDb`). A previous user's queued PDFs may carry their personal layer, and the
+ * new user must neither see nor upload them. The download already happened on that user's turn;
+ * only the still-unrecorded ExportRecord is lost. Stores are emptied, not deleted: idb-keyval holds
+ * its connection open, which would block `deleteDatabase`. Where the browser cannot list its
+ * databases (`indexedDB.databases` is missing), only stores this page has opened are emptied.
+ */
+export async function clearOtherOutboxes(keepUserId: string): Promise<void> {
+  const keep = `${OUTBOX_DB_PREFIX}${keepUserId}`
+  const names = new Set<string>()
+  try {
+    for (const db of (await indexedDB.databases?.()) ?? []) {
+      if (db.name?.startsWith(OUTBOX_DB_PREFIX)) names.add(db.name)
+    }
+  } catch {
+    // Not listable: fall back to what this page opened.
+  }
+  for (const [userId, store] of stores) {
+    if (`${OUTBOX_DB_PREFIX}${userId}` !== keep) {
+      cancelRun(store)
+      names.add(`${OUTBOX_DB_PREFIX}${userId}`)
+    }
+  }
+  names.delete(keep)
+  for (const name of names) await clear(createStore(name, 'pending'))
   changed()
 }
 
@@ -131,14 +166,26 @@ async function reasonOf(res: Response): Promise<string> {
 interface Run {
   /** Set when a flush is requested while this one is running: it goes round again. */
   again: boolean
+  /** Set by `clearOutbox`: the run makes no further post. */
+  cancelled: boolean
   promise: Promise<FlushResult>
 }
 const runs = new WeakMap<OutboxStore, Run>()
 
+/** Stops the store's running flush before its next post, and lets the next flush start a fresh run. */
+function cancelRun(store: OutboxStore): void {
+  const run = runs.get(store)
+  if (run) {
+    run.cancelled = true
+    runs.delete(store)
+  }
+}
+
 /**
  * Uploads the user's pending exports, oldest first. 2xx removes the entry; a final 4xx removes it
  * with a notice naming the file; network errors and 5xx keep it for the next flush (a network
- * error ends the run, since the rest would fail the same way). Only entries owned by `userId` are
+ * error ends the run, since the rest would fail the same way; any other error keeps the entry, is
+ * logged, and the run goes on). Only entries owned by `userId` are
  * ever sent. One run per store at a time: a flush asked for while another is running joins it, and
  * the run goes round again so an entry queued meanwhile is not left behind.
  */
@@ -154,7 +201,7 @@ export function flushOutbox(
     return running.promise
   }
 
-  const run = { again: false } as Run
+  const run = { again: false, cancelled: false } as Run
   run.promise = (async () => {
     const total: FlushResult = { sent: 0, kept: 0, dropped: 0 }
     const tried = new Set<string>()
@@ -164,6 +211,7 @@ export function flushOutbox(
         run.again = false
         for (const p of await pendingExports(userId, store)) {
           // Within one run an entry gets one attempt: a 503 is not hammered by the second pass.
+          if (run.cancelled) break
           if (tried.has(p.id)) continue
           tried.add(p.id)
           if (offline) {
@@ -173,11 +221,15 @@ export function flushOutbox(
           let res: Response
           try {
             res = await post(p)
-          } catch {
-            offline = true
+          } catch (err) {
             total.kept++
+            // fetch rejects with a TypeError when there is no network. Anything else is a bug or a
+            // storage problem: keep the entry, say so, and carry on rather than calling it offline.
+            if (err instanceof TypeError) offline = true
+            else console.error(`could not upload export ${p.meta.filename}`, err)
             continue
           }
+          if (run.cancelled) break
           if (res.ok) {
             await store.remove(p.id)
             total.sent++
@@ -192,9 +244,9 @@ export function flushOutbox(
             total.kept++
           }
         }
-      } while (run.again && !offline)
+      } while (run.again && !offline && !run.cancelled)
     } finally {
-      runs.delete(store)
+      if (runs.get(store) === run) runs.delete(store)
       changed()
     }
     return total

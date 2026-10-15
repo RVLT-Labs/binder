@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -300,11 +301,17 @@ test('an export made offline downloads at once and its record appears after reco
     const waiting = page.getByRole('region', { name: 'Waiting to upload' })
     await expect(waiting).toContainText(filename)
     await expect(records).toHaveCount(before)
+    // Offline, a stored file this device never downloaded cannot be fetched: said, not a dead link.
+    const first = records.first()
+    await expect(first.getByRole('button', { name: 'Download again' })).toBeDisabled()
+    await expect(first.getByText('Available when online')).toBeVisible()
+    await expect(first.getByRole('link', { name: 'Download again' })).toHaveCount(0)
 
     // Back online the outbox uploads it, the record syncs down, and nothing is waiting.
     await context.setOffline(false)
     await expect(records).toHaveCount(before + 1, { timeout: 60_000 })
     await expect(waiting).toHaveCount(0, { timeout: 30_000 })
+    await expect(first.getByRole('link', { name: 'Download again' })).toBeVisible()
   } finally {
     for (const context of contexts) await context.close()
   }
@@ -344,5 +351,68 @@ test('an export that includes the personal layer says so, is private to its make
     await expect(exportRow(viewer.page, privateName)).toHaveCount(0)
   } finally {
     for (const context of contexts) await context.close()
+  }
+})
+
+test('an export kept waiting is uploaded right after signing in, with no reload', async ({
+  browser,
+}) => {
+  const { users, password } = readRun()
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    await page.goto('/login')
+    await expect(page.getByRole('heading', { name: 'Sign in to Binder' })).toBeVisible()
+
+    // As if kept after a 401: an entry in the owner's outbox while nobody is signed in.
+    const id = randomUUID()
+    const filename = `Kept after sign-out ${Date.now()}.pdf`
+    await page.evaluate(
+      async ({ userId, entry }) => {
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const open = indexedDB.open(`binder-exports-${userId}`, 1)
+          open.onupgradeneeded = () => open.result.createObjectStore('pending')
+          open.onsuccess = () => resolve(open.result)
+          open.onerror = () => reject(open.error)
+        })
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction('pending', 'readwrite')
+          tx.objectStore('pending').put(
+            { ...entry, bytes: new TextEncoder().encode('%PDF-1.4\n%%EOF\n') },
+            entry.id,
+          )
+          tx.oncomplete = () => resolve()
+          tx.onerror = () => reject(tx.error)
+        })
+        db.close()
+      },
+      {
+        userId: users.owner.id,
+        entry: {
+          id,
+          showId: show.showId,
+          userId: users.owner.id,
+          meta: {
+            id,
+            kind: 'pdf-script',
+            filename,
+            layerSelection: [],
+            createdAt: new Date().toISOString(),
+          },
+          contentType: 'application/pdf',
+        },
+      },
+    )
+
+    await page.getByLabel('Email').fill(users.owner.email)
+    await page.getByLabel('Password').fill(password)
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+
+    // Client-side navigation only: a reload would flush at start and hide what this tests.
+    await page.getByRole('link', { name: show.title }).click()
+    await page.getByRole('link', { name: 'Exports', exact: true }).click()
+    await expect(exportRow(page, filename)).toHaveCount(1, { timeout: 30_000 })
+  } finally {
+    await context.close()
   }
 })

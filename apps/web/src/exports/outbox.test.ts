@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { clearNotices, getNotices } from '../components/noticeStore'
 import {
+  clearOtherOutboxes,
   clearOutbox,
   enqueueExport,
   flushOutbox,
@@ -192,4 +193,76 @@ test('the default post sends meta, then the file, as multipart to the show', asy
   expect(file.type).toBe('application/pdf')
   expect(file.name).toBe(p.meta.filename)
   expect(file.size).toBe(p.bytes.length)
+})
+
+test('an error that is not a network failure keeps the entry, is logged, and the run goes on', async () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const store = memoryStore()
+  const bad = pending('u1', { filename: 'bad.pdf' })
+  const good = pending('u1', { filename: 'good.pdf' })
+  await enqueueExport(bad, store)
+  await enqueueExport(good, store)
+  const post = vi.fn(async (p: PendingExport) => {
+    if (p.id === bad.id) throw new RangeError('boom')
+    return reply(201)
+  })
+  expect(await flushOutbox('u1', { store, post })).toEqual({ sent: 1, kept: 1, dropped: 0 })
+  // Not treated as "offline": the next entry was still tried, and the failure was reported.
+  expect(post).toHaveBeenCalledTimes(2)
+  expect([...store.entries.keys()]).toEqual([bad.id])
+  expect(log).toHaveBeenCalledWith(expect.stringContaining('bad.pdf'), expect.any(RangeError))
+})
+
+test('a storage failure rejects that flush but does not poison the next one', async () => {
+  const store = memoryStore()
+  await enqueueExport(pending('u1'), store)
+  const list = store.list
+  let failures = 1
+  store.list = async () => {
+    if (failures-- > 0) throw new Error('IndexedDB is closing')
+    return list()
+  }
+  const post = vi.fn(async () => reply(201))
+  await expect(flushOutbox('u1', { store, post })).rejects.toThrow('IndexedDB is closing')
+  expect(await flushOutbox('u1', { store, post })).toEqual({ sent: 1, kept: 0, dropped: 0 })
+})
+
+test('clearOutbox cancels a flush in flight: no further post goes out under whoever signs in next', async () => {
+  const store = memoryStore()
+  const [one, two, three] = [pending('u1'), pending('u1'), pending('u1')]
+  for (const p of [one, two, three]) await enqueueExport(p, store)
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const post = vi.fn(async (p: PendingExport) => {
+    if (p.id === one.id) await gate
+    return reply(201)
+  })
+  const flushing = flushOutbox('u1', { store, post })
+  await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+
+  const clearing = clearOutbox('u1', store) // sign-out, mid-flush
+  release()
+  await Promise.all([flushing, clearing])
+  expect(post).toHaveBeenCalledTimes(1)
+  expect(store.entries.size).toBe(0)
+
+  // The store is usable again: a later flush starts a fresh run and sends what is queued then.
+  const later = pending('u1')
+  await enqueueExport(later, store)
+  expect(await flushOutbox('u1', { store, post })).toEqual({ sent: 1, kept: 0, dropped: 0 })
+  expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ id: later.id }))
+})
+
+test("clearOtherOutboxes empties every other user's outbox and leaves the owner's", async () => {
+  await enqueueExport(pending('old-1'))
+  await enqueueExport(pending('old-2'))
+  const mine = pending('new-user')
+  await enqueueExport(mine)
+  await clearOtherOutboxes('new-user')
+  expect(await pendingExports('old-1')).toEqual([])
+  expect(await pendingExports('old-2')).toEqual([])
+  expect((await pendingExports('new-user')).map((p) => p.id)).toEqual([mine.id])
+  await clearOutbox('new-user')
 })

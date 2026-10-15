@@ -8,7 +8,9 @@ vi.mock('./ownership', () => ({
   claimLocalDb: (...args: unknown[]) => claimLocalDb(...args),
   writeOwner: vi.fn(),
 }))
+const clearOtherOutboxes = vi.fn(async (_userId: string) => {})
 vi.mock('../blobs/fetchBlob', () => ({ clearBlobCache: vi.fn(async () => {}) }))
+vi.mock('../exports/outbox', () => ({ clearOtherOutboxes: (u: string) => clearOtherOutboxes(u) }))
 
 const { PowerSyncProvider } = await import('./provider')
 
@@ -26,6 +28,19 @@ test('renders the app once the local database is claimed', async () => {
   )
   expect(await screen.findByText('the app')).toBeTruthy()
   expect(connect).toHaveBeenCalledOnce()
+})
+
+test("a change of owner also clears every other user's export outbox", async () => {
+  claimLocalDb.mockImplementation(async (_db, _user, clearForeign: () => Promise<void>) => {
+    await clearForeign()
+  })
+  render(
+    <PowerSyncProvider userId="u1">
+      <p>the app</p>
+    </PowerSyncProvider>,
+  )
+  expect(await screen.findByText('the app')).toBeTruthy()
+  expect(clearOtherOutboxes).toHaveBeenCalledWith('u1')
 })
 
 test('a failure to open local storage shows why instead of a blank screen', async () => {
