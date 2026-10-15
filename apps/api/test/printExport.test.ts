@@ -249,8 +249,10 @@ describe.skipIf(skip)('print stamping with poppler', () => {
       // ...and never filled: the words' own area and the page beyond them stay white.
       expect(near(await pixelAt(out, 0, 230, 72, 288), '#FFFFFF', 2)).toBe(true)
       expect(near(await pixelAt(out, 0, 300, 78, 288), '#FFFFFF', 2)).toBe(true)
-      // The connector runs level with the tag centre from the pill to the underline.
-      expect(near(await pixelAt(out, 0, 120, 72, 288), AMBER, 20)).toBe(true)
+      // The connector runs at the underline's y from the pill to the underline, never through the
+      // words' own area (y 72 is white there).
+      expect(near(await pixelAt(out, 0, 120, 78, 288), AMBER, 20)).toBe(true)
+      expect(near(await pixelAt(out, 0, 120, 72, 288), '#FFFFFF', 2)).toBe(true)
       // The footer sits 24 pt in and 12 pt above the displayed bottom edge.
       const first = words.find((w) => w.t === 'Pirates')
       expect(first?.xMin).toBeCloseTo(24, 0)

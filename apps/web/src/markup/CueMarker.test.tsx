@@ -156,11 +156,12 @@ test('a bound cue underlines its trigger words and joins them to the tag with a 
   expect(u.getAttribute('y1')).toBe('494')
   expect(u.getAttribute('stroke')).toBe('#F5A623')
   expect(u.getAttribute('stroke-width')).toBe('1.5')
-  const leader = trigger.querySelector('line.cue-leader') as SVGLineElement
+  const leader = trigger.querySelector('polyline.cue-leader') as SVGPolylineElement
   expect(leader.getAttribute('stroke')).toBe('#F5A623')
-  expect(Number(leader.getAttribute('x2'))).toBeCloseTo(222)
-  // Level with the tag's centre.
-  expect(leader.getAttribute('y1')).toBe('500')
+  // At the underline's y, so it never crosses a glyph, and ending at the underline's start.
+  const points = (leader.getAttribute('points') ?? '').split(' ')
+  expect(points.at(-1)).toBe('224,494')
+  expect(points.every((p) => p.endsWith(',494'))).toBe(true)
   expect(trigger.querySelector('.cue-tick')).toBeNull()
   // Not filled unless selected or hovered.
   expect(trigger.querySelector('rect.cue-highlight')?.getAttribute('fill-opacity')).toBe('0')
@@ -202,7 +203,7 @@ test('an unbound cue has a tick at its anchor instead of an underline', () => {
   expect(tick.getAttribute('x1')).toBe('100')
   expect(tick.getAttribute('y1')).toBe('496')
   expect(tick.getAttribute('y2')).toBe('504')
-  expect(trigger.querySelector('line.cue-leader')).not.toBeNull()
+  expect(trigger.querySelector('polyline.cue-leader')).not.toBeNull()
 })
 
 test('clicking the trigger words selects the cue; with another tool they do not take the pointer', () => {
@@ -298,4 +299,39 @@ test('in a narrow margin a standby tag sheds its SB prefix and then its code, ne
   expect(numberOnly.querySelector('[data-cue-id]')?.getAttribute('aria-label')).toBe(
     'SB LX 10.5, page 1',
   )
+})
+
+test('a tag pushed off its line draws a three-segment connector that jogs in the gutter', () => {
+  const second: LayoutCue = {
+    ...bound,
+    id: 'c2',
+    major: 11,
+    minor: 0,
+    anchor: { ...bound.anchor, y: 503 },
+  }
+  const layouts = layoutPageCues(
+    [bound, second],
+    words,
+    600,
+    () => 'left',
+    () => 0,
+  )
+  const tag = layouts.get('c2')
+  if (!tag) throw new Error('no layout')
+  const { container } = render(
+    <svg aria-label="Page 1 markup">
+      <CueTrigger cue={second} tag={tag} interactive />
+    </svg>,
+  )
+  const leader = container.querySelector('polyline.cue-leader') as SVGPolylineElement
+  const points = (leader.getAttribute('points') ?? '')
+    .split(' ')
+    .map((p) => p.split(',').map(Number))
+  expect(points).toHaveLength(4)
+  // Out of the tag at its own height, then the gutter 2 points left of the text block (x 200),
+  // down to the underline, then in to it.
+  expect(points[1]?.[0]).toBe(198)
+  expect(points[2]?.[0]).toBe(198)
+  expect(points[3]?.[1]).toBe(points[2]?.[1])
+  expect(points[0]?.[1]).toBe(tag.centreY)
 })

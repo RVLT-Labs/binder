@@ -140,14 +140,13 @@ export function CueTrigger({
         />
       )}
       {tag.leader && (
-        <line
+        <polyline
           className="cue-leader"
-          x1={tag.leader.x1}
-          x2={tag.leader.x2}
-          y1={tag.leader.y}
-          y2={tag.leader.y}
+          points={tag.leader.map((p) => `${p.x},${p.y}`).join(' ')}
+          fill="none"
           stroke={colour}
           strokeWidth={LEADER_WIDTH}
+          strokeLinejoin="miter"
         />
       )}
     </g>

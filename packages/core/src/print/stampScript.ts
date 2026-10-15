@@ -328,7 +328,10 @@ function drawCues(d: DisplayedPage, pageWidth: number, items: CueItem[]) {
 function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
   for (const u of t.underlines) d.line(u.x1, u.y, u.x2, u.y, colour, UNDERLINE_WIDTH)
   if (t.tick) d.line(t.tick.x, t.tick.y1, t.tick.x, t.tick.y2, colour, UNDERLINE_WIDTH)
-  if (t.leader) d.line(t.leader.x1, t.leader.y, t.leader.x2, t.leader.y, colour, LEADER_WIDTH)
+  for (let i = 1; t.leader && i < t.leader.length; i++) {
+    const [a, b] = [t.leader[i - 1], t.leader[i]] as Array<{ x: number; y: number }>
+    d.line(a.x, a.y, b.x, b.y, colour, LEADER_WIDTH)
+  }
 }
 
 function drawTag(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {

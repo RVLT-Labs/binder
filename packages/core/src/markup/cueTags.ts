@@ -24,8 +24,8 @@ export const UNDERLINE_DROP = 1
 /** The on-screen fill of a selected or hovered cue's trigger words. */
 export const SELECTED_FILL_OPACITY = 0.1
 export const LEADER_WIDTH = 0.75
-/** The connector stops this short of the underline. */
-export const LEADER_STOP = 2
+/** A connector that has to jog turns in a gutter this far into the margin from the text block. */
+export const LEADER_GUTTER = 2
 export const TICK_HEIGHT = 8
 /** The margin assumed on a page with no word layer, in points. */
 export const DEFAULT_MARGIN = 56
@@ -102,8 +102,11 @@ export interface CueTagLayout {
   underlines: Array<{ x1: number; x2: number; y: number }>
   /** An unbound cue's mark at its anchor. */
   tick: { x: number; y1: number; y2: number } | null
-  /** The connector from the tag to the first underline (or tick), or null when they already meet. */
-  leader: { x1: number; x2: number; y: number } | null
+  /**
+   * The connector from the tag to the first underline (or tick) as a polyline of square joins, or
+   * null when they already meet. It always runs at the underline's y so it never crosses a glyph.
+   */
+  leader: Array<{ x: number; y: number }> | null
 }
 
 /**
@@ -153,6 +156,11 @@ export function layoutCueTags(input: {
     centres[i] = cy
     placed.push(i)
   }
+  // Where the text block starts and ends: the connector's gutters sit just outside it.
+  const textEdges = {
+    left: input.textExtent ? input.textExtent.minX : DEFAULT_MARGIN,
+    right: input.textExtent ? input.textExtent.maxX : pageWidth - DEFAULT_MARGIN,
+  }
   return cues.map((c, i) =>
     layoutOne(
       c,
@@ -160,6 +168,7 @@ export function layoutCueTags(input: {
       (fitted[i] as { w: number }).w,
       centres[i] as number,
       pageWidth,
+      textEdges,
     ),
   )
 }
@@ -179,6 +188,7 @@ function layoutOne(
   w: number,
   centre: number,
   pageWidth: number,
+  textEdges: { left: number; right: number },
 ): CueTagLayout {
   const left = c.side === 'left'
   const x = left ? TAG_EDGE : pageWidth - TAG_EDGE - w
@@ -192,9 +202,17 @@ function layoutOne(
   }))
   const first = underlines[0]
   const tick = first ? null : { x: c.anchorX, y1: c.y - TICK_HEIGHT / 2, y2: c.y + TICK_HEIGHT / 2 }
-  // The connector runs level with the tag between its inner edge and the first underline (or tick).
-  const from = left ? x + w : first ? first.x2 + LEADER_STOP : c.anchorX
-  const to = left ? (first ? first.x1 - LEADER_STOP : c.anchorX) : x
+  const leader = connector({
+    left,
+    tag,
+    centre,
+    target: first
+      ? { x: left ? first.x1 : first.x2, y: first.y }
+      : tick
+        ? { x: tick.x, y: tick.y1 }
+        : null,
+    gutter: left ? textEdges.left - LEADER_GUTTER : textEdges.right + LEADER_GUTTER,
+  })
   return {
     id: c.id,
     side: c.side,
@@ -209,6 +227,34 @@ function layoutOne(
     triggerBoxes: c.triggerBoxes.map((b) => ({ ...b })),
     underlines,
     tick,
-    leader: from < to ? { x1: from, x2: to, y: centre } : null,
+    leader,
   }
+}
+
+/**
+ * The connector from a tag to its mark, always at the mark's y so it never crosses a glyph. A tag
+ * level with its line runs straight out, starting under the pill's curve so it meets the outline.
+ * A tag pushed off its line leaves at its own centre, turns in the gutter beside the text block,
+ * and runs in to the mark.
+ */
+function connector(o: {
+  left: boolean
+  tag: Box
+  centre: number
+  target: { x: number; y: number } | null
+  gutter: number
+}): Array<{ x: number; y: number }> | null {
+  const { left, tag, centre, target } = o
+  if (!target) return null
+  const edge = left ? tag.x + tag.w : tag.x
+  // Already touching or overlapping the mark.
+  if (left ? edge >= target.x : edge <= target.x) return null
+  if (Math.abs(target.y - centre) <= TAG_HEIGHT / 2) {
+    return [{ x: left ? edge - TAG_RADIUS : edge + TAG_RADIUS, y: target.y }, target]
+  }
+  // The gutter is never beyond the tag's edge or the mark.
+  const gx = left
+    ? Math.min(Math.max(o.gutter, edge), target.x)
+    : Math.max(Math.min(o.gutter, edge), target.x)
+  return [{ x: edge, y: centre }, { x: gx, y: centre }, { x: gx, y: target.y }, target]
 }

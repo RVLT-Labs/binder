@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   type CueTagInput,
   DEFAULT_MARGIN,
-  LEADER_STOP,
+  LEADER_GUTTER,
   layoutCueTags,
   TAG_EDGE,
   TAG_FONT_SIZE,
@@ -139,17 +139,19 @@ describe('crowding: tags stack vertically in the margin', () => {
     expect(tags.map((t) => t.centreY)).toEqual([500, 500 - TAG_HEIGHT, 500])
   })
 
-  test('a stacked tag keeps its own connector, level with its own tag, from its own tag', () => {
+  test('a stacked tag keeps its own connector, which leaves its own tag and jogs to its own underline', () => {
     const boxes = [{ x: 300, y: 495, w: 40, h: 10 }]
     const [a, b] = layout([
       cue('a', { triggerBoxes: boxes, sortKey: sort(0, 1) }),
       cue('b', { triggerBoxes: boxes, y: 502, sortKey: sort(0, 2) }),
     ])
     if (!a || !b) throw new Error('tags')
-    expect(a.leader?.y).toBe(500)
-    expect(b.leader?.y).toBe(b.centreY)
+    // The tag on its own line runs straight out to its underline.
+    expect(a.leader?.map((p) => p.y)).toEqual([494, 494])
+    // The pushed one leaves its tag at the tag's centre and meets the underline in the gutter.
+    expect(b.leader?.[0]).toEqual({ x: expect.closeTo(b.tag.x + b.tag.w), y: b.centreY })
+    expect(b.leader?.at(-1)).toEqual({ x: 300, y: 494 })
     expect(b.centreY).toBeLessThan(a.centreY)
-    expect(b.leader?.x1).toBeCloseTo(b.tag.x + b.tag.w)
     // The underline stays under the cue's own words.
     expect(b.underlines[0]?.y).toBe(494)
   })
@@ -275,36 +277,77 @@ describe('trigger underline and connector', () => {
     expect(t.tick).toBeNull()
   })
 
-  test('a left connector runs from the tag to 2 points short of the first underline, at the tag centre', () => {
+  test('level with its line, a left connector runs at the underline y from the tag to the underline start', () => {
     const t = one(cue('a', { triggerBoxes: words }))
-    expect(LEADER_STOP).toBe(2)
-    expect(t.leader).toEqual({ x1: expect.closeTo(t.tag.x + t.tag.w), x2: 298, y: 500 })
+    // It starts under the pill's curve (a radius in from the inner edge), so it meets the outline.
+    expect(t.leader).toEqual([
+      { x: expect.closeTo(t.tag.x + t.tag.w - TAG_RADIUS), y: 494 },
+      { x: 300, y: 494 },
+    ])
   })
 
-  test('a right connector runs from 2 points past the underline end to the tag', () => {
+  test('a right connector runs from the tag to the underline end, at the underline y', () => {
     const t = one(cue('a', { side: 'right', triggerBoxes: words }))
-    expect(t.leader).toEqual({ x1: 342, x2: expect.closeTo(t.tag.x), y: 500 })
+    expect(t.leader).toEqual([
+      { x: expect.closeTo(t.tag.x + TAG_RADIUS), y: 494 },
+      { x: 340, y: 494 },
+    ])
   })
 
   test('the connector joins the first underline, not a later line', () => {
     const t = one(cue('a', { triggerBoxes: [words[1] as (typeof words)[number], ...words] }))
-    expect(t.leader?.x2).toBe(98)
+    expect(t.leader?.at(-1)).toEqual({ x: 100, y: 474 })
   })
 
-  test('no connector when the tag and the underline already meet or the gap is under the stop', () => {
+  test("never crosses glyphs: an underline out of the tag's reach gets three segments through the gutter", () => {
+    expect(LEADER_GUTTER).toBe(2)
+    // The words sit 12 points below the tag's line, so the straight run would miss the pill.
+    const low = [{ x: 300, y: 482, w: 40, h: 10 }]
+    const t = one(cue('a', { triggerBoxes: low }))
+    // Text block starts at 150: the gutter is 2 points toward the margin.
+    expect(t.leader).toEqual([
+      { x: expect.closeTo(t.tag.x + t.tag.w), y: 500 },
+      { x: 148, y: 500 },
+      { x: 148, y: 481 },
+      { x: 300, y: 481 },
+    ])
+    const r = one(cue('a', { side: 'right', triggerBoxes: low }))
+    expect(r.leader).toEqual([
+      { x: expect.closeTo(r.tag.x), y: 500 },
+      { x: 452, y: 500 },
+      { x: 452, y: 481 },
+      { x: 340, y: 481 },
+    ])
+  })
+
+  test('with no word layer the gutter is measured from the 56 point margin', () => {
+    const low = [{ x: 300, y: 482, w: 40, h: 10 }]
+    const t = one(cue('a', { triggerBoxes: low }), null)
+    expect(t.leader?.[1]).toEqual({ x: 54, y: 500 })
+    const r = one(cue('a', { side: 'right', triggerBoxes: low }), null)
+    expect(r.leader?.[1]).toEqual({ x: WIDTH - 54, y: 500 })
+  })
+
+  test('no connector when the tag and the underline already meet or overlap', () => {
     const near = { x: 20, y: 495, w: 40, h: 10 }
     expect(one(cue('a', { triggerBoxes: [near] })).leader).toBeNull()
     const nearRight = { x: WIDTH - 60, y: 495, w: 40, h: 10 }
     expect(one(cue('a', { side: 'right', triggerBoxes: [nearRight] })).leader).toBeNull()
   })
 
-  test('an unbound cue has an 8 point tick at its anchor and a connector to it', () => {
+  test('an unbound cue has an 8 point tick at its anchor and a connector to its bottom', () => {
     const t = one(cue('a', { anchorX: 250 }))
     expect(t.triggerBoxes).toEqual([])
     expect(t.underlines).toEqual([])
     expect(t.tick).toEqual({ x: 250, y1: 496, y2: 504 })
-    expect(t.leader).toEqual({ x1: expect.closeTo(t.tag.x + t.tag.w), x2: 250, y: 500 })
+    expect(t.leader).toEqual([
+      { x: expect.closeTo(t.tag.x + t.tag.w - TAG_RADIUS), y: 496 },
+      { x: 250, y: 496 },
+    ])
     const r = one(cue('a', { side: 'right', anchorX: 250 }))
-    expect(r.leader).toEqual({ x1: 250, x2: expect.closeTo(r.tag.x), y: 500 })
+    expect(r.leader).toEqual([
+      { x: expect.closeTo(r.tag.x + TAG_RADIUS), y: 496 },
+      { x: 250, y: 496 },
+    ])
   })
 })

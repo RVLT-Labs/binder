@@ -35,7 +35,7 @@ export {
 export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
   DEFAULT_MARGIN,
-  LEADER_STOP,
+  LEADER_GUTTER,
   LEADER_WIDTH,
   layoutCueTags,
   SELECTED_FILL_OPACITY,
