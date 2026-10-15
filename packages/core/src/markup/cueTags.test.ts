@@ -1,18 +1,22 @@
 import { describe, expect, test } from 'vitest'
 import {
   type CueTagInput,
-  HIGHLIGHT_PAD,
+  DEFAULT_MARGIN,
+  LEADER_STOP,
   layoutCueTags,
-  TAG_BAR,
-  TAG_DIVIDER,
   TAG_EDGE,
   TAG_FONT_SIZE,
   TAG_GAP,
   TAG_HEIGHT,
   TAG_PAD,
+  TAG_RADIUS,
+  TAG_TEXT_GAP,
   tagWidth,
+  textExtent,
+  UNDERLINE_DROP,
+  UNDERLINE_WIDTH,
 } from './cueTags'
-import { helveticaWidth } from './helvetica'
+import { helveticaBoldWidth, helveticaWidth } from './helvetica'
 
 const WIDTH = 600
 
@@ -20,40 +24,38 @@ const cue = (id: string, over: Partial<CueTagInput> = {}): CueTagInput => ({
   id,
   y: 500,
   side: 'left',
+  type: 'go',
   lead: 'LX',
+  code: 'LX',
   number: '10',
-  dash: false,
   triggerBoxes: [],
   anchorX: 200,
   sortKey: { department: 0, major: 10, minor: 0 },
   ...over,
 })
 
-const layout = (cues: CueTagInput[]) => layoutCueTags({ pageWidth: WIDTH, cues })
-const one = (c: CueTagInput) => {
-  const [t] = layout([c])
+/** A wide margin on both sides, so only the tests about the margin are about it. */
+const WIDE = { minX: 150, maxX: 450 }
+const layout = (cues: CueTagInput[], extent: { minX: number; maxX: number } | null = WIDE) =>
+  layoutCueTags({ pageWidth: WIDTH, textExtent: extent, cues })
+const one = (c: CueTagInput, extent: { minX: number; maxX: number } | null = WIDE) => {
+  const [t] = layout([c], extent)
   if (!t) throw new Error('no tag')
   return t
 }
 
-describe('tag size', () => {
-  test('is 14 high and as wide as its parts, with text widths from Helvetica at 9 pt', () => {
-    const w = tagWidth('LX', '10')
-    const expected =
-      TAG_BAR +
-      TAG_PAD +
-      helveticaWidth('LX', TAG_FONT_SIZE) +
-      TAG_PAD +
-      TAG_DIVIDER +
-      TAG_PAD +
-      helveticaWidth('10', TAG_FONT_SIZE) +
-      TAG_PAD
-    expect(w).toBeCloseTo(expected)
+describe('the pill', () => {
+  test('is 14 high with a radius of half its height, sized from Helvetica and Helvetica-Bold at 9 pt', () => {
     expect(TAG_HEIGHT).toBe(14)
+    expect(TAG_RADIUS).toBe(TAG_HEIGHT / 2)
     expect(TAG_FONT_SIZE).toBe(9)
-    const t = one(cue('a', { lead: 'SB LX', number: '14.5' }))
+    expect(TAG_TEXT_GAP).toBe(3)
+    const expected =
+      TAG_PAD + helveticaWidth('LX', 9) + TAG_TEXT_GAP + helveticaBoldWidth('10', 9) + TAG_PAD
+    expect(tagWidth('LX', '10')).toBeCloseTo(expected)
+    const t = one(cue('a', { lead: 'SB LX', number: '14.5', type: 'standby' }))
     expect(t.tag.w).toBeCloseTo(tagWidth('SB LX', '14.5'))
-    expect(t.tag.w).toBeGreaterThan(w)
+    expect(t.tag.w).toBeGreaterThan(tagWidth('LX', '10'))
     expect(t.tag.h).toBe(14)
   })
 
@@ -62,68 +64,62 @@ describe('tag size', () => {
     expect(t.tag.y).toBe(393)
     expect(t.centreY).toBe(400)
   })
+
+  test('the code then a 3 point gap then the number, left to right, on either side', () => {
+    for (const side of ['left', 'right'] as const) {
+      const t = one(cue('a', { side }))
+      expect(t.leadX).toBeCloseTo(t.tag.x + TAG_PAD)
+      expect(t.numberX).toBeCloseTo(t.leadX + helveticaWidth('LX', 9) + 3)
+      expect(t.numberX + helveticaBoldWidth('10', 9) + TAG_PAD).toBeCloseTo(t.tag.x + t.tag.w)
+    }
+  })
+
+  test('outline: 1 pt solid for go, 1 pt dashed for standby, 1.5 pt solid for warn', () => {
+    expect(one(cue('a', { type: 'go' }))).toMatchObject({ dash: false, outlineWidth: 1 })
+    expect(one(cue('a', { type: 'standby' }))).toMatchObject({ dash: true, outlineWidth: 1 })
+    expect(one(cue('a', { type: 'warn' }))).toMatchObject({ dash: false, outlineWidth: 1.5 })
+  })
 })
 
 describe('placement in the margin', () => {
-  test('a left tag starts 4 points inside the left edge, the bar on its outer (left) edge', () => {
-    const t = one(cue('a'))
-    expect(t.tag.x).toBe(4)
+  test('a left tag starts 4 points inside the left edge', () => {
+    expect(one(cue('a')).tag.x).toBe(4)
     expect(TAG_EDGE).toBe(4)
-    expect(t.bar).toEqual({ x: 4, y: t.tag.y, w: 4, h: 14 })
-    expect(t.leadX).toBeCloseTo(4 + TAG_BAR + TAG_PAD)
-    expect(t.dividerX).toBeCloseTo(t.leadX + helveticaWidth('LX', 9) + TAG_PAD)
-    expect(t.numberX).toBeCloseTo(t.dividerX + TAG_DIVIDER + TAG_PAD)
-    expect(t.numberX + helveticaWidth('10', 9) + TAG_PAD).toBeCloseTo(t.tag.x + t.tag.w)
   })
 
-  test('a right tag ends 4 points inside the right edge, the bar on its outer (right) edge', () => {
+  test('a right tag ends 4 points inside the right edge', () => {
     const t = one(cue('a', { side: 'right' }))
     expect(t.tag.x + t.tag.w).toBeCloseTo(WIDTH - 4)
-    expect(t.bar.x + t.bar.w).toBeCloseTo(WIDTH - 4)
-    expect(t.bar.w).toBe(4)
-    // The text still reads lead then number, left to right, inside the bar.
-    expect(t.leadX).toBeCloseTo(t.tag.x + TAG_PAD)
-    expect(t.dividerX).toBeGreaterThan(t.leadX)
-    expect(t.numberX).toBeGreaterThan(t.dividerX)
-    expect(t.numberX + helveticaWidth('10', 9) + TAG_PAD).toBeCloseTo(t.bar.x)
-  })
-
-  test('three grip dots sit in the middle of the bar', () => {
-    const t = one(cue('a', { y: 300 }))
-    expect(t.grips).toHaveLength(3)
-    for (const g of t.grips) expect(g.x).toBeCloseTo(t.bar.x + t.bar.w / 2)
-    expect(t.grips.map((g) => g.y)).toEqual([...t.grips.map((g) => g.y)].sort((a, b) => b - a))
-    expect(t.grips[1]?.y).toBeCloseTo(300)
-  })
-
-  test('the standby dash is carried through', () => {
-    expect(one(cue('a', { dash: true })).dash).toBe(true)
-    expect(one(cue('a')).dash).toBe(false)
   })
 })
 
-describe('crowding', () => {
+describe('crowding: tags stack vertically in the margin', () => {
   const sort = (department: number, major: number, minor = 0) => ({ department, major, minor })
 
-  test('tags whose vertical extents overlap sit side by side, inward, 2 points apart', () => {
-    const [a, b] = layout([
+  test('tags whose vertical extents overlap stack downward, TAG_HEIGHT + 2 apart, flush at the same x', () => {
+    const [a, b, c] = layout([
       cue('a', { sortKey: sort(0, 10) }),
-      cue('b', { y: 505, lead: 'SND', number: '2', sortKey: sort(1, 2) }),
+      cue('b', { y: 505, lead: 'SND', code: 'SND', number: '2', sortKey: sort(1, 2) }),
+      cue('c', { y: 498, number: '12', sortKey: sort(1, 3) }),
     ])
-    if (!a || !b) throw new Error('tags')
-    expect(a.tag.x).toBe(4)
-    expect(b.tag.x).toBeCloseTo(a.tag.x + a.tag.w + TAG_GAP)
+    if (!a || !b || !c) throw new Error('tags')
+    expect([a.tag.x, b.tag.x, c.tag.x]).toEqual([4, 4, 4])
     expect(TAG_GAP).toBe(2)
+    expect(a.centreY).toBe(500)
+    expect(b.centreY).toBe(500 - (TAG_HEIGHT + TAG_GAP))
+    expect(c.centreY).toBe(500 - 2 * (TAG_HEIGHT + TAG_GAP))
+    expect(a.tag.y - (b.tag.y + b.tag.h)).toBeCloseTo(TAG_GAP)
   })
 
-  test('on the right they move inward (leftward) from the right edge', () => {
+  test('on the right they stack in the right margin, ending 4 points inside the edge', () => {
     const [a, b] = layout([
       cue('a', { side: 'right', sortKey: sort(0, 10) }),
       cue('b', { side: 'right', y: 505, number: '11', sortKey: sort(0, 11) }),
     ])
     if (!a || !b) throw new Error('tags')
     expect(a.tag.x + a.tag.w).toBeCloseTo(WIDTH - 4)
-    expect(b.tag.x + b.tag.w).toBeCloseTo(a.tag.x - TAG_GAP)
+    expect(b.tag.x + b.tag.w).toBeCloseTo(WIDTH - 4)
+    expect(b.centreY).toBe(500 - (TAG_HEIGHT + TAG_GAP))
   })
 
   test('the order is department sort order, then cue number, then id, whatever the input order', () => {
@@ -133,81 +129,182 @@ describe('crowding', () => {
       cue('b', { sortKey: sort(0, 11, 5) }),
       cue('a', { sortKey: sort(0, 11, 5) }),
     ])
-    const byX = [...tags].sort((p, q) => p.tag.x - q.tag.x).map((t) => t.id)
-    expect(byX).toEqual(['a', 'b', 'm', 'z'])
-    // Returned in the input order.
+    const topToBottom = [...tags].sort((p, q) => q.centreY - p.centreY).map((t) => t.id)
+    expect(topToBottom).toEqual(['a', 'b', 'm', 'z'])
     expect(tags.map((t) => t.id)).toEqual(['z', 'm', 'b', 'a'])
   })
 
-  test('tags a full height apart, or on opposite sides, do not crowd', () => {
+  test('tags a full height apart, or on opposite sides, do not stack', () => {
     const tags = layout([cue('a'), cue('b', { y: 500 - TAG_HEIGHT }), cue('c', { side: 'right' })])
-    expect(tags.map((t) => t.tag.x)).toEqual([4, 4, tags[2]?.tag.x])
-    expect(tags[2]?.tag.x).toBeGreaterThan(300)
+    expect(tags.map((t) => t.centreY)).toEqual([500, 500 - TAG_HEIGHT, 500])
   })
 
-  test('a later tag steps past every overlapping tag, and a leader starts at its own tag', () => {
+  test('a stacked tag keeps its own connector, level with its own tag, from its own tag', () => {
     const boxes = [{ x: 300, y: 495, w: 40, h: 10 }]
     const [a, b] = layout([
       cue('a', { triggerBoxes: boxes, sortKey: sort(0, 1) }),
       cue('b', { triggerBoxes: boxes, y: 502, sortKey: sort(0, 2) }),
     ])
     if (!a || !b) throw new Error('tags')
-    expect(a.leader?.x1).toBeCloseTo(a.tag.x + a.tag.w)
+    expect(a.leader?.y).toBe(500)
+    expect(b.leader?.y).toBe(b.centreY)
+    expect(b.centreY).toBeLessThan(a.centreY)
     expect(b.leader?.x1).toBeCloseTo(b.tag.x + b.tag.w)
-    expect(b.leader?.x1).toBeGreaterThan(a.leader?.x1 ?? 0)
+    // The underline stays under the cue's own words.
+    expect(b.underlines[0]?.y).toBe(494)
   })
 })
 
-describe('trigger highlight and leader', () => {
+describe('the margin: a tag never enters the text block', () => {
+  test('the text extent is the leftmost word start and the rightmost word end of the page', () => {
+    expect(textExtent(null)).toBeNull()
+    expect(textExtent({ words: [], lines: [] })).toBeNull()
+    expect(
+      textExtent({
+        words: [
+          { t: 'a', x: 80, y: 10, w: 10, h: 10 },
+          { t: 'b', x: 60, y: 30, w: 20, h: 10 },
+          { t: 'c', x: 100, y: 30, w: 400, h: 10 },
+        ],
+        lines: [],
+      }),
+    ).toEqual({ minX: 60, maxX: 500 })
+  })
+
+  test('a tag that fits keeps its full text', () => {
+    const t = one(cue('a'))
+    expect(t.lead).toBe('LX')
+    expect(t.tag.x + t.tag.w).toBeLessThanOrEqual(150 - 4)
+  })
+
+  test('a standby that is too wide drops its SB prefix first, keeping the dash', () => {
+    const full = tagWidth('SB LX', '11')
+    const short = tagWidth('LX', '11')
+    const limit = 4 + (full + short) / 2 + 4
+    const t = one(cue('a', { lead: 'SB LX', number: '11', type: 'standby' }), {
+      minX: limit,
+      maxX: 450,
+    })
+    expect(t.lead).toBe('LX')
+    expect(t.dash).toBe(true)
+    expect(t.tag.w).toBeCloseTo(short)
+    expect(t.tag.x + t.tag.w).toBeLessThanOrEqual(limit - 4)
+  })
+
+  test('a warn drops its W prefix the same way', () => {
+    const limit = 4 + (tagWidth('W LX', '11') + tagWidth('LX', '11')) / 2 + 4
+    const t = one(cue('a', { lead: 'W LX', number: '11', type: 'warn' }), {
+      minX: limit,
+      maxX: 450,
+    })
+    expect(t.lead).toBe('LX')
+    expect(t.outlineWidth).toBe(1.5)
+  })
+
+  test('then the department code goes, keeping the number', () => {
+    const limit = 4 + (tagWidth('LX', '12.50') + tagWidth('', '12.50')) / 2 + 4
+    const t = one(cue('a', { lead: 'W LX', number: '12.50', type: 'warn' }), {
+      minX: limit,
+      maxX: 450,
+    })
+    expect(t.lead).toBe('')
+    expect(t.number).toBe('12.50')
+    expect(t.tag.w).toBeCloseTo(tagWidth('', '12.50'))
+    expect(t.numberX).toBeCloseTo(t.tag.x + TAG_PAD)
+    expect(t.tag.x + t.tag.w).toBeLessThanOrEqual(limit - 4)
+  })
+
+  test('as a last resort the number-only tag sits at the page edge over the text, whole', () => {
+    const t = one(cue('a', { number: '12.50' }), { minX: 10, maxX: 450 })
+    expect(t.lead).toBe('')
+    expect(t.number).toBe('12.50')
+    expect(t.tag.x).toBe(4)
+  })
+
+  test('the right margin is measured from the text block too', () => {
+    const limit = WIDTH - (4 + (tagWidth('SB LX', '11') + tagWidth('LX', '11')) / 2 + 4)
+    const t = one(cue('a', { side: 'right', lead: 'SB LX', number: '11', type: 'standby' }), {
+      minX: 50,
+      maxX: limit,
+    })
+    expect(t.lead).toBe('LX')
+    expect(t.tag.x).toBeGreaterThanOrEqual(limit + 4)
+    expect(t.tag.x + t.tag.w).toBeCloseTo(WIDTH - 4)
+  })
+
+  test('a page with no word layer assumes a 56 point margin', () => {
+    expect(DEFAULT_MARGIN).toBe(56)
+    // "SB SND 12.50" is wider than the 52 points between the edge inset and the margin.
+    const wide = cue('a', { lead: 'SB SND', code: 'SND', number: '12.50', type: 'standby' })
+    expect(tagWidth('SB SND', '12.50')).toBeGreaterThan(52)
+    const t = one(wide, null)
+    expect(t.tag.x + t.tag.w).toBeLessThanOrEqual(56)
+    const r = one({ ...wide, side: 'right' }, null)
+    expect(r.tag.x).toBeGreaterThanOrEqual(WIDTH - 56)
+  })
+
+  test('stacked tags each fit the margin on their own', () => {
+    const limit = 4 + tagWidth('LX', '10') + 4
+    const tags = layout(
+      [
+        cue('a'),
+        cue('b', { y: 502, number: '11', sortKey: { department: 0, major: 11, minor: 0 } }),
+      ],
+      { minX: limit, maxX: 450 },
+    )
+    for (const t of tags) expect(t.tag.x + t.tag.w).toBeLessThanOrEqual(limit - 4)
+  })
+})
+
+describe('trigger underline and connector', () => {
   const words = [
     { x: 300, y: 495, w: 40, h: 10 },
     { x: 100, y: 475, w: 60, h: 10 },
   ]
 
-  test('each word box is padded 1.5 points', () => {
+  test('each trigger word box gets a 1.5 pt underline along its bottom edge, 1 pt below it', () => {
     const t = one(cue('a', { triggerBoxes: words }))
-    expect(HIGHLIGHT_PAD).toBe(1.5)
-    expect(t.triggerBoxes).toEqual([
-      { x: 298.5, y: 493.5, w: 43, h: 13 },
-      { x: 98.5, y: 473.5, w: 63, h: 13 },
+    expect(UNDERLINE_WIDTH).toBe(1.5)
+    expect(UNDERLINE_DROP).toBe(1)
+    expect(t.underlines).toEqual([
+      { x1: 300, x2: 340, y: 494 },
+      { x1: 100, x2: 160, y: 474 },
     ])
+    // The boxes themselves are kept for the on-screen selected fill.
+    expect(t.triggerBoxes).toEqual(words)
     expect(t.tick).toBeNull()
   })
 
-  test('a left leader runs from the tag right edge to the highlight left edge at the tag bottom', () => {
+  test('a left connector runs from the tag to 2 points short of the first underline, at the tag centre', () => {
     const t = one(cue('a', { triggerBoxes: words }))
-    expect(t.leader).toEqual({ x1: expect.closeTo(t.tag.x + t.tag.w), x2: 298.5, y: 493 })
+    expect(LEADER_STOP).toBe(2)
+    expect(t.leader).toEqual({ x1: expect.closeTo(t.tag.x + t.tag.w), x2: 298, y: 500 })
   })
 
-  test('a right leader runs from the highlight right edge to the tag left edge', () => {
+  test('a right connector runs from 2 points past the underline end to the tag', () => {
     const t = one(cue('a', { side: 'right', triggerBoxes: words }))
-    expect(t.leader).toEqual({ x1: 341.5, x2: expect.closeTo(t.tag.x), y: 493 })
+    expect(t.leader).toEqual({ x1: 342, x2: expect.closeTo(t.tag.x), y: 500 })
   })
 
-  test('the leader joins the first highlight box, not a later line', () => {
+  test('the connector joins the first underline, not a later line', () => {
     const t = one(cue('a', { triggerBoxes: [words[1] as (typeof words)[number], ...words] }))
-    expect(t.leader?.x2).toBe(98.5)
+    expect(t.leader?.x2).toBe(98)
   })
 
-  test('no leader when the tag and the highlight already touch or overlap', () => {
+  test('no connector when the tag and the underline already meet or the gap is under the stop', () => {
     const near = { x: 20, y: 495, w: 40, h: 10 }
     expect(one(cue('a', { triggerBoxes: [near] })).leader).toBeNull()
     const nearRight = { x: WIDTH - 60, y: 495, w: 40, h: 10 }
     expect(one(cue('a', { side: 'right', triggerBoxes: [nearRight] })).leader).toBeNull()
-    // A highlight on the far side of the tag from the page edge is no leader either.
-    expect(one(cue('a', { triggerBoxes: [{ x: 6, y: 495, w: 10, h: 10 }] })).leader).toBeNull()
   })
 
-  test('an unbound cue has an 8 point tick at its anchor and a leader to it', () => {
+  test('an unbound cue has an 8 point tick at its anchor and a connector to it', () => {
     const t = one(cue('a', { anchorX: 250 }))
     expect(t.triggerBoxes).toEqual([])
+    expect(t.underlines).toEqual([])
     expect(t.tick).toEqual({ x: 250, y1: 496, y2: 504 })
-    expect(t.leader).toEqual({ x1: expect.closeTo(t.tag.x + t.tag.w), x2: 250, y: 493 })
+    expect(t.leader).toEqual({ x1: expect.closeTo(t.tag.x + t.tag.w), x2: 250, y: 500 })
     const r = one(cue('a', { side: 'right', anchorX: 250 }))
-    expect(r.leader).toEqual({ x1: 250, x2: expect.closeTo(r.tag.x), y: 493 })
-  })
-
-  test('a bound cue draws no tick', () => {
-    expect(one(cue('a', { triggerBoxes: words })).tick).toBeNull()
+    expect(r.leader).toEqual({ x1: 250, x2: expect.closeTo(r.tag.x), y: 500 })
   })
 })

@@ -64,3 +64,26 @@ export function helveticaWidth(text: string, size: number): number {
   for (const ch of text) units += advance(ch)
   return (units * size) / 1000
 }
+
+/** Helvetica-Bold advance widths (thousandths of an em) for ASCII 32 to 126, as in its AFM. */
+const BOLD_ASCII = [
+  278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556,
+  556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667,
+  611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667,
+  667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556,
+  278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
+]
+
+/**
+ * The width of `text` set in Helvetica-Bold at `size` points, unkerned. Cue numbers are digits and
+ * dots; anything outside ASCII is measured as in regular Helvetica, a close upper bound.
+ */
+export function helveticaBoldWidth(text: string, size: number): number {
+  let units = 0
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) ?? 0
+    units +=
+      cp >= 32 && cp <= 126 ? (BOLD_ASCII[cp - 32] as number) : (helveticaWidth(ch, 1000) as number)
+  }
+  return (units * size) / 1000
+}

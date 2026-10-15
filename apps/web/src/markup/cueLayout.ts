@@ -3,6 +3,7 @@ import {
   formatCueNumber,
   layoutCueTags,
   markerLead,
+  textExtent,
   wordBoxes,
 } from '@binder/core'
 import type { CueType, MarkerSide, TextAnchor, WordLayer } from '@binder/shared'
@@ -29,6 +30,7 @@ export function layoutPageCues(
 ): Map<string, CueTagLayout> {
   const layouts = layoutCueTags({
     pageWidth,
+    textExtent: textExtent(words),
     cues: cues.map((c) => {
       const department = c.department_id ?? ''
       const type = asType(c.type)
@@ -36,9 +38,10 @@ export function layoutPageCues(
         id: c.id,
         y: c.anchor.y,
         side: sideOf(department),
+        type,
         lead: markerLead(type, c.dept_code),
+        code: c.dept_code,
         number: formatCueNumber(c.major ?? 0, c.minor ?? 0, c.dept_number_format),
-        dash: type === 'standby',
         triggerBoxes: words && c.anchor.text ? wordBoxes(words, c.anchor.text) : [],
         anchorX: c.anchor.x,
         sortKey: { department: orderOf(department), major: c.major ?? 0, minor: c.minor ?? 0 },

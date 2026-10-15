@@ -68,6 +68,8 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const { peers } = usePresencePeers()
   const peerOn = useMemo(() => peerSelections(peers, session.versionId), [peers, session.versionId])
   const [ghost, setGhost] = useState<Ghost | null>(null)
+  /** The cue the pointer is over (its tag or its trigger words): its words fill lightly. */
+  const [hovered, setHovered] = useState<string | null>(null)
   /** The one drag in progress from this page: a cue marker, a shape, a handle, or a drawing. */
   const slot = useDragSlot()
   const root = useRef<SVGGElement>(null)
@@ -210,7 +212,11 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
               cue={cue}
               tag={tag}
               interactive={tool === 'select' && !rebind}
+              filled={
+                hovered === cue.id || (selection?.table === 'cues' && selection.id === cue.id)
+              }
               onActivate={() => select('cues', cue.id)}
+              onHover={(over) => setHovered((h) => (over ? cue.id : h === cue.id ? null : h))}
             />
           )
         )
@@ -262,6 +268,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
               movable={movable}
               onPointerDown={(e) => onMarkerDown(e, cue)}
               onActivate={() => select('cues', cue.id)}
+              onHover={(over) => setHovered((h) => (over ? cue.id : h === cue.id ? null : h))}
             />
           )
         )

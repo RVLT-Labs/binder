@@ -79,11 +79,13 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       y: 500,
       type: 'go',
       lead: 'LX',
+      code: 'LX',
       number: '10',
       colour: '#F5A623',
       side: 'left',
       sortKey: { department: 0, major: 10, minor: 0 },
       triggerBoxes: [],
+      textExtent: null,
     },
     {
       kind: 'cue',
@@ -93,11 +95,13 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       y: 300,
       type: 'standby',
       lead: 'SB LX',
+      code: 'LX',
       number: '14.5',
       colour: '#F5A623',
       side: 'left',
       sortKey: { department: 0, major: 14, minor: 50 },
       triggerBoxes: [],
+      textExtent: null,
     },
   ])
 })
@@ -238,4 +242,25 @@ test('a bound cue carries the word boxes of its trigger, one per line; unbound o
     { x: 50, y: 680, w: 40, h: 10 },
   ])
   expect(boxes.slice(1)).toEqual([[], [], []])
+})
+
+test("a cue carries its page's text block, so tags stay out of it", () => {
+  const layer: WordLayer = {
+    words: [
+      { t: 'one', x: 50, y: 700, w: 30, h: 10 },
+      { t: 'two', x: 90, y: 700, w: 480, h: 10 },
+    ],
+    lines: [[0, 1]],
+  }
+  const items = buildStampItems({
+    ...base,
+    wordLayers: new Map([[0, layer]]),
+    layers: [dept('d-lx')],
+    cues: [cue('a'), cue('b', { anchor: anchor({ pageIndex: 3 }) })],
+    annotations: [],
+  })
+  expect(items.map((i) => (i.kind === 'cue' ? i.textExtent : 'x'))).toEqual([
+    { minX: 50, maxX: 570 },
+    null,
+  ])
 })

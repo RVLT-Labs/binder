@@ -213,12 +213,11 @@ test("B sees A's avatar on page 3's thumbnail within 3s and an outline on the cu
         'SELECT colour FROM departments WHERE id = ?',
         [departments.LX],
       )
-      // The tag keeps its department colour: on its outline and its bar.
+      // The tag keeps its department colour: on its outline.
       await expect(bMarker.locator('rect.cue-tag-body')).toHaveAttribute(
         'stroke',
         deptColour.colour,
       )
-      await expect(bMarker.locator('rect.cue-tag-bar')).toHaveAttribute('fill', deptColour.colour)
       expect(deptColour.colour.toLowerCase()).not.toBe(colour)
       // Not focusable, and the marker under it is still B's to click.
       await expect(group.locator('[tabindex]')).toHaveCount(0)

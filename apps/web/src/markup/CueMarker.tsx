@@ -1,22 +1,19 @@
 import {
   type CueTagLayout,
   formatCueNumber,
-  GRIP_RADIUS,
-  HIGHLIGHT_OPACITY,
-  HIGHLIGHT_OUTLINE,
   LEADER_WIDTH,
-  markerLead,
   markerText,
+  SELECTED_FILL_OPACITY,
   TAG_FONT_SIZE,
-  TAG_OUTLINE,
   TAG_RADIUS,
+  UNDERLINE_WIDTH,
 } from '@binder/core'
 import type { CueType, NumberFormat } from '@binder/shared'
 import type { KeyboardEvent, PointerEventHandler } from 'react'
 import { SvgText } from './SvgText'
 
 const FONT_FAMILY = 'Helvetica, Arial, sans-serif'
-/** Tag text is dark so it reads on white whatever the department colour. */
+/** The number is dark bold ink; the code beside it is in the department colour. */
 const INK = '#111827'
 
 export interface MarkerCue {
@@ -41,6 +38,8 @@ export interface CueMarkerProps {
   onPointerDown?: PointerEventHandler<SVGGElement>
   /** Enter or Space on the focused tag: select it. */
   onActivate?: () => void
+  /** The pointer entered or left the tag: its trigger words fill while it is over. */
+  onHover?: (over: boolean) => void
 }
 
 const asType = (t: MarkerCue['type']): CueType => (t === 'standby' || t === 'warn' ? t : 'go')
@@ -72,23 +71,34 @@ export function focusCueMarker(id: string, frames = 30): void {
 export interface CueTriggerProps {
   cue: MarkerCue
   tag: CueTagLayout
-  /** The pointer selects the cue by its highlight; false while another tool is using the page. */
+  /** The pointer selects the cue by its words; false while another tool is using the page. */
   interactive: boolean
+  /** The cue is selected or hovered: its trigger words get a light fill (on screen only). */
+  filled?: boolean
   onActivate?: () => void
+  onHover?: (over: boolean) => void
 }
 
 /**
- * A cue's trigger on the page: its words highlighted (or a tick when unbound) and the leader that
- * joins them to the tag. Hidden from assistive technology, which has the tag; clicking the
- * highlight selects the cue. Drawn under the annotations so they stay clickable.
+ * A cue's trigger on the page: its words underlined in the department colour (or a tick when
+ * unbound) and the connector that joins them to the tag. Hidden from assistive technology, which
+ * has the tag; clicking the words selects the cue. Drawn under the annotations so they stay
+ * clickable.
  */
-export function CueTrigger({ cue, tag, interactive, onActivate }: CueTriggerProps) {
+export function CueTrigger({
+  cue,
+  tag,
+  interactive,
+  filled = false,
+  onActivate,
+  onHover,
+}: CueTriggerProps) {
   const colour = cue.dept_colour
   return (
     // biome-ignore lint/a11y/noAriaHiddenOnFocusable: a plain SVG group is never focusable
     <g className="cue-trigger" aria-hidden="true" data-cue-trigger={cue.id} pointerEvents="none">
       {tag.triggerBoxes.map((b, i) => (
-        // biome-ignore lint/a11y/noStaticElementInteractions: the highlight is a pointer shortcut to selecting the cue; the tag is the keyboard control
+        // biome-ignore lint/a11y/noStaticElementInteractions: the words are a pointer shortcut to selecting the cue; the tag is the keyboard control
         <rect
           // biome-ignore lint/suspicious/noArrayIndexKey: the boxes are positional, one per line
           key={i}
@@ -97,13 +107,25 @@ export function CueTrigger({ cue, tag, interactive, onActivate }: CueTriggerProp
           y={b.y}
           width={b.w}
           height={b.h}
-          rx={1}
           fill={colour}
-          fillOpacity={HIGHLIGHT_OPACITY}
-          stroke={colour}
-          strokeWidth={HIGHLIGHT_OUTLINE}
+          fillOpacity={filled ? SELECTED_FILL_OPACITY : 0}
           style={{ pointerEvents: interactive ? 'auto' : 'none', cursor: 'pointer' }}
           onClick={onActivate}
+          onPointerEnter={() => onHover?.(true)}
+          onPointerLeave={() => onHover?.(false)}
+        />
+      ))}
+      {tag.underlines.map((u, i) => (
+        <line
+          // biome-ignore lint/suspicious/noArrayIndexKey: the lines are positional, one per line of text
+          key={i}
+          className="cue-underline"
+          x1={u.x1}
+          x2={u.x2}
+          y1={u.y}
+          y2={u.y}
+          stroke={colour}
+          strokeWidth={UNDERLINE_WIDTH}
         />
       ))}
       {tag.tick && (
@@ -114,7 +136,7 @@ export function CueTrigger({ cue, tag, interactive, onActivate }: CueTriggerProp
           y1={tag.tick.y1}
           y2={tag.tick.y2}
           stroke={colour}
-          strokeWidth={LEADER_WIDTH * 1.5}
+          strokeWidth={UNDERLINE_WIDTH}
         />
       )}
       {tag.leader && (
@@ -133,8 +155,8 @@ export function CueTrigger({ cue, tag, interactive, onActivate }: CueTriggerProp
 }
 
 /**
- * A cue's tag on the page, in displayed space: an opaque white label in the margin with the
- * department colour on its outer edge, the department code, a divider and the number. It is the
+ * A cue's tag on the page, in displayed space: an opaque white pill in the margin outlined in the
+ * department colour, with the department code in that colour and the number in bold. It is the
  * focusable, labelled control; the cue's label is in its accessible name and hover title, never
  * drawn on the page.
  */
@@ -145,10 +167,10 @@ export function CueMarker({
   movable = false,
   onPointerDown,
   onActivate,
+  onHover,
 }: CueMarkerProps) {
-  const type = asType(cue.type)
   const colour = cue.dept_colour
-  const { tag: box, bar } = tag
+  const box = tag.tag
   return (
     // biome-ignore lint/a11y/useSemanticElements: an SVG marker cannot be an HTML <button>; it carries the button role, focus and keys itself
     <g
@@ -172,6 +194,8 @@ export function CueMarker({
         touchAction: movable ? 'none' : undefined,
       }}
       onPointerDown={onPointerDown}
+      onPointerEnter={() => onHover?.(true)}
+      onPointerLeave={() => onHover?.(false)}
     >
       <title>{[textOf(cue), cue.label].filter(Boolean).join(', ')}</title>
       {selected && (
@@ -181,6 +205,7 @@ export function CueMarker({
           y={box.y - 2}
           width={box.w + 4}
           height={box.h + 4}
+          rx={TAG_RADIUS + 2}
           fill="none"
           stroke="#111827"
           strokeWidth={1}
@@ -197,39 +222,22 @@ export function CueMarker({
         // Opaque white: the script never shows through the tag.
         fill="#fff"
         stroke={colour}
-        strokeWidth={TAG_OUTLINE}
+        strokeWidth={tag.outlineWidth}
         strokeDasharray={tag.dash ? '3 2' : undefined}
       />
-      <rect
-        className="cue-tag-bar"
-        x={bar.x}
-        y={bar.y}
-        width={bar.w}
-        height={bar.h}
-        fill={colour}
-      />
-      {tag.grips.map((g) => (
-        <circle key={g.y} className="cue-tag-grip" cx={g.x} cy={g.y} r={GRIP_RADIUS} fill="#fff" />
-      ))}
-      <rect
-        className="cue-tag-divider"
-        x={tag.divider.x}
-        y={tag.divider.y}
-        width={tag.divider.w}
-        height={tag.divider.h}
-        fill={colour}
-      />
-      <SvgText
-        className="cue-tag-lead"
-        x={tag.leadX}
-        y={tag.centreY}
-        fill={INK}
-        fontFamily={FONT_FAMILY}
-        fontSize={TAG_FONT_SIZE}
-        dominantBaseline="central"
-      >
-        {markerLead(type, cue.dept_code)}
-      </SvgText>
+      {tag.lead && (
+        <SvgText
+          className="cue-tag-lead"
+          x={tag.leadX}
+          y={tag.centreY}
+          fill={colour}
+          fontFamily={FONT_FAMILY}
+          fontSize={TAG_FONT_SIZE}
+          dominantBaseline="central"
+        >
+          {tag.lead}
+        </SvgText>
+      )}
       <SvgText
         className="cue-tag-number"
         x={tag.numberX}
@@ -237,9 +245,10 @@ export function CueMarker({
         fill={INK}
         fontFamily={FONT_FAMILY}
         fontSize={TAG_FONT_SIZE}
+        fontWeight={700}
         dominantBaseline="central"
       >
-        {formatCueNumber(cue.major ?? 0, cue.minor ?? 0, cue.dept_number_format)}
+        {tag.number}
       </SvgText>
     </g>
   )

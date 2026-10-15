@@ -32,27 +32,30 @@ export {
   unboundSnippet,
   wrapText,
 } from './markup/annotationLayout'
-export type { CueTagInput, CueTagLayout } from './markup/cueTags'
+export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
-  GRIP_RADIUS,
-  HIGHLIGHT_OPACITY,
-  HIGHLIGHT_OUTLINE,
-  HIGHLIGHT_PAD,
+  DEFAULT_MARGIN,
+  LEADER_STOP,
   LEADER_WIDTH,
   layoutCueTags,
-  TAG_BAR,
-  TAG_DIVIDER,
+  SELECTED_FILL_OPACITY,
   TAG_EDGE,
   TAG_FONT_SIZE,
   TAG_GAP,
   TAG_HEIGHT,
   TAG_OUTLINE,
+  TAG_OUTLINE_WARN,
   TAG_PAD,
   TAG_RADIUS,
+  TAG_TEXT_GAP,
+  TEXT_CLEARANCE,
   TICK_HEIGHT,
   tagWidth,
+  textExtent,
+  UNDERLINE_DROP,
+  UNDERLINE_WIDTH,
 } from './markup/cueTags'
-export { helveticaWidth } from './markup/helvetica'
+export { helveticaBoldWidth, helveticaWidth } from './markup/helvetica'
 export type { Box } from './markup/markers'
 export { markerLead, markerText } from './markup/markers'
 export { wordBoxes } from './markup/wordBoxes'

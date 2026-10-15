@@ -1,4 +1,4 @@
-import { type CueTagLayout, helveticaWidth } from '@binder/core'
+import { type CueTagLayout, helveticaBoldWidth, helveticaWidth } from '@binder/core'
 import type { WordLayer } from '@binder/shared'
 import { fireEvent, render } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
@@ -70,7 +70,7 @@ const draw = (
     </svg>,
   )
 
-test('a go marker is an opaque white tag in the margin with a coloured bar, the code, a divider and the number', () => {
+test('a go marker is an opaque white pill in the margin: the code in colour, the number in bold ink', () => {
   const { container } = draw(cue, tagOf(cue))
   const g = container.querySelector('[data-cue-id="c1"]') as SVGGElement
   expect(g.getAttribute('data-cue-label')).toBe('LX 10.5')
@@ -78,8 +78,10 @@ test('a go marker is an opaque white tag in the margin with a coloured bar, the 
   expect(body.getAttribute('x')).toBe('4')
   expect(body.getAttribute('y')).toBe('493')
   expect(body.getAttribute('height')).toBe('14')
+  // A pill: a radius of half the height.
+  expect(body.getAttribute('rx')).toBe('7')
   expect(Number(body.getAttribute('width'))).toBeCloseTo(
-    4 + 4 + helveticaWidth('LX', 9) + 4 + 0.75 + 4 + helveticaWidth('10.5', 9) + 4,
+    6 + helveticaWidth('LX', 9) + 3 + helveticaBoldWidth('10.5', 9) + 6,
   )
   // Opaque white, outlined 1 pt in the department colour, solid.
   expect(body.getAttribute('fill')).toBe('#fff')
@@ -87,15 +89,14 @@ test('a go marker is an opaque white tag in the margin with a coloured bar, the 
   expect(body.getAttribute('stroke')).toBe('#F5A623')
   expect(body.getAttribute('stroke-width')).toBe('1')
   expect(body.getAttribute('stroke-dasharray')).toBeNull()
-  const bar = g.querySelector('rect.cue-tag-bar') as SVGRectElement
-  expect(bar.getAttribute('fill')).toBe('#F5A623')
-  expect(bar.getAttribute('x')).toBe('4')
-  expect(bar.getAttribute('width')).toBe('4')
-  expect(g.querySelectorAll('circle.cue-tag-grip')).toHaveLength(3)
-  expect(g.querySelector('.cue-tag-divider')).not.toBeNull()
-  const texts = [...g.querySelectorAll('text')].map((t) => t.textContent)
-  // Only the code and number: the label is never drawn on the page.
-  expect(texts).toEqual(['LX', '10.5'])
+  // No edge bar, grip dots or divider.
+  expect(g.querySelector('.cue-tag-bar, .cue-tag-grip, .cue-tag-divider')).toBeNull()
+  const [lead, number] = [...g.querySelectorAll('text')]
+  expect([lead?.textContent, number?.textContent]).toEqual(['LX', '10.5'])
+  expect(lead?.getAttribute('fill')).toBe('#F5A623')
+  expect(number?.getAttribute('fill')).toBe('#111827')
+  expect(number?.getAttribute('font-weight')).toBe('700')
+  expect(lead?.getAttribute('font-weight')).toBeNull()
   expect(g.querySelector('.cue-marker-selection')).toBeNull()
 })
 
@@ -108,7 +109,7 @@ test('the cue label is in a title on the tag for hover, and not drawn as text', 
   )
 })
 
-test('standby is a dashed outline with the SB prefix, warn a solid one with W; selection is outlined', () => {
+test('standby is a dashed 1 pt outline with the SB prefix, warn a solid 1.5 pt one with W; selection is outlined', () => {
   const standby = { ...cue, type: 'standby' as const, label: '' }
   const { container } = draw(standby, tagOf(standby), { selected: true })
   const g = container.querySelector('[data-cue-id="c1"]') as SVGGElement
@@ -116,6 +117,7 @@ test('standby is a dashed outline with the SB prefix, warn a solid one with W; s
   const body = g.querySelector('rect.cue-tag-body') as SVGRectElement
   expect(body.getAttribute('fill')).toBe('#fff')
   expect(body.getAttribute('stroke-dasharray')).not.toBeNull()
+  expect(body.getAttribute('stroke-width')).toBe('1')
   expect([...g.querySelectorAll('text')].map((t) => t.textContent)).toEqual(['SB LX', '10.5'])
   expect(g.getAttribute('data-selected')).toBe('true')
   expect(g.querySelector('.cue-marker-selection')).not.toBeNull()
@@ -131,41 +133,70 @@ test('standby is a dashed outline with the SB prefix, warn a solid one with W; s
   ).container
   const wb = warn.querySelector('rect.cue-tag-body') as SVGRectElement
   expect(wb.getAttribute('stroke-dasharray')).toBeNull()
+  expect(wb.getAttribute('stroke-width')).toBe('1.5')
   expect([...warn.querySelectorAll('text')][0]?.textContent).toBe('W LX')
 })
 
-test('a right-side tag ends 4 points inside the right edge, its bar outermost', () => {
+test('a right-side tag ends 4 points inside the right edge', () => {
   const { container } = draw(cue, tagOf(cue, 'right'))
   const body = container.querySelector('rect.cue-tag-body') as SVGRectElement
   expect(Number(body.getAttribute('x')) + Number(body.getAttribute('width'))).toBeCloseTo(596)
-  const bar = container.querySelector('rect.cue-tag-bar') as SVGRectElement
-  expect(Number(bar.getAttribute('x')) + Number(bar.getAttribute('width'))).toBeCloseTo(596)
 })
 
-test('a bound cue highlights its trigger words and joins them to the tag with a leader, both hidden from assistive technology', () => {
+test('a bound cue underlines its trigger words and joins them to the tag with a connector, both hidden from assistive technology', () => {
   const { container } = draw(bound, tagOf(bound))
   const trigger = container.querySelector('.cue-trigger') as SVGGElement
   expect(trigger.getAttribute('aria-hidden')).toBe('true')
-  const highlights = [...trigger.querySelectorAll('rect.cue-highlight')]
-  expect(highlights).toHaveLength(1)
-  const h = highlights[0] as SVGRectElement
-  // "the hill" (224 to 276), padded 1.5.
-  expect(h.getAttribute('x')).toBe('222.5')
-  expect(h.getAttribute('width')).toBe('55')
-  expect(h.getAttribute('fill')).toBe('#F5A623')
-  expect(h.getAttribute('fill-opacity')).toBe('0.15')
-  expect(h.getAttribute('stroke')).toBe('#F5A623')
-  expect(h.getAttribute('stroke-width')).toBe('0.75')
+  const underlines = [...trigger.querySelectorAll('line.cue-underline')]
+  expect(underlines).toHaveLength(1)
+  const u = underlines[0] as SVGLineElement
+  // "the hill" (224 to 276), 1 pt under the word box's bottom edge (495).
+  expect(u.getAttribute('x1')).toBe('224')
+  expect(u.getAttribute('x2')).toBe('276')
+  expect(u.getAttribute('y1')).toBe('494')
+  expect(u.getAttribute('stroke')).toBe('#F5A623')
+  expect(u.getAttribute('stroke-width')).toBe('1.5')
   const leader = trigger.querySelector('line.cue-leader') as SVGLineElement
   expect(leader.getAttribute('stroke')).toBe('#F5A623')
-  expect(Number(leader.getAttribute('x2'))).toBeCloseTo(222.5)
-  expect(leader.getAttribute('y1')).toBe('493')
+  expect(Number(leader.getAttribute('x2'))).toBeCloseTo(222)
+  // Level with the tag's centre.
+  expect(leader.getAttribute('y1')).toBe('500')
   expect(trigger.querySelector('.cue-tick')).toBeNull()
+  // Not filled unless selected or hovered.
+  expect(trigger.querySelector('rect.cue-highlight')?.getAttribute('fill-opacity')).toBe('0')
 })
 
-test('an unbound cue has a tick at its anchor instead of a highlight', () => {
+test('a selected or hovered cue fills its trigger words with 10% of its colour', () => {
+  const tag = tagOf(bound)
+  const { container } = render(
+    <svg aria-label="Page 1 markup">
+      <CueTrigger cue={bound} tag={tag} interactive filled />
+    </svg>,
+  )
+  const h = container.querySelector('rect.cue-highlight') as SVGRectElement
+  expect(h.getAttribute('fill')).toBe('#F5A623')
+  expect(h.getAttribute('fill-opacity')).toBe('0.1')
+  expect(h.getAttribute('x')).toBe('224')
+  expect(h.getAttribute('width')).toBe('52')
+})
+
+test('hovering the trigger words reports the hover', () => {
+  const onHover = vi.fn()
+  const { container } = render(
+    <svg aria-label="Page 1 markup">
+      <CueTrigger cue={bound} tag={tagOf(bound)} interactive onHover={onHover} />
+    </svg>,
+  )
+  const h = container.querySelector('rect.cue-highlight') as SVGRectElement
+  fireEvent.pointerEnter(h)
+  fireEvent.pointerLeave(h)
+  expect(onHover.mock.calls).toEqual([[true], [false]])
+})
+
+test('an unbound cue has a tick at its anchor instead of an underline', () => {
   const { container } = draw(cue, tagOf(cue))
   const trigger = container.querySelector('.cue-trigger') as SVGGElement
+  expect(trigger.querySelector('line.cue-underline')).toBeNull()
   expect(trigger.querySelector('rect.cue-highlight')).toBeNull()
   const tick = trigger.querySelector('line.cue-tick') as SVGLineElement
   expect(tick.getAttribute('x1')).toBe('100')
@@ -174,7 +205,7 @@ test('an unbound cue has a tick at its anchor instead of a highlight', () => {
   expect(trigger.querySelector('line.cue-leader')).not.toBeNull()
 })
 
-test('clicking the highlight selects the cue; with another tool it does not take the pointer', () => {
+test('clicking the trigger words selects the cue; with another tool they do not take the pointer', () => {
   const onActivate = vi.fn()
   const tag = tagOf(bound)
   const { container, rerender } = render(
@@ -182,10 +213,10 @@ test('clicking the highlight selects the cue; with another tool it does not take
       <CueTrigger cue={bound} tag={tag} interactive onActivate={onActivate} />
     </svg>,
   )
-  const highlight = container.querySelector('rect.cue-highlight') as SVGRectElement
-  fireEvent.click(highlight)
+  const words = container.querySelector('rect.cue-highlight') as SVGRectElement
+  fireEvent.click(words)
   expect(onActivate).toHaveBeenCalledOnce()
-  expect(highlight.style.pointerEvents).toBe('auto')
+  expect(words.style.pointerEvents).toBe('auto')
   rerender(
     <svg aria-label="Page 1 markup">
       <CueTrigger cue={bound} tag={tag} interactive={false} onActivate={onActivate} />
@@ -229,7 +260,42 @@ test('Enter and Space activate a focused marker; other keys do not', () => {
   expect(onActivate).toHaveBeenCalledTimes(2)
 })
 
-test('only the tag is a button: the highlight and leader are not in the accessibility tree', () => {
+test('only the tag is a button: the underline and connector are not in the accessibility tree', () => {
   const { getAllByRole } = draw(bound, tagOf(bound))
   expect(getAllByRole('button')).toHaveLength(1)
+})
+
+test('in a narrow margin a standby tag sheds its SB prefix and then its code, never its number', () => {
+  const standby: LayoutCue = { ...cue, type: 'standby', label: '' }
+  // The text block starts at x 62: room for "LX 10.5" (about 42 wide) but not "SB LX 10.5".
+  const narrow = (minX: number): WordLayer => ({
+    words: [{ t: 'a', x: minX, y: 495, w: 20, h: 10 }],
+    lines: [[0]],
+  })
+  const render1 = (minX: number) => {
+    const tag = layoutPageCues(
+      [standby],
+      narrow(minX),
+      600,
+      () => 'left',
+      () => 0,
+    ).get('c1')
+    if (!tag) throw new Error('no layout')
+    return draw(standby, tag).container
+  }
+  const prefix = render1(62)
+  expect([...prefix.querySelectorAll('[data-cue-id] text')].map((t) => t.textContent)).toEqual([
+    'LX',
+    '10.5',
+  ])
+  // The dashed outline still says standby.
+  expect(prefix.querySelector('rect.cue-tag-body')?.getAttribute('stroke-dasharray')).not.toBeNull()
+  const numberOnly = render1(36)
+  expect([...numberOnly.querySelectorAll('[data-cue-id] text')].map((t) => t.textContent)).toEqual([
+    '10.5',
+  ])
+  // The accessible name still carries the full text.
+  expect(numberOnly.querySelector('[data-cue-id]')?.getAttribute('aria-label')).toBe(
+    'SB LX 10.5, page 1',
+  )
 })

@@ -223,8 +223,8 @@ export async function runPrintExport(
     })
   }
 
-  // Word layers matter only for what is drawn from the words: a highlight's rectangles and a
-  // cue's trigger highlight. Only the pages with a selected one need theirs. Without them a
+  // Word layers matter only for what is drawn from the words: a highlight's rectangles, a
+  // cue's trigger highlight and its page's margins. Only the pages with a selected one need theirs. Without them a
   // highlight prints as its quote and a cue's trigger as a tick.
   const picked = new Set(layers.map(layerKey))
   const highlightPages = new Set(
@@ -238,10 +238,10 @@ export async function runPrintExport(
       .map((a) => a.anchor.pageIndex),
   )
   for (const c of cues) {
+    // Every page with a selected cue: its words give the trigger boxes and the text block the
+    // tags keep out of.
     if (
       c.anchor?.documentVersionId === input.versionId &&
-      c.anchor.text &&
-      c.anchor.text.wordStart >= 0 &&
       picked.has(layerKey({ kind: 'department', id: c.departmentId }))
     )
       highlightPages.add(c.anchor.pageIndex)

@@ -30,14 +30,11 @@ import {
 import {
   type CueTagInput,
   type CueTagLayout,
-  GRIP_RADIUS,
-  HIGHLIGHT_OPACITY,
-  HIGHLIGHT_OUTLINE,
   LEADER_WIDTH,
   layoutCueTags,
   TAG_FONT_SIZE,
-  TAG_OUTLINE,
   TAG_RADIUS,
+  UNDERLINE_WIDTH,
 } from '../markup/cueTags'
 import { helveticaWidth } from '../markup/helvetica'
 import { type FooterInfo, footerText } from './footer'
@@ -128,12 +125,20 @@ class DisplayedPage {
     private readonly page: PDFPage,
     private readonly frame: PageFrame,
     private readonly font: PDFFont,
+    private readonly boldFont: PDFFont,
   ) {
     this.turn = degrees(frame.rotation)
   }
 
   /** Text whose baseline starts at displayed (x, y), reading upright on the displayed page. */
-  text(s: string, x: number, y: number, size: number, colour: ReturnType<typeof rgb>) {
+  text(
+    s: string,
+    x: number,
+    y: number,
+    size: number,
+    colour: ReturnType<typeof rgb>,
+    bold = false,
+  ) {
     const text = toWinAnsi(s)
     if (!text) return
     const p = displayedToUser(this.frame, x, y)
@@ -141,15 +146,22 @@ class DisplayedPage {
       x: p.x,
       y: p.y,
       size,
-      font: this.font,
+      font: bold ? this.boldFont : this.font,
       color: colour,
       rotate: this.turn,
     })
   }
 
   /** Text centred vertically on displayed y, as the on-screen markers set theirs. */
-  centredText(s: string, x: number, y: number, size: number, colour: ReturnType<typeof rgb>) {
-    this.text(s, x, y - size * BASELINE_DROP, size, colour)
+  centredText(
+    s: string,
+    x: number,
+    y: number,
+    size: number,
+    colour: ReturnType<typeof rgb>,
+    bold = false,
+  ) {
+    this.text(s, x, y - size * BASELINE_DROP, size, colour, bold)
   }
 
   /** An axis-aligned rectangle in displayed space with its lower-left corner at (x, y). */
@@ -286,67 +298,50 @@ class DisplayedPage {
 type CueItem = Extract<StampItem, { kind: 'cue' }>
 
 /**
- * The cues of one page, laid out together so crowded tags step aside. Highlights and leaders go
- * down first, then the opaque tags, so a tag is never crossed by another cue's leader or highlight.
+ * The cues of one page, laid out together so crowded tags stack. Underlines and connectors go down
+ * first, then the opaque tags, so a tag is never crossed by another cue's connector. Print never
+ * fills the trigger words: the script stays as it was, underlined.
  */
 function drawCues(d: DisplayedPage, pageWidth: number, items: CueItem[]) {
+  const extent = items.find((c) => c.textExtent)?.textExtent ?? null
   const inputs: CueTagInput[] = items.map((c) => ({
     id: c.id,
     y: c.y,
     side: c.side,
+    type: c.type,
     lead: toWinAnsi(c.lead),
+    code: toWinAnsi(c.code),
     number: toWinAnsi(c.number),
-    dash: c.type === 'standby',
     triggerBoxes: c.triggerBoxes,
     anchorX: c.x,
     sortKey: c.sortKey,
   }))
-  const layouts = layoutCueTags({ pageWidth, cues: inputs })
+  const layouts = layoutCueTags({ pageWidth, textExtent: extent, cues: inputs })
   const parts = layouts.map((layout, i) => ({
     layout,
-    input: inputs[i] as CueTagInput,
     colour: colourOf((items[i] as CueItem).colour),
   }))
   for (const { layout, colour } of parts) drawTrigger(d, layout, colour)
-  for (const { layout, colour } of parts) drawLeader(d, layout, colour)
-  for (const { layout, input, colour } of parts) drawTag(d, layout, input, colour)
+  for (const { layout, colour } of parts) drawTag(d, layout, colour)
 }
 
 function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
-  for (const b of t.triggerBoxes) {
-    d.rect(b.x, b.y, b.w, b.h, {
-      fill: colour,
-      fillOpacity: HIGHLIGHT_OPACITY,
-      stroke: colour,
-      strokeWidth: HIGHLIGHT_OUTLINE,
-    })
-  }
-  if (t.tick) d.line(t.tick.x, t.tick.y1, t.tick.x, t.tick.y2, colour, LEADER_WIDTH * 1.5)
-}
-
-function drawLeader(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
+  for (const u of t.underlines) d.line(u.x1, u.y, u.x2, u.y, colour, UNDERLINE_WIDTH)
+  if (t.tick) d.line(t.tick.x, t.tick.y1, t.tick.x, t.tick.y2, colour, UNDERLINE_WIDTH)
   if (t.leader) d.line(t.leader.x1, t.leader.y, t.leader.x2, t.leader.y, colour, LEADER_WIDTH)
 }
 
-function drawTag(
-  d: DisplayedPage,
-  t: CueTagLayout,
-  input: CueTagInput,
-  colour: ReturnType<typeof rgb>,
-) {
-  const { tag, bar } = t
-  // An opaque white body, so the script never shows through, then the bar, grip dots and divider.
-  d.roundedRect(tag.x, tag.y, tag.w, tag.h, TAG_RADIUS, { fill: WHITE })
-  d.rect(bar.x, bar.y, bar.w, bar.h, { fill: colour })
-  for (const g of t.grips) d.dot(g.x, g.y, GRIP_RADIUS, WHITE)
-  d.rect(t.divider.x, t.divider.y, t.divider.w, t.divider.h, { fill: colour })
-  d.centredText(input.lead, t.leadX, t.centreY, TAG_FONT_SIZE, INK)
-  d.centredText(input.number, t.numberX, t.centreY, TAG_FONT_SIZE, INK)
+function drawTag(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
+  const { tag } = t
+  // An opaque white pill outlined in the department colour: the script never shows through.
   d.roundedRect(tag.x, tag.y, tag.w, tag.h, TAG_RADIUS, {
+    fill: WHITE,
     stroke: colour,
-    strokeWidth: TAG_OUTLINE,
+    strokeWidth: t.outlineWidth,
     dash: t.dash ? [3, 2] : undefined,
   })
+  if (t.lead) d.centredText(t.lead, t.leadX, t.centreY, TAG_FONT_SIZE, colour)
+  d.centredText(t.number, t.numberX, t.centreY, TAG_FONT_SIZE, INK, true)
 }
 
 function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'annotation' }>) {
@@ -439,8 +434,9 @@ export async function stampScript(
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdf, { updateMetadata: false })
   const font = await doc.embedFont(StandardFonts.Helvetica)
+  const boldFont = await doc.embedFont(StandardFonts.HelveticaBold)
   const pages = doc.getPages()
-  const drawers = pages.map((page) => new DisplayedPage(page, frameOf(page), font))
+  const drawers = pages.map((page) => new DisplayedPage(page, frameOf(page), font, boldFont))
 
   const cuesByPage = new Map<number, CueItem[]>()
   for (const item of items) {

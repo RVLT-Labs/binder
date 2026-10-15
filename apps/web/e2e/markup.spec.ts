@@ -113,10 +113,10 @@ test('A places an LX cue snapped to a line on page 1 and B sees it within 5s', a
     // Upright text centred on the line: the line's centre falls inside the text's box.
     expect(box?.y ?? 0).toBeLessThan(lineTop.y)
     expect((box?.y ?? 0) + (box?.height ?? 0)).toBeGreaterThan(lineTop.y)
-    // The tag sits in the left margin, clear of the line's words, which are highlighted instead.
+    // The tag sits in the left margin, clear of the line's words, which are underlined instead.
     const tagBox = await bMarker.locator('rect.cue-tag-body').boundingBox()
     expect((tagBox?.x ?? 0) + (tagBox?.width ?? 0)).toBeLessThan(lineTop.x)
-    await expect(b.page.locator(`[data-cue-trigger="${id}"] rect.cue-highlight`)).toHaveCount(1)
+    await expect(b.page.locator(`[data-cue-trigger="${id}"] line.cue-underline`)).toHaveCount(1)
 
     // Editing the label in A's editor reaches B's marker, in its name and hover title.
     await editor.getByLabel('Label').fill('Sunrise')
@@ -141,7 +141,9 @@ test('A places an LX cue snapped to a line on page 1 and B sees it within 5s', a
     await numberField.press('Enter')
     await expect(editor.getByRole('alert')).toHaveCount(0)
     await expect(editor.getByRole('heading')).toHaveText('LX 10.5')
-    await expect(bMarker.locator('text')).toHaveText(['LX', '10.5'], { timeout: 5_000 })
+    // The wider number no longer fits this page's narrow margin beside the code, so the tag sheds
+    // the code (the name and the colour still say LX) and never enters the text.
+    await expect(bMarker.locator('text').last()).toHaveText('10.5', { timeout: 5_000 })
     const renumbered = await localCue(b.page, id)
     expect([renumbered?.major, renumbered?.minor]).toEqual([10, 50])
     await expect(
@@ -283,10 +285,9 @@ test("an owner sets SND to the right and an SND cue's tag renders in the right m
       expect(sheet.x + sheet.width - (tag.x + tag.width)).toBeLessThan(6 * zoom)
       expect(sheet.x + sheet.width - (tag.x + tag.width)).toBeGreaterThan(2 * zoom)
 
-      // Its leader runs from the highlighted words out to the tag: the near edge of the highlight
-      // is left of the tag.
+      // Its connector runs from the underlined words out to the tag: the underline ends left of the tag.
       const highlight = await b.page
-        .locator(`[data-cue-trigger="${id}"] rect.cue-highlight`)
+        .locator(`[data-cue-trigger="${id}"] line.cue-underline`)
         .first()
         .boundingBox()
       expect((highlight?.x ?? 0) + (highlight?.width ?? 0)).toBeLessThan(tag.x)

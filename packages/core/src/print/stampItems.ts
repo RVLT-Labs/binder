@@ -14,6 +14,7 @@ import {
 } from '@binder/shared'
 import { formatCueNumber } from '../cues/numbering'
 import { DEFAULT_NOTE_FONT, DEFAULT_STAMP_FONT, DEFAULT_STROKE } from '../markup/annotationLayout'
+import { type TextExtent, textExtent } from '../markup/cueTags'
 import { type Box, markerLead } from '../markup/markers'
 import { wordBoxes } from '../markup/wordBoxes'
 
@@ -30,6 +31,8 @@ export type StampItem =
       type: CueType
       /** The department half of the tag (`LX`, `SB LX`, `W LX`) and the formatted cue number. */
       lead: string
+      /** The department code alone: what the lead shrinks to in a narrow margin. */
+      code: string
       number: string
       colour: string
       /** The page margin the department's tags sit in. */
@@ -38,6 +41,8 @@ export type StampItem =
       sortKey: { department: number; major: number; minor: number }
       /** The trigger words' boxes, one per line; empty when unbound or the page's words are unknown. */
       triggerBoxes: Box[]
+      /** The page's text block, which tags stay out of; null when its words are unknown. */
+      textExtent: TextExtent | null
     }
   | {
       kind: 'annotation'
@@ -129,11 +134,13 @@ export function buildStampItems(input: StampInput): StampItem[] {
       y: c.anchor.y,
       type: c.type,
       lead: markerLead(c.type, dept.code),
+      code: dept.code,
       number: formatCueNumber(c.major, c.minor, dept.numberFormat),
       colour: dept.colour,
       side: markerSide(input.settings, dept.id),
       sortKey: { department: dept.sortOrder, major: c.major, minor: c.minor },
       triggerBoxes: words && c.anchor.text ? wordBoxes(words, c.anchor.text) : [],
+      textExtent: textExtent(words),
     })
   }
   return items

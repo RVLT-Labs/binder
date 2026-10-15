@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { describe, expect, test } from 'vitest'
-import { helveticaWidth } from './helvetica'
+import { helveticaBoldWidth, helveticaWidth } from './helvetica'
 
 test('Helvetica widths follow the AFM: "LX 10" at 10 pt', () => {
   // L 556 + X 667 + space 278 + 1 556 + 0 556 = 2613 thousandths of an em.
@@ -59,4 +59,22 @@ describe('beyond ASCII', () => {
   })
 
   test('anything else keeps the 556 default', () => expect(helveticaWidth('東', 1000)).toBe(556))
+})
+
+describe("Helvetica-Bold agrees with pdf-lib's StandardFonts.HelveticaBold at 9 pt", () => {
+  const font = PDFDocument.create().then((d) => d.embedFont(StandardFonts.HelveticaBold))
+
+  test('every printable ASCII character', async () => {
+    const f = await font
+    for (let c = 32; c < 127; c++) {
+      const ch = String.fromCharCode(c)
+      expect(helveticaBoldWidth(ch, 9), ch).toBeCloseTo(f.widthOfTextAtSize(ch, 9), 6)
+    }
+  })
+
+  test('a cue number: 12.50 at 9 pt is five glyphs of the bold table', () => {
+    // 4 digits at 556 and a dot at 278.
+    expect(helveticaBoldWidth('12.50', 9)).toBeCloseTo(((556 * 4 + 278) * 9) / 1000)
+    expect(helveticaBoldWidth('', 9)).toBe(0)
+  })
 })

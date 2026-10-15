@@ -62,11 +62,13 @@ const cueAt = (
   y,
   type: 'go',
   lead,
+  code: lead.split(' ').at(-1) ?? lead,
   number,
   colour: AMBER,
   side: 'left',
   sortKey: { department: 0, major: Number.parseInt(number, 10) || 0, minor: 0 },
   triggerBoxes: [],
+  textExtent: null,
   ...over,
 })
 
@@ -157,18 +159,19 @@ async function bboxWords(pdf: Uint8Array, pageIndex: number): Promise<BBoxWord[]
   }))
 }
 
-/** The RGB of the pixel at displayed (x, y from the top) when the page is drawn at 72 dpi. */
-async function pixelAt(pdf: Uint8Array, pageIndex: number, x: number, y: number) {
+/** The RGB of the pixel at displayed (x, y from the top, in points) when the page is drawn at `dpi`. */
+async function pixelAt(pdf: Uint8Array, pageIndex: number, x: number, y: number, dpi = 72) {
   const path = await tmpPdf(pdf)
   const p = String(pageIndex + 1)
-  const { stdout } = (await run('pdftoppm', ['-r', '72', '-f', p, '-l', p, path], {
+  const { stdout } = (await run('pdftoppm', ['-r', String(dpi), '-f', p, '-l', p, path], {
     encoding: 'buffer',
     maxBuffer: 64 * 1024 * 1024,
   })) as { stdout: Buffer }
   const header = /^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(stdout.subarray(0, 40).toString('latin1'))
   if (!header) throw new Error('pdftoppm gave no PPM')
   const width = Number(header[1])
-  const at = header[0].length + (Math.round(y) * width + Math.round(x)) * 3
+  const k = dpi / 72
+  const at = header[0].length + (Math.round(y * k) * width + Math.round(x * k)) * 3
   return [stdout[at], stdout[at + 1], stdout[at + 2]] as number[]
 }
 
@@ -201,7 +204,7 @@ describe.skipIf(skip)('print stamping with poppler', () => {
     expect(ten.xMin).toBeGreaterThan(lx.xMax)
     expect(Math.abs(ten.yMin - lx.yMin)).toBeLessThan(2)
     // The tag is in the left margin (bar 4 + padding 4 in from x = 4) and level with y = 72.
-    expect(lx.xMin).toBeCloseTo(12, 0)
+    expect(lx.xMin).toBeCloseTo(10, 0)
     expect((lx.yMin + lx.yMax) / 2).toBeCloseTo(72, -0.5)
   })
 
@@ -212,13 +215,14 @@ describe.skipIf(skip)('print stamping with poppler', () => {
     const word = (await bboxWords(out, 0)).find((w) => w.t === 'LX')
     if (!word) throw new Error('the tag text is not in the text layer')
     expect(word.xMin).toBeLessThan(0.25 * width)
-    expect(word.xMin).toBeCloseTo(12, 0)
-    // The tag's colour bar is where the displayed coordinates say, in the rendered page too.
-    expect(near(await pixelAt(out, 0, 7, 72 + 5), AMBER)).toBe(true)
+    expect(word.xMin).toBeCloseTo(10, 0)
+    // The pill's outline is where the displayed coordinates say, in the rendered page too: its top
+    // edge, 7 points above the cue's y, in the department colour (drawn at 288 dpi).
+    expect(near(await pixelAt(out, 0, 24, 72 - 7, 288), AMBER, 20)).toBe(true)
   })
 
   test.each([0, 90, 180, 270])(
-    'at /Rotate %i the tag is upright in the left margin, the highlight and bar where they belong',
+    'at /Rotate %i the tag is upright in the left margin, the underline and pill where they belong',
     async (rot) => {
       const src = await blankPage(rot)
       const { width, height } = (await pageSizes(src))[0] as PageInfo
@@ -235,15 +239,18 @@ describe.skipIf(skip)('print stamping with poppler', () => {
       const lx = words.find((w) => w.t === 'LX')
       const ten = words.find((w) => w.t === '10')
       if (!lx || !ten) throw new Error('the tag is not in the text layer')
-      expect(lx.xMin).toBeCloseTo(12, 0)
+      expect(lx.xMin).toBeCloseTo(10, 0)
       expect((lx.yMin + lx.yMax) / 2).toBeCloseTo(72, -0.5)
       expect(ten.xMin).toBeGreaterThan(lx.xMax)
       expect(Math.abs(ten.yMin - lx.yMin)).toBeLessThan(2)
-      expect(near(await pixelAt(out, 0, 7, 72 + 5), AMBER)).toBe(true)
-      // The highlight is 15% amber over white, over the box the trigger words occupy.
-      expect(near(await pixelAt(out, 0, 230, 72), '#FDF2DE', 8)).toBe(true)
-      // Beyond the highlight the page is still white.
-      expect(near(await pixelAt(out, 0, 300, 72), '#FFFFFF', 2)).toBe(true)
+      expect(near(await pixelAt(out, 0, 24, 72 - 7, 288), AMBER, 20)).toBe(true)
+      // The trigger words (a box 67 to 77 down) are underlined 1 pt below it, 1.5 pt thick...
+      expect(near(await pixelAt(out, 0, 230, 78, 288), AMBER, 20)).toBe(true)
+      // ...and never filled: the words' own area and the page beyond them stay white.
+      expect(near(await pixelAt(out, 0, 230, 72, 288), '#FFFFFF', 2)).toBe(true)
+      expect(near(await pixelAt(out, 0, 300, 78, 288), '#FFFFFF', 2)).toBe(true)
+      // The connector runs level with the tag centre from the pill to the underline.
+      expect(near(await pixelAt(out, 0, 120, 72, 288), AMBER, 20)).toBe(true)
       // The footer sits 24 pt in and 12 pt above the displayed bottom edge.
       const first = words.find((w) => w.t === 'Pirates')
       expect(first?.xMin).toBeCloseTo(24, 0)
@@ -314,6 +321,47 @@ describe.skipIf(skip)('print stamping with poppler', () => {
       }
     })
 
+    test('wide and crowded tags stay out of the text block: they shrink and stack in the margin', async () => {
+      const { src, info, words, line, box, y } = await midLine()
+      const extent = {
+        minX: Math.min(...words.map((w) => w.xMin)),
+        maxX: Math.max(...words.map((w) => w.xMax)),
+      }
+      const at = (over: Partial<Extract<StampItem, { kind: 'cue' }>>, lead: string, n: string) =>
+        cueAt(0, box.x, y, lead, n, { triggerBoxes: [box], textExtent: extent, ...over })
+      const out = await stampScript(
+        src,
+        [
+          at({ type: 'standby' }, 'SB LX', '11'),
+          at(
+            { colour: '#9B51E0', type: 'warn', sortKey: { department: 20, major: 12, minor: 50 } },
+            'W TM',
+            '12.50',
+          ),
+          at({ side: 'right', colour: '#4A90E2' }, 'SND', '20'),
+        ],
+        footer,
+      )
+      const after = await bboxWords(out, 0)
+      const before = new Set(words.map((w) => `${w.t}@${Math.round(w.xMin)},${Math.round(w.yMin)}`))
+      const stamped = after.filter(
+        (w) =>
+          !before.has(`${w.t}@${Math.round(w.xMin)},${Math.round(w.yMin)}`) &&
+          !/·/.test(w.t) &&
+          w.yMin < info.height - 20,
+      )
+      const tagWords = stamped.filter((w) => ['LX', 'TM', '11', '12.50', 'SND', '20'].includes(w.t))
+      expect(tagWords.length).toBeGreaterThanOrEqual(4)
+      for (const t of tagWords) {
+        const left = t.xMax <= extent.minX
+        const right = t.xMin >= extent.maxX
+        expect(left || right, `${t.t} at ${t.xMin}-${t.xMax} is in the margin`).toBe(true)
+      }
+      // The script itself is untouched.
+      expect(line.length).toBeGreaterThan(0)
+      for (const w of words) expect(after.some((a) => a.t === w.t)).toBe(true)
+    })
+
     test('a right-side department stamps its tag in the right margin', async () => {
       const { src, info, trigger, box, y } = await midLine()
       const out = await stampScript(
@@ -349,7 +397,7 @@ describe.skipIf(skip)('print stamping with poppler', () => {
       const twelve = words.find((w) => w.t === '12')
       if (!lx || !twelve) throw new Error('the tag text is not in the text layer')
       expect(lx.xMax).toBeLessThan(200)
-      expect(lx.xMin).toBeCloseTo(12, 0)
+      expect(lx.xMin).toBeCloseTo(10, 0)
       expect((lx.yMin + lx.yMax) / 2).toBeCloseTo(info.height - 300, -0.5)
       expect(twelve.xMin).toBeGreaterThan(lx.xMax)
       expect(Math.abs(twelve.yMin - lx.yMin)).toBeLessThan(2)
@@ -381,7 +429,11 @@ describe.skipIf(skip)('print stamping with poppler', () => {
 
   test('a lead outside WinAnsi stamps with question marks instead of throwing', async () => {
     const src = await read(FIXTURES.librettoPdf)
-    const out = await stampScript(src, [cueAt(0, 72, 700, 'Ça ✓ 東京', '10')], footer)
+    const out = await stampScript(
+      src,
+      [cueAt(0, 72, 700, 'Ça ✓ 東京', '10', { textExtent: { minX: 300, maxX: 500 } })],
+      footer,
+    )
     expect(await pdftotext(out, 0)).toContain('Ça ? ??')
   })
 
@@ -420,8 +472,11 @@ describe.skipIf(skip)('print stamping with poppler', () => {
           wordBoxes: [{ x: 100, y: 400, w: 80, h: 10 }],
         }),
         annotationAt('highlight', { ...at, y: 450, x: 100, text: 'an unbound highlight quote' }),
-        cueAt(1, 100, 350, 'SB LX', '10', { type: 'standby' }),
-        cueAt(1, 100, 380, 'W LX', '11', { type: 'warn' }),
+        cueAt(1, 100, 350, 'SB LX', '10', {
+          type: 'standby',
+          textExtent: { minX: 300, maxX: 600 },
+        }),
+        cueAt(1, 100, 380, 'W LX', '11', { type: 'warn', textExtent: { minX: 300, maxX: 600 } }),
       ],
       footer,
     )
