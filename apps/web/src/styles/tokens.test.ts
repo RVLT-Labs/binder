@@ -25,9 +25,18 @@ test('the @theme inline block maps the tokens to Tailwind utilities', () => {
     '--color-page:',
     '--color-page-ink:',
     '--font-mono:',
-    '--font-disp:',
     '--shadow-card:',
   ]) {
     expect(theme).toContain(mapping)
   }
+})
+
+test('Flow component class names resolve unchanged: font-display and the cream variant', () => {
+  const theme = tokens.slice(tokens.indexOf('@theme inline'))
+  expect(theme).toContain('--font-display:')
+  expect(theme).not.toContain('--font-disp:')
+  expect(theme).toContain('--color-cream: var(--cream)')
+  expect(theme).toContain('--color-cream-ink: var(--cream-ink)')
+  expect(tokens).toContain('--sh-cream:')
+  expect(tokens).toContain('--sh-cream-press:')
 })

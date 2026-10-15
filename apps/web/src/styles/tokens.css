@@ -5,7 +5,7 @@
  * Binder tokens. Chrome tokens are RVLT Flow's generated theme (espresso dark by
  * default, .light = Paper, opt-in) from ~/rvltflow/gearflow/src/app/globals.css,
  * minus Flow-only tokens Binder has no use for (warehouse display, gaff tape,
- * cream). The page and department tokens are Binder's own (DESIGN.md 4.2-4.3).
+ * wordmark font, accordion keyframes). The page and department tokens are Binder's own (DESIGN.md 4.2-4.3).
  * Tailwind v4: direct hex / var() aliases, mapped to utilities in @theme inline.
  * -------------------------------------------------------------------------- */
 
@@ -88,7 +88,11 @@
   --destructive-foreground: #fff;
   --input: var(--border);
   --ring: var(--red);
+  --cream: #f5efe2;
+  --cream-ink: #1d1a15;
   --sh-halo: 0 3px 0 var(--red-700), 0 0 28px rgba(224, 54, 61, 0.5);
+  --sh-cream: 0 3px 0 rgba(0, 0, 0, 0.25);
+  --sh-cream-press: 0 1px 0 rgba(0, 0, 0, 0.25);
   /* === sidebar (app shell rail) — references semantic vars so it follows .light ===
      The RVLT theme.json omits these; the app shell (shadcn sidebar) needs them.
      var() resolves at the consuming element, so .light overrides flow through. */
@@ -179,6 +183,8 @@
   --color-teal: var(--teal);
   --color-pink: var(--pink);
   --color-lime: var(--lime);
+  --color-cream: var(--cream);
+  --color-cream-ink: var(--cream-ink);
   --color-dark: var(--dark);
   --color-link: var(--link);
   --color-red-soft: var(--red-soft);
@@ -247,7 +253,7 @@
   --text-badge: 0.6875rem;
   --text-button: 0.875rem;
   /* fonts */
-  --font-disp: "Archivo", sans-serif;
+  --font-display: "Archivo", sans-serif;
   --font-sans: "Hanken Grotesk", system-ui, sans-serif;
   --font-hand: "Kalam", cursive;
   --font-mono: "Geist Mono", ui-monospace, monospace;
