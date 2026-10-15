@@ -52,7 +52,7 @@ test('a cue created offline uploads on reconnect and reaches the other user', as
   try {
     const a = await open(browser, 'owner', contexts)
     const b = await open(browser, 'sndEditor', contexts)
-    await expect(a.page.getByLabel('Sync status')).toHaveText('Connected', { timeout: 20_000 })
+    await expect(a.page.getByLabel('Sync status')).toHaveText('Synced', { timeout: 20_000 })
 
     const id = randomUUID()
     await a.context.setOffline(true)
@@ -80,7 +80,7 @@ test('a cue created offline uploads on reconnect and reaches the other user', as
       id,
     )
     expect(row).toEqual({ label: 'Offline sunrise', major: 21, department_id: departments.LX })
-    await expect(a.page.getByLabel('Sync status')).toHaveText('Connected', { timeout: 10_000 })
+    await expect(a.page.getByLabel('Sync status')).toHaveText('Synced', { timeout: 10_000 })
   } finally {
     for (const context of contexts) await context.close()
   }

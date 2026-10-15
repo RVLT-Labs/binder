@@ -99,11 +99,6 @@ function CueListPage() {
   if (!current) {
     return (
       <>
-        <p>
-          <Link to="/shows/$showId" params={{ showId }}>
-            ← Show
-          </Link>
-        </p>
         <h1>Cue list</h1>
         <p>This show has no departments yet.</p>
       </>
@@ -112,11 +107,6 @@ function CueListPage() {
 
   return (
     <>
-      <p>
-        <Link to="/shows/$showId" params={{ showId }}>
-          ← Show
-        </Link>
-      </p>
       <h1>{current.code} cue list</h1>
       <nav aria-label="Departments" className="cue-list-departments">
         {visible.map((d) => (

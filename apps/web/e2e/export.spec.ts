@@ -13,6 +13,7 @@ import {
   test,
 } from '@playwright/test'
 import { API_URL, APP_URL, readRun, storageStateFor, type UserKey } from './env'
+import { railLink, showCrumb } from './helpers'
 
 /**
  * Print, the export outbox, and the exports screen. The specs share one fresh show of their own (made
@@ -230,7 +231,7 @@ test('exporting the calling script downloads a PDF with the same page count whos
     expect(exported.join('\n')).toContain(`${show.title} · Export libretto v1 · All layers`)
 
     // The exports screen lists the record once it has uploaded and synced back.
-    await page.getByRole('link', { name: 'Exports', exact: true }).click()
+    await railLink(page, 'Exports').click()
     const row = exportRow(page, filename)
     await expect(row).toHaveCount(1, { timeout: 30_000 })
     await expect(row).toContainText('All layers')
@@ -274,7 +275,7 @@ test('an export made offline downloads at once and its record appears after reco
     await expect(records.first()).toBeVisible({ timeout: 30_000 })
     const before = await records.count()
 
-    await page.getByRole('link', { name: '← Show' }).click()
+    await showCrumb(page, show.title).click()
     await page.getByRole('list', { name: 'Documents' }).getByRole('link').first().click()
     await viewerReady(page)
 
@@ -298,7 +299,7 @@ test('an export made offline downloads at once and its record appears after reco
     expect(readFileSync(saved).subarray(0, 5).toString()).toBe('%PDF-')
 
     // Offline the file is on the device and waiting to upload; the list has no record of it yet.
-    await page.getByRole('link', { name: 'Exports', exact: true }).click()
+    await railLink(page, 'Exports').click()
     const waiting = page.getByRole('region', { name: 'Waiting to upload' })
     await expect(waiting).toContainText(filename)
     await expect(records).toHaveCount(before)
@@ -411,7 +412,7 @@ test('an export kept waiting is uploaded right after signing in, with no reload'
 
     // Client-side navigation only: a reload would flush at start and hide what this tests.
     await page.getByRole('link', { name: show.title }).click()
-    await page.getByRole('link', { name: 'Exports', exact: true }).click()
+    await railLink(page, 'Exports').click()
     await expect(exportRow(page, filename)).toHaveCount(1, { timeout: 30_000 })
   } finally {
     await context.close()

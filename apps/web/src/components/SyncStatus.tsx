@@ -16,10 +16,31 @@ export function SyncStatus() {
       : status.connecting
         ? 'Connecting'
         : 'Offline'
+  // DESIGN §8: a dot and a word. Connected with nothing waiting is Synced; with local changes still
+  // uploading (or still connecting) it is Syncing…; offline keeps the count of what is waiting.
+  const word =
+    state === 'Connected'
+      ? pending > 0
+        ? 'Syncing…'
+        : 'Synced'
+      : state === 'Connecting'
+        ? 'Syncing…'
+        : 'Offline'
+  const dot = word === 'Synced' ? 'bg-ok' : word === 'Syncing…' ? 'bg-warn' : 'bg-muted'
   return (
-    <output className="sync-status" aria-label="Sync status" data-state={state.toLowerCase()}>
-      <span>{state}</span>
-      {pending > 0 && <span className="pending"> · {pending} pending</span>}
+    <output
+      className="sync-status inline-flex shrink-0 items-center gap-1.5 text-[12px] text-ink-2"
+      aria-label="Sync status"
+      data-state={state.toLowerCase()}
+    >
+      <span aria-hidden className={`size-2 rounded-full ${dot}`} />
+      <span>{word}</span>
+      {state === 'Connected' && pending > 0 && (
+        <span className="pending font-mono tabular-nums"> {pending}</span>
+      )}
+      {state !== 'Connected' && pending > 0 && (
+        <span className="pending font-mono tabular-nums"> · {pending} pending</span>
+      )}
     </output>
   )
 }

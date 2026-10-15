@@ -20,7 +20,7 @@ test('after a cold offline reload, print downloads at once and the record is mad
 
   await page.goto(`/shows/${sharedShow.id}/exports`)
   await expect(page.getByRole('heading', { name: 'Exports' })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByLabel('Sync status')).toHaveText('Connected', { timeout: 30_000 })
+  await expect(page.getByLabel('Sync status')).toHaveText('Synced', { timeout: 30_000 })
   const records = page.locator('li[data-export-id]')
   const before = await records.count()
 
@@ -73,7 +73,7 @@ test('after a cold offline reload, the cue list exports an XLSX at once and its 
   const { sharedShow } = readRun()
   await page.goto(`/shows/${sharedShow.id}/exports`)
   await expect(page.getByRole('heading', { name: 'Exports' })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByLabel('Sync status')).toHaveText('Connected', { timeout: 30_000 })
+  await expect(page.getByLabel('Sync status')).toHaveText('Synced', { timeout: 30_000 })
   const records = page.locator('li[data-export-id]')
   const before = await records.count()
 

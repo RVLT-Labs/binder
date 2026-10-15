@@ -1,23 +1,15 @@
-import { usePowerSync } from '@powersync/react'
-import { useQueryClient } from '@tanstack/react-query'
 import {
   createRootRouteWithContext,
-  Link,
   Navigate,
   Outlet,
-  useNavigate,
   useRouterState,
 } from '@tanstack/react-router'
-import { authClient } from '../auth/client'
 import { useSessionUser } from '../auth/session'
-import { signOutAndClear } from '../auth/signOut'
-import { BinderMark } from '../brand/BinderMark'
-import { Notices } from '../components/Notices'
-import { clearNotices } from '../components/noticeStore'
-import { SyncStatus } from '../components/SyncStatus'
-import { clearOutbox } from '../exports/outbox'
-import { clearLocalData, PowerSyncProvider } from '../powersync/provider'
+import { PowerSyncProvider } from '../powersync/provider'
 import type { RouterContext } from '../router'
+import { AppShell } from '../shell/AppShell'
+import type { Crumb } from '../shell/types'
+import { useAccount } from '../shell/useAccount'
 
 export const Route = createRootRouteWithContext<RouterContext>()({ component: RootLayout })
 
@@ -26,57 +18,34 @@ function RootLayout() {
   const { data: user, isPending, error } = useSessionUser()
 
   if (pathname === '/login') return <Outlet />
-  if (isPending) return <p className="page">Loading…</p>
-  if (error) return <p className="page">Could not reach Binder: {error.message}</p>
+  if (isPending) return <p className="p-4">Loading…</p>
+  if (error) return <p className="p-4">Could not reach Binder: {error.message}</p>
   if (!user) return <Navigate to="/login" />
 
   return (
     <PowerSyncProvider userId={user.id}>
-      <header className="app-header">
-        <Link to="/" className="brand">
-          <BinderMark className="brand-mark" />
-          Binder
-        </Link>
-        <nav>
-          <Link to="/">Shows</Link>
-          <Link to="/settings/tokens">Tokens</Link>
-        </nav>
-        <SyncStatus />
-        <span className="user">{user.email}</span>
-        <SignOut userId={user.id} />
-      </header>
-      <Notices />
-      <main className="page">
-        <Outlet />
-      </main>
+      <SignedIn />
     </PowerSyncProvider>
   )
 }
 
-function SignOut({ userId }: { userId: string }) {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const db = usePowerSync()
+/** The shell around the screens above a show: the shows list and the account's own pages. */
+const SHOWS_ROOT: Crumb = { label: 'Shows', link: { to: '/' }, phoneOnly: true }
+
+function crumbsFor(pathname: string): Crumb[] {
+  if (pathname === '/') return [{ label: 'Shows' }]
+  if (pathname === '/settings/tokens') return [SHOWS_ROOT, { label: 'Personal access tokens' }]
+  return [SHOWS_ROOT, { label: 'Binder' }]
+}
+
+function SignedIn() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const account = useAccount()
+  // A show's screens are drawn by the show route, which knows the show for the rail and the crumbs.
+  if (pathname.startsWith('/shows/')) return <Outlet />
   return (
-    <button
-      type="button"
-      onClick={() =>
-        signOutAndClear({
-          signOut: () => authClient.signOut(),
-          clearOutbox: () => clearOutbox(userId),
-          clearLocalData,
-          clearCache: () => {
-            clearNotices()
-            queryClient.clear()
-          },
-          toLogin: () => navigate({ to: '/login' }),
-          pendingUploads: async () =>
-            (await db.get<{ n: number }>('SELECT count(*) AS n FROM ps_crud')).n,
-          confirm: (message) => window.confirm(message),
-        })
-      }
-    >
-      Sign out
-    </button>
+    <AppShell crumbs={crumbsFor(pathname)} account={account}>
+      <Outlet />
+    </AppShell>
   )
 }

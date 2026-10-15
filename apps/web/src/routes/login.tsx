@@ -18,7 +18,7 @@ function LoginPage() {
   })
 
   return (
-    <main className="page login">
+    <main className="login mx-auto max-w-3xl p-4">
       <h1>Sign in to Binder</h1>
       <LoginForm
         magicLink={capabilities.data?.magicLink === true}

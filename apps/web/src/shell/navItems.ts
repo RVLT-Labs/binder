@@ -1,0 +1,74 @@
+import {
+  Activity,
+  Download,
+  FileText,
+  type LucideIcon,
+  NotepadText,
+  SlidersHorizontal,
+} from 'lucide-react'
+
+export type NavKey = 'script' | 'cues' | 'docs' | 'activity' | 'exports'
+/** The module hue each destination takes when it is the current one (DESIGN §6.2). */
+export type NavHue = 'blue' | 'amber' | 'teal' | 'purple' | 'green'
+
+export interface NavItem {
+  key: NavKey
+  label: string
+  to:
+    | '/shows/$showId'
+    | '/shows/$showId/cues'
+    | '/shows/$showId/activity'
+    | '/shows/$showId/exports'
+  params: { showId: string }
+  hue: NavHue
+  icon: LucideIcon
+}
+
+/** A show's destinations, in rail order. */
+export function navItems(showId: string): NavItem[] {
+  const params = { showId }
+  return [
+    { key: 'script', label: 'Script', to: '/shows/$showId', params, hue: 'blue', icon: FileText },
+    {
+      key: 'cues',
+      label: 'Cues',
+      to: '/shows/$showId/cues',
+      params,
+      hue: 'amber',
+      icon: SlidersHorizontal,
+    },
+    // The Documents screen has no route of its own yet, so Docs opens the show's page, where the
+    // documents are listed.
+    { key: 'docs', label: 'Docs', to: '/shows/$showId', params, hue: 'teal', icon: NotepadText },
+    {
+      key: 'activity',
+      label: 'Activity',
+      to: '/shows/$showId/activity',
+      params,
+      hue: 'purple',
+      icon: Activity,
+    },
+    {
+      key: 'exports',
+      label: 'Exports',
+      to: '/shows/$showId/exports',
+      params,
+      hue: 'green',
+      icon: Download,
+    },
+  ]
+}
+
+/**
+ * Which destination the URL is in. A document is the script, so Script stays current inside one;
+ * the show's own page counts as Script too. Settings and the rest belong to none.
+ */
+export function activeNavKey(pathname: string): NavKey | 'more' | null {
+  const m = /^\/shows\/[^/]+(?:\/(.*?))?\/?$/.exec(pathname)
+  if (!m) return null
+  const rest = m[1] ?? ''
+  if (rest === '' || rest.startsWith('docs/')) return 'script'
+  if (rest === 'docs') return 'docs'
+  if (rest === 'cues' || rest === 'activity' || rest === 'exports' || rest === 'more') return rest
+  return null
+}

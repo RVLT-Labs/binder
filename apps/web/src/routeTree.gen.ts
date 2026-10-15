@@ -13,9 +13,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SettingsTokensRouteImport } from './routes/settings.tokens'
 import { Route as ShowsShowIdRouteImport } from './routes/shows.$showId'
+import { Route as ShowsShowIdIndexRouteImport } from './routes/shows.$showId.index'
 import { Route as ShowsShowIdActivityRouteImport } from './routes/shows.$showId.activity'
 import { Route as ShowsShowIdCuesRouteImport } from './routes/shows.$showId.cues'
 import { Route as ShowsShowIdExportsRouteImport } from './routes/shows.$showId.exports'
+import { Route as ShowsShowIdMoreRouteImport } from './routes/shows.$showId.more'
 import { Route as ShowsShowIdSettingsRouteImport } from './routes/shows.$showId.settings'
 import { Route as ShowsShowIdDocsDocIdRouteImport } from './routes/shows.$showId.docs.$docId'
 import { Route as ShowsShowIdDocsDocIdCompareRouteImport } from './routes/shows.$showId.docs.$docId.compare'
@@ -40,6 +42,11 @@ const ShowsShowIdRoute = ShowsShowIdRouteImport.update({
   path: '/shows/$showId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShowsShowIdIndexRoute = ShowsShowIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShowsShowIdRoute,
+} as any)
 const ShowsShowIdActivityRoute = ShowsShowIdActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
@@ -53,6 +60,11 @@ const ShowsShowIdCuesRoute = ShowsShowIdCuesRouteImport.update({
 const ShowsShowIdExportsRoute = ShowsShowIdExportsRouteImport.update({
   id: '/exports',
   path: '/exports',
+  getParentRoute: () => ShowsShowIdRoute,
+} as any)
+const ShowsShowIdMoreRoute = ShowsShowIdMoreRouteImport.update({
+  id: '/more',
+  path: '/more',
   getParentRoute: () => ShowsShowIdRoute,
 } as any)
 const ShowsShowIdSettingsRoute = ShowsShowIdSettingsRouteImport.update({
@@ -80,7 +92,9 @@ export interface FileRoutesByFullPath {
   '/shows/$showId/activity': typeof ShowsShowIdActivityRoute
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
   '/shows/$showId/exports': typeof ShowsShowIdExportsRoute
+  '/shows/$showId/more': typeof ShowsShowIdMoreRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
+  '/shows/$showId/': typeof ShowsShowIdIndexRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRouteWithChildren
   '/shows/$showId/docs/$docId/compare': typeof ShowsShowIdDocsDocIdCompareRoute
 }
@@ -88,11 +102,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings/tokens': typeof SettingsTokensRoute
-  '/shows/$showId': typeof ShowsShowIdRouteWithChildren
   '/shows/$showId/activity': typeof ShowsShowIdActivityRoute
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
   '/shows/$showId/exports': typeof ShowsShowIdExportsRoute
+  '/shows/$showId/more': typeof ShowsShowIdMoreRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
+  '/shows/$showId': typeof ShowsShowIdIndexRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRouteWithChildren
   '/shows/$showId/docs/$docId/compare': typeof ShowsShowIdDocsDocIdCompareRoute
 }
@@ -105,7 +120,9 @@ export interface FileRoutesById {
   '/shows/$showId/activity': typeof ShowsShowIdActivityRoute
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
   '/shows/$showId/exports': typeof ShowsShowIdExportsRoute
+  '/shows/$showId/more': typeof ShowsShowIdMoreRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
+  '/shows/$showId/': typeof ShowsShowIdIndexRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRouteWithChildren
   '/shows/$showId/docs/$docId/compare': typeof ShowsShowIdDocsDocIdCompareRoute
 }
@@ -119,7 +136,9 @@ export interface FileRouteTypes {
     | '/shows/$showId/activity'
     | '/shows/$showId/cues'
     | '/shows/$showId/exports'
+    | '/shows/$showId/more'
     | '/shows/$showId/settings'
+    | '/shows/$showId/'
     | '/shows/$showId/docs/$docId'
     | '/shows/$showId/docs/$docId/compare'
   fileRoutesByTo: FileRoutesByTo
@@ -127,11 +146,12 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/settings/tokens'
-    | '/shows/$showId'
     | '/shows/$showId/activity'
     | '/shows/$showId/cues'
     | '/shows/$showId/exports'
+    | '/shows/$showId/more'
     | '/shows/$showId/settings'
+    | '/shows/$showId'
     | '/shows/$showId/docs/$docId'
     | '/shows/$showId/docs/$docId/compare'
   id:
@@ -143,7 +163,9 @@ export interface FileRouteTypes {
     | '/shows/$showId/activity'
     | '/shows/$showId/cues'
     | '/shows/$showId/exports'
+    | '/shows/$showId/more'
     | '/shows/$showId/settings'
+    | '/shows/$showId/'
     | '/shows/$showId/docs/$docId'
     | '/shows/$showId/docs/$docId/compare'
   fileRoutesById: FileRoutesById
@@ -185,6 +207,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShowsShowIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shows/$showId/': {
+      id: '/shows/$showId/'
+      path: '/'
+      fullPath: '/shows/$showId/'
+      preLoaderRoute: typeof ShowsShowIdIndexRouteImport
+      parentRoute: typeof ShowsShowIdRoute
+    }
     '/shows/$showId/activity': {
       id: '/shows/$showId/activity'
       path: '/activity'
@@ -204,6 +233,13 @@ declare module '@tanstack/react-router' {
       path: '/exports'
       fullPath: '/shows/$showId/exports'
       preLoaderRoute: typeof ShowsShowIdExportsRouteImport
+      parentRoute: typeof ShowsShowIdRoute
+    }
+    '/shows/$showId/more': {
+      id: '/shows/$showId/more'
+      path: '/more'
+      fullPath: '/shows/$showId/more'
+      preLoaderRoute: typeof ShowsShowIdMoreRouteImport
       parentRoute: typeof ShowsShowIdRoute
     }
     '/shows/$showId/settings': {
@@ -245,7 +281,9 @@ interface ShowsShowIdRouteChildren {
   ShowsShowIdActivityRoute: typeof ShowsShowIdActivityRoute
   ShowsShowIdCuesRoute: typeof ShowsShowIdCuesRoute
   ShowsShowIdExportsRoute: typeof ShowsShowIdExportsRoute
+  ShowsShowIdMoreRoute: typeof ShowsShowIdMoreRoute
   ShowsShowIdSettingsRoute: typeof ShowsShowIdSettingsRoute
+  ShowsShowIdIndexRoute: typeof ShowsShowIdIndexRoute
   ShowsShowIdDocsDocIdRoute: typeof ShowsShowIdDocsDocIdRouteWithChildren
 }
 
@@ -253,7 +291,9 @@ const ShowsShowIdRouteChildren: ShowsShowIdRouteChildren = {
   ShowsShowIdActivityRoute: ShowsShowIdActivityRoute,
   ShowsShowIdCuesRoute: ShowsShowIdCuesRoute,
   ShowsShowIdExportsRoute: ShowsShowIdExportsRoute,
+  ShowsShowIdMoreRoute: ShowsShowIdMoreRoute,
   ShowsShowIdSettingsRoute: ShowsShowIdSettingsRoute,
+  ShowsShowIdIndexRoute: ShowsShowIdIndexRoute,
   ShowsShowIdDocsDocIdRoute: ShowsShowIdDocsDocIdRouteWithChildren,
 }
 

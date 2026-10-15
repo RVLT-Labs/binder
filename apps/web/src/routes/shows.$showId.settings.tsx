@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { type FormEvent, useState } from 'react'
 import { api } from '../api/client'
 import { PaperSizeEditor } from '../exports/PaperSizeEditor'
@@ -32,11 +32,6 @@ function SettingsPage() {
   const isOwner = membership?.role === 'owner'
   return (
     <>
-      <p>
-        <Link to="/shows/$showId" params={{ showId }}>
-          ← Show
-        </Link>
-      </p>
       <h1>Show settings</h1>
       {!isOwner && <p>Only owners can change these settings.</p>}
       <DepartmentsSection showId={showId} departments={departments} editable={isOwner} />
@@ -221,7 +216,7 @@ function MembersSection({
     queryFn: () => api.get<{ members: Member[] }>(`/shows/${showId}/members`),
   })
   return (
-    <section aria-labelledby="members-heading">
+    <section id="members" aria-labelledby="members-heading">
       <h2 id="members-heading">Members</h2>
       {members.isError && <p role="alert">Members are not available offline.</p>}
       <ul aria-label="Members" className="settings-list">

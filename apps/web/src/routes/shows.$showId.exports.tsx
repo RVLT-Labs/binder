@@ -19,11 +19,6 @@ function ExportsPage() {
 
   return (
     <>
-      <p>
-        <Link to="/shows/$showId" params={{ showId }}>
-          ← Show
-        </Link>
-      </p>
       <h1>Exports</h1>
       {pending.length > 0 && (
         <section aria-label="Waiting to upload">

@@ -39,3 +39,13 @@ export async function uploadAndWaitReady(
   await expect(row).toContainText('ready', { timeout: readyTimeout })
   return row
 }
+
+/** A destination in the app shell's rail (Script, Cues, Docs, Activity, Exports). */
+export const railLink = (page: Page, name: string) =>
+  page.getByRole('navigation', { name: 'Binder' }).getByRole('link', { name, exact: true })
+
+/** The show's title in the top bar's breadcrumbs, a link back to the show on every screen inside it. */
+export const showCrumb = (page: Page, title: string) =>
+  page
+    .getByRole('navigation', { name: 'Breadcrumb' })
+    .getByRole('link', { name: title, exact: true })

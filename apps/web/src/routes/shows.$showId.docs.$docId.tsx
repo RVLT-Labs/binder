@@ -1,5 +1,5 @@
 import { useQuery } from '@powersync/react'
-import { createFileRoute, Link, Outlet, useChildMatches, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useChildMatches, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { blobUrl } from '../blobs/fetchBlob'
 import { PrintButton } from '../exports/PrintDialog'
@@ -145,12 +145,6 @@ function DocumentPage() {
   return (
     <div className="document-page">
       <header className="document-header">
-        <Link to="/shows/$showId" params={{ showId }}>
-          ← Documents
-        </Link>
-        <Link to="/shows/$showId/exports" params={{ showId }}>
-          Exports
-        </Link>
         <h1>{doc.title}</h1>
         {version && (
           <VersionSwitcher

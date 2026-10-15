@@ -1,5 +1,5 @@
 import { useQuery } from '@powersync/react'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import type { DocumentRow, DocumentVersionRow } from '../powersync/schema'
 import { ComparePane } from '../revisions/ComparePane'
@@ -86,9 +86,6 @@ function ComparePage() {
   return (
     <div className="compare-page-root">
       <header className="document-header">
-        <Link to="/shows/$showId/docs/$docId" params={{ showId, docId }}>
-          ← {doc?.title ?? 'Document'}
-        </Link>
         <h1>Compare versions</h1>
         <label>
           From

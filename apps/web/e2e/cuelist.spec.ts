@@ -14,6 +14,7 @@ import {
 } from '@playwright/test'
 import { strFromU8, unzipSync } from 'fflate'
 import { API_URL, APP_URL, readRun, storageStateFor, type UserKey } from './env'
+import { railLink } from './helpers'
 
 /**
  * Cue lists and "Renumber from script order". The specs share one fresh show of their own (made in
@@ -221,7 +222,7 @@ function numbers(page: Page, ids: string[]): Promise<Record<string, string>> {
 const row = (page: Page, id: string): Locator => page.locator(`tr[data-cue-id="${id}"]`)
 const numberField = (page: Page, id: string) => row(page, id).getByLabel(/^Number/)
 const synced = (page: Page, timeout = 30_000) =>
-  expect(page.getByLabel('Sync status')).toHaveText('Connected', { timeout })
+  expect(page.getByLabel('Sync status')).toHaveText('Synced', { timeout })
 
 test('the LX list shows a duplicate badge; renumbering from script order gives 10, 11, 12 in page order and clears it', async ({
   browser,
@@ -504,8 +505,7 @@ test('the cue list exports a CSV, an XLSX and a PDF that download at once, read 
     }
 
     // Each was queued for upload: the Exports screen lists all three once they have synced back.
-    await page.getByRole('link', { name: '← Show' }).click()
-    await page.getByRole('link', { name: 'Exports', exact: true }).click()
+    await railLink(page, 'Exports').click()
     for (const ext of ['csv', 'xlsx', 'pdf']) {
       await expect(page.locator('li[data-export-id]').filter({ hasText: names(ext) })).toHaveCount(
         1,

@@ -71,7 +71,7 @@ test('an edit made while the sync service is down uploads and reaches another us
   try {
     await expect(showLink(a, original)).toBeVisible({ timeout: 20_000 })
     await expect(showLink(b, original)).toBeVisible({ timeout: 20_000 })
-    await expect(status).toHaveText('Connected', { timeout: 20_000 })
+    await expect(status).toHaveText('Synced', { timeout: 20_000 })
 
     // Uploads go to the API, which stays up when only the sync service stops, so a local edit would
     // upload within moments and the "pending" label would flash by. Hold the upload back, so the
@@ -97,7 +97,7 @@ test('an edit made while the sync service is down uploads and reaches another us
 
     // Both clients reconnect by themselves; A's queued edit uploads and B receives it.
     await expect(showLink(b, renamed)).toBeVisible({ timeout: 30_000 })
-    await expect(status).toHaveText('Connected', { timeout: 30_000 })
+    await expect(status).toHaveText('Synced', { timeout: 30_000 })
   } finally {
     for (const context of contexts) await context.close()
   }
