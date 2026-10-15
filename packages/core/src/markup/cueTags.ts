@@ -163,7 +163,9 @@ export function layoutCueTags(input: {
       .map((_, i) => i)
       .filter((i) => (cues[i] as CueTagInput).side === side)
       .sort((a, b) => comparePlacement(cues[a] as CueTagInput, cues[b] as CueTagInput))
-    order.forEach((i, k) => rank.set(i, k))
+    order.forEach((i, k) => {
+      rank.set(i, k)
+    })
     stackSide(order, cues, centres, bounds)
   }
   // Where the text block starts and ends: the connector's gutters sit just outside it.
