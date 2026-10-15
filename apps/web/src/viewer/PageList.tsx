@@ -1,3 +1,4 @@
+import type { PresencePeer } from '@binder/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   type KeyboardEventHandler,
@@ -9,6 +10,7 @@ import {
   useMemo,
   useRef,
 } from 'react'
+import { AvatarGroup } from '../presence/Avatars'
 import { PageCanvas } from './PageCanvas'
 import type { PDFDocumentProxy } from './pdfjs'
 
@@ -36,6 +38,8 @@ export interface PageListProps {
   zoom: number
   /** Drawn over each mounted page in its box, e.g. a PageOverlay with markup. `pageIndex` is zero-based. */
   overlay?: (pageIndex: number) => ReactNode
+  /** Who is on each page (zero-based) of this version: avatars at the page's top right. */
+  peersByPage?: ReadonlyMap<number, readonly PresencePeer[]>
   /** Zero-based page to open at. Read on mount only. */
   initialPage?: number
   /** Called with the zero-based page at the top of the view whenever it changes. */
@@ -54,6 +58,7 @@ export function PageList({
   pages,
   zoom,
   overlay,
+  peersByPage,
   initialPage = 0,
   onVisiblePage,
   onKeyDown,
@@ -145,6 +150,11 @@ export function PageList({
                 height={page.height}
               >
                 {overlay?.(item.index)}
+                <AvatarGroup
+                  className="page-presence"
+                  peers={peersByPage?.get(item.index) ?? []}
+                  pageIndex={item.index}
+                />
               </PageCanvas>
             </div>
           )

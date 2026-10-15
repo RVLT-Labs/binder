@@ -27,9 +27,13 @@ test('make available offline, go offline, reload, view and search', async ({ pag
   // Offline, and a cold reload: the app shell comes from the precache, the user from the device.
   await context.setOffline(true)
   await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false)
+  // Presence is silently absent offline: the reloaded app opens no socket.
+  const sockets: string[] = []
+  page.on('websocket', (ws) => sockets.push(ws.url()))
   await page.reload()
   const link = page.getByRole('list', { name: 'Documents' }).getByRole('link', { name: title })
   await expect(link).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('region', { name: 'Who is in the binder' })).toHaveCount(0)
 
   // The document opens and its first page renders, from cached bytes.
   await link.click()
@@ -55,4 +59,9 @@ test('make available offline, go offline, reload, view and search', async ({ pag
   await expect(sheet).toBeVisible()
   await expect(sheet.locator('svg rect.search-hit').first()).toBeVisible()
   await expect.poll(() => hasInk(sheet.locator('canvas')), { timeout: 15_000 }).toBe(true)
+
+  // Still no presence socket, no presence UI, and no error shown for its absence.
+  expect(sockets).toEqual([])
+  await expect(page.getByRole('group', { name: /People on page/ })).toHaveCount(0)
+  await expect(page.getByRole('alert')).toHaveCount(0)
 })

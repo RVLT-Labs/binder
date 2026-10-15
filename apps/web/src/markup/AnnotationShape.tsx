@@ -312,6 +312,11 @@ function draw(a: ShapeAnnotation, colour: string, words: WordLayer | null): Draw
   }
 }
 
+/** Where the shape sits on its page, in displayed points: what a selection outline goes around. */
+export function annotationBox(annotation: ShapeAnnotation, words: WordLayer | null): Box {
+  return draw(annotation, '#000', words).box
+}
+
 export interface AnnotationShapeProps {
   annotation: ShapeAnnotation
   /** The layer's colour: what the shape uses when its style names none. */

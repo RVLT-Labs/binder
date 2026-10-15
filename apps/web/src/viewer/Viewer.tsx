@@ -11,6 +11,8 @@ import {
   useRef,
   useState,
 } from 'react'
+import { usePresencePeers } from '../presence/PresenceProvider'
+import { peersByPage } from '../presence/peers'
 import { SearchPanel } from '../search/SearchPanel'
 import { useDocumentSearch } from '../search/useDocumentSearch'
 import { fitWidthZoom, viewerKeyAction, zoomIn, zoomOut } from './controls'
@@ -80,6 +82,8 @@ export function Viewer({
   const [openAt, setOpenAt] = useState(firstPage)
   const [zoom, setZoom] = useState<number | null>(null)
   const documentSearch = useDocumentSearch(versionId)
+  const { peers } = usePresencePeers()
+  const onPages = useMemo(() => peersByPage(peers, versionId), [peers, versionId])
   const [hits, setHits] = useState<DocHit[]>([])
   const [activeHit, setActiveHit] = useState<number | null>(null)
   const area = useRef<HTMLDivElement>(null)
@@ -199,7 +203,7 @@ export function Viewer({
         {tools}
       </ViewerToolbar>
       <div className="viewer-body">
-        <ThumbnailRail pages={pages} current={current} onSelect={goTo} />
+        <ThumbnailRail pages={pages} current={current} onSelect={goTo} peersByPage={onPages} />
         <div ref={area} className="viewer-pages">
           {status === 'error' ? (
             <p role="alert" className="viewer-message">
@@ -212,6 +216,7 @@ export function Viewer({
               pages={pages}
               zoom={zoom}
               overlay={overlay}
+              peersByPage={onPages}
               initialPage={openAt}
               onVisiblePage={setCurrent}
               onKeyDown={onKeyDown}

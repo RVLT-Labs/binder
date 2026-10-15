@@ -48,6 +48,11 @@ function textOf(cue: MarkerCue): string {
   )
 }
 
+/** The marker's box on its page, in displayed points: what a selection outline goes around. */
+export function cueBox(cue: MarkerCue) {
+  return cueMarkerBox(cue.anchor.x, cue.anchor.y, helveticaWidth(textOf(cue), MARKER_FONT_SIZE))
+}
+
 /** What a screen reader says for a marker: `LX 10, Sunrise, page 2`. */
 export function cueAccessibleName(cue: MarkerCue): string {
   return [textOf(cue), cue.label, `page ${cue.anchor.pageIndex + 1}`].filter(Boolean).join(', ')

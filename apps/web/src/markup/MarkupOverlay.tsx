@@ -4,13 +4,22 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
 import type { PageRow } from '../powersync/schema'
-import { AnnotationPreview, AnnotationShape, toShapeAnnotation } from './AnnotationShape'
-import { CueMarker } from './CueMarker'
+import { PeerOutline } from '../presence/PeerOutline'
+import { usePresencePeers } from '../presence/PresenceProvider'
+import { peerSelections } from '../presence/peers'
+import {
+  AnnotationPreview,
+  AnnotationShape,
+  annotationBox,
+  toShapeAnnotation,
+} from './AnnotationShape'
+import { CueMarker, cueBox } from './CueMarker'
 import { useDragSlot } from './dragGesture'
 import { Handles } from './Handles'
 import { useMarkupSession } from './MarkupSession'
@@ -55,6 +64,8 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const selection = useSelection()
   const { tool, cueType, rebind } = useTool()
   const relocating = useRelocating()
+  const { peers } = usePresencePeers()
+  const peerOn = useMemo(() => peerSelections(peers, session.versionId), [peers, session.versionId])
   const [ghost, setGhost] = useState<Ghost | null>(null)
   /** The one drag in progress from this page: a cue marker, a shape, a handle, or a drawing. */
   const slot = useDragSlot()
@@ -222,6 +233,16 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
             onActivate={() => select('cues', cue.id)}
           />
         )
+      })}
+      {annotations.map((row) => {
+        const who = peerOn.get(`annotations:${row.id}`)
+        return (
+          who && <PeerOutline key={row.id} box={annotationBox(display(row), words)} peers={who} />
+        )
+      })}
+      {cues.map((cue) => {
+        const who = peerOn.get(`cues:${cue.id}`)
+        return who && <PeerOutline key={cue.id} box={cueBox(cue)} peers={who} />
       })}
       {ghost && createPortal(<DragGhost ghost={ghost} />, document.body)}
     </g>

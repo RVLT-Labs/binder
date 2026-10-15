@@ -4,13 +4,26 @@ import { DocumentList } from '../documents/DocumentList'
 import { useDepartments } from '../markup/useDepartments'
 import { OfflineButton } from '../offline/OfflineButton'
 import type { ShowRow } from '../powersync/schema'
+import { BinderPresence } from '../presence/Avatars'
+import { PresenceProvider } from '../presence/PresenceProvider'
 import { useCanUpload } from '../revisions/useCanUpload'
 
 export const Route = createFileRoute('/shows/$showId')({ component: ShowPage })
 
-/** The show's documents. A document opened from here renders in place of the list (the Outlet). */
+/**
+ * The show's documents. A document opened from here renders in place of the list (the Outlet).
+ * One presence connection serves the whole show, list and documents alike.
+ */
 function ShowPage() {
   const { showId } = Route.useParams()
+  return (
+    <PresenceProvider showId={showId}>
+      <ShowBody showId={showId} />
+    </PresenceProvider>
+  )
+}
+
+function ShowBody({ showId }: { showId: string }) {
   const { data, isLoading } = useQuery<ShowRow>('SELECT * FROM shows WHERE id = ?', [showId])
   const canUpload = useCanUpload(showId)
   const departments = useDepartments(showId)
@@ -27,6 +40,7 @@ function ShowPage() {
       </p>
       <h1>{show.title}</h1>
       <OfflineButton showId={showId} />
+      <BinderPresence showId={showId} />
       <p>
         <Link to="/shows/$showId/settings" params={{ showId }}>
           Settings

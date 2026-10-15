@@ -15,6 +15,7 @@ import { useSelection } from '../markup/selection'
 import { useMarkupShortcuts } from '../markup/useMarkupShortcuts'
 import { useOnline } from '../offline/useOnline'
 import type { DocumentRow, DocumentVersionRow, PageRow } from '../powersync/schema'
+import { PresencePublisher } from '../presence/PresencePublisher'
 import { useVersionAnchors } from '../revisions/api'
 import { ReviewPanel } from '../revisions/ReviewPanel'
 import { UploadRevisionDialog } from '../revisions/UploadRevisionDialog'
@@ -64,6 +65,8 @@ function DocumentPage() {
   const [uploading, setUploading] = useState(false)
   const navigate = useNavigate({ from: Route.fullPath })
   const viewer = useRef<ViewerHandle>(null)
+  /** Zero-based page in view, as the viewer last settled on it: what presence tells the show. */
+  const [viewPage, setViewPage] = useState(() => (p ?? 1) - 1)
   const { data: docs, isLoading } = useQuery<DocumentRow>(
     'SELECT * FROM documents WHERE id = ? AND show_id = ?',
     [docId, showId],
@@ -123,6 +126,7 @@ function DocumentPage() {
   // The URL follows the page in view without adding history entries.
   const onPageChange = useCallback(
     (page: number) => {
+      setViewPage(page - 1)
       if (page !== p) {
         void navigate({
           search: (prev) => ({ ...prev, p: page }),
@@ -212,6 +216,12 @@ function DocumentPage() {
           historic={historic}
         >
           <MarkupKeys />
+          <PresencePublisher
+            showId={showId}
+            documentId={doc.id}
+            versionId={version.id}
+            pageIndex={Math.min(viewPage, pages.length - 1)}
+          />
           <FocusCue
             cueId={cue}
             onDone={() =>
