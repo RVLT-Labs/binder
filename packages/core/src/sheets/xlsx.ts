@@ -36,14 +36,20 @@ function xmlText(s: string): string {
   return out
 }
 
-/** Excel refuses `: \ / ? * [ ]` in a sheet name, a name over 31 characters, and an empty one. */
+/**
+ * Excel refuses `: \ / ? * [ ]` in a sheet name, a name over 31 characters, an empty one, one that
+ * starts or ends with an apostrophe, and the name `History` (case-insensitive), which it reserves.
+ */
 function sheetNameOf(name: string): string {
   const cleaned = [...name.replace(/[:\\/?*[\]]/g, '-')]
     .filter((ch) => (ch.codePointAt(0) as number) >= 0x20)
     .slice(0, 31)
     .join('')
     .trim()
-  return cleaned || 'Cue sheet'
+    .replace(/^'+|'+$/g, '')
+    .trim()
+  if (!cleaned) return 'Cue sheet'
+  return cleaned.toLowerCase() === 'history' ? `${cleaned} sheet` : cleaned
 }
 
 const COLUMN_LETTERS = 'ABCDEFGH'

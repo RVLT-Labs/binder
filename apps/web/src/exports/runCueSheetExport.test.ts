@@ -93,14 +93,14 @@ test('csv: downloads at once, then queues the same bytes for upload as a departm
   const { result, downloads, queued } = await run('csv')
   expect(result.filename).toBe('Pirates- A-B - LX cue sheet.csv')
   expect(downloads).toEqual([
-    { filename: result.filename, bytes: result.bytes, contentType: 'text/csv; charset=utf-8' },
+    { filename: result.filename, bytes: result.bytes, contentType: 'text/csv' },
   ])
   expect(queued).toHaveLength(1)
   expect(queued[0]).toMatchObject({
     id: result.id,
     showId: 'show-1',
     userId: 'user-me',
-    contentType: 'text/csv; charset=utf-8',
+    contentType: 'text/csv',
     meta: {
       id: result.id,
       kind: 'csv',

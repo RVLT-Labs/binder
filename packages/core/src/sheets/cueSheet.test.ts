@@ -232,7 +232,7 @@ describe('cueSheetPdf', () => {
     expect(texts).toContain(FOOTER)
   })
 
-  test('long cells wrap onto more lines and a row never splits across pages', async () => {
+  test('long cells wrap onto more lines inside their columns', async () => {
     const long = Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ')
     const bytes = await cueSheetPdf([row({ cue: '10', label: long, notes: long }), ...many(3)], {
       title: 'LX',
@@ -246,6 +246,50 @@ describe('cueSheetPdf', () => {
     expect(label.every((t) => t.length < long.length / 4)).toBe(true)
     // The words survive in order across the label column's lines.
     expect(label.join(' ').replace(/\s+/g, ' ')).toContain('word0 word1 word2')
+  })
+
+  test('a row that would straddle a page boundary starts on the next page, all its lines together', async () => {
+    const tall = Array.from({ length: 40 }, (_, i) => `tall${i}`).join(' ')
+    const pagesWithTall: number[][] = []
+    // Sweep the number of rows before it, so the tall row meets the bottom of the page at every offset.
+    for (let before = 20; before <= 60; before++) {
+      const bytes = await cueSheetPdf([...many(before), row({ cue: '999', label: tall })], {
+        title: 'LX',
+        paper: 'A4',
+        footer,
+      })
+      const texts = await pdfTexts(bytes)
+      const onPages = texts.flatMap((t, i) => (t.some((s) => /^tall\d/.test(s)) ? [i] : []))
+      pagesWithTall.push(onPages)
+      expect(onPages, `${before} rows before`).toHaveLength(1)
+      // Every one of its lines is there, in order.
+      const joined = (texts[onPages[0] as number] as string[])
+        .filter((s) => /^tall\d/.test(s))
+        .join(' ')
+      expect(joined).toBe(tall)
+    }
+    // The sweep did reach a page break: the tall row sat on a later page for some offsets.
+    expect(pagesWithTall.some((p) => (p[0] as number) > 0)).toBe(true)
+    expect(pagesWithTall.some((p) => p[0] === 0)).toBe(true)
+  })
+
+  test('a row taller than a whole page is split across pages without losing a line', async () => {
+    const huge = Array.from({ length: 1200 }, (_, i) => `huge${i}`).join(' ')
+    const bytes = await cueSheetPdf([row({ cue: '1' }), row({ cue: '2', label: huge })], {
+      title: 'LX',
+      paper: 'Letter',
+      footer,
+    })
+    const texts = await pdfTexts(bytes)
+    expect(texts.length).toBeGreaterThan(1)
+    const words = texts
+      .flat()
+      .filter((s) => /^huge\d/.test(s))
+      .join(' ')
+      .split(' ')
+    expect(words).toEqual(Array.from({ length: 1200 }, (_, i) => `huge${i}`))
+    // The header row is repeated on every page it continues onto.
+    for (const page of texts) expect(page).toContain('Label')
   })
 
   test('a word wider than its column is broken rather than overflowing', async () => {

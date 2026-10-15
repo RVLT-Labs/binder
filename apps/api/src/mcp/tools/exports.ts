@@ -1,4 +1,4 @@
-import type { LayerRef } from '@binder/shared'
+import { EXPORT_FILE_TYPES, type LayerRef, type StoredExportKind } from '@binder/shared'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import { invalid } from '../../errors'
@@ -21,9 +21,9 @@ const LAYERS_DESCRIPTION =
 
 /** The MIME type a resource link advertises for an export record's file. */
 export function exportMimeType(kind: string): string {
-  if (kind === 'csv') return 'text/csv'
-  if (kind === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  return 'application/pdf'
+  return Object.hasOwn(EXPORT_FILE_TYPES, kind)
+    ? EXPORT_FILE_TYPES[kind as StoredExportKind].mime
+    : 'application/pdf'
 }
 
 export function registerExportTools(server: McpServer, mcp: McpContext): void {
@@ -104,15 +104,17 @@ export function registerExportTools(server: McpServer, mcp: McpContext): void {
         "Makes a department's cue sheet as a PDF (laid out for the show's paper size, A4 or " +
         'Letter), an XLSX workbook or a CSV file, with columns Cue, Type, Label, Page, Document, ' +
         'Trigger, Notes and Status, in cue-number order with unplaced cues last. Name the ' +
-        'department with `department` (a code like LX, or an id) and the `showId`, or give ' +
-        '`departmentId` alone. Records the export and returns the record and a resource_link to ' +
+        'department with `department` (a code like LX, or an id) together with `showId`, or give ' +
+        'an id as `departmentId` alone. Records the export and returns the record and a resource_link to ' +
         'read the file (binder://shows/{showId}/exports/{exportId}).',
       inputSchema: z.object({
         department: z
           .string()
           .min(1)
           .optional()
-          .describe('The department code (like LX) or id. Needs showId unless it is an id.'),
+          .describe(
+            'The department code (like LX) or id, looked up in showId, which is required with it. With only an id, use departmentId.',
+          ),
         departmentId: z.string().min(1).optional().describe('The department id.'),
         showId: z.string().min(1).optional().describe('The show id, to resolve a department code.'),
         format: z.enum(['pdf', 'xlsx', 'csv']).describe('The file to make.'),

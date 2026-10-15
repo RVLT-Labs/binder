@@ -1,3 +1,4 @@
+export * from './exportFiles'
 export * from './history'
 export * from './ids'
 export * from './layers'

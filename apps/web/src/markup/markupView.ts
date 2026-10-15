@@ -1,12 +1,7 @@
 import { compareCueNumbers, compareReadingOrder } from '@binder/core'
-import {
-  type Anchor,
-  anchorSchema,
-  type LayerKind,
-  layerKey,
-  type NumberFormat,
-} from '@binder/shared'
+import { type Anchor, type LayerKind, layerKey, type NumberFormat } from '@binder/shared'
 import type { Database } from '../powersync/schema'
+import { parseAnchor } from './rows'
 
 /** A local cue row joined with its department, the anchor parsed. */
 export type CueRowWithDept = Omit<Database['cues'], 'anchor'> & {
@@ -26,16 +21,6 @@ type RawCue = Omit<CueRowWithDept, 'anchor' | 'dept_number_format'> & {
   dept_number_format: string | null
 }
 type RawAnnotation = Omit<AnnotationRow, 'anchor'> & { anchor: string | null }
-
-function parseAnchor(text: string | null): Anchor | null {
-  if (!text) return null
-  try {
-    const parsed = anchorSchema.safeParse(JSON.parse(text))
-    return parsed.success ? (parsed.data as Anchor) : null
-  } catch {
-    return null
-  }
-}
 
 function byPage<T extends { anchor: Anchor }>(items: T[]): Map<number, T[]> {
   const map = new Map<number, T[]>()

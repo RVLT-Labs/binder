@@ -10,6 +10,7 @@ import {
   newId,
 } from '@binder/shared'
 import type { AbstractPowerSyncDatabase } from '@powersync/web'
+import { parseAnchor, parseJson } from './rows'
 
 export type MarkupTable = 'cues' | 'annotations'
 export type EditSource = 'user' | 'undo' | 'redo'
@@ -143,17 +144,9 @@ const EMPTY_FIELDS: CueFields = {
   anchor: null,
 }
 
-function parseJson(v: unknown): unknown {
-  if (typeof v !== 'string') return v ?? null
-  try {
-    return JSON.parse(v)
-  } catch {
-    return null
-  }
-}
-
 /** The cue fields held by a local `cues` row. */
-export function fromCueRow(row: Record<string, unknown>): CueFields {
+export function fromCueRow(source: object): CueFields {
+  const row = source as Record<string, unknown>
   return {
     departmentId: String(row.department_id),
     major: Number(row.major),
@@ -162,7 +155,7 @@ export function fromCueRow(row: Record<string, unknown>): CueFields {
     type: row.type as CueFields['type'],
     notes: String(row.notes ?? ''),
     colour: (row.colour as string | null) ?? null,
-    anchor: parseJson(row.anchor) as CueFields['anchor'],
+    anchor: parseAnchor(row.anchor),
   }
 }
 

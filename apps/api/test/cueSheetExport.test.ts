@@ -254,6 +254,9 @@ describe('export_cue_list', () => {
       /invalid.*unknown department/,
     )
     expect(await asked({ showId: s.show.id, departmentId: s.depts.SND.id })).toBe('ok')
+    // `department` takes an id too, with the show it is looked up in; without a show it is refused.
+    expect(await asked({ showId: s.show.id, department: s.depts.SND.id })).toBe('ok')
+    expect(await asked({ department: s.depts.SND.id })).toMatch(/showId/)
     expect(await asked({ departmentId: newId() })).toMatch(/not_found|not found/i)
     // A department id from a show other than the one named is refused, not exported.
     const other = await setupMarkupShow()
@@ -395,5 +398,94 @@ describe('uploading cue sheets', () => {
       }),
     )
     expect(res.status).toBe(400)
+  })
+})
+
+describe('upload fields are what the file was checked against', () => {
+  const pdf = new TextEncoder().encode('%PDF-1.7 not really')
+  const csv = new TextEncoder().encode('a,b\r\n1,2\r\n')
+  const metaOf = (id: string, kind: string) =>
+    JSON.stringify({
+      id,
+      kind,
+      filename: `x.${kind === 'csv' ? 'csv' : 'pdf'}`,
+      layerSelection: [{ kind: 'department', id: s.depts.LX.id }],
+    })
+  /** Posts parts in exactly this order: `[name, value]` text fields and the `file`. */
+  const postParts = async (parts: Array<[string, string | Uint8Array]>) => {
+    const form = new FormData()
+    for (const [name, value] of parts) {
+      if (typeof value === 'string') form.append(name, value)
+      else form.append(name, new Blob([value]), 'f.bin')
+    }
+    return asJson(
+      await s.app.request(`/api/shows/${s.show.id}/exports`, {
+        method: 'POST',
+        headers: { cookie: s.viewer.cookie, origin: APP_ORIGIN },
+        body: form,
+      }),
+    )
+  }
+  const nothingStored = async (id: string) => {
+    expect((await blobFiles(s.deps)).filter((f) => f.includes(`/exports/${id}/`))).toEqual([])
+    expect(await s.deps.db.select().from(exportRecords).where(eq(exportRecords.id, id))).toEqual([])
+  }
+
+  test('a meta that trails the file is refused (it could relabel a csv as a pdf-script)', async () => {
+    const id = newId()
+    const res = await postParts([
+      ['meta', metaOf(id, 'csv')],
+      ['file', csv],
+      ['meta', metaOf(id, 'pdf-script')],
+    ])
+    expect(res.status).toBe(400)
+    await nothingStored(id)
+  })
+
+  test('a field after the file is refused even when meta came first and was the only one', async () => {
+    const id = newId()
+    const res = await postParts([
+      ['meta', metaOf(id, 'pdf-sheet')],
+      ['file', pdf],
+      ['extra', 'late'],
+    ])
+    expect(res.status).toBe(400)
+    await nothingStored(id)
+  })
+
+  test('a repeated meta before the file is refused', async () => {
+    const id = newId()
+    const res = await postParts([
+      ['meta', metaOf(id, 'csv')],
+      ['meta', metaOf(id, 'pdf-script')],
+      ['file', csv],
+    ])
+    expect(res.status).toBe(400)
+    expect((await res.json()).message).toMatch(/sent twice/)
+    await nothingStored(id)
+  })
+
+  test('a file before meta is refused', async () => {
+    const id = newId()
+    const res = await postParts([
+      ['file', pdf],
+      ['meta', metaOf(id, 'pdf-script')],
+    ])
+    expect(res.status).toBe(400)
+    await nothingStored(id)
+  })
+
+  test('the ordinary order still stores, for a csv and for a pdf', async () => {
+    for (const [kind, bytes] of [
+      ['csv', csv],
+      ['pdf-sheet', pdf],
+    ] as const) {
+      const id = newId()
+      const res = await postParts([
+        ['meta', metaOf(id, kind)],
+        ['file', bytes],
+      ])
+      expect([kind, res.status]).toEqual([kind, 201])
+    }
   })
 })

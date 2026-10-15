@@ -54,6 +54,13 @@ test('the workbook names its one sheet, and the sheet name is made valid', () =>
   expect(book('x'.repeat(40))).toContain(`name="${'x'.repeat(31)}"`)
   expect(book('')).toContain('name="Cue sheet"')
   expect(book("it's <&>")).toContain('name="it&apos;s &lt;&amp;&gt;"')
+  // No leading or trailing apostrophe, and "History" is reserved.
+  expect(book("'LX'")).toContain('name="LX"')
+  expect(book("''x's''")).toContain('name="x&apos;s"')
+  expect(book("'''")).toContain('name="Cue sheet"')
+  expect(book('History')).toContain('name="History sheet"')
+  expect(book('hISTORY')).toContain('name="hISTORY sheet"')
+  expect(book('History of LX')).toContain('name="History of LX"')
 })
 
 test('XLSX escapes markup and drops control characters', () => {
@@ -87,9 +94,11 @@ test('blank cells are left out, and cells that read like formulas stay strings',
   expect(sheet).not.toContain('<f>')
 })
 
-test('a fractional or large page is still a plain number', () => {
-  const sheet = sheetOf([row({ page: 120 })])
-  expect(sheet).toContain('<c r="D2" t="n"><v>120</v></c>')
+test('a page is written as a number cell with exactly its value; a non-finite one is left blank', () => {
+  expect(sheetOf([row({ page: 12.5 })])).toContain('<c r="D2" t="n"><v>12.5</v></c>')
+  expect(sheetOf([row({ page: 120 })])).toContain('<c r="D2" t="n"><v>120</v></c>')
+  expect(sheetOf([row({ page: 1234567 })])).toContain('<c r="D2" t="n"><v>1234567</v></c>')
+  expect(sheetOf([row({ page: Number.NaN })])).not.toContain('r="D2"')
 })
 
 test('the package is deterministic', () => {

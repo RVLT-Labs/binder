@@ -3,4 +3,4 @@
  * pdf-lib and the XLSX fflate, which belong in chunks of their own, loaded when somebody exports a
  * cue sheet, not in the main bundle.
  */
-export { cueSheetCsv, cueSheetPdf, cueSheetXlsx, toCueSheetRows } from '@binder/core'
+export { cueSheetFile, toCueSheetRows } from '@binder/core'

@@ -9,8 +9,11 @@ export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 const MAX_FIELD_BYTES = 64 * 1024
 
 export interface Upload {
-  /** Text fields that arrived before the file part. Clients must send the file last. */
-  fields: Record<string, string>
+  /**
+   * The text fields, frozen at the moment the file part began: exactly what `opts.magic` saw. Clients
+   * must send every field once and the file last; a repeated field, or a field after the file, is `invalid`.
+   */
+  fields: Readonly<Record<string, string>>
   /** The file bytes, beginning with the expected magic when one was asked for. Errors with `payload_too_large` or `invalid` if the upload fails mid-stream. */
   file: { stream: Readable; filename: string }
 }
@@ -18,10 +21,10 @@ export interface Upload {
 export interface UploadOptions {
   /**
    * The bytes the file must begin with (`%PDF-` for a PDF, `PK` for a zip such as an XLSX); none to
-   * take any file. A function gets the text fields that arrived before the file part and answers
+   * take any file. A function gets the (frozen) text fields that arrived before the file part and answers
    * for this upload (an export's `kind` is in its `meta` field); if it throws, the upload fails with that error.
    */
-  magic?: string | ((fields: Record<string, string>) => string | undefined)
+  magic?: string | ((fields: Readonly<Record<string, string>>) => string | undefined)
 }
 
 /** What a failed magic check calls the file the caller wanted. */
@@ -134,6 +137,8 @@ export function readUpload(
 
     const source = Readable.fromWeb(body as import('node:stream/web').ReadableStream)
     const fields: Record<string, string> = {}
+    let snapshot: Readonly<Record<string, string>> | null = null
+    const parsed = new Promise<void>((done) => parser.once('close', () => done()))
     let settled = false
     let fileStream: Transform | null = null
 
@@ -150,6 +155,10 @@ export function readUpload(
     }
 
     parser.on('field', (name, value) => {
+      // A field after the file part, or a name sent twice, could make the upload mean something
+      // other than what was checked when the file began: refuse both.
+      if (snapshot) return fail(invalid('Fields must come before the file'))
+      if (Object.hasOwn(fields, name)) return fail(invalid(`Field "${name}" was sent twice`))
       fields[name] = value
     })
     parser.on('fieldsLimit', () => fail(invalid('Too many fields')))
@@ -162,16 +171,20 @@ export function readUpload(
       const onValid = () => {
         if (settled) return
         settled = true
-        resolve({ fields, file: { stream: check, filename: info.filename || 'upload' } })
+        resolve({
+          fields: snapshot as Readonly<Record<string, string>>,
+          file: { stream: check, filename: info.filename || 'upload' },
+        })
       }
       // Closing the stream early (consumer gave up) must not leave the request half-read.
       const onClose = () => {
         if (!check.writableFinished) source.destroy()
       }
       stream.on('error', fail)
+      snapshot = Object.freeze({ ...fields })
       let magic: string | undefined
       try {
-        magic = typeof opts.magic === 'function' ? opts.magic(fields) : opts.magic
+        magic = typeof opts.magic === 'function' ? opts.magic(snapshot) : opts.magic
       } catch (err) {
         stream.resume()
         return fail(err)
@@ -179,7 +192,14 @@ export function readUpload(
       const check =
         magic === undefined ? anyFile(onValid, onClose) : magicCheck(magic, onValid, onClose)
       fileStream = check
-      stream.pipe(check)
+      // The file ends only once the whole body has been parsed, so a field that trails the file
+      // fails the upload before the consumer can finish storing it.
+      stream.pipe(check, { end: false })
+      stream.once('end', () => {
+        void parsed.then(() => {
+          if (!check.destroyed) check.end()
+        })
+      })
       check.on('error', fail)
     })
     parser.on('close', () => {

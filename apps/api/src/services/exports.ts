@@ -2,9 +2,7 @@ import { Readable } from 'node:stream'
 import {
   buildStampItems,
   cueListRows,
-  cueSheetCsv,
-  cueSheetPdf,
-  cueSheetXlsx,
+  cueSheetFile,
   layerSelectionLabel,
   stampScript,
   toCueSheetRows,
@@ -18,7 +16,17 @@ import {
   exportRecords,
   shows,
 } from '@binder/db'
-import { type Actor, type LayerRef, layerKey, newId, paperSize } from '@binder/shared'
+import {
+  type Actor,
+  EXPORT_FILE_TYPES,
+  type LayerRef,
+  layerKey,
+  newId,
+  paperSize,
+  SHEET_FORMAT_KIND,
+  type SheetFormat,
+  type StoredExportKind,
+} from '@binder/shared'
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { z } from 'zod'
 import { type BlobStore, readBlobBytes } from '../blob/BlobStore'
@@ -32,21 +40,11 @@ import { loadVersionText } from './wordLayers'
 
 export type ExportRecord = typeof exportRecords.$inferSelect
 
-type StoredKind = 'pdf-script' | 'pdf-sheet' | 'csv' | 'xlsx'
+type StoredKind = StoredExportKind
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MIN_CLIENT_TIME = Date.UTC(2000, 0, 1)
 const MAX_CLIENT_TIME = Date.UTC(2100, 0, 1)
-
-const FILE_TYPES: Record<StoredKind, { ext: 'pdf' | 'csv' | 'xlsx'; contentType: string }> = {
-  'pdf-script': { ext: 'pdf', contentType: 'application/pdf' },
-  'pdf-sheet': { ext: 'pdf', contentType: 'application/pdf' },
-  csv: { ext: 'csv', contentType: 'text/csv; charset=utf-8' },
-  xlsx: {
-    ext: 'xlsx',
-    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  },
-}
 
 /** The `binder://` resource for an export's file (spec 3.10). */
 export const exportUri = (showId: string, exportId: string): string =>
@@ -184,7 +182,7 @@ export async function createExportRecord(
   }
   if (!UUID_RE.test(input.id)) throw invalid('id must be a UUID')
   if (input.showId.includes('\u0000')) throw invalid('showId must not contain NUL')
-  if (!Object.hasOwn(FILE_TYPES, input.kind))
+  if (!Object.hasOwn(EXPORT_FILE_TYPES, input.kind))
     throw invalid('kind must be pdf-script, pdf-sheet, csv or xlsx')
   const filename = parseOrInvalid(text(200), input.filename)
   const selection = dedupe(parseOrInvalid(selectionSchema, input.layerSelection))
@@ -211,7 +209,9 @@ export async function createExportRecord(
     return resolveExisting(first)
   }
 
-  const { ext, contentType } = FILE_TYPES[input.kind]
+  const { ext, mime } = EXPORT_FILE_TYPES[input.kind]
+  // A text file is stored as UTF-8.
+  const contentType = mime.startsWith('text/') ? `${mime}; charset=utf-8` : mime
   const key = exportBlobKey(input.showId, input.id, newId(), ext)
   await blobs.put(key, input.file, contentType)
   try {
@@ -379,12 +379,6 @@ export async function exportMarkedScript(
   return { record, uri: exportUri(record.showId, record.id) }
 }
 
-const CUE_LIST_FORMATS = {
-  pdf: { kind: 'pdf-sheet', ext: 'pdf' },
-  xlsx: { kind: 'xlsx', ext: 'xlsx' },
-  csv: { kind: 'csv', ext: 'csv' },
-} as const
-
 /**
  * Viewer or above. A department's cue sheet as a PDF (on the show's paper size), an XLSX or a CSV,
  * made from the same rows as the cue list screen and recorded like any export. The layer selection
@@ -396,9 +390,9 @@ export async function exportCueList(
   db: Executor,
   blobs: BlobStore,
   actor: Actor,
-  input: { departmentId: string; format: 'pdf' | 'xlsx' | 'csv' },
+  input: { departmentId: string; format: SheetFormat },
 ): Promise<{ record: ExportRecord; uri: string }> {
-  if (!Object.hasOwn(CUE_LIST_FORMATS, input.format))
+  if (!Object.hasOwn(SHEET_FORMAT_KIND, input.format))
     throw invalid('format must be pdf, xlsx or csv')
   if (input.departmentId.includes('\u0000')) throw notFound('Department not found')
   const [department] = await db
@@ -424,36 +418,29 @@ export async function exportCueList(
 
   const exportId = newId()
   const now = new Date()
-  const { kind, ext } = CUE_LIST_FORMATS[input.format]
   const title = `${department.code} cue sheet`
-  let bytes: Uint8Array
-  if (input.format === 'pdf') {
-    const settings = (show.settings ?? {}) as Record<string, unknown>
-    bytes = await cueSheetPdf(rows, {
-      title: `${show.title} ${title}`,
-      paper: paperSize(settings),
-      footer: {
-        showTitle: show.title,
-        documentLabel: title,
-        layerLabel: department.code,
-        binderVersion: null,
-        exportId,
-        date: now,
-      },
-    })
-  } else if (input.format === 'xlsx') {
-    bytes = cueSheetXlsx(rows, { sheetName: department.code })
-  } else {
-    bytes = new TextEncoder().encode(cueSheetCsv(rows))
-  }
+  const settings = (show.settings ?? {}) as Record<string, unknown>
+  const file = await cueSheetFile(input.format, rows, {
+    title: `${show.title} ${title}`,
+    sheetName: department.code,
+    paper: paperSize(settings),
+    footer: {
+      showTitle: show.title,
+      documentLabel: title,
+      layerLabel: department.code,
+      binderVersion: null,
+      exportId,
+      date: now,
+    },
+  })
 
   const record = await createExportRecord(db, blobs, actor, {
     id: exportId,
     showId: department.showId,
-    kind,
-    filename: exportFilename([show.title, title], ext),
+    kind: file.kind,
+    filename: exportFilename([show.title, title], file.ext),
     layerSelection: [{ kind: 'department', id: department.id }],
-    file: Readable.from(Buffer.from(bytes)),
+    file: Readable.from(Buffer.from(file.bytes)),
     createdAt: now,
   })
   return { record, uri: exportUri(record.showId, record.id) }

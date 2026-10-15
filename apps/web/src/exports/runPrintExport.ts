@@ -1,10 +1,7 @@
 import {
-  type Anchor,
   type AnnotationFields,
   type AnnotationType,
-  anchorSchema,
   type CueFields,
-  type CueType,
   type LayerRef,
   layerKey,
   type NumberFormat,
@@ -13,7 +10,8 @@ import {
 } from '@binder/shared'
 import { blobUrl, fetchBlob } from '../blobs/fetchBlob'
 import { pushNotice } from '../components/noticeStore'
-import type { EditContext } from '../markup/mutations'
+import { type EditContext, fromCueRow } from '../markup/mutations'
+import { ANNOTATION_TYPES, CUE_TYPES, parseAnchor, parseJson } from '../markup/rows'
 import { loadWordLayer } from '../markup/wordLayers'
 import { enqueueExport, type PendingExport } from './outbox'
 
@@ -42,17 +40,6 @@ export interface PrintEffects {
   loadWords(key: string): Promise<WordLayer | null>
   now(): Date
 }
-
-const CUE_TYPES: readonly string[] = ['go', 'standby', 'warn']
-const ANNOTATION_TYPES: readonly string[] = [
-  'note',
-  'rect',
-  'ellipse',
-  'line',
-  'arrow',
-  'stamp',
-  'highlight',
-]
 
 /** `/ \ : * ? " < > |` and control characters cannot be in a file name on every platform. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are the point
@@ -87,20 +74,6 @@ const defaultEffects: PrintEffects = {
   enqueue: enqueueExport,
   loadWords: loadWordLayer,
   now: () => new Date(),
-}
-
-function parseJson(text: string | null): unknown {
-  if (!text) return null
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
-}
-
-function parseAnchor(text: string | null): Anchor | null {
-  const parsed = anchorSchema.safeParse(parseJson(text))
-  return parsed.success ? (parsed.data as Anchor) : null
 }
 
 function parseRecord(text: string | null): Record<string, unknown> {
@@ -230,17 +203,7 @@ export async function runPrintExport(
   const cues: Array<CueFields & { id: string }> = []
   for (const r of cueRows) {
     if (!r.department_id || !CUE_TYPES.includes(r.type ?? '')) continue
-    cues.push({
-      id: r.id,
-      departmentId: r.department_id,
-      major: r.major ?? 0,
-      minor: r.minor ?? 0,
-      label: r.label ?? '',
-      type: r.type as CueType,
-      notes: r.notes ?? '',
-      colour: r.colour,
-      anchor: parseAnchor(r.anchor),
-    })
+    cues.push({ id: r.id, ...fromCueRow(r) })
   }
   const annotations: Array<AnnotationFields & { id: string }> = []
   for (const r of annotationRows) {

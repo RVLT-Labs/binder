@@ -1,12 +1,13 @@
 import { cueListRows } from '@binder/core'
-import { type Anchor, type CueFields, type NumberFormat, newId } from '@binder/shared'
+import { type CueFields, type NumberFormat, newId, type SheetFormat } from '@binder/shared'
 import { pushNotice } from '../components/noticeStore'
-import type { EditContext } from '../markup/mutations'
+import { type EditContext, fromCueRow } from '../markup/mutations'
+import { CUE_TYPES } from '../markup/rows'
 import { enqueueExport, type PendingExport } from './outbox'
 import { readPaperSize } from './paperSize'
 import { downloadBytes, type ExportDb, exportFilename } from './runPrintExport'
 
-export type SheetFormat = 'pdf' | 'xlsx' | 'csv'
+export type { SheetFormat }
 
 export interface CueSheetInput {
   departmentId: string
@@ -26,35 +27,10 @@ export interface CueSheetEffects {
   now(): Date
 }
 
-const FORMATS: Record<
-  SheetFormat,
-  { kind: 'pdf-sheet' | 'xlsx' | 'csv'; ext: SheetFormat; contentType: string }
-> = {
-  pdf: { kind: 'pdf-sheet', ext: 'pdf', contentType: 'application/pdf' },
-  xlsx: {
-    kind: 'xlsx',
-    ext: 'xlsx',
-    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  },
-  csv: { kind: 'csv', ext: 'csv', contentType: 'text/csv; charset=utf-8' },
-}
-
 const defaultEffects: CueSheetEffects = {
   download: downloadBytes,
   enqueue: enqueueExport,
   now: () => new Date(),
-}
-
-const CUE_TYPES: readonly string[] = ['go', 'standby', 'warn']
-
-function parseAnchor(text: string | null): Anchor | null {
-  if (!text) return null
-  try {
-    const value = JSON.parse(text)
-    return value && typeof value === 'object' ? (value as Anchor) : null
-  } catch {
-    return null
-  }
 }
 
 /**
@@ -70,8 +46,6 @@ export async function runCueSheetExport(
   effects: Partial<CueSheetEffects> = {},
 ): Promise<CueSheetResult> {
   const fx = { ...defaultEffects, ...effects }
-  const format = FORMATS[input.format]
-  if (!format) throw new Error('Choose PDF, XLSX or CSV.')
 
   const [show] = await db.getAll<{ title: string | null; settings: string | null }>(
     'SELECT title, settings FROM shows WHERE id = ?',
@@ -91,6 +65,7 @@ export async function runCueSheetExport(
   const [cueRows, documentRows] = await Promise.all([
     db.getAll<{
       id: string
+      department_id: string | null
       major: number | null
       minor: number | null
       label: string | null
@@ -99,7 +74,7 @@ export async function runCueSheetExport(
       colour: string | null
       anchor: string | null
     }>(
-      'SELECT id, major, minor, label, type, notes, colour, anchor FROM cues WHERE show_id = ? AND department_id = ?',
+      'SELECT id, department_id, major, minor, label, type, notes, colour, anchor FROM cues WHERE show_id = ? AND department_id = ?',
       [ctx.showId, department.id],
     ),
     db.getAll<{ id: string; title: string | null; current_version_id: string | null }>(
@@ -110,17 +85,7 @@ export async function runCueSheetExport(
   const cues: Array<CueFields & { id: string }> = []
   for (const r of cueRows) {
     if (!CUE_TYPES.includes(r.type ?? '')) continue
-    cues.push({
-      id: r.id,
-      departmentId: department.id,
-      major: r.major ?? 0,
-      minor: r.minor ?? 0,
-      label: r.label ?? '',
-      type: r.type as CueFields['type'],
-      notes: r.notes ?? '',
-      colour: r.colour,
-      anchor: parseAnchor(r.anchor),
-    })
+    cues.push({ id: r.id, ...fromCueRow(r) })
   }
 
   // Loaded here, at export time: the writers are large and nothing else in the app needs them.
@@ -149,29 +114,24 @@ export async function runCueSheetExport(
   const createdAt = fx.now()
   const showTitle = show.title ?? ''
   const title = `${code} cue sheet`
-  let bytes: Uint8Array
-  if (input.format === 'pdf') {
-    bytes = await sheets.cueSheetPdf(rows, {
-      title: `${showTitle} ${title}`,
-      paper: readPaperSize(show.settings),
-      footer: {
-        showTitle,
-        documentLabel: title,
-        layerLabel: code,
-        binderVersion: null,
-        exportId: id,
-        date: createdAt,
-      },
-    })
-  } else if (input.format === 'xlsx') {
-    bytes = sheets.cueSheetXlsx(rows, { sheetName: code })
-  } else {
-    bytes = new TextEncoder().encode(sheets.cueSheetCsv(rows))
-  }
-  const filename = exportFilename([showTitle, title], format.ext)
+  const file = await sheets.cueSheetFile(input.format, rows, {
+    title: `${showTitle} ${title}`,
+    sheetName: code,
+    paper: readPaperSize(show.settings),
+    footer: {
+      showTitle,
+      documentLabel: title,
+      layerLabel: code,
+      binderVersion: null,
+      exportId: id,
+      date: createdAt,
+    },
+  })
+  const { bytes } = file
+  const filename = exportFilename([showTitle, title], file.ext)
 
   // The file is the user's the moment it exists, online or not.
-  fx.download(filename, bytes, format.contentType)
+  fx.download(filename, bytes, file.mime)
   try {
     await fx.enqueue({
       id,
@@ -179,13 +139,13 @@ export async function runCueSheetExport(
       userId: ctx.userId,
       meta: {
         id,
-        kind: format.kind,
+        kind: file.kind,
         filename,
         layerSelection: [{ kind: 'department', id: department.id }],
         createdAt: createdAt.toISOString(),
       },
       bytes,
-      contentType: format.contentType,
+      contentType: file.mime,
     })
   } catch (err) {
     pushNotice({
