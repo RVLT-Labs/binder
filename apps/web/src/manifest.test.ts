@@ -4,7 +4,7 @@ import { expect, test } from 'vitest'
 import { APPLE_TOUCH_ICON, webManifest } from './manifest'
 
 const WEB = join(import.meta.dirname, '..')
-const styles = readFileSync(join(WEB, 'src', 'styles.css'), 'utf8')
+const tokens = readFileSync(join(WEB, 'src', 'styles', 'tokens.css'), 'utf8')
 
 /** Width and height from a PNG's IHDR chunk. */
 function pngSize(file: string): [number, number] {
@@ -23,9 +23,13 @@ test('the manifest makes Binder installable as a standalone app', () => {
   })
 })
 
-test('theme and background colours come from styles.css', () => {
-  expect(styles).toContain(`background: ${webManifest.background_color};`)
-  expect(styles).toContain(`background: ${webManifest.theme_color};`)
+test('theme and background colours are the espresso paper from tokens.css', () => {
+  expect(webManifest.background_color).toBe('#141210')
+  expect(webManifest.theme_color).toBe('#141210')
+  expect(tokens).toContain(`--paper: ${webManifest.background_color};`)
+  expect(tokens).toContain(`--paper: ${webManifest.theme_color};`)
+  const html = readFileSync(join(WEB, 'index.html'), 'utf8')
+  expect(html).toContain('<meta name="theme-color" content="#141210" />')
 })
 
 test('every icon exists at its declared size, including 192 and 512', () => {

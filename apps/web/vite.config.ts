@@ -1,6 +1,8 @@
 import { createReadStream, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, extname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
@@ -43,9 +45,11 @@ export default defineConfig({
   plugins: [
     tanstackRouter({ target: 'react', autoCodeSplitting: true }),
     react(),
+    tailwindcss(),
     pdfjsAssets(),
     offlineShell(),
   ],
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   server: {
     port: 5173,
     strictPort: true,
@@ -116,7 +120,7 @@ function offlineShell(): Plugin[] {
     // The icons and manifest are precached with the shell, so an installed app opens offline.
     includeAssets: ['apple-touch-icon.png', 'favicon.svg', 'favicon-32.png'],
     workbox: {
-      globPatterns: ['**/*.{html,js,mjs,css,wasm}', 'pdfjs/**/*'],
+      globPatterns: ['**/*.{html,js,mjs,css,wasm,woff2}', 'pdfjs/**/*'],
       maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       navigateFallback: '/index.html',
       navigateFallbackDenylist: [/^\/api\//, /^\/blobs\//, /^\/mcp/],
