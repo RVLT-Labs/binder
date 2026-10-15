@@ -13,7 +13,7 @@ import {
 } from '@binder/shared'
 import { and, desc, eq } from 'drizzle-orm'
 import { AppError, conflict, forbidden, IdTaken, invalid, notFound } from '../errors'
-import { REANCHOR_AGENT } from '../processing/reanchorJob'
+import { isReanchorRow } from '../processing/reanchorJob'
 import { hasNoNul } from '../validation'
 import { writeAnchorUnchecked } from './anchorWrites'
 import { createAnnotation, deleteAnnotations, updateAnnotation } from './annotations'
@@ -295,7 +295,7 @@ async function revertRows(
  * not match makes the whole batch an ordinary one.
  */
 function isServerAuthoredRun(rows: LogRow[]): boolean {
-  return rows.length > 0 && rows.every((r) => r.via === 'web' && r.agent === REANCHOR_AGENT)
+  return rows.length > 0 && rows.every(isReanchorRow)
 }
 
 /**

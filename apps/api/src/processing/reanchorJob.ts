@@ -1,7 +1,7 @@
 import { reanchor, reanchorAll, type VersionText } from '@binder/core'
 import { annotations, changeLog, cues, documents, documentVersions, shows } from '@binder/db'
 import type { Actor, Anchor, AnchorStatus } from '@binder/shared'
-import { and, asc, eq, type SQLWrapper, sql } from 'drizzle-orm'
+import { and, asc, eq, type SQL, type SQLWrapper, sql } from 'drizzle-orm'
 import { writeAnchorUnchecked } from '../services/anchorWrites'
 import { setCurrentVersion } from '../services/documents'
 import type { Executor } from '../services/executor'
@@ -13,6 +13,18 @@ import type { ProcessingDeps } from './types'
  * from a client: session actors carry `agent: null`, bearer and MCP actors carry `via: 'mcp'`.
  */
 export const REANCHOR_AGENT = 'Binder re-anchoring'
+
+/**
+ * Whether a change-log row (or any actor) is the server-authored re-anchoring run: `via = 'web'` with
+ * `agent = REANCHOR_AGENT`, a combination no client can produce. Revert and the review list's
+ * `previous` anchor both identify a run's rows with this rule, never by batch id.
+ */
+export const isReanchorRow = (row: { via: string; agent: string | null }): boolean =>
+  row.via === 'web' && row.agent === REANCHOR_AGENT
+
+/** The SQL form of `isReanchorRow` over `change_log`; keep the two in step. */
+export const reanchorRowCondition = (): SQL =>
+  sql`(${changeLog.via} = 'web' AND ${changeLog.agent} = ${REANCHOR_AGENT})`
 
 /** The change-log batch of one run. Client batch ids cannot contain `:` (Task 3), so none can collide. */
 export const reanchorBatchId = (versionId: string): string => `reanchor:${versionId}`

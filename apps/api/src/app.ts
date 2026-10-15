@@ -18,6 +18,7 @@ import { exportRoutes } from './routes/exports'
 import { health } from './routes/health'
 import { history } from './routes/history'
 import { me } from './routes/me'
+import { revisions } from './routes/revisions'
 import { sync } from './routes/sync'
 import { tenancy } from './routes/tenancy'
 import { tokens } from './routes/tokens'
@@ -84,6 +85,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   api.route('/', documents)
   api.route('/', history)
   api.route('/', exportRoutes)
+  api.route('/', revisions)
   app.route('/api', api)
   app.route('/', blobs)
 

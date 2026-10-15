@@ -42,6 +42,10 @@ export const TOOL_NAMES = [
   'list_exports',
   'export_marked_script',
   'export_cue_list',
+  'get_reanchor_review',
+  'resolve_reanchor_item',
+  'get_version_anchors',
+  'compare_versions',
 ] as const
 
 export type ToolName = (typeof TOOL_NAMES)[number]
@@ -90,6 +94,10 @@ export const OPERATION_TO_TOOL: Record<string, ToolName> = {
   listExportRecords: 'list_exports',
   exportMarkedScript: 'export_marked_script',
   exportCueList: 'export_cue_list',
+  listReanchorReview: 'get_reanchor_review',
+  resolveReanchorItem: 'resolve_reanchor_item',
+  listVersionAnchors: 'get_version_anchors',
+  compareDocumentVersions: 'compare_versions',
 }
 
 const TOKEN_REASON = 'token management stays in the UI so an agent cannot mint credentials'

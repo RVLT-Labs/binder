@@ -35,6 +35,12 @@ export type { PlaceCueAtTextInput, PlaceCueAtTextResult } from './placement'
 export { placeCueAtText } from './placement'
 export { renumberCues } from './renumber'
 export { revertBatch, revertChange } from './revert'
+export {
+  compareDocumentVersions,
+  listReanchorReview,
+  listVersionAnchors,
+  resolveReanchorItem,
+} from './revisions'
 export { searchVersion } from './search'
 export {
   addShowMember,

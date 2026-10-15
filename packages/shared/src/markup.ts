@@ -21,6 +21,21 @@ export interface Anchor {
   status: AnchorStatus
 }
 
+/**
+ * One cue or annotation in the re-anchoring review (spec 5.4). `previous` is the anchor the row had
+ * before the most recent re-anchoring run moved it, or null when no run ever moved it. `title` is
+ * `LX 12 · Fly out` for a cue and `note · first words` for an annotation.
+ */
+export interface ReviewItem {
+  table: 'cues' | 'annotations'
+  rowId: string
+  /** A layer key: `department:<id>`, or `personal:<your user id>`. */
+  layer: string
+  title: string
+  anchor: Anchor
+  previous: Anchor | null
+}
+
 export interface CueNumber {
   major: number
   minor: number

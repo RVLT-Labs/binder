@@ -64,9 +64,10 @@ function pageSize(limit: number | undefined): number {
 
 /**
  * The privacy filter every history query carries (spec 4.11): rows on a personal layer belong to its
- * owner alone. The SQL form of shared `isLayerVisibleTo`; keep the two in step.
+ * owner alone. The SQL form of shared `isLayerVisibleTo`; keep the two in step. Internal (not in the
+ * barrel): the revisions service filters its change-log lookups with it too.
  */
-const visibleTo = (actor: Actor): SQL =>
+export const visibleTo = (actor: Actor): SQL =>
   sql`(${changeLog.layer} IS NULL OR ${changeLog.layer} NOT LIKE 'personal:%' OR ${changeLog.layer} = ${`personal:${actor.userId}`})`
 
 function conditions(actor: Actor, f: RowFilter): SQL[] {
