@@ -16,6 +16,7 @@
     "@binder/db": "workspace:*",
     "@binder/shared": "workspace:*",
     "@hono/node-server": "^2.1.0",
+    "@hono/node-ws": "^1.3.1",
     "@modelcontextprotocol/hono": "^2.0.2",
     "@modelcontextprotocol/server": "^2.3.1",
     "better-auth": "^1.7.7",
@@ -27,6 +28,7 @@
     "pdf-lib": "^1.17.1",
     "pg": "^8.13.0",
     "pg-boss": "^12.37.1",
+    "ws": "^8.22.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
@@ -34,6 +36,7 @@
     "@modelcontextprotocol/client": "^2.3.1",
     "@types/busboy": "^1.5.5",
     "@types/nodemailer": "^8.0.2",
+    "@types/ws": "^8.18.2",
     "fflate": "^0.8.3",
     "tsup": "^8.5.0",
     "tsx": "^4.20.0"

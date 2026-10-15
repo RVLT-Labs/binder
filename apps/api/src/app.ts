@@ -1,5 +1,6 @@
 import type { Db } from '@binder/db'
-import type { Actor } from '@binder/shared'
+import { type Actor, PRESENCE_MAX_FRAME_BYTES } from '@binder/shared'
+import { createNodeWebSocket, type NodeWebSocket } from '@hono/node-ws'
 import { Hono, type MiddlewareHandler } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { HTTPException } from 'hono/http-exception'
@@ -10,6 +11,7 @@ import type { Config } from './config'
 import { AppError } from './errors'
 import { mcpAuth } from './mcp/auth'
 import { createMcpRoutes } from './mcp/server'
+import type { PresenceHub } from './presence/hub'
 import type { JobQueue } from './processing/types'
 import { blobs } from './routes/blobs'
 import { departments } from './routes/departments'
@@ -18,6 +20,7 @@ import { exportRoutes } from './routes/exports'
 import { health } from './routes/health'
 import { history } from './routes/history'
 import { me } from './routes/me'
+import { createPresenceRoutes } from './routes/presence'
 import { revisions } from './routes/revisions'
 import { sync } from './routes/sync'
 import { tenancy } from './routes/tenancy'
@@ -29,6 +32,9 @@ export interface AppDeps {
   blobs: BlobStore
   auth: Auth
   jobs: JobQueue
+  presence: PresenceHub
+  /** Tests shorten these: how often idle connections are swept and memberships re-read. */
+  presenceOptions?: { sweepMs?: number; recheckMs?: number }
 }
 
 export type AppEnv = {
@@ -39,8 +45,14 @@ export type AppEnv = {
   }
 }
 
-export function createApp(deps: AppDeps): Hono<AppEnv> {
+/** The app, plus the hook that lets its HTTP server take WebSocket upgrades (presence). */
+export type BinderApp = Hono<AppEnv> & { injectWebSocket: NodeWebSocket['injectWebSocket'] }
+
+export function createApp(deps: AppDeps): BinderApp {
   const app = new Hono<AppEnv>()
+  const { upgradeWebSocket, injectWebSocket, wss } = createNodeWebSocket({ app })
+  // The library closes a socket that sends a larger frame with 1009 before our handler sees it.
+  wss.options.maxPayload = PRESENCE_MAX_FRAME_BYTES
 
   app.use('*', async (c, next) => {
     c.set('deps', deps)
@@ -86,6 +98,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   api.route('/', history)
   api.route('/', exportRoutes)
   api.route('/', revisions)
+  api.route('/', createPresenceRoutes(upgradeWebSocket))
   app.route('/api', api)
   app.route('/', blobs)
 
@@ -93,7 +106,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.use('/mcp/*', mcpAuth)
   app.route('/mcp', createMcpRoutes(deps, deps.config))
 
-  return app
+  return Object.assign(app, { injectWebSocket })
 }
 
 export const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024

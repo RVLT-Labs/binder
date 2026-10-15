@@ -2,7 +2,7 @@ import { HTTPException } from 'hono/http-exception'
 import { expect, test } from 'vitest'
 import { createApp } from '../src/app'
 import { invalid, notFound } from '../src/errors'
-import { testDeps } from './helpers'
+import { APP_ORIGIN, testDeps } from './helpers'
 
 test('GET /api/health returns ok', async () => {
   const app = createApp(await testDeps())
@@ -58,4 +58,14 @@ test('unknown path returns JSON 404', async () => {
   const res = await app.request('/api/nope')
   expect(res.status).toBe(404)
   expect(await res.json()).toEqual({ error: 'not_found', message: 'Not found' })
+})
+
+test('createApp exposes the WebSocket hook and the presence route is mounted', async () => {
+  const app = createApp(await testDeps())
+  expect(typeof app.injectWebSocket).toBe('function')
+  // Without an upgrade the route still answers after the origin and session checks.
+  const noOrigin = await app.request('/api/shows/s/presence')
+  expect(noOrigin.status).toBe(403)
+  const noSession = await app.request('/api/shows/s/presence', { headers: { origin: APP_ORIGIN } })
+  expect(noSession.status).toBe(401)
 })

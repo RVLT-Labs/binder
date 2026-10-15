@@ -41,7 +41,8 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    proxy: { '/api': api, '/blobs': api, '/mcp': api },
+    // `ws: true` lets the presence WebSocket (/api/shows/:id/presence) upgrade through the proxy.
+    proxy: { '/api': { target: api, ws: true }, '/blobs': api, '/mcp': api },
   },
   // `vite preview` serves the production build, as the offline e2e needs; same-origin like production.
   preview: {

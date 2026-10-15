@@ -1,13 +1,16 @@
 import { mkdtempSync } from 'node:fs'
+import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getTestDb } from '@binder/db/testing'
+import { serve } from '@hono/node-server'
 import type { Hono } from 'hono'
 import { type AppDeps, type AppEnv, createApp } from '../src/app'
 import { createAuth } from '../src/auth/auth'
 import type { SendMail } from '../src/auth/mailer'
 import { DiskBlobStore } from '../src/blob/DiskBlobStore'
 import type { Config } from '../src/config'
+import { PresenceHub } from '../src/presence/hub'
 import type { JobQueue } from '../src/processing/types'
 
 /** Records enqueued version, page and re-anchor ids instead of processing them. */
@@ -55,6 +58,7 @@ export async function testDeps(
     blobs: new DiskBlobStore(config.BLOB_ROOT),
     auth: createAuth({ db, config, sendMail }),
     jobs: new RecordingJobs(),
+    presence: new PresenceHub(),
     ...overrides,
   }
 }
@@ -82,4 +86,27 @@ export async function createTestUser(
     .map((c) => c.split(';')[0])
     .join('; ')
   return { id: user.id, cookie }
+}
+
+/**
+ * Serve the app on a real HTTP server (port 0) with WebSocket upgrades wired in, for tests that need
+ * a socket. `close` drops every open connection and stops the server.
+ */
+export async function listen(app: ReturnType<typeof createApp>): Promise<{
+  port: number
+  close: () => Promise<void>
+}> {
+  const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' })
+  app.injectWebSocket(server)
+  await new Promise<void>((resolve) => server.once('listening', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('test server has no port')
+  return {
+    port: address.port,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve())
+        ;(server as Server).closeAllConnections()
+      }),
+  }
 }

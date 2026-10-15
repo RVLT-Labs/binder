@@ -1,3 +1,4 @@
+import { PRESENCE_HEARTBEAT_MS } from '@binder/shared'
 import { serve } from '@hono/node-server'
 import { PgBoss } from 'pg-boss'
 import { createApp } from './app'
@@ -6,6 +7,7 @@ import { createMailer } from './auth/mailer'
 import { DiskBlobStore } from './blob/DiskBlobStore'
 import { loadConfig } from './config'
 import { connectAndMigrate } from './db'
+import { PresenceHub } from './presence/hub'
 import { createJobQueue } from './processing/queue'
 import { sweepPendingReanchors } from './processing/reanchorSweep'
 import { createShutdown } from './shutdown'
@@ -29,17 +31,22 @@ const sweepReanchors = () =>
 await sweepReanchors()
 const reanchorSweepTimer = setInterval(() => void sweepReanchors(), 5 * 60 * 1000)
 
-const app = createApp({ config, db, blobs, auth, jobs })
+// Presence (spec 3.9) is in memory: one process, one hub. Connections silent for 15 s are swept.
+const presence = new PresenceHub()
+const app = createApp({ config, db, blobs, auth, jobs, presence })
+const presenceSweepTimer = setInterval(() => presence.sweep(), PRESENCE_HEARTBEAT_MS)
 
 const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.log(`binder api listening on :${info.port}`)
 })
+app.injectWebSocket(server)
 
 // In-flight jobs get a moment to finish; anything left is retried by the next worker.
 const shutdown = createShutdown({
   closeServer: () => server.close(),
   stopQueue: () => {
     clearInterval(reanchorSweepTimer)
+    clearInterval(presenceSweepTimer)
     return boss.stop({ graceful: true, timeout: 10_000 })
   },
   endPool: () => pool.end(),
