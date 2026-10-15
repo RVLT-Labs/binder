@@ -21,6 +21,8 @@ export {
   updateDocument,
   uploadDocumentFromUrl,
 } from './documents'
+export type { ExportRecord } from './exports'
+export { createExportRecord, exportMarkedScript, listExportRecords } from './exports'
 export type { ActivityGroup, HistoryEntry } from './history'
 export { activityFeed, listHistory } from './history'
 export { getPage, getPageImage } from './pages'

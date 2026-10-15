@@ -27,9 +27,12 @@ RUN apt-get update \
       ocrmypdf tesseract-ocr tesseract-ocr-eng ghostscript qpdf poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 
+# TZ decides the date in the footer of server-made PDF exports (it prints local time, spec 5.3):
+# the productions are in Sydney, so that is the default. Override TZ in the service environment.
 ENV NODE_ENV=production \
     PORT=3000 \
-    BLOB_ROOT=/data/blobs
+    BLOB_ROOT=/data/blobs \
+    TZ=Australia/Sydney
 WORKDIR /app
 
 # Same layout as the repository, so `node apps/api/dist/cli.js` works from /app.

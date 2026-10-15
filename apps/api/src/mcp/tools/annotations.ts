@@ -53,7 +53,7 @@ const annotationPlacement = placement.extend({
 })
 type AnnotationPlacement = z.infer<typeof annotationPlacement>
 
-async function resolveLayer(
+export async function resolveLayer(
   db: Executor,
   actor: Actor,
   showId: string,

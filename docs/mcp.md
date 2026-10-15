@@ -104,6 +104,8 @@ quoting problems. For a local API on plain http, add `"--allow-http"` after the 
 | `upload_document` | write, open-world | Server downloads a PDF from a public http(s) URL as a new document or a new version. Editors. |
 | `get_page` | read-only | A page as a JPEG (at most 1600 px on the long side) plus its word layer. |
 | `search_script` | read-only | Phrase search over a version, with page, snippet and the first word's box. |
+| `list_exports` | read-only | A show's export records, newest first. Exports that include someone else's personal layer are never listed. Paginated. |
+| `export_marked_script` | write | Print a document version with chosen layers (`"all"`, `"none"`, or department codes, `"personal"`, layer keys) to a PDF with a footer; returns the record and a `resource_link` to the file. Including your personal layer makes the export private to you. |
 
 Only `remove_show_member` is marked destructive. Hard-to-reverse calls return `CONFIRMATION_REQUIRED` with a
 plain-language summary and change nothing until called again with `confirm: true` (spec 3.10).
@@ -129,6 +131,8 @@ curl -F kind=libretto -F title=Script -F file=@script.pdf \
 
 - `binder://shows/{showId}/versions/{versionId}/pages/{index}/words`: the word layer as JSON.
 - `binder://shows/{showId}/versions/{versionId}/pages/{index}/image`: the page JPEG.
+- `binder://shows/{showId}/exports/{exportId}`: an export's file (PDF, CSV or XLSX) as a blob. A private
+  export of another member is `not_found`.
 - `binder://guides/{slug}`: the working guides in `docs/guides/` (listed): `jayden-style`,
   `mic-and-dca-practice`, `tmix-format`.
 

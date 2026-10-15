@@ -4,6 +4,7 @@ import {
   departments,
   documents,
   documentVersions,
+  exportRecords,
   pages,
   showMemberships,
   shows,
@@ -23,6 +24,7 @@ const SYNCED: Table[] = [
   departments,
   cues,
   annotations,
+  exportRecords,
 ]
 
 test('the client schema lists exactly the synced tables', () => {

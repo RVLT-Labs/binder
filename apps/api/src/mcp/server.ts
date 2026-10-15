@@ -4,12 +4,14 @@ import type { Hono } from 'hono'
 import type { Config } from '../config'
 import { principalFrom } from './auth'
 import { type McpDeps, mcpContext } from './context'
+import { registerExportResources } from './resources/exports'
 import { registerGuideResources } from './resources/guides'
 import { registerPageResources } from './resources/pages'
 import { registerAnnotationTools } from './tools/annotations'
 import { registerCueTools } from './tools/cues'
 import { registerDepartmentTools } from './tools/departments'
 import { registerDocumentTools } from './tools/documents'
+import { registerExportTools } from './tools/exports'
 import { registerHistoryTools } from './tools/history'
 import { registerPageTools } from './tools/pages'
 import { registerSearchTools } from './tools/search'
@@ -27,6 +29,7 @@ const INSTRUCTIONS = [
   'word layer per page), departments (the layers cues and marks live on, like LX or SND) their cues (numbered per department, anchored to a page position or unplaced) and annotations (notes, shapes, stamps and highlights drawn on a department layer or on your own private personal layer). Start with list_shows, then list_documents for a show;',
   'a document version id is what get_page (see and read a page) and search_script take. Page',
   'indices are zero-based and coordinates are PDF points with the origin at the bottom left.',
+  "export_marked_script prints a document with chosen layers to a PDF (read it as a binder://shows/{showId}/exports/{exportId} resource); list_exports lists a show's exports.",
   'House rules for cue style, mic and DCA practice and the .tmix format are the binder://guides',
   'resources; read them before marking up a script.',
 ].join(' ')
@@ -46,9 +49,11 @@ export function createMcpServerFactory(deps: McpDeps): McpServerFactory {
     registerAnnotationTools(server, mcp)
     registerDocumentTools(server, mcp)
     registerHistoryTools(server, mcp)
+    registerExportTools(server, mcp)
     registerPageTools(server, mcp)
     registerSearchTools(server, mcp)
     registerPageResources(server, mcp)
+    registerExportResources(server, mcp)
     registerGuideResources(server)
     return server
   }

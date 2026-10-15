@@ -12,4 +12,5 @@ export const SYNCED_TABLES: readonly string[] = [
   'departments',
   'cues',
   'annotations',
+  'export_records',
 ]

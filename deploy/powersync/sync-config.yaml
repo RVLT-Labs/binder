@@ -22,3 +22,6 @@ streams:
       # Department layers reach every member; a personal layer reaches only its owner.
       - SELECT * FROM annotations WHERE show_id IN user_shows AND layer_kind = 'department'
       - SELECT * FROM annotations WHERE show_id IN user_shows AND layer_kind = 'personal' AND layer_id = auth.user_id()
+      # Exports reach every member unless their selection includes the exporter's personal layer; those reach only the exporter.
+      - SELECT * FROM export_records WHERE show_id IN user_shows AND private_to IS NULL
+      - SELECT * FROM export_records WHERE show_id IN user_shows AND private_to = auth.user_id()

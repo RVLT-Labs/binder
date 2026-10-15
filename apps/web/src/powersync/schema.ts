@@ -134,6 +134,27 @@ const annotations = new Table(
   { indexes: { show: ['show_id'], layer: ['layer_kind', 'layer_id'] } },
 )
 
+// Read-only on the client: an export's file uploads over REST, which creates the row.
+const export_records = new Table(
+  {
+    show_id: column.text,
+    kind: column.text,
+    filename: column.text,
+    cast_variant_id: column.text,
+    layer_selection: column.text,
+    snapshot_id: column.text,
+    binder_version: column.integer,
+    private_to: column.text,
+    file_key: column.text,
+    changelog: column.text,
+    created_by: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+    updated_by: column.text,
+  },
+  { indexes: { show: ['show_id'] } },
+)
+
 export const AppSchema = new Schema({
   shows,
   show_memberships,
@@ -143,6 +164,7 @@ export const AppSchema = new Schema({
   departments,
   cues,
   annotations,
+  export_records,
 })
 
 export type Database = (typeof AppSchema)['types']
@@ -153,3 +175,4 @@ export type PageRow = Database['pages']
 export type DepartmentRow = Database['departments']
 export type CueRow = Database['cues']
 export type AnnotationRow = Database['annotations']
+export type ExportRecordRow = Database['export_records']

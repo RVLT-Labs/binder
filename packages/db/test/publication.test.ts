@@ -61,3 +61,22 @@ test('sync-config streams personal annotations only where layer_id = auth.user_i
   // Every query still scopes to the user's shows.
   for (const q of queries) expect(q).toMatch(/show_id IN user_shows/)
 })
+
+test("sync-config streams export records as shared (private_to IS NULL) or the exporter's own only", () => {
+  const config = parse(readFileSync(SYNC_CONFIG, 'utf8')) as {
+    streams: Record<string, { queries: string[] }>
+  }
+  const queries = Object.values(config.streams)
+    .flatMap((s) => s.queries)
+    .filter((q) => /\bFROM\s+export_records\b/i.test(q))
+    .map((q) => q.replace(/\s+/g, ' ').trim())
+  expect(queries.length).toBe(2)
+  for (const q of queries) {
+    expect(q, `unsafe export_records query: ${q}`).toMatch(
+      /private_to IS NULL$|private_to = auth\.user_id\(\)$/,
+    )
+    expect(q).toMatch(/show_id IN user_shows/)
+  }
+  expect(queries.some((q) => /private_to IS NULL/.test(q))).toBe(true)
+  expect(queries.some((q) => /private_to = auth\.user_id\(\)/.test(q))).toBe(true)
+})

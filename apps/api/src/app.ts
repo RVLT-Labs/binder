@@ -14,6 +14,7 @@ import type { JobQueue } from './processing/types'
 import { blobs } from './routes/blobs'
 import { departments } from './routes/departments'
 import { documents } from './routes/documents'
+import { exportRoutes } from './routes/exports'
 import { health } from './routes/health'
 import { history } from './routes/history'
 import { me } from './routes/me'
@@ -82,6 +83,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   api.route('/', sync)
   api.route('/', documents)
   api.route('/', history)
+  api.route('/', exportRoutes)
   app.route('/api', api)
   app.route('/', blobs)
 
@@ -94,8 +96,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
 export const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
 
-/** POST /api/shows/:showId/documents and POST /api/shows/:showId/documents/:docId/versions. */
-const UPLOAD_PATH = /^\/api\/shows\/[^/]+\/documents(?:\/[^/]+\/versions)?\/?$/
+/** The multipart uploads: documents, document versions and exports. */
+const UPLOAD_PATH = /^\/api\/shows\/[^/]+\/(?:documents(?:\/[^/]+\/versions)?|exports)\/?$/
 
 const limit = bodyLimit({ maxSize: MAX_JSON_BODY_BYTES })
 

@@ -39,6 +39,8 @@ export const TOOL_NAMES = [
   'get_activity',
   'revert_change',
   'revert_batch',
+  'list_exports',
+  'export_marked_script',
 ] as const
 
 export type ToolName = (typeof TOOL_NAMES)[number]
@@ -84,6 +86,8 @@ export const OPERATION_TO_TOOL: Record<string, ToolName> = {
   activityFeed: 'get_activity',
   revertChange: 'revert_change',
   revertBatch: 'revert_batch',
+  listExportRecords: 'list_exports',
+  exportMarkedScript: 'export_marked_script',
 }
 
 const TOKEN_REASON = 'token management stays in the UI so an agent cannot mint credentials'
@@ -102,4 +106,6 @@ export const UI_ONLY_OPERATIONS: Record<string, string> = {
   authenticateToken:
     'auth plumbing: the MCP endpoint itself authenticates the bearer token with it',
   tokenAllowsShow: 'auth plumbing: a pure token scope predicate, not an operation',
+  createExportRecord:
+    'client-generated exports upload their file over REST; agents export with export_marked_script and export_cue_list, which create the record server side',
 }

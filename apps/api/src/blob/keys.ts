@@ -59,3 +59,23 @@ export function pageImageBlobKey(
 ): string {
   return `${versionPrefix(showId, documentId, versionId)}/pages/${index}/image-${maxPx}.jpg`
 }
+
+/**
+ * An export's file. The nonce is server-generated per upload, so two uploads racing on one export
+ * id never write the same key (the loser deletes its own blob).
+ */
+export function exportBlobKey(
+  showId: string,
+  exportId: string,
+  nonce: string,
+  ext: 'pdf' | 'csv' | 'xlsx',
+): string {
+  return `shows/${showId}/exports/${exportId}/${nonce}.${ext}`
+}
+
+/** The show and export a `shows/{showId}/exports/{exportId}/...` key belongs to, or null for any other key. */
+export function parseExportKey(key: string): { showId: string; exportId: string } | null {
+  const segments = key.split('/')
+  if (segments.length !== 5 || segments[0] !== 'shows' || segments[2] !== 'exports') return null
+  return { showId: segments[1], exportId: segments[3] }
+}
