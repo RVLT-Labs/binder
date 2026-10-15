@@ -30,3 +30,33 @@ describe("agrees with pdf-lib's StandardFonts.Helvetica at 9 pt", () => {
     expect(helveticaWidth(pangram, 9)).toBeCloseTo(sum, 6)
   })
 })
+
+describe('beyond ASCII', () => {
+  test('accented letters and smart punctuation measure from the AFM, not a default', () => {
+    // 'Ç' 722, em dash 1000, curly quotes 333 and 222, ellipsis 1000, bullet 350, euro 556.
+    expect(helveticaWidth('Ç', 1000)).toBe(722)
+    expect(helveticaWidth('—', 1000)).toBe(1000)
+    expect(helveticaWidth('“”', 1000)).toBe(666)
+    expect(helveticaWidth('’', 1000)).toBe(222)
+    expect(helveticaWidth('…', 1000)).toBe(1000)
+    expect(helveticaWidth('•', 1000)).toBe(350)
+    expect(helveticaWidth('\u00a0', 1000)).toBe(278)
+  })
+
+  test('every WinAnsi character agrees with pdf-lib Helvetica', async () => {
+    const f = await PDFDocument.create().then((d) => d.embedFont(StandardFonts.Helvetica))
+    const chars = [
+      ...Array.from({ length: 0x60 }, (_, i) => String.fromCodePoint(0xa0 + i)),
+      ...'€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ',
+    ]
+    expect(chars).toHaveLength(96 + 27)
+    for (const ch of chars) {
+      expect(helveticaWidth(ch, 9), `U+${ch.codePointAt(0)?.toString(16)}`).toBeCloseTo(
+        f.widthOfTextAtSize(ch, 9),
+        6,
+      )
+    }
+  })
+
+  test('anything else keeps the 556 default', () => expect(helveticaWidth('東', 1000)).toBe(556))
+})

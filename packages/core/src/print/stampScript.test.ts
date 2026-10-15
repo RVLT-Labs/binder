@@ -1,6 +1,6 @@
-import { degrees, PDFDocument } from 'pdf-lib'
-import { expect, test } from 'vitest'
-import { displayedToUser, stampScript } from './stampScript'
+import { degrees, PDFDocument, PDFName, PDFNumber } from 'pdf-lib'
+import { describe, expect, test } from 'vitest'
+import { displayedToUser, frameOf, stampScript } from './stampScript'
 
 const footer = {
   showTitle: 'Pirates',
@@ -63,4 +63,54 @@ test('stamping keeps every page box and rotation and draws the footer on each pa
   expect(p0?.getCropBox()).toEqual({ x: 20, y: 30, width: 200, height: 300 })
   expect(p1?.getRotation().angle).toBe(270)
   expect(p1?.getSize()).toEqual({ width: 500, height: 200 })
+})
+
+const numbers = (doc: PDFDocument, ns: number[]) => doc.context.obj(ns)
+
+describe('frameOf', () => {
+  test.each([
+    [-90, 270],
+    [450, 90],
+    [-180, 180],
+    [360, 0],
+    [90, 90],
+  ])('/Rotate %i is read as %i', async (given, want) => {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([300, 400])
+    page.node.set(PDFName.of('Rotate'), PDFNumber.of(given))
+    expect(frameOf(page).rotation).toBe(want)
+  })
+
+  test('/Rotate inherited from the page tree applies', async () => {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([300, 400])
+    doc.catalog.Pages().set(PDFName.of('Rotate'), PDFNumber.of(90))
+    expect(page.node.has(PDFName.of('Rotate'))).toBe(false)
+    expect(frameOf(page).rotation).toBe(90)
+  })
+
+  test('a crop box larger than the media box is clipped to it', async () => {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([300, 400])
+    page.setCropBox(-20, -30, 400, 600)
+    expect(frameOf(page)).toEqual({ bx: 0, by: 0, w: 300, h: 400, rotation: 0 })
+  })
+
+  test('a crop box inside an offset media box keeps its own corner', async () => {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([300, 400])
+    page.setMediaBox(50, 50, 300, 400)
+    page.setCropBox(70, 80, 100, 150)
+    expect(frameOf(page)).toEqual({ bx: 70, by: 80, w: 100, h: 150, rotation: 0 })
+  })
+
+  test('a reversed box (upper-right corner first) is normalised', async () => {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([300, 400])
+    page.node.set(PDFName.of('MediaBox'), numbers(doc, [350, 450, 50, 50]))
+    page.node.set(PDFName.of('CropBox'), numbers(doc, [250, 350, 100, 100]))
+    expect(frameOf(page)).toEqual({ bx: 100, by: 100, w: 150, h: 250, rotation: 0 })
+    page.node.delete(PDFName.of('CropBox'))
+    expect(frameOf(page)).toEqual({ bx: 50, by: 50, w: 300, h: 400, rotation: 0 })
+  })
 })

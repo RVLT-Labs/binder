@@ -41,6 +41,11 @@ test('layer labels: none is Clean copy, every department is All layers', () => {
   ).toBe('All layers')
 })
 
+test('every department plus the personal layer says so: private notes are printed', () =>
+  expect(layerSelectionLabel([...depts.map((d) => dept(d.id)), personal], depts)).toBe(
+    'All layers + personal',
+  ))
+
 test('layer labels: codes in department order, then the personal layer', () => {
   // Selection order does not matter: the department order does.
   expect(layerSelectionLabel([dept('d-tm'), dept('d-lx')], depts)).toBe('LX, TM')

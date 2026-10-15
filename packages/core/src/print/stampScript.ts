@@ -66,22 +66,36 @@ export function displayedToUser(f: PageFrame, dx: number, dy: number): { x: numb
   }
 }
 
-function frameOf(page: PDFPage): PageFrame {
-  const media = page.getMediaBox()
-  const crop = page.getCropBox()
-  // The visible box is the crop box clipped to the media box, as poppler reads it.
-  const x0 = Math.max(media.x, crop.x)
-  const y0 = Math.max(media.y, crop.y)
-  const x1 = Math.min(media.x + media.width, crop.x + crop.width)
-  const y1 = Math.min(media.y + media.height, crop.y + crop.height)
-  const angle = (((Math.round(page.getRotation().angle / 90) * 90) % 360) + 360) % 360
+/** A box's corners in either order, as poppler reads them: lower-left first, non-negative size. */
+function normalised(box: { x: number; y: number; width: number; height: number }) {
   return {
-    bx: x0,
-    by: y0,
-    w: x1 > x0 ? x1 - x0 : media.width,
-    h: y1 > y0 ? y1 - y0 : media.height,
-    rotation: angle as PageFrame['rotation'],
+    x0: Math.min(box.x, box.x + box.width),
+    y0: Math.min(box.y, box.y + box.height),
+    x1: Math.max(box.x, box.x + box.width),
+    y1: Math.max(box.y, box.y + box.height),
   }
+}
+
+/** The frame displayed space is measured in: the visible box and `/Rotate` of a page. */
+export function frameOf(page: PDFPage): PageFrame {
+  const media = normalised(page.getMediaBox())
+  const crop = normalised(page.getCropBox())
+  // The visible box is the crop box clipped to the media box.
+  const x0 = Math.max(media.x0, crop.x0)
+  const y0 = Math.max(media.y0, crop.y0)
+  const x1 = Math.min(media.x1, crop.x1)
+  const y1 = Math.min(media.y1, crop.y1)
+  const clipped = x1 > x0 && y1 > y0
+  const angle = (((Math.round(page.getRotation().angle / 90) * 90) % 360) + 360) % 360
+  return clipped
+    ? { bx: x0, by: y0, w: x1 - x0, h: y1 - y0, rotation: angle as PageFrame['rotation'] }
+    : {
+        bx: media.x0,
+        by: media.y0,
+        w: media.x1 - media.x0,
+        h: media.y1 - media.y0,
+        rotation: angle as PageFrame['rotation'],
+      }
 }
 
 function colourOf(hex: string) {

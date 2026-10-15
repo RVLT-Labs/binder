@@ -313,14 +313,7 @@ describe.skipIf(skip)('print stamping with poppler', () => {
     expect(gap.xMin).toBeGreaterThan(note.xMin)
     expect(Math.abs(gap.yMin - note.yMin)).toBeLessThan(2)
     const text = await pdftotext(out, 1)
-    for (const s of [
-      'second paragraph',
-      'Blackout',
-      'quote words'.slice(0, 0),
-      'an unbound',
-      'SB LX 10',
-      'W LX 11',
-    ]) {
+    for (const s of ['second paragraph', 'Blackout', 'an unbound', 'SB LX 10', 'W LX 11']) {
       expect(text).toContain(s)
     }
     // A highlight's colour lands where its word box says (120 from the left, 400 up on a 595 tall

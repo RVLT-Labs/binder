@@ -25,7 +25,7 @@ export function footerText(f: FooterInfo): string {
 
 /**
  * What the footer says about the layers on the page: `Clean copy` for none, `All layers` when
- * every department is in, otherwise the department codes in department order, plus ` + personal`.
+ * every department is in (` + personal` when the personal layer is too), otherwise the department codes in department order, plus ` + personal`.
  */
 export function layerSelectionLabel(
   sel: LayerRef[],
@@ -34,7 +34,10 @@ export function layerSelectionLabel(
   const picked = new Set(sel.filter((l) => l.kind === 'department').map((l) => l.id))
   const personal = sel.some((l) => l.kind === 'personal')
   if (picked.size === 0 && !personal) return 'Clean copy'
-  if (departments.length > 0 && departments.every((d) => picked.has(d.id))) return 'All layers'
+  if (departments.length > 0 && departments.every((d) => picked.has(d.id))) {
+    // Private notes print too: the footer says so.
+    return personal ? 'All layers + personal' : 'All layers'
+  }
   const codes = departments.filter((d) => picked.has(d.id)).map((d) => d.code)
   if (codes.length === 0) return 'Personal'
   return codes.join(', ') + (personal ? ' + personal' : '')
