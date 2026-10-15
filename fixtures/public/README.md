@@ -14,3 +14,5 @@ redistribution without the header and trademark.
 - `pirates-scan.pdf`: first 8 pages rasterised at 150 dpi, image only (for OCR tests).
 - `mixed.pdf`: A4 portrait text, an A4 page with `/Rotate 90`, a Letter page, and a rasterised page.
 - `offset.pdf`: one A4 page whose media box and crop box start at (50, 50), with `OFFSET` at the visible top-left.
+- `pirates-revised-cut.pdf`: the libretto with lines 201 to 240 of `pirates.txt` cut, so it is one page shorter (re-anchoring tests).
+- `pirates-revised-insert.pdf`: the libretto with a page of 48 `INSERTED LINE <n>` lines added after line 240 of `pirates.txt`.

@@ -20,14 +20,18 @@ import {
   DOCUMENT_DEAD_QUEUE,
   DOCUMENT_JOB_EXPIRE_SECONDS,
   DOCUMENT_QUEUE,
+  ensureQueues,
   handleDocumentDeadLetter,
   handlePageDeadLetter,
   handleSyncChunkGc,
   PAGE_DEAD_QUEUE,
   PAGE_QUEUE,
+  REANCHOR_DEAD_QUEUE,
+  REANCHOR_QUEUE,
   SYNC_CHUNK_GC_CRON,
   SYNC_CHUNK_GC_QUEUE,
 } from '../src/processing/queue'
+import { reanchorVersion } from '../src/processing/reanchorJob'
 import type { ProcessingDeps } from '../src/processing/types'
 import { addDocumentVersion, createDocument } from '../src/services'
 import { setupShow } from './documentHelpers'
@@ -448,7 +452,7 @@ describe.skipIf(skip)('processing pipeline', () => {
     expect(done.pages[0]?.error).toMatch(/searchable\.pdf/)
   }, 120_000)
 
-  test('a later version becomes current once it is ready', async () => {
+  test('a later version becomes ready but stays behind until it is re-anchored', async () => {
     const pdf = await textOnlyPdf()
     const { document, version: v1 } = await upload(pdf)
     await processAll(v1.id)
@@ -466,8 +470,21 @@ describe.skipIf(skip)('processing pipeline', () => {
     await processDocumentVersion(deps, v2.id)
     expect(await current()).toBe(v1.id)
     await mapLimit(deps.jobs.enqueuedPages, 3, (id) => processPage(deps, id))
+    // ready, but the document keeps its current version until the re-anchoring job has run
+    expect((await load(v2.id)).version.status).toBe('ready')
+    expect(await current()).toBe(v1.id)
+    expect(deps.jobs.enqueuedReanchors).toEqual([v2.id])
+    expect(await reanchorVersion(deps, v2.id)).toMatchObject({ moved: 0 })
     expect(await current()).toBe(v2.id)
     expect((await load(v2.id)).version.updatedBy).toBe('system')
+  }, 120_000)
+
+  test('a first version becomes current without any re-anchoring', async () => {
+    const { document, version } = await upload(await textOnlyPdf())
+    const done = await processAll(version.id)
+    expect(done.version.status).toBe('ready')
+    const [doc] = await s.deps.db.select().from(documents).where(eq(documents.id, document.id))
+    expect(doc?.currentVersionId).toBe(version.id)
   }, 120_000)
 
   test('an earlier version finishing late does not take over from a later ready one', async () => {
@@ -480,12 +497,16 @@ describe.skipIf(skip)('processing pipeline', () => {
       label: 'quick replacement',
       file: createReadStream(pdf),
     })
-    await processAll(v2.id)
+    const v2Done = await processAll(v2.id)
+    expect(v2Done.version.status).toBe('ready')
+    // v2 is re-anchored while v1 is still finishing; v1 finishing afterwards must not take over
+    await reanchorVersion(processingDeps(), v2.id)
     await mapLimit(v1Deps.jobs.enqueuedPages, 3, (id) => processPage(v1Deps, id))
 
     expect((await load(v1.id)).version.status).toBe('ready')
     const [doc] = await s.deps.db.select().from(documents).where(eq(documents.id, document.id))
     expect(doc?.currentVersionId).toBe(v2.id)
+    expect(v1Deps.jobs.enqueuedReanchors).toEqual([])
   }, 120_000)
 })
 
@@ -623,6 +644,8 @@ describe('pg-boss job queue', () => {
         PAGE_QUEUE,
         DOCUMENT_DEAD_QUEUE,
         PAGE_DEAD_QUEUE,
+        REANCHOR_QUEUE,
+        REANCHOR_DEAD_QUEUE,
       ])
       expect(
         Object.fromEntries(
@@ -631,6 +654,8 @@ describe('pg-boss job queue', () => {
       ).toEqual({
         [DOCUMENT_QUEUE]: [2, 2400, DOCUMENT_DEAD_QUEUE],
         [PAGE_QUEUE]: [3, 300, PAGE_DEAD_QUEUE],
+        [REANCHOR_QUEUE]: [3, 600, REANCHOR_DEAD_QUEUE],
+        [REANCHOR_DEAD_QUEUE]: [expect.any(Number), expect.any(Number), null],
         [DOCUMENT_DEAD_QUEUE]: [expect.any(Number), expect.any(Number), null],
         [PAGE_DEAD_QUEUE]: [expect.any(Number), expect.any(Number), null],
       })
@@ -646,6 +671,70 @@ describe('pg-boss job queue', () => {
     }
     expect(errors).toEqual([])
   }, 60_000)
+
+  test('re-anchor jobs coalesce per version and a repeat after the run is a no-op', async () => {
+    const { url } = await getTestDb()
+    const boss = new PgBoss({ connectionString: url })
+    const errors: unknown[] = []
+    boss.on('error', (err) => errors.push(err))
+    await boss.start()
+    try {
+      const jobs = createJobQueue(boss, { db: s.deps.db, blobs: s.deps.blobs })
+      // Queues created as `start()` creates them, but no worker takes the jobs while they are counted.
+      await ensureQueues(boss)
+      const queue = (await boss.getQueues([REANCHOR_QUEUE]))[0]
+      expect(queue?.policy).toBe('short')
+      await jobs.enqueueReanchor('v-coalesce-1')
+      await jobs.enqueueReanchor('v-coalesce-1')
+      await jobs.enqueueReanchor('v-coalesce-2')
+      const { rows } = await s.deps.db.$client.query(
+        `SELECT data->>'versionId' AS id, singleton_key FROM pgboss.job WHERE name = $1 ORDER BY 1`,
+        [REANCHOR_QUEUE],
+      )
+      expect(rows).toEqual([
+        { id: 'v-coalesce-1', singleton_key: 'v-coalesce-1' },
+        { id: 'v-coalesce-2', singleton_key: 'v-coalesce-2' },
+      ])
+    } finally {
+      await boss.stop({ graceful: true, timeout: 10_000 })
+    }
+    expect(errors).toEqual([])
+  }, 60_000)
+
+  test('a re-anchor job that fails its last attempt is dead-lettered and makes the version current', async () => {
+    const { url } = await getTestDb()
+    const boss = new PgBoss({ connectionString: url })
+    boss.on('error', () => {})
+    await boss.start()
+    try {
+      const jobs = createJobQueue(boss, { db: s.deps.db, blobs: s.deps.blobs })
+      await jobs.start()
+      const pdf = await textOnlyPdf()
+      const { document, version: v1 } = await upload(pdf)
+      await processAll(v1.id)
+      const v2 = await addDocumentVersion(s.deps.db, s.deps.blobs, s.jobs, s.ownerActor, {
+        documentId: document.id,
+        label: 'second',
+        file: createReadStream(pdf),
+      })
+      await processAll(v2.id)
+      // Without its word layers the job throws on every attempt; no retries, to be quick.
+      await s.deps.db
+        .update(pages)
+        .set({ wordsKey: 'missing/words.json' })
+        .where(eq(pages.documentVersionId, v2.id))
+      await boss.send(REANCHOR_QUEUE, { versionId: v2.id }, { retryLimit: 0 })
+      const current = async () =>
+        (await s.deps.db.select().from(documents).where(eq(documents.id, document.id)))[0]
+          ?.currentVersionId
+      for (let i = 0; i < 60 && (await current()) !== v2.id; i++) {
+        await new Promise((r) => setTimeout(r, 250))
+      }
+      expect(await current()).toBe(v2.id)
+    } finally {
+      await boss.stop({ graceful: true, timeout: 10_000 })
+    }
+  }, 120_000)
 
   test('a document job that fails its last attempt is dead-lettered and fails the version', async () => {
     const { url } = await getTestDb()

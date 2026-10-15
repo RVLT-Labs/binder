@@ -7,6 +7,7 @@ import { DiskBlobStore } from './blob/DiskBlobStore'
 import { loadConfig } from './config'
 import { connectAndMigrate } from './db'
 import { createJobQueue } from './processing/queue'
+import { sweepPendingReanchors } from './processing/reanchorSweep'
 import { createShutdown } from './shutdown'
 
 const config = loadConfig(process.env)
@@ -21,6 +22,13 @@ await boss.start()
 const jobs = createJobQueue(boss, { db, blobs })
 await jobs.start()
 
+// A revision that became ready but whose re-anchoring was never queued (a crash between the two, or
+// a failed enqueue) is found again here: once at start, then every five minutes.
+const sweepReanchors = () =>
+  sweepPendingReanchors({ db, jobs }).catch((err) => console.error('re-anchor sweep failed', err))
+await sweepReanchors()
+const reanchorSweepTimer = setInterval(() => void sweepReanchors(), 5 * 60 * 1000)
+
 const app = createApp({ config, db, blobs, auth, jobs })
 
 const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
@@ -30,7 +38,10 @@ const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
 // In-flight jobs get a moment to finish; anything left is retried by the next worker.
 const shutdown = createShutdown({
   closeServer: () => server.close(),
-  stopQueue: () => boss.stop({ graceful: true, timeout: 10_000 }),
+  stopQueue: () => {
+    clearInterval(reanchorSweepTimer)
+    return boss.stop({ graceful: true, timeout: 10_000 })
+  },
   endPool: () => pool.end(),
   exit: (code) => process.exit(code),
 })

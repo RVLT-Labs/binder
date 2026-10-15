@@ -99,6 +99,13 @@
       "when": 1792024796863,
       "tag": "0013_export_records_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792032686513,
+      "tag": "0014_change_log_batch_idx",
+      "breakpoints": true
     }
   ]
 }

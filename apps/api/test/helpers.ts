@@ -10,15 +10,19 @@ import { DiskBlobStore } from '../src/blob/DiskBlobStore'
 import type { Config } from '../src/config'
 import type { JobQueue } from '../src/processing/types'
 
-/** Records enqueued version and page ids instead of processing them. */
+/** Records enqueued version, page and re-anchor ids instead of processing them. */
 export class RecordingJobs implements JobQueue {
   readonly enqueued: string[] = []
   readonly enqueuedPages: string[] = []
+  readonly enqueuedReanchors: string[] = []
   async enqueueDocumentProcess(versionId: string): Promise<void> {
     this.enqueued.push(versionId)
   }
   async enqueuePageProcess(pageIds: string[]): Promise<void> {
     this.enqueuedPages.push(...pageIds)
+  }
+  async enqueueReanchor(versionId: string): Promise<void> {
+    this.enqueuedReanchors.push(versionId)
   }
 }
 

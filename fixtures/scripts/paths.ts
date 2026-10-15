@@ -15,6 +15,10 @@ export const FIXTURES = {
   librettoShortPdf: join(GENERATED_DIR, 'pirates-short.pdf'),
   scanPdf: join(GENERATED_DIR, 'pirates-scan.pdf'),
   mixedPdf: join(GENERATED_DIR, 'mixed.pdf'),
+  /** The libretto with lines 201 to 240 of the text cut (one page shorter), for re-anchoring tests. */
+  revisedCutPdf: join(GENERATED_DIR, 'pirates-revised-cut.pdf'),
+  /** The libretto with a page of 48 `INSERTED LINE <n>` lines added after line 240 of the text. */
+  revisedInsertPdf: join(GENERATED_DIR, 'pirates-revised-insert.pdf'),
   /** One A4 page whose media and crop boxes start at (50, 50), with OFFSET at the visible top-left. */
   offsetPdf: join(GENERATED_DIR, 'offset.pdf'),
 }

@@ -1,8 +1,10 @@
 import { execFile } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import { expect, test } from 'vitest'
 import { hasText, pageCount } from './lib.ts'
 import { ensureFixtures } from './make-fixtures.ts'
+import { cutLines, insertLines } from './revisions.ts'
 
 const run = promisify(execFile)
 
@@ -69,3 +71,41 @@ test('offset.pdf: one A4 page whose boxes start at (50, 50), OFFSET at the visib
   expect(yMin).toBeLessThan(100)
   expect(yMin).toBeGreaterThan(60)
 }, 120_000)
+
+async function textOf(pdf: string): Promise<string> {
+  const { stdout } = await run('pdftotext', [pdf, '-'], { maxBuffer: 64 * 1024 * 1024 })
+  return stdout
+}
+
+test('revisedCutPdf is the libretto without lines 201 to 240, one page shorter', async () => {
+  const f = await ensureFixtures()
+  expect(await pageCount(f.librettoPdf)).toBe(147)
+  expect(await pageCount(f.revisedCutPdf)).toBe(146)
+  const text = await readFile(f.librettoText, 'utf8')
+  const cut = (await readFile(f.librettoText, 'utf8')).split('\n').slice(200, 240)
+  // A line that exists only in the cut range is in the libretto and not in the revision.
+  const only = cut.map((l) => l.trim()).find((l) => l.length > 30 && text.split(l).length === 2)
+  if (!only) throw new Error('no unique line in the cut range')
+  const needle = only.split(/\s+/).slice(0, 4).join(' ')
+  expect(await textOf(f.librettoPdf)).toContain(needle)
+  expect(await textOf(f.revisedCutPdf)).not.toContain(needle)
+  // The first line of the text and a late line survive.
+  expect(await textOf(f.revisedCutPdf)).toContain('PIRATES OF PENZANCE')
+}, 120_000)
+
+test('revisedInsertPdf adds 48 INSERTED LINE lines after line 240, one page longer', async () => {
+  const f = await ensureFixtures()
+  expect(await pageCount(f.revisedInsertPdf)).toBe(148)
+  const out = await textOf(f.revisedInsertPdf)
+  const inserted = out.match(/INSERTED LINE \d+/g) ?? []
+  expect(inserted).toHaveLength(48)
+  expect(inserted[0]).toBe('INSERTED LINE 1')
+  expect(inserted[47]).toBe('INSERTED LINE 48')
+  expect(await textOf(f.librettoPdf)).not.toContain('INSERTED LINE')
+}, 120_000)
+
+test('the cut and insert helpers edit the 1-based lines', () => {
+  const text = ['a', 'b', 'c', 'd', 'e'].join('\n')
+  expect(cutLines(text, 2, 3)).toBe('a\nd\ne')
+  expect(insertLines(text, 2, 2)).toBe('a\nb\nINSERTED LINE 1\nINSERTED LINE 2\nc\nd\ne')
+})

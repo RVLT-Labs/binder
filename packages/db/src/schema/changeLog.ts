@@ -24,5 +24,7 @@ export const changeLog = pgTable(
   (t) => [
     index('change_log_show_seq_idx').on(t.showId, t.seq),
     index('change_log_show_row_seq_idx').on(t.showId, t.rowId, t.seq),
+    // Batch reverts and the re-anchoring "already run" check look a batch up by id.
+    index('change_log_show_batch_idx').on(t.showId, t.batchId),
   ],
 )

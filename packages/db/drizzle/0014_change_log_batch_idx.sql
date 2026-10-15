@@ -1,0 +1,1 @@
+CREATE INDEX "change_log_show_batch_idx" ON "change_log" USING btree ("show_id","batch_id");

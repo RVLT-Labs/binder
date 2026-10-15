@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { degrees, PDFDocument, StandardFonts } from 'pdf-lib'
 import { newDoc, rasterisePages, sizeOf, textToPdf } from './lib.ts'
 import { FIXTURES, GENERATED_DIR } from './paths.ts'
+import { makeRevisedCutPdf, makeRevisedInsertPdf } from './revisions.ts'
 
 /**
  * page 1 A4 portrait text; page 2 A4 with /Rotate 90, "ROTATED" appearing top-left once the
@@ -90,6 +91,8 @@ async function generate(): Promise<void> {
   await publish(FIXTURES.mixedPdf, await makeMixedPdf())
   await publish(FIXTURES.offsetPdf, await makeOffsetPdf())
   await publish(FIXTURES.librettoShortPdf, await firstPages(FIXTURES.librettoPdf, 3))
+  await publish(FIXTURES.revisedCutPdf, await makeRevisedCutPdf(text))
+  await publish(FIXTURES.revisedInsertPdf, await makeRevisedInsertPdf(text))
 }
 
 let inflight: Promise<typeof FIXTURES> | undefined
@@ -107,6 +110,8 @@ export function ensureFixtures(): Promise<typeof FIXTURES> {
         FIXTURES.mixedPdf,
         FIXTURES.offsetPdf,
         FIXTURES.librettoShortPdf,
+        FIXTURES.revisedCutPdf,
+        FIXTURES.revisedInsertPdf,
       ].map(exists),
     )
     if (!present.every(Boolean)) await generate()

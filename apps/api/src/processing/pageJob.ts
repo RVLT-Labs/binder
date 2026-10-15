@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { fromPopplerBbox } from '@binder/core'
 import { documents, documentVersions, pages } from '@binder/db'
-import { and, eq, gt, isNull, notExists, notInArray, or, sql } from 'drizzle-orm'
+import { and, eq, notExists, sql } from 'drizzle-orm'
 import { pageThumbBlobKey, pageWordsBlobKey } from '../blob/keys'
 import { extractBboxXhtml, renderThumbnail } from './poppler'
 import { blobFile, withTempDir } from './tmp'
@@ -11,15 +11,22 @@ import type { ProcessingDeps } from './types'
 /** Processing writes rows as the system and never logs changes (R43). */
 export const SYSTEM = 'system'
 
-type Executor = ProcessingDeps['db']
+/** What finishing a page did to its version. */
+export type FinishResult = 'not-done' | 'ready' | 'needs-reanchor'
 
 /**
- * Marks the version ready once none of its pages is still queued (a failed page counts as done),
- * then makes it the document's current version unless a later ready version already is (R42). One
- * conditional UPDATE, so when two page jobs finish together exactly one of them wins.
+ * Marks the version ready once none of its pages is still queued (a failed page counts as done). One
+ * conditional UPDATE, so when two page jobs finish together exactly one of them wins. A document's
+ * first version (no current version yet) becomes current at once. A newer version leaves the current
+ * one in place and queues the re-anchoring job after the transaction commits (`'needs-reanchor'`);
+ * it becomes current when that job has moved the anchors (spec 5.4). A version older than the
+ * current one changes nothing more. If the enqueue fails the sweep finds the version again.
  */
-export async function finishVersionIfDone(db: Executor, versionId: string): Promise<boolean> {
-  return db.transaction(async (tx) => {
+export async function finishVersionIfDone(
+  deps: Pick<ProcessingDeps, 'db' | 'jobs'>,
+  versionId: string,
+): Promise<FinishResult> {
+  const result = await deps.db.transaction(async (tx): Promise<FinishResult> => {
     const [ready] = await tx
       .update(documentVersions)
       .set({
@@ -43,33 +50,37 @@ export async function finishVersionIfDone(db: Executor, versionId: string): Prom
         documentId: documentVersions.documentId,
         number: documentVersions.versionNumber,
       })
-    if (!ready) return false
+    if (!ready) return 'not-done'
 
-    const laterReady = tx
-      .select({ id: documentVersions.id })
+    // Serialises with the re-anchoring job, which reads the current version under the same lock.
+    const [document] = await tx
+      .select({ currentVersionId: documents.currentVersionId })
+      .from(documents)
+      .where(eq(documents.id, ready.documentId))
+      .for('update')
+    if (!document || document.currentVersionId === versionId) return 'ready'
+    if (document.currentVersionId === null) {
+      await tx
+        .update(documents)
+        .set({ currentVersionId: versionId, updatedBy: SYSTEM })
+        .where(eq(documents.id, ready.documentId))
+      return 'ready'
+    }
+    const [current] = await tx
+      .select({ number: documentVersions.versionNumber })
       .from(documentVersions)
-      .where(
-        and(
-          eq(documentVersions.documentId, ready.documentId),
-          eq(documentVersions.status, 'ready'),
-          gt(documentVersions.versionNumber, ready.number),
-        ),
-      )
-    await tx
-      .update(documents)
-      .set({ currentVersionId: versionId, updatedBy: SYSTEM })
-      .where(
-        and(
-          eq(documents.id, ready.documentId),
-          sql`${documents.currentVersionId} IS DISTINCT FROM ${versionId}`,
-          or(
-            isNull(documents.currentVersionId),
-            notInArray(documents.currentVersionId, laterReady),
-          ),
-        ),
-      )
-    return true
+      .where(eq(documentVersions.id, document.currentVersionId))
+    return current && current.number > ready.number ? 'ready' : 'needs-reanchor'
   })
+  if (result === 'needs-reanchor') {
+    try {
+      await deps.jobs.enqueueReanchor(versionId)
+    } catch (err) {
+      // The version is ready and durable; the periodic sweep enqueues it again.
+      console.error(`could not enqueue re-anchoring for version ${versionId}`, err)
+    }
+  }
+  return result
 }
 
 /**
@@ -118,18 +129,22 @@ export async function processPage(deps: ProcessingDeps, pageId: string): Promise
         .where(stillQueued)
     }
   }
-  await finishVersionIfDone(db, version.id)
+  await finishVersionIfDone(deps, version.id)
 }
 
 /**
  * The page job's dead-letter action (R45): pg-boss gave up after retries or expiry. Fails the page
  * if it is still queued, then runs the same ready check as a finished page job.
  */
-export async function markPageFailed(db: Executor, pageId: string, error: string): Promise<void> {
-  const [failed] = await db
+export async function markPageFailed(
+  deps: Pick<ProcessingDeps, 'db' | 'jobs'>,
+  pageId: string,
+  error: string,
+): Promise<void> {
+  const [failed] = await deps.db
     .update(pages)
     .set({ status: 'failed', error, updatedBy: SYSTEM })
     .where(and(eq(pages.id, pageId), eq(pages.status, 'queued')))
     .returning({ versionId: pages.documentVersionId })
-  if (failed) await finishVersionIfDone(db, failed.versionId)
+  if (failed) await finishVersionIfDone(deps, failed.versionId)
 }

@@ -7,6 +7,8 @@ export interface JobQueue {
   enqueueDocumentProcess(versionId: string): Promise<void>
   /** Queue one page job per page row; called by the document job. */
   enqueuePageProcess(pageIds: string[]): Promise<void>
+  /** Queue the re-anchoring run for a ready revision; repeats for one version coalesce. */
+  enqueueReanchor(versionId: string): Promise<void>
 }
 
 export interface ProcessingDeps {

@@ -5,6 +5,7 @@ import { APPLIED_CHUNK_TTL_MS, deleteAppliedChunksBefore } from '../sync/apply'
 import { markVersionFailed, processDocumentVersion } from './documentJob'
 import { OCRMYPDF_TIMEOUT_MS } from './ocrmypdf'
 import { markPageFailed, processPage } from './pageJob'
+import { adoptVersionWithoutReanchoring, reanchorVersion } from './reanchorJob'
 import type { JobQueue, ProcessingDeps } from './types'
 
 export const DOCUMENT_QUEUE = 'document-process'
@@ -12,6 +13,9 @@ export const PAGE_QUEUE = 'page-process'
 /** pg-boss moves a job here once it has failed or expired on every retry (R45). */
 export const DOCUMENT_DEAD_QUEUE = 'document-process-dead'
 export const PAGE_DEAD_QUEUE = 'page-process-dead'
+/** Moves cue and annotation anchors onto a revised version, then makes it current (spec 5.4). */
+export const REANCHOR_QUEUE = 'document-reanchor'
+export const REANCHOR_DEAD_QUEUE = 'document-reanchor-dead'
 /** Maintenance: forgets applied sync chunks once no client could still be retrying them. */
 export const SYNC_CHUNK_GC_QUEUE = 'sync-chunk-gc'
 /** Daily at 03:17 UTC. */
@@ -24,9 +28,17 @@ export const SYNC_CHUNK_GC_CRON = '17 3 * * *'
  */
 export const DOCUMENT_JOB_EXPIRE_SECONDS = OCRMYPDF_TIMEOUT_MS / 1000 + 10 * 60
 
-const QUEUES = [
+type QueueSettings = NonNullable<Parameters<PgBoss['createQueue']>[1]>
+
+const QUEUES: ReadonlyArray<{
+  name: string
+  options: QueueSettings
+  /** Settings pg-boss accepts only when it creates the queue (it refuses to change them later). */
+  creation?: { policy: 'short' }
+}> = [
   { name: DOCUMENT_DEAD_QUEUE, options: { retryLimit: 5, retryDelay: 10, retryBackoff: true } },
   { name: PAGE_DEAD_QUEUE, options: { retryLimit: 5, retryDelay: 10, retryBackoff: true } },
+  { name: REANCHOR_DEAD_QUEUE, options: { retryLimit: 5, retryDelay: 10, retryBackoff: true } },
   {
     name: DOCUMENT_QUEUE,
     options: {
@@ -48,7 +60,28 @@ const QUEUES = [
       deadLetter: PAGE_DEAD_QUEUE,
     },
   },
-] as const
+  {
+    name: REANCHOR_QUEUE,
+    options: {
+      retryLimit: 3,
+      retryDelay: 10,
+      retryBackoff: true,
+      expireInSeconds: 10 * 60,
+      deadLetter: REANCHOR_DEAD_QUEUE,
+    },
+    // `short`: at most one queued job per singleton key, so repeats for one version coalesce.
+    creation: { policy: 'short' },
+  },
+]
+
+/** Creates every queue (and applies changed settings to existing ones). Idempotent. */
+export async function ensureQueues(boss: PgBoss): Promise<void> {
+  for (const { name, options, creation } of QUEUES) {
+    await boss.createQueue(name, { ...options, ...creation })
+    // createQueue leaves an existing queue alone; this applies changed settings to it.
+    await boss.updateQueue(name, options)
+  }
+}
 
 /** A dead-lettered job: its original data and the original job's last output (usually its error). */
 export interface DeadLetter<T> {
@@ -78,10 +111,26 @@ export async function handleDocumentDeadLetter(
 }
 
 export async function handlePageDeadLetter(
-  deps: Pick<ProcessingDeps, 'db'>,
+  deps: Pick<ProcessingDeps, 'db' | 'jobs'>,
   job: DeadLetter<{ pageId: string }>,
 ): Promise<void> {
-  await markPageFailed(deps.db, job.data.pageId, afterRetries('Page processing', job.sourceOutput))
+  await markPageFailed(deps, job.data.pageId, afterRetries('Page processing', job.sourceOutput))
+}
+
+/**
+ * The re-anchoring job's dead-letter action (R45): pg-boss gave up after retries or expiry. The
+ * version still becomes current, without its anchors moved, so it never stays ready but not
+ * current; the anchors left on older versions surface in the review list.
+ */
+export async function handleReanchorDeadLetter(
+  deps: Pick<ProcessingDeps, 'db'>,
+  job: DeadLetter<{ versionId: string }>,
+): Promise<void> {
+  const { message } = lastFailure(job.sourceOutput)
+  console.error(
+    `re-anchoring ${job.data.versionId} failed after retries: ${message ?? 'no detail'}`,
+  )
+  await adoptVersionWithoutReanchoring(deps, job.data.versionId)
 }
 
 export async function handleSyncChunkGc(
@@ -114,12 +163,13 @@ export function createJobQueue(
       )
     },
 
+    async enqueueReanchor(versionId) {
+      // A job already queued for this version coalesces this one: boss.send then returns null.
+      await boss.send(REANCHOR_QUEUE, { versionId }, { singletonKey: versionId })
+    },
+
     async start() {
-      for (const { name, options } of QUEUES) {
-        await boss.createQueue(name, options)
-        // createQueue leaves an existing queue alone; this applies changed settings to it.
-        await boss.updateQueue(name, options)
-      }
+      await ensureQueues(boss)
       await boss.work<{ versionId: string }>(
         DOCUMENT_QUEUE,
         { localConcurrency: 1, batchSize: 1 },
@@ -134,6 +184,20 @@ export function createJobQueue(
           if (job) await processPage(processing, job.data.pageId)
         },
       )
+      await boss.work<{ versionId: string }>(
+        REANCHOR_QUEUE,
+        { localConcurrency: 1, batchSize: 1 },
+        async ([job]) => {
+          if (job) await reanchorVersion(processing, job.data.versionId)
+        },
+      )
+      await boss.work(
+        REANCHOR_DEAD_QUEUE,
+        { batchSize: 1, includeMetadata: true },
+        async ([job]: JobWithMetadata<{ versionId: string }>[]) => {
+          if (job) await handleReanchorDeadLetter(deps, job)
+        },
+      )
       await boss.work(
         DOCUMENT_DEAD_QUEUE,
         { batchSize: 1, includeMetadata: true },
@@ -145,7 +209,7 @@ export function createJobQueue(
         PAGE_DEAD_QUEUE,
         { batchSize: 1, includeMetadata: true },
         async ([job]: JobWithMetadata<{ pageId: string }>[]) => {
-          if (job) await handlePageDeadLetter(deps, job)
+          if (job) await handlePageDeadLetter(processing, job)
         },
       )
       await boss.schedule(SYNC_CHUNK_GC_QUEUE, SYNC_CHUNK_GC_CRON)

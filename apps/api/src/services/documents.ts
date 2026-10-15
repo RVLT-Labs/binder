@@ -1,7 +1,7 @@
 import type { Readable } from 'node:stream'
 import { documents, documentVersions, pages, shows } from '@binder/db'
 import { type Actor, type DocumentKind, newId, type OcrMode } from '@binder/shared'
-import { asc, eq, type InferSelectModel, sql } from 'drizzle-orm'
+import { and, asc, eq, type InferSelectModel, sql } from 'drizzle-orm'
 import type { BlobStore } from '../blob/BlobStore'
 import { originalBlobKey } from '../blob/keys'
 import { invalid, notFound, payloadTooLarge } from '../errors'
@@ -71,6 +71,47 @@ export async function updateDocument(
       clientTs: input.clientTs,
     })
     return updated
+  })
+}
+
+/**
+ * Internal (never in the services barrel, so not an MCP operation): makes `versionId` the document's
+ * current version and logs the change under `batchId`, with none of the role or archived-show checks
+ * of `updateDocument`. Only the re-anchoring job and the revert of its run (and of that revert) use
+ * it, with the document row already locked `FOR UPDATE` by the caller. The version must belong to
+ * the document (`null` clears it, which only a revert of a first assignment needs). Writes and logs nothing when it is already current.
+ */
+export async function setCurrentVersion(
+  tx: Executor,
+  actor: Actor,
+  documentId: string,
+  versionId: string | null,
+  batchId: string,
+): Promise<void> {
+  const [document] = await tx.select().from(documents).where(eq(documents.id, documentId))
+  if (!document) throw notFound('Document not found')
+  if (versionId !== null) {
+    const [version] = await tx
+      .select({ id: documentVersions.id })
+      .from(documentVersions)
+      .where(and(eq(documentVersions.id, versionId), eq(documentVersions.documentId, documentId)))
+    if (!version) throw invalid('version is not a version of this document')
+  }
+  if (document.currentVersionId === versionId) return
+
+  await tx
+    .update(documents)
+    .set({ currentVersionId: versionId, updatedBy: actor.userId })
+    .where(eq(documents.id, documentId))
+  await logChange(tx, {
+    showId: document.showId,
+    actor,
+    batchId,
+    table: 'documents',
+    rowId: documentId,
+    op: 'update',
+    before: { currentVersionId: document.currentVersionId },
+    after: { currentVersionId: versionId },
   })
 }
 
