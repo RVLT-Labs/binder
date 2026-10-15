@@ -42,7 +42,7 @@ export function MarkerSideEditor({ showId, editable }: { showId: string; editabl
       <h2 id={`${ids}-heading`}>Cue tag sides</h2>
       <p>
         The page margin each department’s cue tags sit in, on screen and in print. A cue’s trigger
-        words are highlighted and joined to its tag.
+        words are underlined and joined to its tag.
       </p>
       {editable ? (
         <div className="settings-list">

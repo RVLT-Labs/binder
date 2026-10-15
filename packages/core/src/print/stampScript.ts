@@ -44,6 +44,8 @@ import { toWinAnsi } from './winAnsi'
 const FOOTER_SIZE = 7
 const FOOTER_LEFT = 24
 const FOOTER_BOTTOM = 12
+/** The footer's top edge: tags never go below it, so none ends up under the footer text. */
+const FOOTER_TOP = FOOTER_BOTTOM + FOOTER_SIZE
 const FOOTER_GREY = rgb(0.45, 0.45, 0.45)
 const INK = rgb(0.067, 0.094, 0.153)
 const WHITE = rgb(1, 1, 1)
@@ -273,12 +275,6 @@ class DisplayedPage {
     )
   }
 
-  /** A filled circle centred on displayed (x, y). */
-  dot(x: number, y: number, r: number, colour: ReturnType<typeof rgb>) {
-    const c = displayedToUser(this.frame, x, y)
-    this.page.drawCircle({ x: c.x, y: c.y, size: r, color: colour })
-  }
-
   /** A filled polygon through displayed points. */
   polygon(points: Array<[number, number]>, colour: ReturnType<typeof rgb>) {
     const [first, ...rest] = points.map(([x, y]) => displayedToUser(this.frame, x, y))
@@ -297,12 +293,17 @@ class DisplayedPage {
 
 type CueItem = Extract<StampItem, { kind: 'cue' }>
 
+interface PlacedCue {
+  layout: CueTagLayout
+  colour: ReturnType<typeof rgb>
+}
+
 /**
- * The cues of one page, laid out together so crowded tags stack. Underlines and connectors go down
- * first, then the opaque tags, so a tag is never crossed by another cue's connector. Print never
- * fills the trigger words: the script stays as it was, underlined.
+ * The cues of one page, laid out together so crowded tags stack inside the page, clear of the
+ * footer. Underlines and connectors go down first, under the annotations as on screen; the opaque
+ * tags go on last. Print never fills the trigger words: the script stays as it was, underlined.
  */
-function drawCues(d: DisplayedPage, pageWidth: number, items: CueItem[]) {
+function layoutCues(pageWidth: number, pageHeight: number, items: CueItem[]): PlacedCue[] {
   const extent = items.find((c) => c.textExtent)?.textExtent ?? null
   const inputs: CueTagInput[] = items.map((c) => ({
     id: c.id,
@@ -310,19 +311,22 @@ function drawCues(d: DisplayedPage, pageWidth: number, items: CueItem[]) {
     side: c.side,
     type: c.type,
     lead: toWinAnsi(c.lead),
-    code: toWinAnsi(c.code),
+    typeWord: c.typeWord,
     number: toWinAnsi(c.number),
     triggerBoxes: c.triggerBoxes,
     anchorX: c.x,
     sortKey: c.sortKey,
   }))
-  const layouts = layoutCueTags({ pageWidth, textExtent: extent, cues: inputs })
-  const parts = layouts.map((layout, i) => ({
+  const layouts = layoutCueTags({
+    pageWidth,
+    bounds: { minY: FOOTER_TOP, maxY: pageHeight },
+    textExtent: extent,
+    cues: inputs,
+  })
+  return layouts.map((layout, i) => ({
     layout,
     colour: colourOf((items[i] as CueItem).colour),
   }))
-  for (const { layout, colour } of parts) drawTrigger(d, layout, colour)
-  for (const { layout, colour } of parts) drawTag(d, layout, colour)
 }
 
 function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
@@ -443,17 +447,31 @@ export async function stampScript(
 
   const cuesByPage = new Map<number, CueItem[]>()
   for (const item of items) {
-    const d = drawers[item.pageIndex]
-    if (!d) continue
-    if (item.kind === 'annotation') drawAnnotation(d, item)
-    else cuesByPage.set(item.pageIndex, [...(cuesByPage.get(item.pageIndex) ?? []), item])
+    if (!drawers[item.pageIndex]) continue
+    if (item.kind === 'cue')
+      cuesByPage.set(item.pageIndex, [...(cuesByPage.get(item.pageIndex) ?? []), item])
   }
-  // Cues go on last, so their tags sit on top of every annotation.
+  const placed = new Map<number, PlacedCue[]>()
   for (const [pageIndex, cues] of cuesByPage) {
     const frame = frameOf(pages[pageIndex] as PDFPage)
     const quarter = frame.rotation === 90 || frame.rotation === 270
-    drawCues(drawers[pageIndex] as DisplayedPage, quarter ? frame.h : frame.w, cues)
+    placed.set(
+      pageIndex,
+      layoutCues(quarter ? frame.h : frame.w, quarter ? frame.w : frame.h, cues),
+    )
   }
+  // Underlines and connectors first, then the annotations, then the tags, which are opaque and
+  // so sit on top of everything: the order the screen draws in.
+  for (const [pageIndex, cues] of placed)
+    for (const { layout, colour } of cues)
+      drawTrigger(drawers[pageIndex] as DisplayedPage, layout, colour)
+  for (const item of items) {
+    const d = drawers[item.pageIndex]
+    if (d && item.kind === 'annotation') drawAnnotation(d, item)
+  }
+  for (const [pageIndex, cues] of placed)
+    for (const { layout, colour } of cues)
+      drawTag(drawers[pageIndex] as DisplayedPage, layout, colour)
 
   const line = footerText(footer)
   for (const d of drawers) d.text(line, FOOTER_LEFT, FOOTER_BOTTOM, FOOTER_SIZE, FOOTER_GREY)

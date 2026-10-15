@@ -50,7 +50,7 @@ function tagOf(c: LayoutCue, side: 'left' | 'right' = 'left') {
   const tag = layoutPageCues(
     [c],
     words,
-    600,
+    { width: 600, height: 800 },
     () => side,
     () => 0,
   ).get(c.id)
@@ -201,8 +201,8 @@ test('an unbound cue has a tick at its anchor instead of an underline', () => {
   expect(trigger.querySelector('rect.cue-highlight')).toBeNull()
   const tick = trigger.querySelector('line.cue-tick') as SVGLineElement
   expect(tick.getAttribute('x1')).toBe('100')
-  expect(tick.getAttribute('y1')).toBe('496')
-  expect(tick.getAttribute('y2')).toBe('504')
+  expect(tick.getAttribute('y1')).toBe('493')
+  expect(tick.getAttribute('y2')).toBe('501')
   expect(trigger.querySelector('polyline.cue-leader')).not.toBeNull()
 })
 
@@ -266,9 +266,9 @@ test('only the tag is a button: the underline and connector are not in the acces
   expect(getAllByRole('button')).toHaveLength(1)
 })
 
-test('in a narrow margin a standby tag sheds its SB prefix and then its code, never its number', () => {
+test('in a narrow margin a standby tag sheds its department and then its SB word, never its number', () => {
   const standby: LayoutCue = { ...cue, type: 'standby', label: '' }
-  // The text block starts at x 62: room for "LX 10.5" (about 42 wide) but not "SB LX 10.5".
+  // The text block starts at x 62: room for "SB 10.5" (about 45 wide) but not "SB LX 10.5".
   const narrow = (minX: number): WordLayer => ({
     words: [{ t: 'a', x: minX, y: 495, w: 20, h: 10 }],
     lines: [[0]],
@@ -277,7 +277,7 @@ test('in a narrow margin a standby tag sheds its SB prefix and then its code, ne
     const tag = layoutPageCues(
       [standby],
       narrow(minX),
-      600,
+      { width: 600, height: 800 },
       () => 'left',
       () => 0,
     ).get('c1')
@@ -286,7 +286,7 @@ test('in a narrow margin a standby tag sheds its SB prefix and then its code, ne
   }
   const prefix = render1(62)
   expect([...prefix.querySelectorAll('[data-cue-id] text')].map((t) => t.textContent)).toEqual([
-    'LX',
+    'SB',
     '10.5',
   ])
   // The dashed outline still says standby.
@@ -312,7 +312,7 @@ test('a tag pushed off its line draws a three-segment connector that jogs in the
   const layouts = layoutPageCues(
     [bound, second],
     words,
-    600,
+    { width: 600, height: 800 },
     () => 'left',
     () => 0,
   )

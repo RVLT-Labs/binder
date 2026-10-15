@@ -223,11 +223,11 @@ export async function runPrintExport(
     })
   }
 
-  // Word layers matter only for what is drawn from the words: a highlight's rectangles, a
-  // cue's trigger highlight and its page's margins. Only the pages with a selected one need theirs. Without them a
-  // highlight prints as its quote and a cue's trigger as a tick.
+  // Word layers matter only for what is drawn from the words: a highlight's rectangles, a cue's
+  // trigger underline and its page's margins. Only the pages with a selected one need theirs.
+  // Without them a highlight prints as its quote and a cue's trigger as a tick.
   const picked = new Set(layers.map(layerKey))
-  const highlightPages = new Set(
+  const wordPages = new Set(
     annotations
       .filter(
         (a) =>
@@ -244,14 +244,14 @@ export async function runPrintExport(
       c.anchor?.documentVersionId === input.versionId &&
       picked.has(layerKey({ kind: 'department', id: c.departmentId }))
     )
-      highlightPages.add(c.anchor.pageIndex)
+      wordPages.add(c.anchor.pageIndex)
   }
   const wordKeys = new Map(pageRows.map((p) => [p.index, p.words_key]))
 
   const pdf = await blobBytes(version.searchable_key, 'The script PDF')
   const wordLayers = new Map<number, WordLayer>()
   await Promise.all(
-    [...highlightPages].map(async (pageIndex) => {
+    [...wordPages].map(async (pageIndex) => {
       const key = wordKeys.get(pageIndex)
       const layer = key ? await fx.loadWords(key) : null
       if (layer) wordLayers.set(pageIndex, layer)

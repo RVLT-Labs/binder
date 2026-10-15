@@ -1,4 +1,4 @@
-import { formatCueNumber, markerText } from '@binder/core'
+import { asCueType, formatCueNumber, markerText } from '@binder/core'
 import type { LayerRef, WordLayer } from '@binder/shared'
 import {
   type MouseEvent as ReactMouseEvent,
@@ -83,11 +83,11 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
       layoutPageCues(
         cues,
         words,
-        size.width,
+        { width: size.width, height: size.height },
         (id) => markerSide(id),
         (id) => departments.find((d) => d.id === id)?.sort_order ?? 0,
       ),
-    [cues, words, size.width, markerSide, departments],
+    [cues, words, size.width, size.height, markerSide, departments],
   )
   const annotations = session.view.annotationsByPage.get(pageIndex) ?? []
   const placing = tool === 'cue' && !('disabled' in session.cueTarget)
@@ -292,7 +292,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
 function DragGhost({ ghost }: { ghost: Ghost }) {
   const { cue } = ghost
   const text = markerText(
-    cue.type === 'standby' || cue.type === 'warn' ? cue.type : 'go',
+    asCueType(cue.type),
     cue.dept_code,
     formatCueNumber(cue.major ?? 0, cue.minor ?? 0, cue.dept_number_format),
   )

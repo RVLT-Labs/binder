@@ -15,7 +15,7 @@ import {
 import { formatCueNumber } from '../cues/numbering'
 import { DEFAULT_NOTE_FONT, DEFAULT_STAMP_FONT, DEFAULT_STROKE } from '../markup/annotationLayout'
 import { type TextExtent, textExtent } from '../markup/cueTags'
-import { type Box, markerLead } from '../markup/markers'
+import { type Box, markerLead, markerTypeWord } from '../markup/markers'
 import { wordBoxes } from '../markup/wordBoxes'
 
 /** One thing to draw on a script page, in displayed page space (points, origin bottom-left). */
@@ -31,8 +31,8 @@ export type StampItem =
       type: CueType
       /** The department half of the tag (`LX`, `SB LX`, `W LX`) and the formatted cue number. */
       lead: string
-      /** The department code alone: what the lead shrinks to in a narrow margin. */
-      code: string
+      /** The type word alone (`SB`, `W`, or empty): what the lead shrinks to in a narrow margin. */
+      typeWord: string
       number: string
       colour: string
       /** The page margin the department's tags sit in. */
@@ -134,7 +134,7 @@ export function buildStampItems(input: StampInput): StampItem[] {
       y: c.anchor.y,
       type: c.type,
       lead: markerLead(c.type, dept.code),
-      code: dept.code,
+      typeWord: markerTypeWord(c.type),
       number: formatCueNumber(c.major, c.minor, dept.numberFormat),
       colour: dept.colour,
       side: markerSide(input.settings, dept.id),

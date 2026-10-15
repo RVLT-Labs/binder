@@ -32,7 +32,7 @@ test('lays out every cue of a page by its department side and sort order', () =>
       { ...base, id: 'snd', dept_code: 'SND', department_id: 'd-snd', anchor: at(500) },
     ],
     words,
-    600,
+    { width: 600, height: 800 },
     (id) => (id === 'd-snd' ? 'right' : 'left'),
     (id) => (id === 'd-snd' ? 10 : 0),
   )
@@ -48,7 +48,7 @@ test('a bound cue takes its trigger boxes from the words; unbound or without wor
       { ...base, id: 'unbound', anchor: at(480, { quote: 'x', wordStart: -1, wordEnd: -1 }) },
     ],
     words,
-    600,
+    { width: 600, height: 800 },
     () => 'left',
     () => 0,
   )
@@ -58,7 +58,7 @@ test('a bound cue takes its trigger boxes from the words; unbound or without wor
   const none = layoutPageCues(
     [{ ...base, id: 'c', anchor: at(500, { quote: 'b', wordStart: 1, wordEnd: 1 }) }],
     null,
-    600,
+    { width: 600, height: 800 },
     () => 'left',
     () => 0,
   )

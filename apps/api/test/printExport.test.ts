@@ -62,7 +62,7 @@ const cueAt = (
   y,
   type: 'go',
   lead,
-  code: lead.split(' ').at(-1) ?? lead,
+  typeWord: /^(SB|W) /.test(lead) ? (lead.split(' ')[0] as string) : '',
   number,
   colour: AMBER,
   side: 'left',
@@ -203,7 +203,7 @@ describe.skipIf(skip)('print stamping with poppler', () => {
     // Upright and left to right: "10" follows "LX" on the same line.
     expect(ten.xMin).toBeGreaterThan(lx.xMax)
     expect(Math.abs(ten.yMin - lx.yMin)).toBeLessThan(2)
-    // The tag is in the left margin (bar 4 + padding 4 in from x = 4) and level with y = 72.
+    // The tag is in the left margin (6 pt of padding in from x = 4) and level with y = 72.
     expect(lx.xMin).toBeCloseTo(10, 0)
     expect((lx.yMin + lx.yMax) / 2).toBeCloseTo(72, -0.5)
   })
@@ -352,7 +352,9 @@ describe.skipIf(skip)('print stamping with poppler', () => {
           !/·/.test(w.t) &&
           w.yMin < info.height - 20,
       )
-      const tagWords = stamped.filter((w) => ['LX', 'TM', '11', '12.50', 'SND', '20'].includes(w.t))
+      const tagWords = stamped.filter((w) =>
+        ['SB', 'W', 'LX', 'TM', 'SND', '11', '12.50', '20'].includes(w.t),
+      )
       expect(tagWords.length).toBeGreaterThanOrEqual(4)
       for (const t of tagWords) {
         const left = t.xMax <= extent.minX
@@ -362,6 +364,33 @@ describe.skipIf(skip)('print stamping with poppler', () => {
       // The script itself is untouched.
       expect(line.length).toBeGreaterThan(0)
       for (const w of words) expect(after.some((a) => a.t === w.t)).toBe(true)
+    })
+
+    test('five cues on a bottom line all stack above the footer, none off the page', async () => {
+      const src = await read(FIXTURES.librettoShortPdf)
+      const info = (await pageSizes(src))[0] as PageInfo
+      const leads = ['AA', 'BB', 'CC', 'DD', 'EE']
+      const out = await stampScript(
+        src,
+        leads.map((lead, i) =>
+          cueAt(0, 300, 60, lead, String(i + 1), {
+            sortKey: { department: i, major: i + 1, minor: 0 },
+          }),
+        ),
+        footer,
+      )
+      const words = await bboxWords(out, 0)
+      const footerTop = Math.min(...words.filter((w) => w.t === 'Pirates').map((w) => w.yMin))
+      const tags = leads.map((l) => words.find((w) => w.t === l))
+      for (const t of tags) {
+        if (!t) throw new Error('a tag is missing from the page')
+        expect(t.yMax).toBeLessThan(footerTop)
+        expect(t.yMin).toBeGreaterThan(0)
+      }
+      // In page order, top to bottom.
+      const tops = tags.map((t) => t?.yMin ?? 0)
+      expect(tops).toEqual([...tops].sort((a, b) => a - b))
+      expect(info.height).toBeGreaterThan(0)
     })
 
     test('a right-side department stamps its tag in the right margin', async () => {
@@ -377,7 +406,7 @@ describe.skipIf(skip)('print stamping with poppler', () => {
       const four = after.find((w) => w.t === '4' && w.xMin > trigger.xMax)
       if (!snd || !four) throw new Error('the tag text is not in the text layer')
       expect(snd.xMin).toBeGreaterThan(trigger.xMax)
-      // The tag ends 4 pt inside the right edge, with its bar outermost.
+      // The pill ends 4 pt inside the right edge, its number 6 pt of padding short of that.
       expect(four.xMax).toBeLessThan(info.width - 4 - 4)
       expect(four.xMax).toBeGreaterThan(info.width - 40)
     })

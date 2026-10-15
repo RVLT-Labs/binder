@@ -3,6 +3,7 @@ import {
   type CueTagInput,
   DEFAULT_MARGIN,
   LEADER_GUTTER,
+  LEADER_STEP,
   layoutCueTags,
   TAG_EDGE,
   TAG_FONT_SIZE,
@@ -26,7 +27,7 @@ const cue = (id: string, over: Partial<CueTagInput> = {}): CueTagInput => ({
   side: 'left',
   type: 'go',
   lead: 'LX',
-  code: 'LX',
+  typeWord: '',
   number: '10',
   triggerBoxes: [],
   anchorX: 200,
@@ -36,8 +37,12 @@ const cue = (id: string, over: Partial<CueTagInput> = {}): CueTagInput => ({
 
 /** A wide margin on both sides, so only the tests about the margin are about it. */
 const WIDE = { minX: 150, maxX: 450 }
-const layout = (cues: CueTagInput[], extent: { minX: number; maxX: number } | null = WIDE) =>
-  layoutCueTags({ pageWidth: WIDTH, textExtent: extent, cues })
+const BOUNDS = { minY: 0, maxY: 800 }
+const layout = (
+  cues: CueTagInput[],
+  extent: { minX: number; maxX: number } | null = WIDE,
+  bounds = BOUNDS,
+) => layoutCueTags({ pageWidth: WIDTH, bounds, textExtent: extent, cues })
 const one = (c: CueTagInput, extent: { minX: number; maxX: number } | null = WIDE) => {
   const [t] = layout([c], extent)
   if (!t) throw new Error('no tag')
@@ -53,7 +58,7 @@ describe('the pill', () => {
     const expected =
       TAG_PAD + helveticaWidth('LX', 9) + TAG_TEXT_GAP + helveticaBoldWidth('10', 9) + TAG_PAD
     expect(tagWidth('LX', '10')).toBeCloseTo(expected)
-    const t = one(cue('a', { lead: 'SB LX', number: '14.5', type: 'standby' }))
+    const t = one(cue('a', { lead: 'SB LX', typeWord: 'SB', number: '14.5', type: 'standby' }))
     expect(t.tag.w).toBeCloseTo(tagWidth('SB LX', '14.5'))
     expect(t.tag.w).toBeGreaterThan(tagWidth('LX', '10'))
     expect(t.tag.h).toBe(14)
@@ -93,13 +98,18 @@ describe('placement in the margin', () => {
   })
 })
 
-describe('crowding: tags stack vertically in the margin', () => {
+describe('crowding: a collision sweep down the page, in page order', () => {
   const sort = (department: number, major: number, minor = 0) => ({ department, major, minor })
 
-  test('tags whose vertical extents overlap stack downward, TAG_HEIGHT + 2 apart, flush at the same x', () => {
+  test('tags that do not collide stay exactly on their lines', () => {
+    const tags = layout([cue('a', { y: 500 }), cue('b', { y: 484 }), cue('c', { y: 400 })])
+    expect(tags.map((t) => t.centreY)).toEqual([500, 484, 400])
+  })
+
+  test('a tag that would overlap the one above is pushed to 2 points below it, flush at the same x', () => {
     const [a, b, c] = layout([
       cue('a', { sortKey: sort(0, 10) }),
-      cue('b', { y: 505, lead: 'SND', code: 'SND', number: '2', sortKey: sort(1, 2) }),
+      cue('b', { y: 500, number: '2', sortKey: sort(1, 2) }),
       cue('c', { y: 498, number: '12', sortKey: sort(1, 3) }),
     ])
     if (!a || !b || !c) throw new Error('tags')
@@ -114,7 +124,7 @@ describe('crowding: tags stack vertically in the margin', () => {
   test('on the right they stack in the right margin, ending 4 points inside the edge', () => {
     const [a, b] = layout([
       cue('a', { side: 'right', sortKey: sort(0, 10) }),
-      cue('b', { side: 'right', y: 505, number: '11', sortKey: sort(0, 11) }),
+      cue('b', { side: 'right', y: 500, number: '11', sortKey: sort(0, 11) }),
     ])
     if (!a || !b) throw new Error('tags')
     expect(a.tag.x + a.tag.w).toBeCloseTo(WIDTH - 4)
@@ -122,7 +132,7 @@ describe('crowding: tags stack vertically in the margin', () => {
     expect(b.centreY).toBe(500 - (TAG_HEIGHT + TAG_GAP))
   })
 
-  test('the order is department sort order, then cue number, then id, whatever the input order', () => {
+  test('on one line the order is department sort order, then cue number, then id, whatever the input order', () => {
     const tags = layout([
       cue('z', { sortKey: sort(1, 1) }),
       cue('m', { sortKey: sort(0, 12) }),
@@ -134,6 +144,36 @@ describe('crowding: tags stack vertically in the margin', () => {
     expect(tags.map((t) => t.id)).toEqual(['z', 'm', 'b', 'a'])
   })
 
+  test('I1: a cue on a lower line never ends up under a tag that belongs to the line below', () => {
+    // LX 10 on line A (400), LX 11 on line B (388, 12 pt lower), SND 5 on line A (400).
+    const [lx10, lx11, snd5] = layout([
+      cue('lx10', { y: 400, sortKey: sort(0, 10) }),
+      cue('lx11', { y: 388, number: '11', sortKey: sort(0, 11) }),
+      cue('snd5', { y: 400, number: '5', sortKey: sort(1, 5) }),
+    ])
+    if (!lx10 || !lx11 || !snd5) throw new Error('tags')
+    // Page order: line A's two tags first (LX then SND), line B's below both.
+    expect(lx10.centreY).toBe(400)
+    expect(snd5.centreY).toBe(384)
+    expect(lx11.centreY).toBeLessThan(snd5.centreY)
+    expect(lx11.centreY).toBe(368)
+    // Never in the wrong order down the margin.
+    const down = [lx10, snd5, lx11].map((t) => t.centreY)
+    expect(down).toEqual([...down].sort((p, q) => q - p))
+  })
+
+  test('I1: dense consecutive lines keep their order and drift only as far as they must', () => {
+    const lines = [400, 388, 376, 364, 352, 340]
+    const tags = layout(lines.map((y, i) => cue(`c${i}`, { y, number: String(i) })))
+    const centres = tags.map((t) => t.centreY)
+    // Strictly top to bottom, in page order, with 2 points between neighbours.
+    for (let i = 1; i < centres.length; i++) {
+      expect((centres[i - 1] as number) - (centres[i] as number)).toBeGreaterThanOrEqual(TAG_HEIGHT)
+    }
+    // 12 pt lines: each tag is pushed to 16 below the one above, so the drift is 4 pt a line.
+    expect(centres).toEqual([400, 384, 368, 352, 336, 320])
+  })
+
   test('tags a full height apart, or on opposite sides, do not stack', () => {
     const tags = layout([cue('a'), cue('b', { y: 500 - TAG_HEIGHT }), cue('c', { side: 'right' })])
     expect(tags.map((t) => t.centreY)).toEqual([500, 500 - TAG_HEIGHT, 500])
@@ -143,17 +183,101 @@ describe('crowding: tags stack vertically in the margin', () => {
     const boxes = [{ x: 300, y: 495, w: 40, h: 10 }]
     const [a, b] = layout([
       cue('a', { triggerBoxes: boxes, sortKey: sort(0, 1) }),
-      cue('b', { triggerBoxes: boxes, y: 502, sortKey: sort(0, 2) }),
+      cue('b', { triggerBoxes: boxes, y: 500, sortKey: sort(0, 2) }),
     ])
     if (!a || !b) throw new Error('tags')
     // The tag on its own line runs straight out to its underline.
     expect(a.leader?.map((p) => p.y)).toEqual([494, 494])
     // The pushed one leaves its tag at the tag's centre and meets the underline in the gutter.
     expect(b.leader?.[0]).toEqual({ x: expect.closeTo(b.tag.x + b.tag.w), y: b.centreY })
-    expect(b.leader?.at(-1)).toEqual({ x: 300, y: 494 })
+    expect(b.leader).toHaveLength(4)
     expect(b.centreY).toBeLessThan(a.centreY)
-    // The underline stays under the cue's own words.
     expect(b.underlines[0]?.y).toBe(494)
+  })
+})
+
+describe('I4: cues on one line get parallel leaders 1.5 pt apart', () => {
+  const sort = (department: number, major: number) => ({ department, major, minor: 0 })
+
+  test('the second and later cues on a side run 1.5 pt below the previous cue, in placement order', () => {
+    const [a, b, c] = layout([
+      cue('a', { triggerBoxes: [{ x: 300, y: 495, w: 40, h: 10 }], sortKey: sort(0, 1) }),
+      cue('b', { triggerBoxes: [{ x: 200, y: 495, w: 40, h: 10 }], sortKey: sort(1, 2) }),
+      cue('c', { triggerBoxes: [{ x: 250, y: 495, w: 40, h: 10 }], sortKey: sort(2, 3) }),
+    ])
+    if (!a || !b || !c) throw new Error('tags')
+    expect(LEADER_STEP).toBe(1.5)
+    expect(a.leader?.at(-1)?.y).toBe(494)
+    expect(b.leader?.at(-1)?.y).toBe(492.5)
+    expect(c.leader?.at(-1)?.y).toBe(491)
+    // They end at their own underlines' starts.
+    expect([a, b, c].map((t) => t.leader?.at(-1)?.x)).toEqual([300, 200, 250])
+  })
+
+  test('cues on different lines, or on opposite sides, keep their natural leader y', () => {
+    const tags = layout([
+      cue('a', { y: 500, triggerBoxes: [{ x: 300, y: 495, w: 40, h: 10 }] }),
+      cue('b', { y: 400, triggerBoxes: [{ x: 300, y: 395, w: 40, h: 10 }] }),
+      cue('c', { y: 500, side: 'right', triggerBoxes: [{ x: 300, y: 495, w: 40, h: 10 }] }),
+    ])
+    expect(tags.map((t) => t.leader?.at(-1)?.y)).toEqual([494, 394, 494])
+  })
+})
+
+describe('I2: tags never leave the page or sit under the footer', () => {
+  const FOOTER_TOP = 19
+
+  test('five cues on a line at y = 60 all end above the footer, in page order, without overlapping', () => {
+    const tags = layout(
+      [0, 1, 2, 3, 4].map((i) =>
+        cue(`c${i}`, {
+          y: 60,
+          number: String(i + 1),
+          sortKey: { department: i, major: i, minor: 0 },
+        }),
+      ),
+      WIDE,
+      { minY: FOOTER_TOP, maxY: 800 },
+    )
+    for (const t of tags) expect(t.tag.y).toBeGreaterThanOrEqual(FOOTER_TOP)
+    const down = [...tags].sort((p, q) => q.centreY - p.centreY)
+    expect(down.map((t) => t.id)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4'])
+    for (let i = 1; i < down.length; i++) {
+      expect(
+        (down[i - 1]?.tag.y ?? 0) - ((down[i]?.tag.y ?? 0) + TAG_HEIGHT),
+      ).toBeGreaterThanOrEqual(TAG_GAP - 1e-9)
+    }
+  })
+
+  test('a lone tag below the floor is lifted to it', () => {
+    const [t] = layout([cue('a', { y: 3 })], WIDE, { minY: FOOTER_TOP, maxY: 800 })
+    expect(t?.tag.y).toBe(FOOTER_TOP)
+  })
+
+  test('nothing goes above the top of the page, even if a cluster has to overlap there', () => {
+    const tags = layout(
+      [0, 1, 2, 3, 4, 5].map((i) =>
+        cue(`c${i}`, { y: 795, sortKey: { department: i, major: i, minor: 0 } }),
+      ),
+      WIDE,
+      { minY: 0, maxY: 800 },
+    )
+    for (const t of tags) expect(t.tag.y + t.tag.h).toBeLessThanOrEqual(800)
+    for (const t of tags) expect(t.tag.y).toBeGreaterThanOrEqual(0)
+  })
+
+  test('a cluster squeezed between the floor and the top still stays on the page', () => {
+    const tags = layout(
+      [0, 1, 2, 3, 4].map((i) =>
+        cue(`c${i}`, { y: 40, sortKey: { department: i, major: i, minor: 0 } }),
+      ),
+      WIDE,
+      { minY: 19, maxY: 70 },
+    )
+    for (const t of tags) {
+      expect(t.tag.y).toBeGreaterThanOrEqual(19)
+      expect(t.tag.y + t.tag.h).toBeLessThanOrEqual(70)
+    }
   })
 })
 
@@ -173,39 +297,53 @@ describe('the margin: a tag never enters the text block', () => {
     ).toEqual({ minX: 60, maxX: 500 })
   })
 
+  test('a stray word in the margin does not move it: only lines of three or more words count', () => {
+    const solid = [0, 1, 2].map((i) => ({ t: 'w', x: 100 + i * 50, y: 500, w: 40, h: 10 }))
+    const stray = { t: '7', x: 12, y: 500, w: 6, h: 10 }
+    expect(textExtent({ words: [stray, ...solid], lines: [[0], [1, 2, 3]] })).toEqual({
+      minX: 100,
+      maxX: 240,
+    })
+    // No line of three words: every word counts.
+    expect(textExtent({ words: [stray, ...solid.slice(0, 1)], lines: [[0], [1]] })).toEqual({
+      minX: 12,
+      maxX: 140,
+    })
+  })
+
   test('a tag that fits keeps its full text', () => {
     const t = one(cue('a'))
     expect(t.lead).toBe('LX')
     expect(t.tag.x + t.tag.w).toBeLessThanOrEqual(150 - 4)
   })
 
-  test('a standby that is too wide drops its SB prefix first, keeping the dash', () => {
+  test('a standby that does not fit drops its department first and keeps the SB word and the dash', () => {
     const full = tagWidth('SB LX', '11')
-    const short = tagWidth('LX', '11')
-    const limit = 4 + (full + short) / 2 + 4
-    const t = one(cue('a', { lead: 'SB LX', number: '11', type: 'standby' }), {
+    const typeOnly = tagWidth('SB', '11')
+    const limit = 4 + (full + typeOnly) / 2 + 4
+    const t = one(cue('a', { lead: 'SB LX', typeWord: 'SB', number: '11', type: 'standby' }), {
       minX: limit,
       maxX: 450,
     })
-    expect(t.lead).toBe('LX')
+    expect(t.lead).toBe('SB')
     expect(t.dash).toBe(true)
-    expect(t.tag.w).toBeCloseTo(short)
+    expect(t.tag.w).toBeCloseTo(typeOnly)
     expect(t.tag.x + t.tag.w).toBeLessThanOrEqual(limit - 4)
   })
 
-  test('a warn drops its W prefix the same way', () => {
-    const limit = 4 + (tagWidth('W LX', '11') + tagWidth('LX', '11')) / 2 + 4
-    const t = one(cue('a', { lead: 'W LX', number: '11', type: 'warn' }), {
+  test('a warn drops its department the same way and keeps W and its heavier outline', () => {
+    const limit = 4 + (tagWidth('W LX', '11') + tagWidth('W', '11')) / 2 + 4
+    const t = one(cue('a', { lead: 'W LX', typeWord: 'W', number: '11', type: 'warn' }), {
       minX: limit,
       maxX: 450,
     })
-    expect(t.lead).toBe('LX')
+    expect(t.lead).toBe('W')
     expect(t.outlineWidth).toBe(1.5)
   })
 
-  test('then the department code goes, keeping the number', () => {
-    const limit = 4 + (tagWidth('LX', '12.50') + tagWidth('', '12.50')) / 2 + 4
-    const t = one(cue('a', { lead: 'W LX', number: '12.50', type: 'warn' }), {
+  test('then the type word goes too, keeping the number whole', () => {
+    const limit = 4 + (tagWidth('W', '12.50') + tagWidth('', '12.50')) / 2 + 4
+    const t = one(cue('a', { lead: 'W LX', typeWord: 'W', number: '12.50', type: 'warn' }), {
       minX: limit,
       maxX: 450,
     })
@@ -216,6 +354,12 @@ describe('the margin: a tag never enters the text block', () => {
     expect(t.tag.x + t.tag.w).toBeLessThanOrEqual(limit - 4)
   })
 
+  test('a go has no type word: it goes from "LX 11" straight to "11"', () => {
+    const limit = 4 + (tagWidth('LX', '11') + tagWidth('', '11')) / 2 + 4
+    const t = one(cue('a', { number: '11' }), { minX: limit, maxX: 450 })
+    expect(t.lead).toBe('')
+  })
+
   test('as a last resort the number-only tag sits at the page edge over the text, whole', () => {
     const t = one(cue('a', { number: '12.50' }), { minX: 10, maxX: 450 })
     expect(t.lead).toBe('')
@@ -224,12 +368,12 @@ describe('the margin: a tag never enters the text block', () => {
   })
 
   test('the right margin is measured from the text block too', () => {
-    const limit = WIDTH - (4 + (tagWidth('SB LX', '11') + tagWidth('LX', '11')) / 2 + 4)
-    const t = one(cue('a', { side: 'right', lead: 'SB LX', number: '11', type: 'standby' }), {
-      minX: 50,
-      maxX: limit,
-    })
-    expect(t.lead).toBe('LX')
+    const limit = WIDTH - (4 + (tagWidth('SB LX', '11') + tagWidth('SB', '11')) / 2 + 4)
+    const t = one(
+      cue('a', { side: 'right', lead: 'SB LX', typeWord: 'SB', number: '11', type: 'standby' }),
+      { minX: 50, maxX: limit },
+    )
+    expect(t.lead).toBe('SB')
     expect(t.tag.x).toBeGreaterThanOrEqual(limit + 4)
     expect(t.tag.x + t.tag.w).toBeCloseTo(WIDTH - 4)
   })
@@ -237,7 +381,7 @@ describe('the margin: a tag never enters the text block', () => {
   test('a page with no word layer assumes a 56 point margin', () => {
     expect(DEFAULT_MARGIN).toBe(56)
     // "SB SND 12.50" is wider than the 52 points between the edge inset and the margin.
-    const wide = cue('a', { lead: 'SB SND', code: 'SND', number: '12.50', type: 'standby' })
+    const wide = cue('a', { lead: 'SB SND', typeWord: 'SB', number: '12.50', type: 'standby' })
     expect(tagWidth('SB SND', '12.50')).toBeGreaterThan(52)
     const t = one(wide, null)
     expect(t.tag.x + t.tag.w).toBeLessThanOrEqual(56)
@@ -335,19 +479,28 @@ describe('trigger underline and connector', () => {
     expect(one(cue('a', { side: 'right', triggerBoxes: [nearRight] })).leader).toBeNull()
   })
 
-  test('an unbound cue has an 8 point tick at its anchor and a connector to its bottom', () => {
+  test('an unbound cue has an 8 point tick from 4 above its anchor to 7 below, the connector at its bottom', () => {
     const t = one(cue('a', { anchorX: 250 }))
     expect(t.triggerBoxes).toEqual([])
     expect(t.underlines).toEqual([])
-    expect(t.tick).toEqual({ x: 250, y1: 496, y2: 504 })
+    expect(t.tick).toEqual({ x: 250, y1: 493, y2: 501 })
     expect(t.leader).toEqual([
-      { x: expect.closeTo(t.tag.x + t.tag.w - TAG_RADIUS), y: 496 },
-      { x: 250, y: 496 },
+      { x: expect.closeTo(t.tag.x + t.tag.w - TAG_RADIUS), y: 493 },
+      { x: 250, y: 493 },
     ])
     const r = one(cue('a', { side: 'right', anchorX: 250 }))
     expect(r.leader).toEqual([
-      { x: expect.closeTo(r.tag.x + TAG_RADIUS), y: 496 },
-      { x: 250, y: 496 },
+      { x: expect.closeTo(r.tag.x + TAG_RADIUS), y: 493 },
+      { x: 250, y: 493 },
     ])
+  })
+
+  test('a taller word box still runs straight: the jog needs the underline more than 1 point out of reach', () => {
+    // A 13 pt word box on the line: its underline is 7.5 below the centre (the tag reaches 7).
+    const tall = [{ x: 300, y: 493.5, w: 40, h: 13 }]
+    expect(one(cue('a', { triggerBoxes: tall })).leader).toHaveLength(2)
+    // 2 points beyond the pill's reach is out of reach: it jogs.
+    const lower = [{ x: 300, y: 490, w: 40, h: 13 }]
+    expect(one(cue('a', { triggerBoxes: lower })).leader).toHaveLength(4)
   })
 })

@@ -1,4 +1,5 @@
 import {
+  asCueType,
   type CueTagLayout,
   formatCueNumber,
   LEADER_WIDTH,
@@ -42,12 +43,10 @@ export interface CueMarkerProps {
   onHover?: (over: boolean) => void
 }
 
-const asType = (t: MarkerCue['type']): CueType => (t === 'standby' || t === 'warn' ? t : 'go')
-
 /** The marker's text: `LX 10`, `SB LX 10.5`. */
 function textOf(cue: MarkerCue): string {
   return markerText(
-    asType(cue.type),
+    asCueType(cue.type),
     cue.dept_code,
     formatCueNumber(cue.major ?? 0, cue.minor ?? 0, cue.dept_number_format),
   )
