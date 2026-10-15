@@ -93,6 +93,22 @@ export class PresenceHub {
     }
   }
 
+  /**
+   * Shutdown: close every connection with `code` and forget them all. Nobody is told about anyone
+   * leaving, because everybody is. Each connection's own cleanup then finds nothing left to do.
+   */
+  closeAll(code: number, reason: string): void {
+    const conns = [...this.#shows.values()].flatMap((show) => [...show.values()].map((e) => e.conn))
+    this.#shows.clear()
+    for (const conn of conns) {
+      try {
+        conn.close(code, reason)
+      } catch {
+        // already gone
+      }
+    }
+  }
+
   peers(showId: string): PresencePeer[] {
     return [...(this.#shows.get(showId)?.values() ?? [])].map(peerOf)
   }

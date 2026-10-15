@@ -12,6 +12,7 @@ import { eq } from 'drizzle-orm'
 import { type Context, Hono, type MiddlewareHandler } from 'hono'
 import type { AppEnv } from '../app'
 import { requireSession } from '../auth/middleware'
+import { appOrigin } from '../config'
 import { forbidden, unauthenticated } from '../errors'
 import type { PresenceConn } from '../presence/hub'
 import { getShowRole, requireShowRole } from '../services/tenancy'
@@ -22,6 +23,7 @@ export const PRESENCE_RECHECK_MS = 30_000
 /** Close codes. 1008 and 1009 are the standard policy and message-too-big codes. */
 export const PRESENCE_CLOSE_POLICY = 1008
 export const PRESENCE_CLOSE_TOO_BIG = 1009
+export const PRESENCE_CLOSE_SESSION_ENDED = 4401
 export const PRESENCE_CLOSE_MEMBERSHIP_REMOVED = 4403
 /** Lost a race for the last connection slot between the pre-upgrade check and the upgrade. */
 export const PRESENCE_CLOSE_TOO_MANY = 4429
@@ -35,7 +37,7 @@ const FLOOD_FRAMES_PER_SECOND = PRESENCE_MAX_MESSAGES_PER_SECOND * 5
  * session cookie. A handshake with no Origin is refused too: every browser sends one.
  */
 const requireAppOrigin: MiddlewareHandler<AppEnv> = async (c, next) => {
-  if (c.req.header('origin') !== new URL(c.var.deps.config.APP_ORIGIN).origin) {
+  if (c.req.header('origin') !== appOrigin(c.var.deps.config)) {
     throw forbidden('Cross-origin request refused')
   }
   await next()
@@ -109,6 +111,8 @@ export function createPresenceRoutes(
       const showId = c.req.param('showId') ?? ''
       const hub = deps.presence
       const recheckMs = deps.presenceOptions?.recheckMs ?? PRESENCE_RECHECK_MS
+      // The upgrade request's credentials, kept to ask again later whether the session still lives.
+      const headers = new Headers(c.req.raw.headers)
 
       // The display name is read from the user table now, never taken from the client.
       const [row] = await deps.db.select({ name: user.name }).from(user).where(eq(user.id, userId))
@@ -164,11 +168,17 @@ export function createPresenceRoutes(
             if (checking || over) return
             checking = true
             try {
+              // A socket outlives the request that opened it, and heartbeats defeat the sweep, so
+              // sign-out, revocation and expiry are noticed here, along with a removed membership.
+              if (!(await deps.auth.api.getSession({ headers }))) {
+                shut(PRESENCE_CLOSE_SESSION_ENDED, 'session ended')
+                return
+              }
               const role = await getShowRole(deps.db, userId, showId)
               if (!role) shut(PRESENCE_CLOSE_MEMBERSHIP_REMOVED, 'membership removed')
             } catch (err) {
-              // A database blip must not drop everyone; the next tick tries again.
-              console.error('presence membership recheck failed', err)
+              // A database blip must not drop everyone (session or membership); the next tick tries again.
+              console.error('presence recheck failed', err)
             } finally {
               checking = false
             }
@@ -187,6 +197,7 @@ export function createPresenceRoutes(
             shut(PRESENCE_CLOSE_POLICY, 'rate limit exceeded')
             return
           }
+          // Backstop: wss.options.maxPayload (app.ts) normally closes an oversized frame with 1009 first.
           if (frameBytes(event.data) > PRESENCE_MAX_FRAME_BYTES) {
             shut(PRESENCE_CLOSE_TOO_BIG, 'frame too large')
             return

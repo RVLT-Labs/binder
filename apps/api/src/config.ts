@@ -17,6 +17,11 @@ const schema = z.object({
 
 export type Config = z.infer<typeof schema>
 
+/** The origin (scheme, host, port) of APP_ORIGIN: what a browser sends as `Origin` from the app. */
+export function appOrigin(config: Pick<Config, 'APP_ORIGIN'>): string {
+  return new URL(config.APP_ORIGIN).origin
+}
+
 /**
  * The secrets committed in the repo for local development (.env.example, deploy/docker-compose.dev.yml).
  * They are public, so a production process refuses to run with any of them.

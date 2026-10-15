@@ -5,6 +5,16 @@ import { z } from 'zod'
  * selected. Clients send their state on change and every PRESENCE_HEARTBEAT_MS; the server fans it
  * out to the show and drops a connection after PRESENCE_TIMEOUT_MS of silence. Presence is
  * best-effort and silently absent offline.
+ *
+ * Protocol notes for clients:
+ * - `welcome` lists the peers already in the show (never the receiver itself).
+ * - A `peer` message for a new connection arrives when it joins, before it has said anything, so its
+ *   documentId, versionId, pageIndex and selection are all null. Show such a peer as present but
+ *   not located; later `peer` messages for the same connId replace its state.
+ * - `leave` removes a connId. The server closes with 4401 (session ended), 4403 (no longer a member),
+ *   4408 (silent too long), 4429 (too many connections), 1001 (server restarting), 1008 (too many
+ *   frames) or 1009 (frame over PRESENCE_MAX_FRAME_BYTES). Reconnect after 1001 and 4408; do not
+ *   after 4401, 4403 or 1008/1009.
  */
 
 export interface PresenceSelection {

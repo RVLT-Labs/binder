@@ -248,6 +248,24 @@ describe('PresenceHub', () => {
     expect(hub.connectionCount('s', 'u1')).toBe(1)
   })
 
+  test('closeAll closes every connection with the code and announces no leaves', () => {
+    const { hub } = setup()
+    const a = new RecordingConn('a', 'u1', 'A')
+    const b = new RecordingConn('b', 'u2', 'B')
+    const c = new RecordingConn('c', 'u3', 'C')
+    hub.join('s', a)
+    hub.join('s', b)
+    hub.join('t', c)
+    a.sent.length = 0
+    hub.closeAll(1001, 'bye')
+    for (const conn of [a, b, c]) expect(conn.closed).toEqual([{ code: 1001, reason: 'bye' }])
+    expect(hub.peers('s')).toEqual([])
+    expect(hub.peers('t')).toEqual([])
+    expect(a.sent).toEqual([]) // everyone is going; nobody is told about anyone
+    hub.closeAll(1001, 'bye')
+    expect(a.closed).toHaveLength(1)
+  })
+
   test('the same user in two tabs is two peers with the same colour', () => {
     const { hub } = setup()
     hub.join('s', new RecordingConn('tab1', 'u1', 'A'))

@@ -33,7 +33,7 @@ export interface AppDeps {
   auth: Auth
   jobs: JobQueue
   presence: PresenceHub
-  /** Tests shorten these: how often idle connections are swept and memberships re-read. */
+  /** How often silent connections are swept (read by server.ts) and sessions and memberships re-read; tests shorten them. */
   presenceOptions?: { sweepMs?: number; recheckMs?: number }
 }
 

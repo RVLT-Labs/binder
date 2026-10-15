@@ -1,6 +1,7 @@
 import { HTTPException } from 'hono/http-exception'
 import { expect, test } from 'vitest'
 import { createApp } from '../src/app'
+import { appOrigin } from '../src/config'
 import { invalid, notFound } from '../src/errors'
 import { APP_ORIGIN, testDeps } from './helpers'
 
@@ -68,4 +69,10 @@ test('createApp exposes the WebSocket hook and the presence route is mounted', a
   expect(noOrigin.status).toBe(403)
   const noSession = await app.request('/api/shows/s/presence', { headers: { origin: APP_ORIGIN } })
   expect(noSession.status).toBe(401)
+})
+
+test('appOrigin is the origin of APP_ORIGIN, whatever its path or trailing slash', () => {
+  expect(appOrigin({ APP_ORIGIN: 'https://binder.rvlt.app' })).toBe('https://binder.rvlt.app')
+  expect(appOrigin({ APP_ORIGIN: 'https://binder.rvlt.app/' })).toBe('https://binder.rvlt.app')
+  expect(appOrigin({ APP_ORIGIN: 'http://localhost:5173/app' })).toBe('http://localhost:5173')
 })

@@ -1,5 +1,6 @@
 import type { Context, MiddlewareHandler } from 'hono'
 import type { AppEnv } from '../app'
+import { appOrigin } from '../config'
 import { forbidden, unauthenticated } from '../errors'
 import { bearerAuth } from './bearer'
 
@@ -24,7 +25,7 @@ export function assertSameOrigin(c: Context<AppEnv>): void {
   if (!UNSAFE_METHODS.has(c.req.method)) return
   const origin = c.req.header('origin')
   if (origin !== undefined) {
-    if (origin === new URL(c.var.deps.config.APP_ORIGIN).origin) return
+    if (origin === appOrigin(c.var.deps.config)) return
     throw forbidden('Cross-origin request refused')
   }
   if (c.req.header('sec-fetch-site') === 'same-origin') return

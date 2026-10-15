@@ -16,18 +16,26 @@ const previewPort = 4173
 
 /**
  * `vite preview` stands in for production's same-origin Caddy, but on its own port, while the local
- * API (shared with the dev server) only accepts unsafe cookie requests whose Origin is APP_ORIGIN,
- * the dev origin. So the preview proxy presents the preview origin as the dev origin. Any other
- * Origin passes through unchanged and is still refused by the API.
+ * API (shared with the dev server) only accepts unsafe cookie requests and WebSocket upgrades whose
+ * Origin is APP_ORIGIN, the dev origin. So the proxy presents the preview origin as the dev origin,
+ * on plain requests (`proxyReq`) and on WebSocket upgrades such as presence (`proxyReqWs`). Any other
+ * Origin passes through unchanged and is still refused by the API. The dev server uses the same
+ * hooks; there the Origin is already the dev origin and they change nothing.
  */
-const previewApi: ProxyOptions = {
+const apiProxy: ProxyOptions = {
   target: api,
+  ws: true,
   configure: (proxy) => {
-    proxy.on('proxyReq', (proxyReq) => {
+    const rewrite = (proxyReq: {
+      getHeader(name: string): unknown
+      setHeader(n: string, v: string): unknown
+    }) => {
       if (proxyReq.getHeader('origin') === `http://localhost:${previewPort}`) {
         proxyReq.setHeader('origin', devOrigin)
       }
-    })
+    }
+    proxy.on('proxyReq', rewrite)
+    proxy.on('proxyReqWs', rewrite)
   },
 }
 
@@ -41,14 +49,18 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    // `ws: true` lets the presence WebSocket (/api/shows/:id/presence) upgrade through the proxy.
-    proxy: { '/api': { target: api, ws: true }, '/blobs': api, '/mcp': api },
+    // `ws: true` (in apiProxy) lets the presence WebSocket (/api/shows/:id/presence) upgrade.
+    proxy: { '/api': apiProxy, '/blobs': api, '/mcp': api },
   },
   // `vite preview` serves the production build, as the offline e2e needs; same-origin like production.
   preview: {
     port: previewPort,
     strictPort: true,
-    proxy: { '/api': previewApi, '/blobs': previewApi, '/mcp': previewApi },
+    proxy: {
+      '/api': apiProxy,
+      '/blobs': { ...apiProxy, ws: false },
+      '/mcp': { ...apiProxy, ws: false },
+    },
   },
   // PowerSync ships its own workers and wasm; pre-bundling breaks their relative imports.
   optimizeDeps: { exclude: ['@powersync/web'] },

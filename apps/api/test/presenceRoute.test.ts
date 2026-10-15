@@ -183,7 +183,11 @@ describe('GET /api/shows/:showId/presence', () => {
     const ownerConn = owner.of('welcome')[0].connId
 
     owner.send(stateMessage(state({ pageIndex: 4 })))
-    await sleep(50) // let the server record the owner's state before Bea arrives
+    // The server has recorded the owner's state before Bea arrives.
+    await until(
+      () => s.deps.presence.peers(s.show.id).some((p) => p.pageIndex === 4),
+      "the owner's state",
+    )
 
     const bea = await s.connect(s.bea)
     await until(() => bea.of('welcome').length === 1, "Bea's welcome")
@@ -330,8 +334,10 @@ describe('GET /api/shows/:showId/presence', () => {
 
     // 60 frames at once: roughly the first 20 pass, the rest are dropped, and the socket stays open.
     for (let k = 0; k < 60; k++) sender.send(stateMessage(state({ pageIndex: k + 1 })))
-    await sleep(300)
-    const passed = watcher.of('peer').filter((m) => m.peer.pageIndex !== null).length
+    const passedCount = () => watcher.of('peer').filter((m) => m.peer.pageIndex !== null).length
+    await until(() => passedCount() >= 20, 'the first 20 frames')
+    await sleep(150) // settle: anything beyond the bucket would have arrived by now
+    const passed = passedCount()
     expect(passed).toBeGreaterThanOrEqual(20)
     expect(passed).toBeLessThanOrEqual(24)
     expect(sender.closed).toBeNull()
@@ -344,6 +350,49 @@ describe('GET /api/shows/:showId/presence', () => {
       () => s.deps.presence.connectionCount(s.show.id, s.bea.id) === 1,
       'the flooder to leave',
     )
+  })
+
+  test('a signed-out session closes the socket with 4401 within the recheck interval', async () => {
+    const s = await setup({ recheckMs: 100 })
+    const owner = await s.connect(s.owner)
+    const bea = await s.connect(s.bea)
+    await until(() => owner.of('peer').length === 1, 'the join announcement')
+
+    await s.deps.auth.api.signOut({ headers: new Headers({ cookie: s.bea.cookie }) })
+    expect(await bea.waitClosed()).toMatchObject({ code: 4401, reason: 'session ended' })
+    await until(() => owner.of('leave').length === 1, 'the leave')
+    expect(owner.closed).toBeNull()
+    expect(s.deps.presence.peers(s.show.id)).toHaveLength(1)
+  })
+
+  test('a failing session lookup keeps the socket and is retried', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const s = await setup({ recheckMs: 50 })
+    const real = s.deps.auth.api.getSession
+    let failing = true
+    let calls = 0
+    vi.spyOn(s.deps.auth.api, 'getSession').mockImplementation(((...args: unknown[]) => {
+      // The pre-upgrade session check runs first; only the rechecks after it fail.
+      if (calls++ > 0 && failing) return Promise.reject(new Error('db blip'))
+      return (real as (...a: unknown[]) => unknown)(...args)
+    }) as typeof real)
+    const bea = await s.connect(s.bea)
+    await until(() => calls >= 4, 'several failed rechecks')
+    expect(bea.closed).toBeNull()
+    failing = false
+    await sleep(150)
+    expect(bea.closed).toBeNull()
+  })
+
+  test('closeAll closes every open socket with the given code and empties the hub', async () => {
+    const s = await setup()
+    const owner = await s.connect(s.owner)
+    const bea = await s.connect(s.bea)
+    await until(() => owner.of('peer').length === 1, 'the join announcement')
+    s.deps.presence.closeAll(1001, 'server shutting down')
+    expect(await owner.waitClosed()).toMatchObject({ code: 1001, reason: 'server shutting down' })
+    expect(await bea.waitClosed()).toMatchObject({ code: 1001 })
+    expect(s.deps.presence.peers(s.show.id)).toEqual([])
   })
 
   test('a closed socket leaves once and every per-connection timer is cleared', async () => {
