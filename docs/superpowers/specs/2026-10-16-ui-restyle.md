@@ -64,7 +64,7 @@ Each screen matches its mockup (gallery ids in brackets) at the widths it is dra
 
 ## 6. Data change: department defaults
 
-`DEFAULT_DEPARTMENTS` in `@binder/shared` takes DESIGN §4.3's colours (LX `#C9811F`, SND `#2F6BD6`, TM `#7A5CD0`, VID `#C2487E`, SM `#1C8B83`, STG `#CC5E2E`, FLY `#6E8C12`). Existing departments are not migrated. A shared `deptChrome(hex)` returns the chrome tint, and `isTooCloseToRed(hex)` backs the picker's guard (ΔE76 < 10 against `#E0363D`), both unit-tested.
+`DEFAULT_DEPARTMENTS` in `@binder/shared` takes DESIGN §4.3's colours (LX `#C9811F`, SND `#2F6BD6`, TM `#7A5CD0`, VID `#C2487E`, SM `#1C8B83`, STG `#CC5E2E`, FLY `#6E8C12`). Existing departments are not migrated. A shared `deptChrome(hex)` returns the chrome tint, and `isTooCloseToRed(hex)` backs the picker's guard (ΔE76 < 20 against `#E0363D`), both unit-tested.
 
 ## 7. Page markup colours
 

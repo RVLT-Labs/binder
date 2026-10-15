@@ -68,7 +68,7 @@ A department's colour is stored on the department (owner-editable in Show settin
 
 - On the page, use the stored colour as is.
 - In chrome (swatches, cue numbers in lists, palette results on espresso), use the chrome tint: `deptChrome(hex)` = the table's tint when the stored colour is a default, otherwise `color-mix(in oklab, <hex> 70%, white)`. Never put a dark department colour as text on espresso.
-- The colour picker in Show settings offers the seven defaults as presets plus a custom value, and refuses anything within ΔE 10 of RVLT red with the message "Red is kept for Binder's own alerts. Pick another colour."
+- The colour picker in Show settings offers the seven defaults as presets plus a custom value, and refuses anything within ΔE76 20 of RVLT red (that catches `#D0021B` at 13.3 and still allows coral at 25.8) with the message "Red is kept for Binder's own alerts. Pick another colour."
 - Existing shows keep their stored colours. (The M1 default for SM was red, `#D0021B`; owners can change it, and the picker's red guard applies the next time it is edited.)
 
 ### 4.4 People

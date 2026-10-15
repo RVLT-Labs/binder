@@ -58,9 +58,9 @@
 - Create: `packages/shared/src/colour.ts`, `packages/shared/src/colour.test.ts`; export from `packages/shared/src/index.ts`
 
 **Interfaces:**
-- Produces: `deptChrome(hex: string): string` (DESIGN §4.3 table: default → its chrome tint; other → `color-mix(in oklab, <hex> 70%, white)` as a CSS string), `isTooCloseToRed(hex: string): boolean` (CIE ΔE76 in Lab against `#E0363D` < 10), `DEPARTMENT_COLOUR_PRESETS: readonly { code: string; colour: string }[]` (the seven defaults in DESIGN order), `RVLT_RED = '#E0363D'`.
+- Produces: `deptChrome(hex: string): string` (DESIGN §4.3 table: default → its chrome tint; other → `color-mix(in oklab, <hex> 70%, white)` as a CSS string), `isTooCloseToRed(hex: string): boolean` (CIE ΔE76 in Lab against `#E0363D` < 20), `DEPARTMENT_COLOUR_PRESETS: readonly { code: string; colour: string }[]` (the seven defaults in DESIGN order), `RVLT_RED = '#E0363D'`.
 
-- [ ] **Step 1: Write failing tests** in `colour.test.ts`: `deptChrome('#C9811F') === '#EBA53A'`; `deptChrome('#2F6BD6') === '#5B8DEF'`; `deptChrome('#123456') === 'color-mix(in oklab, #123456 70%, white)'`; case-insensitive input; `isTooCloseToRed('#E0363D')`, `isTooCloseToRed('#D0021B')` and `isTooCloseToRed('#e53b40')` true; `isTooCloseToRed('#C9811F')`, `isTooCloseToRed('#CC5E2E')` (coral, the nearest default) false; presets equal DESIGN §4.3 in order LX, SND, TM, SM, VID, STG, FLY. In the existing markup test for `DEFAULT_DEPARTMENTS`, expect the new colours and that none `isTooCloseToRed`.
+- [ ] **Step 1: Write failing tests** in `colour.test.ts`: `deptChrome('#C9811F') === '#EBA53A'`; `deptChrome('#2F6BD6') === '#5B8DEF'`; `deptChrome('#123456') === 'color-mix(in oklab, #123456 70%, white)'`; case-insensitive input; `isTooCloseToRed('#E0363D')`, `isTooCloseToRed('#D0021B')` (ΔE 13.3), `isTooCloseToRed('#B21F26')` (14.1) and `isTooCloseToRed('#e53b40')` true; `isTooCloseToRed('#C9811F')`, `isTooCloseToRed('#CC5E2E')` (coral, the nearest default, ΔE 25.8) and `isTooCloseToRed('#EF7E55')` (28.7) false; presets equal DESIGN §4.3 in order LX, SND, TM, SM, VID, STG, FLY. In the existing markup test for `DEFAULT_DEPARTMENTS`, expect the new colours and that none `isTooCloseToRed`.
 - [ ] **Step 2: Run** `pnpm --filter @binder/shared test` — FAIL.
 - [ ] **Step 3: Implement** `colour.ts` (hex → sRGB → XYZ D65 → Lab, ΔE76) and update `DEFAULT_DEPARTMENTS` colours (codes, names, formats and order unchanged).
 - [ ] **Step 4: Run** shared and api tests (`pnpm --filter @binder/shared test`, `pnpm --filter @binder/api test`) — PASS; fix any test that pinned old defaults.
@@ -88,7 +88,7 @@
 
 **Files:**
 - Create: `apps/web/src/shell/AppShell.tsx`, `apps/web/src/shell/Rail.tsx`, `apps/web/src/shell/TopBar.tsx`, `apps/web/src/shell/TabBar.tsx`, `apps/web/src/shell/AccountMenu.tsx`, `apps/web/src/shell/navItems.ts`, `apps/web/src/shell/useBreakpoint.ts`, `apps/web/src/shell/AppShell.test.tsx`, `apps/web/src/routes/shows.$showId.more.tsx`
-- Modify: `apps/web/src/routes/__root.tsx`, `apps/web/src/routes/shows.$showId.tsx` (becomes the show layout that renders the shell for show routes), `apps/web/src/components/Notices.tsx`, `apps/web/src/components/SyncStatus.tsx`, `apps/web/src/styles.css` (remove the base/app-header rules and the `:has()` full-height rules)
+- Modify: `apps/web/src/routes/__root.tsx`, `apps/web/src/routes/shows.$showId.tsx` (becomes a pure layout: shell + PresenceProvider + `<Outlet/>`; its current page content moves unchanged to a new `apps/web/src/routes/shows.$showId.index.tsx`), `apps/web/src/components/Notices.tsx`, `apps/web/src/components/SyncStatus.tsx`, `apps/web/src/styles.css` (remove the base/app-header rules and the `:has()` full-height rules)
 
 **Interfaces:**
 - Consumes: primitives (Task 3), `BinderMark`, lucide icons.
@@ -125,7 +125,7 @@
 
 **Files:**
 - Create: `apps/web/src/routes/shows.$showId.docs.index.tsx` (the Documents route, `/shows/$showId/docs`), `apps/web/src/overview/ShowOverview.tsx`, `apps/web/src/overview/NeedsYou.tsx`, `apps/web/src/overview/DepartmentCards.tsx`, `apps/web/src/overview/overview.test.tsx`, `apps/web/src/documents/DocumentRow.tsx`
-- Modify: `apps/web/src/routes/shows.$showId.tsx` (index content becomes `ShowOverview`), `apps/web/src/documents/DocumentList.tsx`, `apps/web/src/documents/UploadDialog.tsx` (DialogShell), `apps/web/src/offline/OfflineButton.tsx`, `apps/web/src/presence/Avatars.tsx`, `apps/web/src/styles.css` (remove Documents, Offline, Presence-list rules)
+- Modify: `apps/web/src/routes/shows.$showId.index.tsx` (created in Task 4; its content becomes `ShowOverview`), `apps/web/src/documents/DocumentList.tsx`, `apps/web/src/documents/UploadDialog.tsx` (DialogShell), `apps/web/src/offline/OfflineButton.tsx`, `apps/web/src/presence/Avatars.tsx`, `apps/web/src/styles.css` (remove Documents, Offline, Presence-list rules)
 
 **Interfaces:**
 - Consumes: existing queries for documents, cues per department, review counts, the activity feed and presence; `deptChrome` (Task 2).
@@ -152,7 +152,7 @@
 
 - [ ] **Step 1: Write failing tests** in `frame.test.tsx`: the tool buttons keep their names and `aria-pressed`, and each shows its key hint (`v`, `c`, `h`, `n`, `r`, `a`, `s`, `/`); the status bar reads "Page 1 of 43" and the active layer name; `THUMB_WIDTH === 96`. Add to `e2e/viewer.spec.ts`: after "Fit width" the first `.page-sheet` width equals the `.viewer-pages` client width minus `FIT_ALLOWANCE` (± 1 px). Add to `e2e/markup.spec.ts`: opening `?cue=<id>` leaves that cue's `rect.cue-tag-body` inside the viewport.
 - [ ] **Step 2: Run** — FAIL.
-- [ ] **Step 3: Implement**: top bar = crumbs (show / document) + version chip/switcher + review count + Print + Calling mode (a link to `?mode=calling`, wired in Task 14) + presence; the stage `bg-[#0E0C0A]` centring the pages; thumbnails 96 px with per-side tag marks if cheap (else plain) and presence initials, hidden by default at tablet with a top-bar toggle; floating ToolStrip at the stage's left edge; status bar 28 px at desktop/tablet (hidden at phone). Keep the toolbar's zoom, fit and "Go to page" controls with their names (they move into the status bar's right side). Update `FIT_ALLOWANCE`, `GAP`, `SLOT_PADDING_TOP` together with the CSS if spacing changes. Print and Upload revision dialogs in DialogShell with Segmented controls for layers/pages/paper.
+- [ ] **Step 3: Implement**: top bar = crumbs (show / document) + version chip/switcher + review count + Print + presence (the Calling mode control is added by Task 14, not here); the stage `bg-[#0E0C0A]` centring the pages; thumbnails 96 px with per-side tag marks if cheap (else plain) and presence initials, hidden by default at tablet with a top-bar toggle; floating ToolStrip at the stage's left edge; status bar 28 px at desktop/tablet (hidden at phone). Keep the toolbar's zoom, fit and "Go to page" controls with their names (they move into the status bar's right side). Update `FIT_ALLOWANCE`, `GAP`, `SLOT_PADDING_TOP` together with the CSS if spacing changes. Print and Upload revision dialogs in DialogShell with Segmented controls for layers/pages/paper.
 - [ ] **Step 4: Run** unit tests and `pnpm e2e -- viewer markup annotations search export revisions presence`.
 - [ ] **Step 5: Screenshot** desktop and tablet; compare with `markup` and `t-markup`.
 - [ ] **Step 6: Commit** `feat(web): script screen stage, tool strip, thumbnails and status bar`.
@@ -253,9 +253,9 @@
 
 **Interfaces:**
 - Consumes: local queries for cues and documents of the current show, the existing search index for script text, router navigation, `cmdk`.
-- Produces: `usePaletteResults(query, { showId, docId }) → { goTo: Result[], cues: Result[], script: Result[], actions: Result[] }` where `Result = { id, label, detail?, hint?, run(): void }`.
+- Produces: `usePaletteResults(query, { showId, docId }) → { goTo: Result[], cues: Result[], script: Result[], actions: Result[] }` where `Result = { id, label, detail?, hint?, run(): void }`; and the pure `matchCues(query: string, cues: CueRow[], departments: Department[]) → CueRow[]` (department code optional, prefix match on the formatted number, ordered by page then y) exported from `apps/web/src/palette/matchCues.ts` for Task 14's keypad.
 
-- [ ] **Step 1: Write failing tests**: "lx 12" puts LX 12 first under Go to and LX 12.5 / LX 120 under Cues (prefix match on the formatted number within the department); "12" also offers "Page 12" when the document has ≥ 12 pages; "wind" offers an In-the-script result with the line count; actions include Switch to calling mode, Print…, Renumber from script order, Hide <dept> layer; Enter runs the current result; Escape closes and returns focus; while open, typing `c` or `]` does not trigger markup shortcuts.
+- [ ] **Step 1: Write failing tests**: "lx 12" puts LX 12 first under Go to and LX 12.5 / LX 120 under Cues (prefix match on the formatted number within the department); "12" also offers "Page 12" when the document has ≥ 12 pages; "wind" offers an In-the-script result with the line count; actions include Print…, Renumber from script order, Hide <dept> layer (Switch to calling mode is added in Task 14); `matchCues('lx 12', …)` and `matchCues('12', …)` unit-tested directly; Enter runs the current result; Escape closes and returns focus; while open, typing `c` or `]` does not trigger markup shortcuts.
 - [ ] **Step 2: Run** — FAIL.
 - [ ] **Step 3: Implement** per DESIGN §7–8 (four fixed groups, red edge on the current result, ↵ hint, footer keys in mono); phone: a search button in the top bar opens it full-screen.
 - [ ] **Step 4: Run** unit tests and `pnpm e2e -- markup` plus a new `e2e/palette.spec.ts`: ⌘K, type a cue number, Enter, the cue is selected on its page.
@@ -267,9 +267,10 @@
 
 **Files:**
 - Create: `apps/web/src/calling/CallingView.tsx`, `apps/web/src/calling/CallingStrip.tsx`, `apps/web/src/calling/GoToKeypad.tsx`, `apps/web/src/calling/nextCue.ts`, `apps/web/src/calling/calling.test.tsx`, `apps/web/e2e/calling.spec.ts`
-- Modify: `apps/web/src/routes/shows.$showId.docs.$docId.tsx` (validate `mode: 'calling'` in search params; render CallingView), `apps/web/src/viewer/Viewer.tsx` (a `readOnly` prop that disables tools, drag and editors but keeps tags focusable), `apps/web/src/markup/useMarkupShortcuts.ts` (⇧C toggles; in Calling only navigation keys act)
+- Modify: `apps/web/src/routes/shows.$showId.docs.$docId.tsx` (validate `mode: 'calling'` in search params; render CallingView; add the "Calling mode" control to the script top bar), `apps/web/src/palette/usePaletteResults.ts` (add the "Switch to calling mode" action), `apps/web/src/viewer/Viewer.tsx` (a `readOnly` prop that disables tools, drag and editors but keeps tags focusable), `apps/web/src/markup/useMarkupShortcuts.ts` (⇧C toggles; in Calling only navigation keys act)
 
 **Interfaces:**
+- Consumes: `matchCues` (Task 13) for the keypad's live match line.
 - Produces: `nextCue(cues, { departmentId, page, y }) → Cue | null` (the first cue on the active department at or after the top of the visible page, in page then y order); `<CallingStrip page pages next onPrev onNext onGoTo onExit />`; `<GoToKeypad mode: 'cue'|'page' onGo onCancel />` (live match line from the same matcher the palette uses).
 
 - [ ] **Step 1: Write failing tests** (`calling.test.tsx`): `nextCue` picks the first LX cue at or below the page top and skips other departments; the strip shows "p.1 / 43" in mono and "Next LX 12 Ship deck wash in"; the keypad builds "2.2" from key presses, shows "SND 2.20 · Verse 2 swell · p.1" as the match, Go navigates to it, Cancel and Escape close it returning focus to Go to…; in read-only mode `c`, Delete and digit keys do nothing, ←/→ turn pages. `e2e/calling.spec.ts`: open Calling mode from the top bar, no tool buttons exist, the page shows, → turns the page, the keypad jumps to a cue, Exit returns to markup with the same page.
