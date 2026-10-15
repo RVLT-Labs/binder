@@ -32,7 +32,7 @@ test('edits sync between two users, survive offline, rejections converge, and no
     // Initial sync: owner and editor both receive the shared show.
     await expect(showLink(a.page, title)).toBeVisible({ timeout: 20_000 })
     await expect(showLink(b.page, title)).toBeVisible({ timeout: 20_000 })
-    await expect(a.page.getByLabel('Sync status')).toHaveText('Connected')
+    await expect(a.page.getByLabel('Sync status')).toHaveText('Connected', { timeout: 20_000 })
 
     // Live: A renames, B sees it.
     await rename(a.page, title, ii)

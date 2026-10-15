@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { FIXTURES } from '@binder/fixtures'
 import type { Anchor, WordLayer } from '@binder/shared'
-import { API_URL, APP_URL, readRun } from './env'
+import { API_URL, APP_URL, readRun, type UserKey } from './env'
 
 /** Server-side setup for the revision specs: their own show, document, and cues, through the API. */
 
@@ -175,8 +175,39 @@ export async function uploadRevision(
   return version.id
 }
 
+/**
+ * A fresh show owned by the run's owner with the given users as editors, for a spec that changes
+ * the show itself (and so must not touch the shared one). The spec archives it when it is done.
+ */
+export async function createOwnedShow(
+  titlePrefix: string,
+  editors: UserKey[],
+): Promise<{ showId: string; title: string }> {
+  const { users } = readRun()
+  const owner = await signInAsOwner()
+  const title = `${titlePrefix} ${Date.now()}`
+  const { organisations } = await call<{ organisations: { id: string }[] }>(
+    owner,
+    'GET',
+    '/api/me/orgs',
+  )
+  const { show } = await call<{ show: { id: string } }>(
+    owner,
+    'POST',
+    `/api/orgs/${organisations[0]?.id}/shows`,
+    { title },
+  )
+  for (const key of editors) {
+    await call(owner, 'POST', `/api/shows/${show.id}/members`, {
+      email: users[key].email,
+      role: 'editor',
+    })
+  }
+  return { showId: show.id, title }
+}
+
 /** Archives the show so the owner's list of active shows is what other specs expect. */
-export async function archiveShow(show: RevisionShow | undefined): Promise<void> {
+export async function archiveShow(show: { showId: string } | undefined): Promise<void> {
   if (!show) return
   await call(await signInAsOwner(), 'PATCH', `/api/shows/${show.showId}`, { status: 'archived' })
 }

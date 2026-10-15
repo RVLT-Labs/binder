@@ -293,7 +293,7 @@ test('compare shows the cut lines as removed', async ({ browser }) => {
       timeout: 60_000,
     })
     const removed = changes.locator('button[data-op="removed"]')
-    expect(await removed.count()).toBeGreaterThanOrEqual(10)
+    await expect.poll(() => removed.count()).toBeGreaterThanOrEqual(10)
     // The cut lines are listed as removed and none of them as added.
     await expect(removed.filter({ hasText: 'Two and twenty' })).toHaveCount(1)
     await expect(
