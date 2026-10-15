@@ -4,7 +4,7 @@ import { promisify } from 'node:util'
 import { expect, test } from 'vitest'
 import { hasText, pageCount } from './lib.ts'
 import { ensureFixtures } from './make-fixtures.ts'
-import { cutLines, insertLines } from './revisions.ts'
+import { cutLines, insertLines, SHORT_CUT_FIRST_LINE, SHORT_CUT_LAST_LINE } from './revisions.ts'
 
 const run = promisify(execFile)
 
@@ -109,3 +109,16 @@ test('the cut and insert helpers edit the 1-based lines', () => {
   expect(cutLines(text, 2, 3)).toBe('a\nd\ne')
   expect(insertLines(text, 2, 2)).toBe('a\nb\nINSERTED LINE 1\nINSERTED LINE 2\nc\nd\ne')
 })
+
+test('revisedShortCutPdf is three pages and lacks lines 60 to 75 that the short libretto has', async () => {
+  const f = await ensureFixtures()
+  expect(await pageCount(f.librettoShortPdf)).toBe(3)
+  expect(await pageCount(f.revisedShortCutPdf)).toBe(3)
+  const text = await readFile(f.librettoText, 'utf8')
+  const cut = text.split('\n').slice(SHORT_CUT_FIRST_LINE - 1, SHORT_CUT_LAST_LINE)
+  const only = cut.map((l) => l.trim()).find((l) => l.length > 20 && text.split(l).length === 2)
+  if (!only) throw new Error('no unique line in the cut range')
+  const needle = only.split(/\s+/).slice(0, 4).join(' ')
+  expect(await textOf(f.librettoShortPdf)).toContain(needle)
+  expect(await textOf(f.revisedShortCutPdf)).not.toContain(needle)
+}, 120_000)

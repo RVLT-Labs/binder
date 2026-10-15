@@ -1,4 +1,5 @@
 import {
+  type Anchor,
   type CueType,
   canEditLayer,
   type LayerRef,
@@ -26,13 +27,14 @@ import type { LayerState, LayerStore } from './layerState'
 import type { CueRowWithDept, MarkupView } from './markupView'
 import { deleteCue, type EditContext, insertCue, updateCue } from './mutations'
 import { anchorAt, numberAt } from './placement'
+import { endRelocate } from './relocate'
 import { clearSelection, select } from './selection'
 import { effectiveSnap, loadSnapOverride, saveSnapOverride } from './snapPref'
 import { readStamps } from './stampSettings'
 import { type AnnotationActions, useAnnotationActions } from './useAnnotationActions'
 import type { DepartmentRow } from './useDepartments'
 import { useLayers } from './useLayers'
-import { useMarkup } from './useMarkup'
+import { type HistoricSource, useMarkup } from './useMarkup'
 import { loadWordLayer } from './wordLayers'
 
 const annotationLayer = (a: { layer_kind: string | null; layer_id: string | null }): LayerRef => ({
@@ -58,8 +60,10 @@ export interface MarkupSession extends AnnotationActions {
   active: LayerRef | null
   layers: LayerState
   store: LayerStore
-  /** Why nothing can be edited (an archived show), or null. */
+  /** Why nothing can be edited (an archived show, or a version that is not current), or null. */
   readOnly: string | null
+  /** Set when the version on screen is not the document's current one: "Viewing v1 — read-only". */
+  versionReadOnly: string | null
   /** Where the cue tool places cues, or why it is disabled. */
   cueTarget: { departmentId: string } | { disabled: string }
   /** Where the annotation tools draw (the active layer), or why they are disabled. */
@@ -89,6 +93,16 @@ export interface MarkupSession extends AnnotationActions {
   placeCue(pageIndex: number, point: Point, type: CueType, words?: WordLayer | null): Promise<void>
   moveCue(id: string, pageIndex: number, point: Point): Promise<void>
   removeCue(id: string): Promise<void>
+  /**
+   * Puts a review item (a cue or annotation anchored to an older version) at a point of this
+   * version, status `ok`. The same rights checks as any move apply.
+   */
+  relocate(
+    table: 'cues' | 'annotations',
+    id: string,
+    pageIndex: number,
+    point: Point,
+  ): Promise<void>
   /** Selects a cue and scrolls it into view. */
   showCue(cue: CueRowWithDept): void
   /** The page and point under the pointer, for placing a cue from the keyboard. */
@@ -112,6 +126,13 @@ export interface MarkupSessionProviderProps {
   /** The document's `snap_to_text`. */
   snapDefault: number | null
   viewer: RefObject<ViewerHandle | null>
+  /**
+   * Set when `versionId` is not the document's current version: every tool, drag, shortcut and
+   * editor that writes is then disabled with this reason, and undo and redo refuse.
+   */
+  versionReadOnly?: string | null
+  /** The draw source for a version that is not current; see `useMarkup`. */
+  historic?: HistoricSource | null
   children: ReactNode
 }
 
@@ -127,11 +148,13 @@ export function MarkupSessionProvider({
   pages,
   snapDefault,
   viewer,
+  versionReadOnly = null,
+  historic = null,
   children,
 }: MarkupSessionProviderProps) {
   const db = usePowerSync()
   const { userId, scope, departments, editable, active, state: layers, store } = useLayers(showId)
-  const view = useMarkup(showId, versionId)
+  const view = useMarkup(showId, versionId, historic)
   const { data: shows } = useQuery<Pick<ShowRow, 'status' | 'settings'>>(
     'SELECT status, settings FROM shows WHERE id = ?',
     [showId],
@@ -139,9 +162,15 @@ export function MarkupSessionProvider({
   const [snapOverride, setSnapOverride] = useState(() => loadSnapOverride(documentId))
   const hover = useRef<{ pageIndex: number; point: Point } | null>(null)
   // A selection belongs to the version it was made on (the provider is keyed by version).
-  useEffect(() => () => clearSelection(), [])
+  useEffect(
+    () => () => {
+      clearSelection()
+      endRelocate()
+    },
+    [],
+  )
 
-  const readOnly = shows[0]?.status === 'archived' ? ARCHIVED_HINT : null
+  const readOnly = shows[0]?.status === 'archived' ? ARCHIVED_HINT : versionReadOnly
   const departmentName = (id: string) => departments.find((d) => d.id === id)?.code ?? '?'
   const cueTarget = cueToolState({
     readOnly,
@@ -340,6 +369,22 @@ export function MarkupSessionProvider({
     [db, mayChange],
   )
 
+  const relocate = useCallback(
+    async (table: 'cues' | 'annotations', id: string, pageIndex: number, point: Point) => {
+      if (table === 'cues') return moveCue(id, pageIndex, point)
+      const moved: Anchor = {
+        documentId,
+        documentVersionId: versionId,
+        pageIndex,
+        x: point.x,
+        y: point.y,
+        status: 'ok',
+      }
+      await annotations.editAnnotation(id, { anchor: moved })
+    },
+    [documentId, versionId, moveCue, annotations.editAnnotation],
+  )
+
   const showCue = useCallback(
     (cue: CueRowWithDept) => {
       select('cues', cue.id)
@@ -370,6 +415,7 @@ export function MarkupSessionProvider({
     layers,
     store,
     readOnly,
+    versionReadOnly,
     cueTarget,
     annotationTarget,
     stamps,
@@ -390,6 +436,7 @@ export function MarkupSessionProvider({
     placeCue,
     moveCue,
     removeCue,
+    relocate,
     showCue,
     hover,
     viewer,

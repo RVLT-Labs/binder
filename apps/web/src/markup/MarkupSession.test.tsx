@@ -4,7 +4,12 @@ import { createRef } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { clearNotices, getNotices } from '../components/noticeStore'
 import type { PageRow } from '../powersync/schema'
-import { type MarkupSession, MarkupSessionProvider, useMarkupSession } from './MarkupSession'
+import {
+  ARCHIVED_HINT,
+  type MarkupSession,
+  MarkupSessionProvider,
+  useMarkupSession,
+} from './MarkupSession'
 import {
   deleteAnnotation,
   deleteCue,
@@ -14,9 +19,10 @@ import {
 } from './mutations'
 
 const db = { getOptional: vi.fn(), getAll: vi.fn() }
+const show = vi.hoisted(() => ({ status: 'prep' }))
 vi.mock('@powersync/react', () => ({
   usePowerSync: () => db,
-  useQuery: () => ({ data: [{ status: 'prep', settings: '{"stampSet":["Hold","Go"]}' }] }),
+  useQuery: () => ({ data: [{ status: show.status, settings: '{"stampSet":["Hold","Go"]}' }] }),
 }))
 vi.mock('./useMarkup', () => ({
   useMarkup: () => ({ cuesByPage: new Map(), annotationsByPage: new Map(), ordered: [] }),
@@ -62,7 +68,7 @@ vi.mock('./useLayers', () => ({
 
 const page = { id: 'p0', index: 0, width: 600, height: 800, words_key: null } as unknown as PageRow
 
-function renderSession(): MarkupSession {
+function renderSession(extra: { versionReadOnly?: string | null } = {}): MarkupSession {
   let session: MarkupSession | null = null
   function Probe() {
     session = useMarkupSession()
@@ -76,6 +82,7 @@ function renderSession(): MarkupSession {
       pages={[page]}
       snapDefault={0}
       viewer={createRef()}
+      {...extra}
     >
       <Probe />
     </MarkupSessionProvider>,
@@ -91,6 +98,7 @@ beforeEach(() => {
     layer_kind: 'department',
     layer_id: 'lx',
   })
+  show.status = 'prep'
   clearNotices()
 })
 afterEach(() => vi.clearAllMocks())
@@ -241,4 +249,41 @@ test('placeAnnotation does nothing while the active layer is locked or hidden', 
 
 test('the session offers the show’s stamp set', () => {
   expect(renderSession().stamps).toEqual(['Hold', 'Go'])
+})
+
+const OLD_VERSION = 'Viewing v1 — read-only'
+
+test('viewing a version that is not current disables every tool and says why', () => {
+  const session = renderSession({ versionReadOnly: OLD_VERSION })
+  expect(session.readOnly).toBe(OLD_VERSION)
+  expect(session.cueTarget).toEqual({ disabled: OLD_VERSION })
+  expect(session.annotationTarget).toEqual({ disabled: OLD_VERSION })
+  expect(session.whyCantEdit({ department_id: 'lx' })).toBe(OLD_VERSION)
+  expect(session.whyCantEditAnnotation({ layer_kind: 'personal', layer_id: 'u1' })).toBe(
+    OLD_VERSION,
+  )
+})
+
+test('on a version that is not current, place, move, delete and edit all refuse and write nothing', async () => {
+  const session = renderSession({ versionReadOnly: OLD_VERSION })
+  await session.placeCue(0, { x: 1, y: 2 }, 'go')
+  await session.moveCue('c1', 0, { x: 1, y: 2 })
+  await session.removeCue('c1')
+  expect(
+    await session.placeAnnotation({ type: 'rect', pageIndex: 0, point: { x: 1, y: 1 } }),
+  ).toBeNull()
+  await session.editAnnotation('a1', { text: 'x' })
+  await session.removeAnnotation('a1')
+  expect(deleteCue).not.toHaveBeenCalled()
+  expect(updateCue).not.toHaveBeenCalled()
+  expect(insertAnnotation).not.toHaveBeenCalled()
+  expect(updateAnnotation).not.toHaveBeenCalled()
+  expect(deleteAnnotation).not.toHaveBeenCalled()
+  expect(new Set(getNotices().map((n) => n.message))).toEqual(new Set([OLD_VERSION]))
+})
+
+test('an archived show’s reason wins over the version’s', () => {
+  show.status = 'archived'
+  const session = renderSession({ versionReadOnly: OLD_VERSION })
+  expect(session.readOnly).toBe(ARCHIVED_HINT)
 })

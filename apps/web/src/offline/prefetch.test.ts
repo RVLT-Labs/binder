@@ -33,6 +33,23 @@ test('blobUrlsForShow lists searchable pdf, thumbs, and words for ready versions
   ])
 })
 
+test('blobUrlsForShow includes every ready version’s pdf, thumbnails, and words, not only the current one', () => {
+  const urls = blobUrlsForShow({
+    versions: [version('v1', 'ready'), version('v2', 'ready'), version('v3', 'processing')],
+    pages: [page('v1', 0), page('v1', 1), page('v2', 0), page('v3', 0)],
+  })
+  for (const v of ['v1', 'v2']) {
+    expect(urls).toContain(`/blobs/${base(v)}/searchable.pdf`)
+    expect(urls).toContain(`/blobs/${base(v)}/pages/0/thumb.png`)
+    expect(urls).toContain(`/blobs/${base(v)}/pages/0/words.json`)
+  }
+  expect(urls).toContain(`/blobs/${base('v1')}/pages/1/words.json`)
+  expect(urls.some((u) => u.includes(base('v3')))).toBe(false)
+  // One pdf, and a thumbnail and a words layer per page: 3 + 2 + 2 + ... per ready version.
+  expect(urls).toHaveLength(1 + 2 * 2 + 1 + 2)
+  expect(new Set(urls).size).toBe(urls.length)
+})
+
 test('blobUrlsForShow skips missing keys and lists nothing twice', () => {
   const urls = blobUrlsForShow({
     versions: [version('v1', 'ready'), version('v2', 'ready', false)],

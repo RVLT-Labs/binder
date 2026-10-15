@@ -16,6 +16,7 @@ import { Handles } from './Handles'
 import { useMarkupSession } from './MarkupSession'
 import type { AnnotationRow, CueRowWithDept } from './markupView'
 import { pageAt, toPagePoint } from './pagePoint'
+import { endRelocate, useRelocating } from './relocate'
 import { clearSelection, select, useSelection } from './selection'
 import { isDragTool, useTool } from './tools'
 import { rowKey, useAnnotationGestures } from './useAnnotationGestures'
@@ -53,6 +54,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const session = useMarkupSession()
   const selection = useSelection()
   const { tool, cueType, rebind } = useTool()
+  const relocating = useRelocating()
   const [ghost, setGhost] = useState<Ghost | null>(null)
   /** The one drag in progress from this page: a cue marker, a shape, a handle, or a drawing. */
   const slot = useDragSlot()
@@ -95,7 +97,10 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   function onSurfaceClick(e: ReactMouseEvent<SVGRectElement>) {
     const point = pointOf(e)
     if (!point) return
-    if (placing) void session.placeCue(pageIndex, point, cueType, words)
+    if (relocating) {
+      void session.relocate(relocating.table, relocating.id, pageIndex, point)
+      endRelocate()
+    } else if (placing) void session.placeCue(pageIndex, point, cueType, words)
     else if (gestures.placeByClick(point) || dragging) return
     else clearSelection()
   }
@@ -163,7 +168,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
         fill="transparent"
         style={{
           pointerEvents: 'auto',
-          cursor: placing || annotating || rebind ? 'crosshair' : 'default',
+          cursor: placing || annotating || rebind || relocating ? 'crosshair' : 'default',
           // A drawing drag on a touch screen draws instead of scrolling the page.
           touchAction: dragging ? 'none' : undefined,
           userSelect: 'none',

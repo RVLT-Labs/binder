@@ -4,8 +4,8 @@ import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
  * The API accepts 200 MB, but Cloudflare's proxy in front of it stops request bodies at 100 MB, so
  * larger files are refused here before any bytes are sent.
  */
-const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
-const PROXY_LIMIT_MESSAGE = 'Files over 100 MB cannot be uploaded through the current proxy.'
+export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+export const PROXY_LIMIT_MESSAGE = 'Files over 100 MB cannot be uploaded through the current proxy.'
 
 export type UploadTarget =
   | { kind: 'document' }
@@ -163,21 +163,24 @@ export function UploadDialog({ showId, target, onClose }: UploadDialogProps) {
   )
 }
 
-/** POSTs multipart form data with upload progress (0 to 1). Rejects with the server's message. */
-function postWithProgress(
+/**
+ * POSTs multipart form data with upload progress (0 to 1). Resolves with the parsed response (null
+ * when it is not JSON); rejects with the server's message.
+ */
+export function postWithProgress(
   url: string,
   body: FormData,
   onProgress: (fraction: number) => void,
-): { promise: Promise<void>; abort: () => void } {
+): { promise: Promise<unknown>; abort: () => void } {
   const xhr = new XMLHttpRequest()
-  const promise = new Promise<void>((resolve, reject) => {
+  const promise = new Promise<unknown>((resolve, reject) => {
     xhr.open('POST', url)
     xhr.withCredentials = true
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded / e.total)
     }
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      if (xhr.status >= 200 && xhr.status < 300) resolve(parsed(xhr))
       else reject(new Error(serverMessage(xhr)))
     }
     xhr.onerror = () => reject(new Error('Upload failed: could not reach the server.'))
@@ -187,7 +190,15 @@ function postWithProgress(
   return { promise, abort: () => xhr.abort() }
 }
 
-function serverMessage(xhr: XMLHttpRequest): string {
+function parsed(xhr: XMLHttpRequest): unknown {
+  try {
+    return JSON.parse(xhr.responseText)
+  } catch {
+    return null
+  }
+}
+
+export function serverMessage(xhr: XMLHttpRequest): string {
   try {
     const message = JSON.parse(xhr.responseText)?.message
     if (typeof message === 'string' && message) return message

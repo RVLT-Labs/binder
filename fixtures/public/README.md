@@ -16,3 +16,4 @@ redistribution without the header and trademark.
 - `offset.pdf`: one A4 page whose media box and crop box start at (50, 50), with `OFFSET` at the visible top-left.
 - `pirates-revised-cut.pdf`: the libretto with lines 201 to 240 of `pirates.txt` cut, so it is one page shorter (re-anchoring tests).
 - `pirates-revised-insert.pdf`: the libretto with a page of 48 `INSERTED LINE <n>` lines added after line 240 of `pirates.txt`.
+- `pirates-short-revised-cut.pdf`: three pages, `pirates-short.pdf` with lines 60 to 75 of `pirates.txt` cut (a short revision for revision e2e).

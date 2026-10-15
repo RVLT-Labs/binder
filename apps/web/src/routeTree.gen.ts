@@ -18,6 +18,7 @@ import { Route as ShowsShowIdCuesRouteImport } from './routes/shows.$showId.cues
 import { Route as ShowsShowIdExportsRouteImport } from './routes/shows.$showId.exports'
 import { Route as ShowsShowIdSettingsRouteImport } from './routes/shows.$showId.settings'
 import { Route as ShowsShowIdDocsDocIdRouteImport } from './routes/shows.$showId.docs.$docId'
+import { Route as ShowsShowIdDocsDocIdCompareRouteImport } from './routes/shows.$showId.docs.$docId.compare'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -64,6 +65,12 @@ const ShowsShowIdDocsDocIdRoute = ShowsShowIdDocsDocIdRouteImport.update({
   path: '/docs/$docId',
   getParentRoute: () => ShowsShowIdRoute,
 } as any)
+const ShowsShowIdDocsDocIdCompareRoute =
+  ShowsShowIdDocsDocIdCompareRouteImport.update({
+    id: '/compare',
+    path: '/compare',
+    getParentRoute: () => ShowsShowIdDocsDocIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -74,7 +81,8 @@ export interface FileRoutesByFullPath {
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
   '/shows/$showId/exports': typeof ShowsShowIdExportsRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
-  '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
+  '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRouteWithChildren
+  '/shows/$showId/docs/$docId/compare': typeof ShowsShowIdDocsDocIdCompareRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -85,7 +93,8 @@ export interface FileRoutesByTo {
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
   '/shows/$showId/exports': typeof ShowsShowIdExportsRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
-  '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
+  '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRouteWithChildren
+  '/shows/$showId/docs/$docId/compare': typeof ShowsShowIdDocsDocIdCompareRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -97,7 +106,8 @@ export interface FileRoutesById {
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
   '/shows/$showId/exports': typeof ShowsShowIdExportsRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
-  '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
+  '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRouteWithChildren
+  '/shows/$showId/docs/$docId/compare': typeof ShowsShowIdDocsDocIdCompareRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
     | '/shows/$showId/exports'
     | '/shows/$showId/settings'
     | '/shows/$showId/docs/$docId'
+    | '/shows/$showId/docs/$docId/compare'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +133,7 @@ export interface FileRouteTypes {
     | '/shows/$showId/exports'
     | '/shows/$showId/settings'
     | '/shows/$showId/docs/$docId'
+    | '/shows/$showId/docs/$docId/compare'
   id:
     | '__root__'
     | '/'
@@ -133,6 +145,7 @@ export interface FileRouteTypes {
     | '/shows/$showId/exports'
     | '/shows/$showId/settings'
     | '/shows/$showId/docs/$docId'
+    | '/shows/$showId/docs/$docId/compare'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -207,15 +220,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShowsShowIdDocsDocIdRouteImport
       parentRoute: typeof ShowsShowIdRoute
     }
+    '/shows/$showId/docs/$docId/compare': {
+      id: '/shows/$showId/docs/$docId/compare'
+      path: '/compare'
+      fullPath: '/shows/$showId/docs/$docId/compare'
+      preLoaderRoute: typeof ShowsShowIdDocsDocIdCompareRouteImport
+      parentRoute: typeof ShowsShowIdDocsDocIdRoute
+    }
   }
 }
+
+interface ShowsShowIdDocsDocIdRouteChildren {
+  ShowsShowIdDocsDocIdCompareRoute: typeof ShowsShowIdDocsDocIdCompareRoute
+}
+
+const ShowsShowIdDocsDocIdRouteChildren: ShowsShowIdDocsDocIdRouteChildren = {
+  ShowsShowIdDocsDocIdCompareRoute: ShowsShowIdDocsDocIdCompareRoute,
+}
+
+const ShowsShowIdDocsDocIdRouteWithChildren =
+  ShowsShowIdDocsDocIdRoute._addFileChildren(ShowsShowIdDocsDocIdRouteChildren)
 
 interface ShowsShowIdRouteChildren {
   ShowsShowIdActivityRoute: typeof ShowsShowIdActivityRoute
   ShowsShowIdCuesRoute: typeof ShowsShowIdCuesRoute
   ShowsShowIdExportsRoute: typeof ShowsShowIdExportsRoute
   ShowsShowIdSettingsRoute: typeof ShowsShowIdSettingsRoute
-  ShowsShowIdDocsDocIdRoute: typeof ShowsShowIdDocsDocIdRoute
+  ShowsShowIdDocsDocIdRoute: typeof ShowsShowIdDocsDocIdRouteWithChildren
 }
 
 const ShowsShowIdRouteChildren: ShowsShowIdRouteChildren = {
@@ -223,7 +254,7 @@ const ShowsShowIdRouteChildren: ShowsShowIdRouteChildren = {
   ShowsShowIdCuesRoute: ShowsShowIdCuesRoute,
   ShowsShowIdExportsRoute: ShowsShowIdExportsRoute,
   ShowsShowIdSettingsRoute: ShowsShowIdSettingsRoute,
-  ShowsShowIdDocsDocIdRoute: ShowsShowIdDocsDocIdRoute,
+  ShowsShowIdDocsDocIdRoute: ShowsShowIdDocsDocIdRouteWithChildren,
 }
 
 const ShowsShowIdRouteWithChildren = ShowsShowIdRoute._addFileChildren(

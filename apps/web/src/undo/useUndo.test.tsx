@@ -88,3 +88,19 @@ test('a remounted hook checks its own session, not the first mount’s', async (
   expect(outcome).toEqual({ status: 'blocked', reason: 'not-editable' })
   expect(real.all('SELECT id FROM cues')).toHaveLength(1)
 })
+
+test('on a version that is not current, undo and redo apply nothing and say the view is read-only', async () => {
+  const { result, rerender } = renderHook(() => useUndo('hook-show'))
+  await act(async () => {
+    await insertCue(real.db, ctx, { ...fields, major: 30 })
+  })
+  expect(result.current.canUndo).toBe(true)
+
+  h.session = session('Viewing v1 — read-only')
+  rerender()
+  await act(async () => {
+    await result.current.undo()
+  })
+  expect(real.all('SELECT id FROM cues')).toHaveLength(1)
+  expect(getNotices().map((n) => n.message)).toEqual(["Can't undo: Viewing v1 — read-only"])
+})

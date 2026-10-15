@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useUndo } from '../undo/useUndo'
 import { useMarkupSession } from './MarkupSession'
 import { stepCue } from './markupView'
+import { endRelocate, isRelocating } from './relocate'
 import { clearSelection, useSelection } from './selection'
 import { resolveShortcut } from './shortcuts'
 import { useTool } from './tools'
@@ -102,14 +103,15 @@ export function useMarkupShortcuts(): void {
           break
         }
         case 'undo':
-          void undo.undo()
-          break
         case 'redo':
-          void undo.redo()
+          // A version that is not current takes no edits, so nothing is applied onto it.
+          if (session.versionReadOnly) return
+          void (action.kind === 'undo' ? undo.undo() : undo.redo())
           break
         case 'deselect':
-          if (!selection) return
-          clearSelection()
+          if (isRelocating()) endRelocate()
+          else if (!selection) return
+          else clearSelection()
           break
         default:
           return

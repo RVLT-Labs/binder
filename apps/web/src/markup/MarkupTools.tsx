@@ -36,7 +36,8 @@ export function MarkupTools() {
       <button
         type="button"
         aria-label="Undo"
-        disabled={!undo.canUndo}
+        disabled={!undo.canUndo || session.versionReadOnly !== null}
+        title={session.versionReadOnly ?? undefined}
         onClick={() => void undo.undo()}
       >
         Undo
@@ -44,7 +45,8 @@ export function MarkupTools() {
       <button
         type="button"
         aria-label="Redo"
-        disabled={!undo.canRedo}
+        disabled={!undo.canRedo || session.versionReadOnly !== null}
+        title={session.versionReadOnly ?? undefined}
         onClick={() => void undo.redo()}
       >
         Redo

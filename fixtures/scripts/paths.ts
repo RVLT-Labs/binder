@@ -13,6 +13,8 @@ export const FIXTURES = {
   librettoPdf: join(GENERATED_DIR, 'pirates-libretto.pdf'),
   /** The libretto's first three pages: a text PDF that processes in seconds, for markup e2e. */
   librettoShortPdf: join(GENERATED_DIR, 'pirates-short.pdf'),
+  /** `librettoShortPdf` with lines 60 to 75 of the text cut, still three pages: a short revision for e2e. */
+  revisedShortCutPdf: join(GENERATED_DIR, 'pirates-short-revised-cut.pdf'),
   scanPdf: join(GENERATED_DIR, 'pirates-scan.pdf'),
   mixedPdf: join(GENERATED_DIR, 'mixed.pdf'),
   /** The libretto with lines 201 to 240 of the text cut (one page shorter), for re-anchoring tests. */
