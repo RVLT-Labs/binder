@@ -62,6 +62,18 @@ describe('latestPerUser', () => {
   })
 })
 
+describe('latestPerUser by changedAt', () => {
+  test('picks the connection whose state changed last, wherever it sits in the list', () => {
+    const peers = [
+      { ...peer({ connId: 'a1', userId: 'ana', pageIndex: 5 }), changedAt: 9 },
+      { ...peer({ connId: 'a2', userId: 'ana', pageIndex: 1 }), changedAt: 3 },
+      { ...peer({ connId: 'b1', userId: 'ben' }), changedAt: 1 },
+    ]
+    expect(latestPerUser(peers).map((p) => p.connId)).toEqual(['a1', 'b1'])
+    expect([...peersByPage(peers, 'v1').keys()].sort()).toEqual([0, 5])
+  })
+})
+
 describe('whoIsHere', () => {
   test('lists each user once, preferring a located connection over a bare one', () => {
     const peers = [

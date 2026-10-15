@@ -14,9 +14,21 @@ export const PRESENCE_BACKOFF_START_MS = 1000
 export const PRESENCE_BACKOFF_MAX_MS = 30_000
 /**
  * Close codes after which reconnecting is pointless until the page reloads or the user signs in
- * again: the session has ended (4401) or the user is no longer a member of the show (4403).
+ * again: the session has ended (4401), the user is no longer a member of the show (4403), or the
+ * client sent too many frames (1008) or one that was too large (1009), which signals a client bug
+ * that a retry would only repeat.
  */
-export const PRESENCE_TERMINAL_CODES: readonly number[] = [4401, 4403]
+export const PRESENCE_TERMINAL_CODES: readonly number[] = [4401, 4403, 1008, 1009]
+/**
+ * How long a connection must stay open before the backoff starts over. A connection that is
+ * welcomed and then dropped at once (a server rejecting it late) keeps backing off.
+ */
+export const PRESENCE_STABLE_MS = 10_000
+/**
+ * Consecutive attempts that never opened (a refusal before the upgrade, such as a 403 or 429, reaches
+ * the browser as a plain 1006) before the client gives up until the tab is visible or online again.
+ */
+export const PRESENCE_MAX_FAILED_ATTEMPTS = 5
 
 const OPEN = 1
 
@@ -129,11 +141,16 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
   let connected = false
   let delay = PRESENCE_BACKOFF_START_MS
   let pending = false
+  /** Gave up after repeated attempts that never opened; resumes on visible or online. */
+  let suspended = false
+  let failedAttempts = 0
+  let changeCounter = 0
   let reconnectTimer: Timer | null = null
   let heartbeatTimer: Timer | null = null
   let windowTimer: Timer | null = null
-  /** In update order: re-setting a key moves it to the end. */
-  const peers = new Map<string, PresencePeer>()
+  let stableTimer: Timer | null = null
+  /** A peer keeps its place; `changedAt` says when its state last really changed. */
+  const peers = new Map<string, PresencePeer & { changedAt: number }>()
   const listeners = new Set<PresenceListener>()
 
   const emit = () => {
@@ -142,8 +159,10 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
   }
 
   function clearTimers() {
-    for (const t of [reconnectTimer, heartbeatTimer, windowTimer]) if (t !== null) clearTimer(t)
-    reconnectTimer = heartbeatTimer = windowTimer = null
+    for (const t of [reconnectTimer, heartbeatTimer, windowTimer, stableTimer]) {
+      if (t !== null) clearTimer(t)
+    }
+    reconnectTimer = heartbeatTimer = windowTimer = stableTimer = null
   }
 
   function send() {
@@ -177,20 +196,10 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
     }
   }
 
-  /** The socket is gone, for `code` (undefined after an error): drop the peers, then retry or stop. */
-  function lost(ws: WebSocket, code: number | undefined) {
-    if (socket !== ws) return
-    socket = null
-    detach(ws)
-    clearTimers()
-    pending = false
-    ownConnId = null
-    connected = false
-    peers.clear()
-    emit()
-    if (stopped) return
-    if (code !== undefined && PRESENCE_TERMINAL_CODES.includes(code)) {
-      stopped = true
+  /** Retry after the backoff, or give up for now after too many attempts that never opened. */
+  function retry(reachedOpen: boolean) {
+    if (!reachedOpen && ++failedAttempts >= PRESENCE_MAX_FAILED_ATTEMPTS) {
+      suspended = true
       return
     }
     reconnectTimer = setTimer(() => {
@@ -200,16 +209,45 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
     delay = Math.min(delay * 2, PRESENCE_BACKOFF_MAX_MS)
   }
 
+  /** The socket is gone, for `code` (undefined after an error): drop the peers, then retry or stop. */
+  function lost(ws: WebSocket, code: number | undefined, reachedOpen: boolean) {
+    if (socket !== ws) return
+    socket = null
+    detach(ws)
+    clearTimers()
+    pending = false
+    ownConnId = null
+    const changed = connected || peers.size > 0
+    connected = false
+    peers.clear()
+    if (changed) emit()
+    if (stopped) return
+    if (code !== undefined && PRESENCE_TERMINAL_CODES.includes(code)) {
+      stopped = true
+      removeWakeListeners()
+      return
+    }
+    retry(reachedOpen)
+  }
+
   function onMessage(msg: ServerMessage) {
     if (msg.type === 'welcome') {
       ownConnId = msg.connId
-      delay = PRESENCE_BACKOFF_START_MS
       peers.clear()
-      for (const p of msg.peers) if (p.connId !== ownConnId) peers.set(p.connId, p)
+      for (const p of msg.peers) {
+        if (p.connId !== ownConnId) peers.set(p.connId, { ...p, changedAt: ++changeCounter })
+      }
     } else if (msg.type === 'peer') {
       if (msg.peer.connId === ownConnId) return
-      peers.delete(msg.peer.connId)
-      peers.set(msg.peer.connId, msg.peer)
+      const prev = peers.get(msg.peer.connId)
+      const moved = !prev || !sameState(prev, msg.peer)
+      // The server fans out every heartbeat: a repeat of what we hold is not news.
+      if (!moved && prev.name === msg.peer.name && prev.colour === msg.peer.colour) return
+      // `set` on a known key keeps its place in the list.
+      peers.set(msg.peer.connId, {
+        ...msg.peer,
+        changedAt: moved ? ++changeCounter : prev.changedAt,
+      })
     } else if (!peers.delete(msg.connId)) return
     emit()
   }
@@ -221,17 +259,21 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
       ws = new (opts.WebSocketImpl ?? WebSocket)(opts.url)
     } catch {
       // A malformed URL or a blocked constructor: treat it like any other failed attempt.
-      reconnectTimer = setTimer(() => {
-        reconnectTimer = null
-        connect()
-      }, delay)
-      delay = Math.min(delay * 2, PRESENCE_BACKOFF_MAX_MS)
+      retry(false)
       return
     }
     socket = ws
+    let reachedOpen = false
     ws.onopen = () => {
       if (socket !== ws) return
+      reachedOpen = true
+      failedAttempts = 0
       connected = true
+      // The backoff starts over only once the connection has proved stable.
+      stableTimer = setTimer(() => {
+        stableTimer = null
+        delay = PRESENCE_BACKOFF_START_MS
+      }, PRESENCE_STABLE_MS)
       emit()
       send()
     }
@@ -240,13 +282,47 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
       const msg = readMessage(e.data)
       if (msg) onMessage(msg)
     }
-    ws.onerror = () => lost(ws, undefined)
-    ws.onclose = (e) => lost(ws, e.code)
+    ws.onerror = () => lost(ws, undefined, reachedOpen)
+    ws.onclose = (e) => lost(ws, e.code, reachedOpen)
   }
+
+  /**
+   * The tab is visible or the network is back: resume at once rather than waiting for a timer a
+   * hidden tab may have throttled. Resumes from a give-up, retries a lost socket now, or resends
+   * the state on a live one.
+   */
+  function wake() {
+    if (stopped) return
+    if (suspended) {
+      suspended = false
+      failedAttempts = 0
+      delay = PRESENCE_BACKOFF_START_MS
+      connect()
+    } else if (!socket) {
+      if (reconnectTimer !== null) clearTimer(reconnectTimer)
+      reconnectTimer = null
+      connect()
+    } else {
+      send()
+    }
+  }
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') wake()
+  }
+  const onOnline = () => wake()
+  function removeWakeListeners() {
+    if (typeof document !== 'undefined')
+      document.removeEventListener('visibilitychange', onVisibility)
+    if (typeof window !== 'undefined') window.removeEventListener('online', onOnline)
+  }
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+  if (typeof window !== 'undefined') window.addEventListener('online', onOnline)
 
   connect()
 
   return {
+    // The only gate on what leaves the device: callers (PresencePublisher) must already have
+    // reduced `selection` to rows every member can see; this sends whatever it is given.
     setState(next) {
       if (sameState(next, state)) return
       state = { ...next, selection: next.selection ? { ...next.selection } : null }
@@ -267,6 +343,7 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
         return
       }
       stopped = true
+      removeWakeListeners()
       clearTimers()
       const ws = socket
       socket = null

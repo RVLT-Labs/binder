@@ -286,6 +286,8 @@ test("a personal note A selects is never announced: B sees no outline and A's fr
 
         // Wait out several throttle windows and heartbeats' worth of time: still nothing for B,
         // and nothing about the note in anything A sent.
+        // A negative assertion needs real time to be meaningful: two seconds is eight of the
+        // client's 250 ms send windows, so any selection frame would have reached B by now.
         await b.page.waitForTimeout(2_000)
         await expect(outlines(b.page, 2)).toHaveCount(0)
         expect(a.sent.some((f) => f.includes(noteId))).toBe(false)

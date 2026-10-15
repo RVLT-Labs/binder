@@ -1,17 +1,28 @@
 import type { PresencePeer, PresenceSelection } from '@binder/shared'
 
-/** The most recently updated connection of each user, in the order the client heard from them. */
-export function latestPerUser(peers: readonly PresencePeer[]): PresencePeer[] {
-  const last = new Map<string, number>()
+/**
+ * A peer as the client hands it on: `changedAt` is a counter that rises only when the peer's
+ * document, version, page or selection changes (not on a heartbeat repeating the same state).
+ */
+export type TimedPeer = PresencePeer & { changedAt?: number }
+
+/**
+ * The most recently changed connection of each user (by `changedAt`; among peers without one, the
+ * later in the list), kept in list order. A heartbeat does not count as a change, so a user with two
+ * tabs stays on the page they last moved to.
+ */
+export function latestPerUser(peers: readonly TimedPeer[]): TimedPeer[] {
+  const best = new Map<string, number>()
   peers.forEach((p, i) => {
-    last.set(p.userId, i)
+    const j = best.get(p.userId)
+    if (j === undefined || (p.changedAt ?? -1) >= (peers[j].changedAt ?? -1)) best.set(p.userId, i)
   })
-  return peers.filter((p, i) => last.get(p.userId) === i)
+  return peers.filter((p, i) => best.get(p.userId) === i)
 }
 
 /**
  * The peers on each page of a version, one entry per user: the user's most recently updated
- * connection on that version. The client keeps `peers` in update order, oldest first. A peer with
+ * connection on that version (see `latestPerUser`). A peer with
  * no location (in the show, not on a document) is on no page.
  */
 export function peersByPage(
