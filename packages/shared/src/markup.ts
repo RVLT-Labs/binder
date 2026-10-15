@@ -36,6 +36,13 @@ export interface ReviewItem {
   previous: Anchor | null
 }
 
+/** The re-anchoring review of a document; `currentVersionId` is null while it has no current version. */
+export interface ReanchorReview {
+  currentVersionId: string | null
+  pending: ReviewItem[]
+  olderVersions: ReviewItem[]
+}
+
 export interface CueNumber {
   major: number
   minor: number

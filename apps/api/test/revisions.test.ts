@@ -1,9 +1,11 @@
 import { createReadStream } from 'node:fs'
-import { annotations, changeLog, cues } from '@binder/db'
+import type { VersionText } from '@binder/core'
+import { annotations, changeLog, cues, documents } from '@binder/db'
 import { FIXTURES } from '@binder/fixtures'
 import { type Actor, type Anchor, newId, type ReviewItem, type SyncCrudEntry } from '@binder/shared'
 import { eq } from 'drizzle-orm'
-import { beforeAll, describe, expect, test } from 'vitest'
+import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
+import { versionFromLines } from '../../../packages/core/test/textLayers'
 import { AppError } from '../src/errors'
 import { REANCHOR_AGENT } from '../src/processing/reanchorJob'
 import {
@@ -26,6 +28,18 @@ import { buildRevisedFixture, type RevisedFixture } from './revisionsHelpers'
 import { skipWithoutTools } from './tools'
 
 const skip = skipWithoutTools('revisions tests', missingTools)
+
+/** Version texts a test stands in for the stored word layers (the compare seam); empty otherwise. */
+const textOverrides = new Map<string, VersionText>()
+vi.mock('../src/services/wordLayers', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/services/wordLayers')>()
+  return {
+    ...original,
+    loadVersionText: (...args: Parameters<typeof original.loadVersionText>) =>
+      textOverrides.get(args[2]) ?? original.loadVersionText(...args),
+  }
+})
+afterEach(() => textOverrides.clear())
 
 let F: RevisedFixture
 const db = () => F.s.deps.db
@@ -129,6 +143,43 @@ describe.skipIf(skip)('the re-anchoring review list', () => {
     expect(JSON.stringify(viewer)).not.toContain(F.rows.ownerNote.id)
     // the department layers are the same for everyone
     expect(idsOf(viewer.pending)).toContain(F.rows.cueAccept.id)
+    // a member's own personal item carries the anchor the run moved it from
+    expect(find(viewer.pending, F.rows.viewerNote.id)?.previous).toEqual(F.cutLine)
+    expect(find(owner.pending, F.rows.ownerNote.id)?.previous).toEqual(F.cutLine)
+
+    // The editor sees neither member's personal note, and its own note, made public after the run,
+    // keeps its `previous` (the run's row was written on the editor's personal layer).
+    const editor = await review(actors().editor)
+    const editorSees = [...editor.pending, ...editor.olderVersions]
+    expect(idsOf(editorSees)).not.toContain(F.rows.viewerNote.id)
+    expect(idsOf(editorSees)).not.toContain(F.rows.ownerNote.id)
+    expect(JSON.stringify(editor)).not.toContain(`personal:${F.s.owner.id}`)
+    expect(find(editor.pending, F.rows.movedNote.id)?.previous).toEqual(F.cutLine)
+    // ...while everyone else sees the now-public note without that private history
+    expect(find(owner.pending, F.rows.movedNote.id)).toBeDefined()
+    expect(find(owner.pending, F.rows.movedNote.id)?.previous).toBeNull()
+    expect(find(viewer.pending, F.rows.movedNote.id)?.previous).toBeNull()
+  })
+
+  test('a document with no current version has nothing to review', async () => {
+    const docId = newId()
+    await db().insert(documents).values({
+      id: docId,
+      showId: F.s.show.id,
+      kind: 'libretto',
+      title: 'Fresh',
+      currentVersionId: null,
+      updatedBy: F.s.owner.id,
+    })
+    expect(await listReanchorReview(db(), actors().owner, { documentId: docId })).toEqual({
+      currentVersionId: null,
+      pending: [],
+      olderVersions: [],
+    })
+    const res = await F.s.app.request(`/api/documents/${docId}/review`, {
+      headers: { cookie: F.s.owner.cookie },
+    })
+    expect(((await res.json()) as Json).currentVersionId).toBeNull()
   })
 
   test('a non-member gets not_found, a token outside the show forbidden', async () => {
@@ -222,6 +273,18 @@ describe.skipIf(skip)('resolving a review item', () => {
     const r = await review(actors().owner)
     expect(idsOf(r.pending)).not.toContain(id)
     expect(find(r.olderVersions, id)).toMatchObject({ anchor: F.cutLine, previous: F.cutLine })
+
+    // the row is on v1 now: accepting a position on an older version is refused, nothing written
+    const logsBefore = (await logsOf(id)).length
+    const refused = resolve(actors().owner, 'cues', id, 'accept')
+    expect(await code(refused)).toBe('invalid')
+    expect(
+      await refused.then(
+        () => '',
+        (e: Error) => e.message,
+      ),
+    ).toBe('Re-anchor or move it to the current version first')
+    expect((await logsOf(id)).length).toBe(logsBefore)
 
     // reverting again changes nothing and writes nothing
     const logs = (await logsOf(id)).length
@@ -400,53 +463,114 @@ describe.skipIf(skip)('comparing versions', () => {
     expect(removed.some((e) => e.text.toLowerCase().includes(lead))).toBe(true)
   })
 
-  test('entries are capped at limit (default 2000, at most 10000) and truncated says so', async () => {
-    const small = await compareDocumentVersions(db(), blobs(), actors().owner, {
-      fromVersionId: F.v1,
-      toVersionId: F.v2,
-      limit: 5,
-    })
+  test('limit counts changed entries only; totals describe the whole diff; truncated says changed entries were cut', async () => {
+    const compare = (over: { limit?: number; context?: number }) =>
+      compareDocumentVersions(db(), blobs(), actors().owner, {
+        fromVersionId: F.v1,
+        toVersionId: F.v2,
+        ...over,
+      })
+    const full = await compare({ limit: 10000, context: 0 })
+    expect(full.truncated).toBe(false)
+    expect(full.entries.every((e) => e.op !== 'same')).toBe(true)
+    expect(full.entries).toHaveLength(full.added + full.removed)
+
+    const small = await compare({ limit: 5, context: 0 })
     expect(small.entries).toHaveLength(5)
+    expect(small.entries.every((e) => e.op !== 'same')).toBe(true)
     expect(small.truncated).toBe(true)
-    // totals describe the whole diff, not the part returned
-    const full = await compareDocumentVersions(db(), blobs(), actors().owner, {
-      fromVersionId: F.v1,
-      toVersionId: F.v2,
-      limit: 10000,
-    })
     expect(small.removed).toBe(full.removed)
     expect(small.added).toBe(full.added)
-    const dflt = await compareDocumentVersions(db(), blobs(), actors().owner, {
-      fromVersionId: F.v1,
-      toVersionId: F.v2,
-    })
-    expect(dflt.entries.length).toBe(Math.min(2000, full.entries.length))
-    expect(dflt.truncated).toBe(full.entries.length > 2000)
-    // identical versions: every line is `same`
-    const same = await compareDocumentVersions(db(), blobs(), actors().owner, {
+
+    // context adds unchanged neighbours around each kept change, with their line refs
+    const withContext = await compare({ limit: 5, context: 3 })
+    expect(withContext.entries.filter((e) => e.op !== 'same')).toHaveLength(5)
+    const same = withContext.entries.filter((e) => e.op === 'same')
+    expect(same.length).toBeGreaterThan(0)
+    expect(same.length).toBeLessThanOrEqual(5 * 2 * 3)
+    expect(same.every((e) => e.old && e.new)).toBe(true)
+
+    // the default limit is far above this diff: nothing cut
+    expect((await compare({})).truncated).toBe(false)
+    // identical versions: no change, no entries
+    const identical = await compareDocumentVersions(db(), blobs(), actors().owner, {
       fromVersionId: F.v2,
       toVersionId: F.v2,
-      limit: 10000,
     })
-    expect(same.added + same.removed).toBe(0)
+    expect(identical).toEqual({ entries: [], added: 0, removed: 0, truncated: false })
+  })
 
-    const bad = (limit: number) =>
+  test('a change late in a long script is returned, with context, however many lines precede it', async () => {
+    const lines = Array.from({ length: 7000 }, (_, i) => `line ${i} alpha beta gamma`)
+    const edited = [...lines]
+    edited[5000] = 'a changed line entirely'
+    edited.splice(6500, 1) // a line removed near the end
+    textOverrides.set(F.v1, versionFromLines(lines, { versionId: F.v1 }))
+    textOverrides.set(F.v2, versionFromLines(edited, { versionId: F.v2 }))
+    const compare = (over: { limit?: number; context?: number }) =>
+      compareDocumentVersions(db(), blobs(), actors().viewer, {
+        fromVersionId: F.v1,
+        toVersionId: F.v2,
+        ...over,
+      })
+
+    // default limit (2000) and context (2): the changes are 5000+ lines in, and the answer is small
+    const r = await compare({})
+    expect(r.truncated).toBe(false)
+    expect({ added: r.added, removed: r.removed }).toEqual({ added: 1, removed: 2 })
+    expect(r.entries.map((e) => `${e.op}:${e.text}`)).toEqual([
+      'same:line 4998 alpha beta gamma',
+      'same:line 4999 alpha beta gamma',
+      'removed:line 5000 alpha beta gamma',
+      'added:a changed line entirely',
+      'same:line 5001 alpha beta gamma',
+      'same:line 5002 alpha beta gamma',
+      'same:line 6498 alpha beta gamma',
+      'same:line 6499 alpha beta gamma',
+      'removed:line 6500 alpha beta gamma',
+      'same:line 6501 alpha beta gamma',
+      'same:line 6502 alpha beta gamma',
+    ])
+    expect(r.entries[0]?.old).toBeDefined()
+    expect(r.entries[0]?.new).toBeDefined()
+    expect(r.entries[2]?.old).toBeDefined()
+    expect(r.entries[2]?.new).toBeUndefined()
+
+    // context 0: only the changed lines
+    expect((await compare({ context: 0 })).entries).toHaveLength(3)
+
+    // a small limit keeps the first changes and says the rest were cut, whatever precedes them
+    const cut = await compare({ limit: 2, context: 1 })
+    expect(cut.truncated).toBe(true)
+    expect(cut.entries.map((e) => e.text)).toEqual([
+      'line 4999 alpha beta gamma',
+      'line 5000 alpha beta gamma',
+      'a changed line entirely',
+      'line 5001 alpha beta gamma',
+    ])
+    expect({ added: cut.added, removed: cut.removed }).toEqual({ added: 1, removed: 2 })
+    // a limit that fits the whole diff is not truncated
+    expect((await compare({ limit: 3 })).truncated).toBe(false)
+  })
+
+  test('limit and context are validated: out of range is invalid, never clamped', async () => {
+    const bad = (over: { limit?: number; context?: number }) =>
       code(
         compareDocumentVersions(db(), blobs(), actors().owner, {
           fromVersionId: F.v1,
           toVersionId: F.v2,
-          limit,
+          ...over,
         }),
       )
-    expect(await bad(0)).toBe('invalid')
-    expect(await bad(1.5)).toBe('invalid')
-    // above the maximum is capped at it
-    const huge = await compareDocumentVersions(db(), blobs(), actors().owner, {
-      fromVersionId: F.v1,
-      toVersionId: F.v2,
-      limit: 1_000_000,
-    })
-    expect(huge.entries.length).toBeLessThanOrEqual(10000)
+    expect(await bad({ limit: 0 })).toBe('invalid')
+    expect(await bad({ limit: 1.5 })).toBe('invalid')
+    expect(await bad({ limit: 10001 })).toBe('invalid')
+    expect(await bad({ limit: 1_000_000 })).toBe('invalid')
+    expect(await bad({ limit: 10000 })).toBe('ok')
+    expect(await bad({ context: -1 })).toBe('invalid')
+    expect(await bad({ context: 21 })).toBe('invalid')
+    expect(await bad({ context: 2.5 })).toBe('invalid')
+    expect(await bad({ context: 20 })).toBe('ok')
   })
 
   test('versions of different documents are invalid; non-members get not_found; tokens out of scope forbidden', async () => {
@@ -549,7 +673,7 @@ describe.skipIf(skip)('routes', () => {
     expect(JSON.stringify(list)).not.toContain(F.rows.viewerNote.id)
 
     const compare = asJson(
-      await api(`/documents/${F.docId}/compare?from=${F.v1}&to=${F.v2}&limit=20`),
+      await api(`/documents/${F.docId}/compare?from=${F.v1}&to=${F.v2}&limit=20&context=0`),
     )
     expect(compare.status).toBe(200)
     const diff: Json = await compare.json()
@@ -557,9 +681,16 @@ describe.skipIf(skip)('routes', () => {
     expect(diff.truncated).toBe(true)
     expect(diff.removed).toBeGreaterThan(0)
     expect((await api(`/documents/${F.docId}/compare?from=${F.v1}`)).status).toBe(400)
-    expect(
-      (await api(`/documents/${F.docId}/compare?from=${F.v1}&to=${F.v2}&limit=0`)).status,
-    ).toBe(400)
+    for (const query of ['limit=0', 'limit=10001', 'context=21', 'context=-1', 'limit=x']) {
+      expect(
+        (await api(`/documents/${F.docId}/compare?from=${F.v1}&to=${F.v2}&${query}`)).status,
+        query,
+      ).toBe(400)
+    }
+    const withContext: Json = await (
+      await api(`/documents/${F.docId}/compare?from=${F.v1}&to=${F.v2}&limit=20&context=1`)
+    ).json()
+    expect(withContext.entries.length).toBeGreaterThan(20)
     // the versions must belong to the document in the path
     expect((await api(`/documents/${newId()}/compare?from=${F.v1}&to=${F.v2}`)).status).toBe(404)
 
@@ -594,13 +725,16 @@ describe.skipIf(skip)('archived shows', () => {
     const id = F.rows.cueSnd.id
     const logs = (await logsOf(id)).length
     await updateShow(db(), actors().owner, { showId: F.s.show.id, patch: { status: 'archived' } })
-    expect(await code(resolve(actors().owner, 'cues', id, 'accept'))).toBe('forbidden')
-    expect(await code(resolve(actors().owner, 'cues', id, 'revert'))).toBe('forbidden')
-    expect((await logsOf(id)).length).toBe(logs)
-    expect((await review(actors().owner)).pending.length).toBeGreaterThan(0)
-    expect(
-      (await listVersionAnchors(db(), actors().owner, { versionId: F.v1 })).length,
-    ).toBeGreaterThan(0)
-    await updateShow(db(), actors().owner, { showId: F.s.show.id, patch: { status: 'prep' } })
+    try {
+      expect(await code(resolve(actors().owner, 'cues', id, 'accept'))).toBe('forbidden')
+      expect(await code(resolve(actors().owner, 'cues', id, 'revert'))).toBe('forbidden')
+      expect((await logsOf(id)).length).toBe(logs)
+      expect((await review(actors().owner)).pending.length).toBeGreaterThan(0)
+      expect(
+        (await listVersionAnchors(db(), actors().owner, { versionId: F.v1 })).length,
+      ).toBeGreaterThan(0)
+    } finally {
+      await updateShow(db(), actors().owner, { showId: F.s.show.id, patch: { status: 'prep' } })
+    }
   })
 })

@@ -14,6 +14,7 @@ import {
   isLayerVisibleTo,
   type LayerRef,
   layerKey,
+  type ReanchorReview,
   type ReviewItem,
 } from '@binder/shared'
 import { and, desc, eq, inArray, or, type SQL, sql } from 'drizzle-orm'
@@ -37,6 +38,8 @@ export type ReanchorAction = (typeof ACTIONS)[number]
 
 export const COMPARE_DEFAULT_LIMIT = 2000
 export const COMPARE_MAX_LIMIT = 10000
+export const COMPARE_DEFAULT_CONTEXT = 2
+export const COMPARE_MAX_CONTEXT = 20
 
 /** How many words of an annotation's text or highlight quote a review title carries. */
 const TITLE_WORDS = 6
@@ -223,20 +226,25 @@ async function previousAnchors(
  * another version (for example a cue an offline client placed after the switch). Both are grouped by
  * layer (departments in the show's order, the caller's personal layer last) then reading order, and
  * hold no other member's personal annotation. `previous` is the anchor before the most recent
- * re-anchoring run moved the row, or null. A document with no current version has nothing to review
- * and is `invalid`.
+ * re-anchoring run moved the row, or null. A document with no current version has nothing to review:
+ * `currentVersionId` is null and both lists are empty.
  */
 export async function listReanchorReview(
   db: Executor,
   actor: Actor,
   input: { documentId: string },
-): Promise<{ currentVersionId: string; pending: ReviewItem[]; olderVersions: ReviewItem[] }> {
+): Promise<ReanchorReview> {
   const document = await loadDocument(db, actor, input.documentId)
   const current = document.currentVersionId
-  if (!current) throw invalid('this document has no current version yet')
+  if (!current) return { currentVersionId: null, pending: [], olderVersions: [] }
 
   const rows = await candidates(db, actor, document.id, document.showId)
-  const previous = await previousAnchors(db, actor, document.showId, rows)
+  const pending = rows.filter(
+    (c) => c.anchor.documentVersionId === current && c.anchor.status !== 'ok',
+  )
+  const olderVersions = rows.filter((c) => c.anchor.documentVersionId !== current)
+  // `previous` is looked up for the rows that are listed, not for every cue of the document.
+  const previous = await previousAnchors(db, actor, document.showId, [...pending, ...olderVersions])
   const item = (c: Candidate): ReviewItem => ({
     table: c.table,
     rowId: c.rowId,
@@ -247,10 +255,8 @@ export async function listReanchorReview(
   })
   return {
     currentVersionId: current,
-    pending: rows
-      .filter((c) => c.anchor.documentVersionId === current && c.anchor.status !== 'ok')
-      .map(item),
-    olderVersions: rows.filter((c) => c.anchor.documentVersionId !== current).map(item),
+    pending: pending.map(item),
+    olderVersions: olderVersions.map(item),
   }
 }
 
@@ -301,7 +307,8 @@ async function lockAnchor(tx: Executor, table: Table, rowId: string): Promise<An
  * the row's anchor afterwards. The write goes through `updateCue` or `updateAnnotation`, so layer
  * rights, the archived-show rule and a change-log row for the actor apply.
  *
- * - `accept` sets the status to `ok` where the anchor is (an unbound highlight stays unbound).
+ * - `accept` sets the status to `ok` where the anchor is (an unbound highlight stays unbound). The
+ *   anchor must be on the document's current version, else `invalid` (re-anchor or move it first).
  * - `revert` restores `previous`, the anchor before the latest re-anchoring run moved the row, which
  *   leaves it on that older version; `invalid` when no run ever moved it.
  * - `reanchor` runs the matcher from the row's version to the document's current version. A row
@@ -349,6 +356,13 @@ export async function resolveReanchorItem(
 
     let next: Anchor
     if (input.action === 'accept') {
+      const [document] = await tx
+        .select({ currentVersionId: documents.currentVersionId })
+        .from(documents)
+        .where(eq(documents.id, locked.documentId))
+      if (document?.currentVersionId !== locked.documentVersionId) {
+        throw invalid('Re-anchor or move it to the current version first')
+      }
       next = { ...locked, status: 'ok' }
     } else if (input.action === 'revert') {
       const previous = (
@@ -456,19 +470,33 @@ export async function listVersionAnchors(
 
 /**
  * Any member. A line diff of two versions of one document (`invalid` for versions of different
- * documents) in stream order. `entries` holds the first `limit` lines of the diff (default 2000, at
- * most 10000; `same` lines count), `added` and `removed` count the whole diff, and `truncated` says
- * whether the entries were cut. `documentId`, when given (the REST route), must be the versions'
- * document, else `not_found`.
+ * documents) in stream order. `limit` (default 2000, at most 10000, `invalid` beyond) counts only
+ * the changed (`added` or `removed`) entries: `entries` holds the first `limit` of them, each with
+ * `context` (default 2, at most 20) unchanged lines before and after it, and drops every other
+ * `same` line. Kept entries keep their `old` and `new` line refs. `added` and `removed` count the
+ * whole diff, and `truncated` says whether changed entries were cut. `documentId`, when given (the
+ * REST route), must be the versions' document, else `not_found`.
  */
 export async function compareDocumentVersions(
   db: Executor,
   blobs: BlobStore,
   actor: Actor,
-  input: { fromVersionId: string; toVersionId: string; limit?: number; documentId?: string },
+  input: {
+    fromVersionId: string
+    toVersionId: string
+    limit?: number
+    context?: number
+    documentId?: string
+  },
 ): Promise<{ entries: LineDiffEntry[]; added: number; removed: number; truncated: boolean }> {
   const limit = input.limit ?? COMPARE_DEFAULT_LIMIT
-  if (!Number.isSafeInteger(limit) || limit < 1) throw invalid('limit must be a positive integer')
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > COMPARE_MAX_LIMIT) {
+    throw invalid(`limit must be a whole number from 1 to ${COMPARE_MAX_LIMIT}`)
+  }
+  const context = input.context ?? COMPARE_DEFAULT_CONTEXT
+  if (!Number.isSafeInteger(context) || context < 0 || context > COMPARE_MAX_CONTEXT) {
+    throw invalid(`context must be a whole number from 0 to ${COMPARE_MAX_CONTEXT}`)
+  }
   // Both versions are looked up as the actor before they are compared, so whether a version exists in
   // a show the caller is not in is never revealed by the answer.
   const from = await loadVersion(db, actor, input.fromVersionId)
@@ -483,6 +511,20 @@ export async function compareDocumentVersions(
     loadVersionText(db, blobs, to.id),
   ])
   const { entries, added, removed } = diffVersionLines(fromText, toText)
-  const cap = Math.min(limit, COMPARE_MAX_LIMIT)
-  return { entries: entries.slice(0, cap), added, removed, truncated: entries.length > cap }
+
+  // The changed entries that fit, then them and their unchanged neighbours.
+  const changed = entries.flatMap((e, i) => (e.op === 'same' ? [] : [i]))
+  const kept = changed.slice(0, limit)
+  const keep = new Set(kept)
+  for (const i of kept) {
+    for (let j = Math.max(0, i - context); j <= Math.min(entries.length - 1, i + context); j++) {
+      if (entries[j]?.op === 'same') keep.add(j)
+    }
+  }
+  return {
+    entries: entries.filter((_, i) => keep.has(i)),
+    added,
+    removed,
+    truncated: changed.length > limit,
+  }
 }

@@ -17,14 +17,16 @@ const resolveBody = z.strictObject({
   action: z.enum(['accept', 'revert', 'reanchor']),
 })
 
+const count = z
+  .string()
+  .regex(/^\d+$/, 'must be a whole number')
+  .transform((s) => Number(s))
+
 const compareQuery = z.object({
   from: z.string().min(1),
   to: z.string().min(1),
-  limit: z
-    .string()
-    .regex(/^\d+$/, 'must be a whole number')
-    .transform((s) => Number(s))
-    .optional(),
+  limit: count.optional(),
+  context: count.optional(),
 })
 
 export const revisions = new Hono<AppEnv>()
@@ -56,12 +58,13 @@ revisions.get('/versions/:versionId/anchors', requireUser, async (c) =>
 )
 
 revisions.get('/documents/:documentId/compare', requireUser, async (c) => {
-  const { from, to, limit } = parseOrInvalid(compareQuery, c.req.query())
+  const { from, to, limit, context } = parseOrInvalid(compareQuery, c.req.query())
   return c.json(
     await compareDocumentVersions(c.var.deps.db, c.var.deps.blobs, actorOf(c), {
       fromVersionId: from,
       toVersionId: to,
       limit,
+      context,
       documentId: c.req.param('documentId'),
     }),
   )

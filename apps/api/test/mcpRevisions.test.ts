@@ -131,11 +131,13 @@ describe.skipIf(skip)('the revisions tools', () => {
     })
     expect(diff.isError).toBeFalsy()
     const d = diff.structuredContent as unknown as {
-      entries: unknown[]
+      entries: Array<{ op: string }>
       removed: number
       truncated: boolean
     }
-    expect(d.entries).toHaveLength(10)
+    // limit counts changed entries: ten of them, each with the default two lines of context
+    expect(d.entries.filter((e) => e.op !== 'same')).toHaveLength(10)
+    expect(d.entries.length).toBeGreaterThan(10)
     expect(d.truncated).toBe(true)
     expect(d.removed).toBeGreaterThan(0)
     const tooBig = await callTool(owner, 'compare_versions', {
@@ -144,6 +146,19 @@ describe.skipIf(skip)('the revisions tools', () => {
       limit: 10001,
     })
     expect(tooBig.isError).toBe(true)
+    const bare = await callTool(owner, 'compare_versions', {
+      fromVersionId: F.v1,
+      toVersionId: F.v2,
+      limit: 10,
+      context: 0,
+    })
+    expect((bare.structuredContent as unknown as { entries: unknown[] }).entries).toHaveLength(10)
+    const tooMuchContext = await callTool(owner, 'compare_versions', {
+      fromVersionId: F.v1,
+      toVersionId: F.v2,
+      context: 21,
+    })
+    expect(tooMuchContext.isError).toBe(true)
   })
 
   test('a token scoped to another show is forbidden on all four tools', async () => {
