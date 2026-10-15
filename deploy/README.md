@@ -148,6 +148,66 @@ that, so a long PowerSync outage cannot fill the host's disk; past the cap Postg
 slot and PowerSync rebuilds its buckets from scratch when it is back (clients resync, nothing is
 lost).
 
+## M1 notes (script markup)
+
+**New migrations.** M1 adds migrations `0004` to `0014`: the `departments`, `cues`, `annotations` and
+`export_records` tables, the sync chunk ledger, and the change log's `layer` column and batch index.
+The API applies them when it starts, as for every upgrade, and each one that adds a synced table extends the `powersync` publication and the
+`powersync_role` grant (conditional `DO` blocks, like `0003_publication`). Take the database dump
+from [Upgrades](#upgrades) first. After the deploy, `select tablename from pg_publication_tables where
+pubname = 'powersync'` should list the four new tables, and the PowerSync log should show
+`To replicate: "public"."departments"`, `cues`, `annotations` and `export_records`.
+
+**PowerSync after sync-config changes.** `powersync/sync-config.yaml` is baked into the PowerSync
+image, so a change ships with a redeploy. PowerSync reprocesses a changed sync config when it
+starts, rebuilding its buckets from the main database, so the first client sync after such a deploy
+takes longer than usual; clients keep working from their local data meanwhile and nothing is lost.
+Restart the `powersync` service (Coolify: the service's Restart; locally `docker compose ... restart
+powersync`) after any change to the sync config or to the publication's tables, so it re-reads them.
+Rows written while it was down are picked up from the replication slot.
+
+**Presence websocket.** Live presence is a WebSocket at `GET /api/shows/<showId>/presence` on the app
+hostname. The path is the same as every other API call: Cloudflare tunnel, Coolify's Traefik, then
+Caddy's `handle /api/*` reverse proxy to the API. Caddy and Traefik pass the `Upgrade` headers
+through, and Cloudflare proxies WebSockets, so no extra configuration is needed; clients send a
+frame every five seconds, so idle timeouts along the way never apply. Two guards run before the
+upgrade and answer plain HTTP: `403` unless the `Origin` header is exactly `APP_ORIGIN` (which is why
+`APP_ORIGIN` must be the public `https://` URL browsers use), then `401` without a session. The
+smoke's last step checks both through the proxy (see below). If presence is silent in production
+while the rest works, check these two answers first.
+
+### The M1 smoke test
+
+`scripts/m1-smoke.ts` drives a running stack with a `*`-scoped personal access token, over MCP
+(client name `m1-smoke`) and REST. It creates a show named `M1 smoke <time>` and archives it at the
+end, and also when a step fails (`CLEANUP PASS`/`CLEANUP FAIL` says which), so a run leaves one
+read-only show behind. Create the token in the app (Tokens page) or from the api container, and
+pass it in the environment only: it is never written to a file or printed.
+
+```sh
+# Production: create the token with the First owner commands above, then
+read -rsp 'Token: ' BINDER_TOKEN; echo; export BINDER_TOKEN
+BINDER_URL=https://binder.rvlt.app \
+  pnpm --filter @binder/api exec tsx ../../deploy/scripts/m1-smoke.ts --stage full
+unset BINDER_TOKEN
+
+# Local production stack: BINDER_URL=http://localhost, and
+export BINDER_TOKEN=$(docker exec binder-prodtest-api-1 node apps/api/dist/cli.js create-token \
+  --email you@example.com --name smoke --scope '*')
+```
+
+Run it from the repository root after `pnpm install` (it generates the fixture PDFs on first use,
+and the second upload is `fixtures/public/generated/pirates-revised-cut.pdf`). `--stage checkpoint`
+runs the first nine steps only (cues, an annotation, renumbering). `--stage full` adds, on the same
+show: history shows the cue's insert and relabel as `m1-smoke/1.0.0` via `mcp`; `revert_change`
+restores the label; the activity feed lists `<name> via m1-smoke`; the calling script PDF starts
+with `%PDF-`; the CSV cue sheet starts with the byte order mark and the XLSX with `PK`; a revised
+upload becomes ready and current and `get_reanchor_review` answers; and a presence upgrade without
+a session gets `401` (with the app's `Origin`) and `403` (with a foreign one). Every step prints
+`PASS` or `FAIL`, and the exit code is non-zero on any failure or if no step ran. The libretto is 147
+pages: processing it takes a few minutes, and the script waits up to five minutes for each version.
+A laptop that sleeps during the run can trip those waits; run it again.
+
 ## Notes
 
 - Uploads are capped at 200 MB by the API, but Cloudflare's proxy caps request bodies at 100 MB on
@@ -211,6 +271,10 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml \
 deploy/scripts/prod-smoke.sh # health, web, sync, OCR upload, MCP; prints PASS
 docker compose -p binder-prodtest down -v
 ```
+
+The M1 smoke ([The M1 smoke test](#the-m1-smoke-test)) runs against it with `BINDER_URL=http://localhost`.
+`gen-env.sh` refuses to overwrite an existing `deploy/.env`; pass `--force`, or delete the file, to
+get fresh secrets. Remove the generated file when you are done.
 
 ## Scheduled backups (configured in Coolify)
 
