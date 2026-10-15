@@ -18,7 +18,7 @@ import { AppError, forbidden, IdTaken, invalid, notFound, payloadTooLarge } from
 import { MAX_UPLOAD_BYTES } from '../upload/multipart'
 import { parseOrInvalid, text } from '../validation'
 import type { Executor } from './executor'
-import { assertShowWritable, requireShowRole } from './tenancy'
+import { requireShowRole } from './tenancy'
 import { loadVersionText } from './wordLayers'
 
 export type ExportRecord = typeof exportRecords.$inferSelect
@@ -103,14 +103,12 @@ export async function readableExport(
 }
 
 /**
- * Internal: viewer or above on an unarchived show. The route calls it before reading an upload body,
- * so a refusal costs nothing.
+ * Internal: viewer or above. Archived shows are allowed: archiving freezes a show's content, and
+ * printing or exporting a closed show is a main reason to keep it (M1-R20); an export record logs
+ * a read, not a content edit. The route calls it before reading an upload body, so a refusal costs nothing.
  */
 export async function assertCanExport(db: Executor, actor: Actor, showId: string): Promise<void> {
   await requireShowRole(db, actor, showId, 'viewer')
-  const [show] = await db.select({ status: shows.status }).from(shows).where(eq(shows.id, showId))
-  if (!show) throw notFound('Show not found')
-  assertShowWritable(show)
 }
 
 /** A personal layer in a selection must be the actor's own; every department must be in the show. */

@@ -9,6 +9,7 @@ import { type LayerRef, newId } from '@binder/shared'
 import { eq } from 'drizzle-orm'
 import { PDFDocument } from 'pdf-lib'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import type { BlobStore } from '../src/blob/BlobStore'
 import { exportBlobKey, parseExportKey, searchableBlobKey } from '../src/blob/keys'
 import { AppError } from '../src/errors'
 import {
@@ -23,6 +24,7 @@ import {
 } from '../src/services'
 import { readableExport } from '../src/services/exports'
 import { applyCrudBatch } from '../src/sync/apply'
+import { MAX_UPLOAD_BYTES } from '../src/upload/multipart'
 import { asJson, blobFiles, librettoBytes, multipart } from './documentHelpers'
 import { APP_ORIGIN } from './helpers'
 import { anchorAt, setupMarkupShow } from './markupHelpers'
@@ -67,11 +69,14 @@ async function post(
   m: Record<string, unknown> | string,
   file: { bytes: Uint8Array } | null = { bytes: pdfBytes() },
   showId = s.show.id,
+  extraHeaders: Record<string, string> = {},
 ) {
-  const headers: Record<string, string> =
-    'cookie' in who
+  const headers: Record<string, string> = {
+    ...('cookie' in who
       ? { cookie: who.cookie, origin: APP_ORIGIN }
-      : { authorization: `Bearer ${who.token}` }
+      : { authorization: `Bearer ${who.token}` }),
+    ...extraHeaders,
+  }
   return asJson(
     await s.app.request(`/api/shows/${showId}/exports`, {
       method: 'POST',
@@ -151,7 +156,67 @@ describe('POST /api/shows/:showId/exports', () => {
     expect(res.status).toBe(409)
   })
 
-  test('a racing duplicate that loses on insert deletes its own blob and returns the winner', async () => {
+  describe('a duplicate that loses on insert (23505)', () => {
+    /**
+     * Stores through the real store, then (once) inserts a competing row for `id` before the loser's
+     * own insert runs: `put` sits between the pre-check and the insert, so the 23505 branch is certain.
+     */
+    function racingStore(id: string, winnerUser: string) {
+      const stored: string[] = []
+      const winnerKey = exportBlobKey(s.show.id, id, newId(), 'pdf')
+      let raced = false
+      const store: BlobStore = {
+        get: (k) => s.deps.blobs.get(k),
+        exists: (k) => s.deps.blobs.exists(k),
+        delete: (k) => s.deps.blobs.delete(k),
+        async put(key, body, contentType) {
+          await s.deps.blobs.put(key, body, contentType)
+          stored.push(key)
+          if (raced) return
+          raced = true
+          await s.deps.blobs.put(winnerKey, pdfBytes(), 'application/pdf')
+          await s.deps.db.insert(exportRecords).values({
+            id,
+            showId: s.show.id,
+            kind: 'pdf-script',
+            filename: 'winner.pdf',
+            layerSelection: [],
+            fileKey: winnerKey,
+            createdBy: winnerUser,
+            updatedBy: winnerUser,
+          })
+        },
+      }
+      return { store, stored, winnerKey }
+    }
+
+    test("the same user's loser deletes its own blob and returns the winner's record", async () => {
+      const id = newId()
+      const { store, stored, winnerKey } = racingStore(id, s.viewer.id)
+      const rec = await createExportRecord(s.deps.db, store, s.actors.viewer, input({ id }))
+      expect(stored).toHaveLength(1)
+      expect(rec.fileKey).toBe(winnerKey)
+      expect(rec.filename).toBe('winner.pdf')
+      expect(await s.deps.blobs.exists(stored[0])).toBe(false)
+      expect(await s.deps.blobs.exists(winnerKey)).toBe(true)
+      expect(
+        await s.deps.db.select().from(exportRecords).where(eq(exportRecords.id, id)),
+      ).toHaveLength(1)
+    })
+
+    test("another user's winner makes the loser conflict, and the loser's blob is deleted", async () => {
+      const id = newId()
+      const { store, stored, winnerKey } = racingStore(id, s.owner.id)
+      expect(await code(createExportRecord(s.deps.db, store, s.actors.viewer, input({ id })))).toBe(
+        'conflict',
+      )
+      expect(stored).toHaveLength(1)
+      expect(await s.deps.blobs.exists(stored[0])).toBe(false)
+      expect(await s.deps.blobs.exists(winnerKey)).toBe(true)
+    })
+  })
+
+  test('concurrent uploads of one id leave one blob and one record', async () => {
     const id = newId()
     const [a, b] = await Promise.all([
       createExportRecord(s.deps.db, s.deps.blobs, s.actors.viewer, input({ id })),
@@ -161,7 +226,6 @@ describe('POST /api/shows/:showId/exports', () => {
     expect(b.fileKey).toBe(a.fileKey)
     const files = (await blobFiles(s.deps)).filter((f) => f.includes(`/exports/${id}/`))
     expect(files.filter((f) => f.endsWith('.pdf'))).toHaveLength(1)
-    expect(files.every((f) => f.includes(a.fileKey.split('/').at(-1) as string))).toBe(true)
   })
 
   test('an export with my personal layer is invisible to others in the list and its blob is 404 for them', async () => {
@@ -329,21 +393,47 @@ describe('POST /api/shows/:showId/exports', () => {
     expect((await s.app.request(`/blobs/${ghost}`, { headers: bearer })).status).toBe(403)
   })
 
-  test('an archived show refuses new exports', async () => {
+  test('an archived show still takes uploads and server-side exports (M1-R20)', async () => {
     const fresh = await setupMarkupShow()
+    const key = searchableBlobKey(fresh.show.id, fresh.docId, fresh.versionId)
+    await fresh.deps.blobs.put(key, pdfBytes(), 'application/pdf')
+    await fresh.deps.db
+      .update(documentVersions)
+      .set({ searchableKey: key })
+      .where(eq(documentVersions.id, fresh.versionId))
     await updateShow(fresh.deps.db, fresh.actors.owner, {
       showId: fresh.show.id,
       patch: { status: 'archived' },
     })
     const res = await fresh.app.request(`/api/shows/${fresh.show.id}/exports`, {
       method: 'POST',
-      headers: { cookie: fresh.owner.cookie, origin: APP_ORIGIN },
+      headers: { cookie: fresh.viewer.cookie, origin: APP_ORIGIN },
       body: multipart(
         { meta: JSON.stringify(meta({ layerSelection: [] })) },
         { bytes: pdfBytes() },
       ),
     })
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(201)
+    const { record } = await exportMarkedScript(
+      fresh.deps.db,
+      fresh.deps.blobs,
+      fresh.actors.viewer,
+      {
+        documentId: fresh.docId,
+        layers: 'all',
+      },
+    )
+    expect(record.showId).toBe(fresh.show.id)
+    // Membership still decides: an outsider is refused.
+    const outsider = { userId: fresh.outsider.id, via: 'web' as const, agent: null }
+    expect(
+      await code(
+        exportMarkedScript(fresh.deps.db, fresh.deps.blobs, outsider, {
+          documentId: fresh.docId,
+          layers: 'all',
+        }),
+      ),
+    ).toBe('not_found')
   })
 
   test('export_records is not writable through sync upload', async () => {
@@ -364,9 +454,85 @@ describe('POST /api/shows/:showId/exports', () => {
       },
     )
     expect(result.applied).toBe(0)
-    expect(result.rejected).toHaveLength(1)
+    expect(result.rejected).toEqual([
+      {
+        index: 0,
+        table: 'export_records',
+        id,
+        reason: 'unknown_table',
+        message: expect.any(String),
+      },
+    ])
     expect(await s.deps.db.select().from(exportRecords).where(eq(exportRecords.id, id))).toEqual([])
   })
+})
+
+describe('oversize uploads', () => {
+  const MB = 1024 * 1024
+  const exportFiles = async (id: string) =>
+    (await blobFiles(s.deps)).filter((f) => f.includes(`/exports/${id}/`))
+
+  /** A multipart request whose file streams `fileBytes` zero bytes after `%PDF-`, with a chosen Content-Length. */
+  function streamingUpload(id: string, fileBytes: number, contentLength: number) {
+    const boundary = '----binderBoundary'
+    const enc = new TextEncoder()
+    const metaPart = `--${boundary}\r\ncontent-disposition: form-data; name="meta"\r\n\r\n${JSON.stringify(meta({ id }))}\r\n`
+    const head = enc.encode(
+      `${metaPart}--${boundary}\r\ncontent-disposition: form-data; name="file"; filename="big.pdf"\r\ncontent-type: application/pdf\r\n\r\n%PDF-1.7\n`,
+    )
+    const tail = enc.encode(`\r\n--${boundary}--\r\n`)
+    const chunk = new Uint8Array(MB)
+    let sent = 0
+    let started = false
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (!started) {
+          started = true
+          controller.enqueue(head)
+          return
+        }
+        if (sent >= fileBytes) {
+          controller.enqueue(tail)
+          controller.close()
+          return
+        }
+        const n = Math.min(MB, fileBytes - sent)
+        controller.enqueue(n === MB ? chunk : chunk.subarray(0, n))
+        sent += n
+      },
+    })
+    return s.app.request(`/api/shows/${s.show.id}/exports`, {
+      method: 'POST',
+      headers: {
+        cookie: s.owner.cookie,
+        origin: APP_ORIGIN,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+        'content-length': String(contentLength),
+      },
+      body,
+      duplex: 'half',
+    } as RequestInit)
+  }
+
+  test('an over-size Content-Length is 413 payload_too_large with nothing stored', async () => {
+    const id = newId()
+    const res = await post(s.owner, meta({ id }), { bytes: pdfBytes() }, s.show.id, {
+      'content-length': String(MAX_UPLOAD_BYTES + 1),
+    })
+    expect(res.status).toBe(413)
+    expect((await res.json()).error).toBe('payload_too_large')
+    expect(await exportFiles(id)).toEqual([])
+    expect(await s.deps.db.select().from(exportRecords).where(eq(exportRecords.id, id))).toEqual([])
+  })
+
+  test('a streamed body past the cap is cut: 413, no blob, no row', async () => {
+    const id = newId()
+    const res = asJson(await streamingUpload(id, 201 * MB, 100 * MB))
+    expect(res.status).toBe(413)
+    expect((await res.json()).error).toBe('payload_too_large')
+    expect(await exportFiles(id)).toEqual([])
+    expect(await s.deps.db.select().from(exportRecords).where(eq(exportRecords.id, id))).toEqual([])
+  }, 60_000)
 })
 
 describe('readableExport', () => {
@@ -521,6 +687,46 @@ describe('exportMarkedScript', () => {
       ),
     ).toBe('forbidden')
   })
+
+  test.skipIf(skipPoppler)(
+    "a selection with my personal layer prints my notes and never another member's",
+    async () => {
+      const f = await ready()
+      const at = (y: number) => anchorAt(f.docId, f.versionId, 0, 100, y)
+      const note = (actor: typeof f.actors.viewer, userId: string, text: string, y: number) =>
+        createAnnotation(f.deps.db, actor, {
+          showId: f.show.id,
+          layerKind: 'personal',
+          layerId: userId,
+          anchor: at(y),
+          type: 'note',
+          geometry: {},
+          text,
+          style: {},
+        })
+      await createCue(f.deps.db, f.actors.owner, {
+        showId: f.show.id,
+        departmentId: f.depts.LX.id,
+        number: { major: 10, minor: 0 },
+        label: 'CUELABELX',
+        anchor: at(700),
+      })
+      await note(f.actors.viewer, f.viewer.id, 'MINEZEBRA', 500)
+      await note(f.actors.owner, f.owner.id, 'THEIRSQUOKKA', 300)
+      const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.viewer, {
+        documentId: f.docId,
+        layers: [
+          { kind: 'department', id: f.depts.LX.id },
+          { kind: 'personal', id: f.viewer.id },
+        ],
+      })
+      expect(record.privateTo).toBe(f.viewer.id)
+      const text = await footerOf(await readRecord(f, record))
+      expect(text).toContain('CUELABELX')
+      expect(text).toContain('MINEZEBRA')
+      expect(text).not.toContain('THEIRSQUOKKA')
+    },
+  )
 
   test('filename characters / \\ : * ? " < > | become dashes', async () => {
     const f = await ready({ title: 'Act 1/2: "Intro"?' })
