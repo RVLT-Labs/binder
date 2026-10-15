@@ -8,7 +8,7 @@ import type { ProcessingDeps } from './types'
 const BATCH_PREFIX = reanchorBatchId('')
 
 /**
- * Enqueues (and returns) every version whose re-anchoring is still owed: ready, in an open show, not
+ * Enqueues each version (one failed enqueue is logged and skipped) and returns the ids actually enqueued, for every version whose re-anchoring is still owed: ready, in an open show, not
  * its document's current version, numbered above it, and never re-anchored. Never re-anchored means
  * no change-log row with batch id `reanchor:<versionId>`, so a run a user reverted is not run again.
  * It covers a process that died between the ready commit and the enqueue, and a failed enqueue;
@@ -45,7 +45,15 @@ export async function sweepPendingReanchors(
       ),
     )
     .orderBy(documentVersions.documentId, documentVersions.versionNumber)
-  const ids = owed.map((r) => r.id)
-  for (const id of ids) await deps.jobs.enqueueReanchor(id)
-  return ids
+  const enqueued: string[] = []
+  for (const { id } of owed) {
+    try {
+      await deps.jobs.enqueueReanchor(id)
+      enqueued.push(id)
+    } catch (err) {
+      // One failed enqueue must not hide the others; the next sweep tries this one again.
+      console.error(`could not enqueue re-anchoring for version ${id}`, err)
+    }
+  }
+  return enqueued
 }

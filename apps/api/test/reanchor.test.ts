@@ -5,7 +5,7 @@ import { FIXTURES } from '@binder/fixtures'
 import { type Actor, type Anchor, newId, type VersionStatus } from '@binder/shared'
 import type { Client } from '@modelcontextprotocol/client'
 import { and, eq } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import { AppError } from '../src/errors'
 import { finishVersionIfDone, markPageFailed } from '../src/processing/pageJob'
 import {
@@ -505,10 +505,13 @@ describe.skipIf(skip)('the re-anchoring run', () => {
     expect(await reanchorVersion({ db: t.deps.db, blobs: t.deps.blobs, jobs }, v2)).toEqual({
       skipped: 'not-needed',
     })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     await handleReanchorDeadLetter(
       { db: t.deps.db },
       { data: { versionId: v2 }, sourceOutput: null },
     )
+    expect(logged).not.toHaveBeenCalled()
+    logged.mockRestore()
     const [doc] = await t.deps.db.select().from(documents).where(eq(documents.id, docId))
     expect(doc?.currentVersionId).toBe(v1)
     const [row] = await t.deps.db.select().from(cues).where(eq(cues.id, cue.id))
@@ -516,22 +519,85 @@ describe.skipIf(skip)('the re-anchoring run', () => {
   })
 })
 
+describe.skipIf(skip)('a source version that appears after the pre-load', () => {
+  test('is read inside the transaction and its anchors still move', async () => {
+    const p = await pair() // v1 current, v2 (the "late" source, number 2)
+    const target = newId()
+    await db()
+      .insert(documentVersions)
+      .values({
+        id: target,
+        showId: s.show.id,
+        documentId: p.docId,
+        versionNumber: 3,
+        originalKey: `test/${target}.pdf`,
+        pageCount: tplV2.length,
+        uploadedBy: uploaderId(),
+        status: 'ready',
+      })
+    await db()
+      .insert(pages)
+      .values(tplV2.map((pg) => ({ ...pg, id: newId(), documentVersionId: target })))
+    const early = await mkCue(noTextAnchor(p.docId, p.v1, 3))
+    let late: Promise<{ id: string }> | undefined
+    const v1Keys = new Set(tplV1.map((pg) => pg.wordsKey))
+    const blobs = new Proxy(s.deps.blobs, {
+      get(t, k) {
+        if (k !== 'get') {
+          const v = Reflect.get(t, k)
+          return typeof v === 'function' ? v.bind(t) : v
+        }
+        return async (key: string) => {
+          // While v1's words are read (after the target's), a cue appears on the not yet read v2.
+          if (v1Keys.has(key)) late ??= mkCue(noTextAnchor(p.docId, p.v2, 4))
+          await late
+          return t.get(key)
+        }
+      },
+    })
+    const result = await reanchorVersion({ db: db(), blobs, jobs: new RecordingJobs() }, target)
+    expect(late).toBeDefined()
+    expect(result).toMatchObject({ moved: 2 })
+    expect((await anchorOfCue(early.id)).documentVersionId).toBe(target)
+    expect((await anchorOfCue((await late)?.id as string)).documentVersionId).toBe(target)
+    expect(await currentOf(p.docId)).toBe(target)
+  })
+})
+
 describe.skipIf(skip)('finishing a version', () => {
+  async function oneQueuedPage(p: { docId: string; v2: string }) {
+    await db().update(pages).set({ status: 'ready' }).where(eq(pages.documentVersionId, p.v2))
+    const [page] = await db().select().from(pages).where(eq(pages.documentVersionId, p.v2)).limit(1)
+    await db()
+      .update(pages)
+      .set({ status: 'queued' })
+      .where(eq(pages.id, page?.id as string))
+    return page?.id as string
+  }
+
   test('a version that fails processing never re-anchors and never becomes current', async () => {
     const p = await pair({ v2Status: 'processing' })
+    const pageId = await oneQueuedPage(p)
     await handleDocumentDeadLetter(
       { db: db() },
       { data: { versionId: p.v2 }, sourceOutput: { message: 'ocrmypdf exploded' } },
     )
-    const [v2] = await db().select().from(documentVersions).where(eq(documentVersions.id, p.v2))
-    expect(v2?.status).toBe('failed')
+    const statusOf = async () =>
+      (await db().select().from(documentVersions).where(eq(documentVersions.id, p.v2)))[0]?.status
+    expect(await statusOf()).toBe('failed')
+
+    // the version's last queued page then finishes through the page dead-letter path: the failed
+    // version must not become ready, enqueue a re-anchor, or become current
     const jobs = new RecordingJobs()
-    expect(jobs.enqueuedReanchors).toEqual([])
+    await markPageFailed({ db: db(), jobs }, pageId, 'boom')
     expect(await finishVersionIfDone({ db: db(), jobs }, p.v2)).toBe('not-done')
+    expect(await statusOf()).toBe('failed')
+    expect(jobs.enqueuedReanchors).toEqual([])
     expect(await sweepPendingReanchors({ db: db(), jobs })).not.toContain(p.v2)
     expect(await reanchorVersion(deps(jobs), p.v2)).toEqual({ skipped: 'not-needed' })
     expect(jobs.enqueuedReanchors).not.toContain(p.v2)
     expect(await currentOf(p.docId)).toBe(p.v1)
+    expect(await rowsOfBatch(reanchorBatchId(p.v2))).toHaveLength(0)
   })
 
   test('finishVersionIfDone: ready for a first or lower version, needs-reanchor for a newer one', async () => {
@@ -593,16 +659,6 @@ describe.skipIf(skip)('finishing a version', () => {
     expect(await sweepPendingReanchors({ db: db(), jobs: new RecordingJobs() })).toContain(p.v2)
   })
 
-  async function oneQueuedPage(p: { docId: string; v2: string }) {
-    await db().update(pages).set({ status: 'ready' }).where(eq(pages.documentVersionId, p.v2))
-    const [page] = await db().select().from(pages).where(eq(pages.documentVersionId, p.v2)).limit(1)
-    await db()
-      .update(pages)
-      .set({ status: 'queued' })
-      .where(eq(pages.id, page?.id as string))
-    return page?.id as string
-  }
-
   test('a last page finished by markPageFailed enqueues the re-anchor', async () => {
     const p = await pair({ v2Status: 'processing' })
     const pageId = await oneQueuedPage(p)
@@ -655,12 +711,41 @@ describe.skipIf(skip)('finishing a version', () => {
   })
 })
 
+describe.skipIf(skip)('the sweep with a failing queue', () => {
+  test('one failed enqueue is logged and skipped; the rest are enqueued and returned', async () => {
+    const bad = await pair()
+    const good = await pair()
+    const jobs = new RecordingJobs()
+    jobs.enqueueReanchor = async (versionId) => {
+      if (versionId === bad.v2) throw new Error('queue refused this one')
+      jobs.enqueuedReanchors.push(versionId)
+    }
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const swept = await sweepPendingReanchors({ db: db(), jobs })
+    expect(logged).toHaveBeenCalledTimes(1)
+    expect(String(logged.mock.calls[0]?.[0])).toContain(bad.v2)
+    logged.mockRestore()
+    expect(swept).toContain(good.v2)
+    expect(swept).not.toContain(bad.v2)
+    expect(jobs.enqueuedReanchors).toEqual(swept)
+    // the failed one is still owed, so the next sweep tries it again
+    const again = await sweepPendingReanchors({ db: db(), jobs: new RecordingJobs() })
+    expect(again).toContain(bad.v2)
+  })
+})
+
 describe.skipIf(skip)('the dead-letter handler', () => {
   test('makes the version current without moving anchors, and a second delivery does nothing', async () => {
     const p = await pair()
     const cue = await mkCue(noTextAnchor(p.docId, p.v1, 3))
     const input = { data: { versionId: p.v2 }, sourceOutput: { message: 'boom' } }
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     await handleReanchorDeadLetter({ db: db() }, input)
+    // the run that adopted the version says why, once
+    expect(logged).toHaveBeenCalledTimes(1)
+    expect(String(logged.mock.calls[0]?.[0])).toContain(
+      `re-anchoring ${p.v2} failed after retries: boom`,
+    )
     expect(await currentOf(p.docId)).toBe(p.v2)
     expect((await anchorOfCue(cue.id)).documentVersionId).toBe(p.v1)
     const rows = await rowsOfBatch(reanchorBatchId(p.v2))
@@ -675,6 +760,8 @@ describe.skipIf(skip)('the dead-letter handler', () => {
       after: { currentVersionId: p.v2 },
     })
     await handleReanchorDeadLetter({ db: db() }, input)
+    expect(logged).toHaveBeenCalledTimes(1) // the second delivery found nothing to do: silent
+    logged.mockRestore()
     expect(await rowsOfBatch(reanchorBatchId(p.v2))).toHaveLength(1)
     // the sweep and a replayed job leave it alone
     expect(await sweepPendingReanchors({ db: db(), jobs: new RecordingJobs() })).not.toContain(p.v2)
@@ -697,16 +784,22 @@ describe.skipIf(skip)('the dead-letter handler', () => {
         status: 'ready',
       })
     await db().update(documents).set({ currentVersionId: v3 }).where(eq(documents.id, p.docId))
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     await handleReanchorDeadLetter({ db: db() }, { data: { versionId: p.v2 }, sourceOutput: null })
+    expect(logged).not.toHaveBeenCalled()
+    logged.mockRestore()
     expect(await currentOf(p.docId)).toBe(v3)
     expect(await rowsOfBatch(reanchorBatchId(p.v2))).toHaveLength(0)
   })
 
   test('does nothing for a version that is not ready, or already current', async () => {
     const p = await pair({ v2Status: 'failed' })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     await handleReanchorDeadLetter({ db: db() }, { data: { versionId: p.v2 }, sourceOutput: null })
     expect(await currentOf(p.docId)).toBe(p.v1)
     await handleReanchorDeadLetter({ db: db() }, { data: { versionId: p.v1 }, sourceOutput: null })
+    expect(logged).not.toHaveBeenCalled()
+    logged.mockRestore()
     expect(await rowsOfBatch(reanchorBatchId(p.v1))).toHaveLength(0)
   })
 })
@@ -827,12 +920,78 @@ describe.skipIf(skip)('reverting a re-anchoring run', () => {
     expect(await currentOf(r.p.docId)).toBe(r.p.v2)
     expect((await anchorOfCue(r.lx.id)).documentVersionId).toBe(r.p.v2)
 
-    const forced = await revertRun(s.actors.editorLx, r.p.v2, { force: true })
+    // forcing over another member's drifted personal row is an owner's call, not a scoped editor's
+    const refused = await message(revertRun(s.actors.editorLx, r.p.v2, { force: true }))
+    expect(await code(revertRun(s.actors.editorLx, r.p.v2, { force: true }))).toBe('forbidden')
+    expect(refused).toMatch(/^1 row changed since this re-anchoring run on layers you cannot edit/)
+    for (const id of hidden) expect(refused).not.toContain(id)
+    expect(await currentOf(r.p.docId)).toBe(r.p.v2)
+    expect(await anchorOfNote(r.ownerNote.id)).toMatchObject({ pageIndex: 20 })
+
+    // the owner may; the viewer's deleted note belongs to someone else's layer and is not listed
+    const forced = await revertRun(s.actors.owner, r.p.v2, { force: true })
     const text = JSON.stringify(forced)
-    for (const id of hidden) expect(text).not.toContain(id)
-    expect(forced.skipped).toEqual([]) // the viewer's deleted note is hidden, so not listed
+    expect(text).not.toContain(r.viewerNote.id)
+    expect(forced.skipped).toEqual([])
     expect(forced.reverted).toBe(6) // 7 rows, minus the deleted note
     expect(await anchorOfNote(r.ownerNote.id)).toEqual(r.originals.ownerNote)
+    expect(await currentOf(r.p.docId)).toBe(r.p.v1)
+  })
+
+  test('an undrifted run is restored by an LX editor with no hidden id in the result, even when a hidden note is gone', async () => {
+    const r = await runWithMarkup()
+    await deleteAnnotations(db(), s.actors.viewer, { annotationIds: [r.viewerNote.id] })
+    const result = await revertRun(s.actors.editorLx, r.p.v2)
+    const text = JSON.stringify(result)
+    for (const id of [r.ownerNote.id, r.viewerNote.id]) expect(text).not.toContain(id)
+    expect(result.skipped).toEqual([])
+    expect(result.reverted).toBe(6)
+    expect(await anchorOfNote(r.ownerNote.id)).toEqual(r.originals.ownerNote)
+  })
+
+  test('with force, an LX-scoped editor cannot overwrite a drifted SND cue; the owner can', async () => {
+    const r = await runWithMarkup()
+    const drifted = noTextAnchor(r.p.docId, r.p.v2, 30)
+    await updateCue(db(), s.actors.owner, { cueId: r.snd.id, patch: { anchor: drifted } })
+    const before = await totalLogs()
+
+    expect(await code(revertRun(s.actors.editorLx, r.p.v2))).toBe('conflict')
+    const refused = await message(revertRun(s.actors.editorLx, r.p.v2, { force: true }))
+    expect(await code(revertRun(s.actors.editorLx, r.p.v2, { force: true }))).toBe('forbidden')
+    expect(refused).toMatch(/^1 row changed since this re-anchoring run on layers you cannot edit/)
+    expect(refused).not.toContain(r.snd.id)
+    // the dry run refuses too, and nothing was written by any of them
+    expect(await code(revertRun(s.actors.editorLx, r.p.v2, { force: true, dryRun: true }))).toBe(
+      'forbidden',
+    )
+    expect(await totalLogs()).toBe(before)
+    expect(await currentOf(r.p.docId)).toBe(r.p.v2)
+    expect((await anchorOfCue(r.lx.id)).documentVersionId).toBe(r.p.v2)
+    expect((await anchorOfCue(r.snd.id)).pageIndex).toBe(30)
+  })
+
+  test('with force, an LX-scoped editor may overwrite drift in a department they edit', async () => {
+    const r = await runWithMarkup()
+    await updateCue(db(), s.actors.owner, {
+      cueId: r.lx.id,
+      patch: { anchor: noTextAnchor(r.p.docId, r.p.v2, 30) },
+    })
+    expect(await code(revertRun(s.actors.editorLx, r.p.v2))).toBe('conflict')
+    const forced = await revertRun(s.actors.editorLx, r.p.v2, { force: true })
+    expect(forced.reverted).toBe(7)
+    expect(await anchorOfCue(r.lx.id)).toEqual(r.originals.lx)
+    expect(await currentOf(r.p.docId)).toBe(r.p.v1)
+  })
+
+  test('with force, the owner overwrites a drifted SND cue', async () => {
+    const r = await runWithMarkup()
+    await updateCue(db(), s.actors.owner, {
+      cueId: r.snd.id,
+      patch: { anchor: noTextAnchor(r.p.docId, r.p.v2, 30) },
+    })
+    const forced = await revertRun(s.actors.owner, r.p.v2, { force: true })
+    expect(forced.reverted).toBe(7)
+    expect(await anchorOfCue(r.snd.id)).toEqual(r.originals.snd)
     expect(await currentOf(r.p.docId)).toBe(r.p.v1)
   })
 
@@ -1047,20 +1206,16 @@ describe.skipIf(skip)('batches that only claim to be the re-anchoring run', () =
   })
 
   test('the rule needs every row: a batch with one real-looking row among others gets per-row checks', async () => {
-    const cue = await mkCue(null, 'SND')
-    const other = await mkCue(null, 'SND')
-    const batchId = `mixed-${newId()}`
+    const p = await pair()
     const run: Actor = { userId: s.owner.id, via: 'web', agent: REANCHOR_AGENT }
     const human: Actor = { userId: s.owner.id, via: 'web', agent: null }
-    await db().transaction(async (tx) => {
-      for (const [actor, id] of [
-        [run, cue.id],
-        [human, other.id],
-      ] as const) {
-        await tx
-          .update(cues)
-          .set({ label: `edited ${id}` })
-          .where(eq(cues.id, id))
+    const cueRun = await mkCue(noTextAnchor(p.docId, p.v1, 3), 'SND')
+    const cueHuman = await mkCue(noTextAnchor(p.docId, p.v1, 4), 'SND')
+    const v1Run = await anchorOfCue(cueRun.id)
+    const v1Human = await anchorOfCue(cueHuman.id)
+    const move = (actor: Actor, batchId: string, id: string, from: Anchor, to: Anchor) =>
+      db().transaction(async (tx) => {
+        await tx.update(cues).set({ anchor: to }).where(eq(cues.id, id))
         await logChange(tx, {
           showId: s.show.id,
           actor,
@@ -1068,44 +1223,55 @@ describe.skipIf(skip)('batches that only claim to be the re-anchoring run', () =
           table: 'cues',
           rowId: id,
           op: 'update',
-          before: { label: 'c' },
-          after: { label: `edited ${id}` },
+          before: { anchor: from },
+          after: { anchor: to },
           layer: `department:${s.depts.SND.id}`,
         })
-      }
-    })
-    expect(
-      await code(
-        revertBatch(db(), s.actors.editorLx, { showId: s.show.id, batchId, userId: s.owner.id }),
-      ),
-    ).toBe('forbidden')
-    expect((await db().select().from(cues).where(eq(cues.id, cue.id)))[0]?.label).toBe(
-      `edited ${cue.id}`,
-    )
-    // with every row claiming the agent, the same edit is a document operation for the editor
-    const batch2 = `all-${newId()}`
-    await db().transaction(async (tx) => {
-      await logChange(tx, {
-        showId: s.show.id,
-        actor: run,
-        batchId: batch2,
-        table: 'cues',
-        rowId: cue.id,
-        op: 'update',
-        before: { anchor: null },
-        after: { anchor: null },
-        layer: `department:${s.depts.SND.id}`,
       })
+    const onV2 = (a: Anchor, page: number): Anchor => ({
+      ...a,
+      documentVersionId: p.v2,
+      pageIndex: page,
     })
-    // (anchor null to null: nothing to restore, so it is skipped, but not refused for layer rights)
-    expect(
-      await code(
-        revertBatch(db(), s.actors.editorLx, {
-          showId: s.show.id,
-          batchId: batch2,
-          userId: s.owner.id,
-        }),
-      ),
-    ).not.toBe('forbidden')
+
+    // one row says it is the re-anchoring run, the other is a person: an ordinary batch
+    const mixed = `mixed-${newId()}`
+    await move(run, mixed, cueRun.id, v1Run, onV2(v1Run, 3))
+    await move(human, mixed, cueHuman.id, v1Human, onV2(v1Human, 4))
+    const asEditor = () =>
+      revertBatch(db(), s.actors.editorLx, {
+        showId: s.show.id,
+        batchId: mixed,
+        userId: s.owner.id,
+      })
+    expect(await code(asEditor())).toBe('forbidden')
+    expect((await anchorOfCue(cueRun.id)).documentVersionId).toBe(p.v2)
+    expect((await anchorOfCue(cueHuman.id)).documentVersionId).toBe(p.v2)
+    // the owner may revert an ordinary batch: both rows return
+    const byOwner = await revertBatch(db(), s.actors.owner, {
+      showId: s.show.id,
+      batchId: mixed,
+      userId: s.owner.id,
+    })
+    expect(byOwner.reverted).toBe(2)
+    expect(await anchorOfCue(cueRun.id)).toEqual(v1Run)
+    expect(await anchorOfCue(cueHuman.id)).toEqual(v1Human)
+
+    // every row claims the agent: a document operation, so the same editor restores both with a real write
+    const all = `all-${newId()}`
+    await move(run, all, cueRun.id, v1Run, onV2(v1Run, 3))
+    await move(run, all, cueHuman.id, v1Human, onV2(v1Human, 4))
+    const restored = await revertBatch(db(), s.actors.editorLx, {
+      showId: s.show.id,
+      batchId: all,
+      userId: s.owner.id,
+    })
+    expect(restored.reverted).toBe(2)
+    expect(restored.skipped).toEqual([])
+    expect(await anchorOfCue(cueRun.id)).toEqual(v1Run)
+    expect(await anchorOfCue(cueHuman.id)).toEqual(v1Human)
+    const written = await rowsOfBatch(restored.batchId)
+    expect(written).toHaveLength(2)
+    for (const row of written) expect(row).toMatchObject({ userId: s.editorLx.id, agent: null })
   })
 })

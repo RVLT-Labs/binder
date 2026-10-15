@@ -702,6 +702,7 @@ describe('pg-boss job queue', () => {
   }, 60_000)
 
   test('a re-anchor job that fails its last attempt is dead-lettered and makes the version current', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { url } = await getTestDb()
     const boss = new PgBoss({ connectionString: url })
     boss.on('error', () => {})
@@ -731,6 +732,9 @@ describe('pg-boss job queue', () => {
         await new Promise((r) => setTimeout(r, 250))
       }
       expect(await current()).toBe(v2.id)
+      expect(logged.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+        `re-anchoring ${v2.id} failed after retries`,
+      )
     } finally {
       await boss.stop({ graceful: true, timeout: 10_000 })
     }

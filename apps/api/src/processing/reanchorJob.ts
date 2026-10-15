@@ -181,10 +181,10 @@ export async function reanchorVersion(
 
   // Word layers are read before the transaction opens, so it does not hold the lock over blob reads.
   const texts = new Map<string, VersionText>()
-  const textOf = async (id: string): Promise<VersionText> => {
+  const textOf = async (id: string, x: Executor = db): Promise<VersionText> => {
     const known = texts.get(id)
     if (known) return known
-    const loaded = await loadVersionText(db, blobs, id)
+    const loaded = await loadVersionText(x, blobs, id)
     texts.set(id, loaded)
     return loaded
   }
@@ -221,7 +221,8 @@ export async function reanchorVersion(
 
     const rows = await lockAnchorRows(tx, run, await olderVersions(tx, run))
 
-    const to = await textOf(versionId)
+    // Anything not read above is read on the transaction's own connection, never a second one.
+    const to = await textOf(versionId, tx)
     const byVersion = new Map<string, AnchorRow[]>()
     for (const row of rows) {
       const group = byVersion.get(row.anchor.documentVersionId)
@@ -232,7 +233,7 @@ export async function reanchorVersion(
     const byStatus: Record<AnchorStatus, number> = { ok: 0, approximate: 0, unresolved: 0 }
     const moved = new Map<AnchorRow, Anchor>()
     for (const [fromId, group] of byVersion) {
-      const from = await textOf(fromId)
+      const from = await textOf(fromId, tx)
       const next = moveAll(
         group.map((r) => r.anchor),
         from,
@@ -257,14 +258,15 @@ export async function reanchorVersion(
  * the same guards and lock as the run, makes the version current without moving any anchor, so a
  * version never stays ready but not current. Anchors left on older versions surface in the review
  * list. Logged under the run's batch id, so the sweep and a replayed job never run it afterwards.
+ * Returns whether it made the version current (false: a guard found nothing to do).
  */
 export async function adoptVersionWithoutReanchoring(
   deps: Pick<ProcessingDeps, 'db'>,
   versionId: string,
-): Promise<void> {
-  await deps.db.transaction(async (tx) => {
+): Promise<boolean> {
+  return deps.db.transaction(async (tx) => {
     const run = await checkRunnable(tx, versionId, true)
-    if ('skipped' in run) return
+    if ('skipped' in run) return false
     await setCurrentVersion(
       tx,
       runActor(run.version),
@@ -272,5 +274,6 @@ export async function adoptVersionWithoutReanchoring(
       versionId,
       reanchorBatchId(versionId),
     )
+    return true
   })
 }

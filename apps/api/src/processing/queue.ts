@@ -126,11 +126,13 @@ export async function handleReanchorDeadLetter(
   deps: Pick<ProcessingDeps, 'db'>,
   job: DeadLetter<{ versionId: string }>,
 ): Promise<void> {
-  const { message } = lastFailure(job.sourceOutput)
-  console.error(
-    `re-anchoring ${job.data.versionId} failed after retries: ${message ?? 'no detail'}`,
-  )
-  await adoptVersionWithoutReanchoring(deps, job.data.versionId)
+  // Only a run that actually adopted the version is worth an error; the guard cases stay silent.
+  if (await adoptVersionWithoutReanchoring(deps, job.data.versionId)) {
+    const { message } = lastFailure(job.sourceOutput)
+    console.error(
+      `re-anchoring ${job.data.versionId} failed after retries: ${message ?? 'no detail'}; made current without moving anchors`,
+    )
+  }
 }
 
 export async function handleSyncChunkGc(

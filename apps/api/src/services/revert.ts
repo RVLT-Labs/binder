@@ -5,12 +5,14 @@ import {
   type Anchor,
   type AnnotationFields,
   type CueFields,
+  canEditLayer,
   isLayerVisibleTo,
   newId,
+  parseLayerKey,
   type RevertResult,
 } from '@binder/shared'
 import { and, desc, eq } from 'drizzle-orm'
-import { AppError, conflict, IdTaken, invalid, notFound } from '../errors'
+import { AppError, conflict, forbidden, IdTaken, invalid, notFound } from '../errors'
 import { REANCHOR_AGENT } from '../processing/reanchorJob'
 import { hasNoNul } from '../validation'
 import { writeAnchorUnchecked } from './anchorWrites'
@@ -19,6 +21,7 @@ import { createCue, deleteCues, updateCue } from './cues'
 import { updateDepartment } from './departments'
 import { setCurrentVersion, updateDocument } from './documents'
 import type { Executor } from './executor'
+import { getMembershipScope } from './layers'
 import { assertShowWritable, requireShowRole, updateShow } from './tenancy'
 
 type LogRow = typeof changeLog.$inferSelect
@@ -312,6 +315,7 @@ async function revertServerRun(
   opts: { force: boolean },
 ): Promise<Outcome> {
   await requireShowRole(tx, actor, showId, 'editor')
+  const scope = await getMembershipScope(tx, actor, showId)
   for (const row of rows) {
     const known =
       row.tableName === 'cues' || row.tableName === 'annotations' || row.tableName === 'documents'
@@ -322,14 +326,29 @@ async function revertServerRun(
   await lockRows(tx, rows)
   const current = new Map<LogRow, Columns | null>()
   let drifted = 0
+  let outOfScope = 0
   for (const row of rows) {
     const now = await loadCurrent(tx, row)
     current.set(row, now)
-    if (now && driftOf(now, row.after).length > 0) drifted++
+    if (!now || driftOf(now, row.after).length === 0) continue
+    drifted++
+    // An undrifted row is restored for any editor (the run wrote it); overwriting a row that changed
+    // since is a write to that row, so it needs rights on its layer, which only an owner has everywhere.
+    const layer = row.layer ? parseLayerKey(row.layer) : null
+    const mayOverwrite =
+      row.tableName === 'documents' ||
+      scope.role === 'owner' ||
+      (layer !== null && canEditLayer(scope, actor.userId, layer))
+    if (!mayOverwrite) outOfScope++
   }
   if (drifted > 0 && !opts.force) {
     throw conflict(
       `${drifted} ${drifted === 1 ? 'row has' : 'rows have'} changed since this re-anchoring run; revert with force to overwrite`,
+    )
+  }
+  if (outOfScope > 0) {
+    throw forbidden(
+      `${outOfScope} ${outOfScope === 1 ? 'row' : 'rows'} changed since this re-anchoring run on layers you cannot edit; only an owner can force over them`,
     )
   }
 
