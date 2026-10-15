@@ -15,6 +15,7 @@ import { Route as SettingsTokensRouteImport } from './routes/settings.tokens'
 import { Route as ShowsShowIdRouteImport } from './routes/shows.$showId'
 import { Route as ShowsShowIdActivityRouteImport } from './routes/shows.$showId.activity'
 import { Route as ShowsShowIdCuesRouteImport } from './routes/shows.$showId.cues'
+import { Route as ShowsShowIdExportsRouteImport } from './routes/shows.$showId.exports'
 import { Route as ShowsShowIdSettingsRouteImport } from './routes/shows.$showId.settings'
 import { Route as ShowsShowIdDocsDocIdRouteImport } from './routes/shows.$showId.docs.$docId'
 
@@ -48,6 +49,11 @@ const ShowsShowIdCuesRoute = ShowsShowIdCuesRouteImport.update({
   path: '/cues',
   getParentRoute: () => ShowsShowIdRoute,
 } as any)
+const ShowsShowIdExportsRoute = ShowsShowIdExportsRouteImport.update({
+  id: '/exports',
+  path: '/exports',
+  getParentRoute: () => ShowsShowIdRoute,
+} as any)
 const ShowsShowIdSettingsRoute = ShowsShowIdSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/shows/$showId': typeof ShowsShowIdRouteWithChildren
   '/shows/$showId/activity': typeof ShowsShowIdActivityRoute
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
+  '/shows/$showId/exports': typeof ShowsShowIdExportsRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
 }
@@ -76,6 +83,7 @@ export interface FileRoutesByTo {
   '/shows/$showId': typeof ShowsShowIdRouteWithChildren
   '/shows/$showId/activity': typeof ShowsShowIdActivityRoute
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
+  '/shows/$showId/exports': typeof ShowsShowIdExportsRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
 }
@@ -87,6 +95,7 @@ export interface FileRoutesById {
   '/shows/$showId': typeof ShowsShowIdRouteWithChildren
   '/shows/$showId/activity': typeof ShowsShowIdActivityRoute
   '/shows/$showId/cues': typeof ShowsShowIdCuesRoute
+  '/shows/$showId/exports': typeof ShowsShowIdExportsRoute
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRoute
 }
@@ -99,6 +108,7 @@ export interface FileRouteTypes {
     | '/shows/$showId'
     | '/shows/$showId/activity'
     | '/shows/$showId/cues'
+    | '/shows/$showId/exports'
     | '/shows/$showId/settings'
     | '/shows/$showId/docs/$docId'
   fileRoutesByTo: FileRoutesByTo
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/shows/$showId'
     | '/shows/$showId/activity'
     | '/shows/$showId/cues'
+    | '/shows/$showId/exports'
     | '/shows/$showId/settings'
     | '/shows/$showId/docs/$docId'
   id:
@@ -119,6 +130,7 @@ export interface FileRouteTypes {
     | '/shows/$showId'
     | '/shows/$showId/activity'
     | '/shows/$showId/cues'
+    | '/shows/$showId/exports'
     | '/shows/$showId/settings'
     | '/shows/$showId/docs/$docId'
   fileRoutesById: FileRoutesById
@@ -174,6 +186,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShowsShowIdCuesRouteImport
       parentRoute: typeof ShowsShowIdRoute
     }
+    '/shows/$showId/exports': {
+      id: '/shows/$showId/exports'
+      path: '/exports'
+      fullPath: '/shows/$showId/exports'
+      preLoaderRoute: typeof ShowsShowIdExportsRouteImport
+      parentRoute: typeof ShowsShowIdRoute
+    }
     '/shows/$showId/settings': {
       id: '/shows/$showId/settings'
       path: '/settings'
@@ -194,6 +213,7 @@ declare module '@tanstack/react-router' {
 interface ShowsShowIdRouteChildren {
   ShowsShowIdActivityRoute: typeof ShowsShowIdActivityRoute
   ShowsShowIdCuesRoute: typeof ShowsShowIdCuesRoute
+  ShowsShowIdExportsRoute: typeof ShowsShowIdExportsRoute
   ShowsShowIdSettingsRoute: typeof ShowsShowIdSettingsRoute
   ShowsShowIdDocsDocIdRoute: typeof ShowsShowIdDocsDocIdRoute
 }
@@ -201,6 +221,7 @@ interface ShowsShowIdRouteChildren {
 const ShowsShowIdRouteChildren: ShowsShowIdRouteChildren = {
   ShowsShowIdActivityRoute: ShowsShowIdActivityRoute,
   ShowsShowIdCuesRoute: ShowsShowIdCuesRoute,
+  ShowsShowIdExportsRoute: ShowsShowIdExportsRoute,
   ShowsShowIdSettingsRoute: ShowsShowIdSettingsRoute,
   ShowsShowIdDocsDocIdRoute: ShowsShowIdDocsDocIdRoute,
 }

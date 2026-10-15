@@ -1,5 +1,6 @@
 import type { ActivityGroup } from '@binder/shared'
 import { useQuery } from '@powersync/react'
+import { Link } from '@tanstack/react-router'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useSessionUser } from '../auth/session'
 import { ARCHIVED_HINT } from '../markup/MarkupSession'
@@ -9,7 +10,7 @@ import { useOnline } from '../offline/useOnline'
 import type { ShowRow } from '../powersync/schema'
 import { type KindFilter, targetOfGroup, useActivity } from './api'
 import { NeedsConnection } from './NeedsConnection'
-import { dayHeading, formatClock, localDay } from './time'
+import { dayHeading, formatClock, formatWhen, localDay } from './time'
 import { useRevertAction } from './useRevertAction'
 
 const KIND_OPTIONS: Array<{ value: KindFilter; label: string }> = [
@@ -39,7 +40,7 @@ function byDay(groups: ActivityGroup[]): Day[] {
  * The show's activity: what each person or agent changed, a batch at a time, newest first, with a
  * "Revert" on each. Older changes load as the end of the list scrolls into view.
  */
-export function ActivityFeed({ showId }: { showId: string }) {
+export function ActivityFeed({ showId, from }: { showId: string; from?: string }) {
   const online = useOnline()
   const { data: user } = useSessionUser()
   const membership = useMembership(showId)
@@ -50,7 +51,7 @@ export function ActivityFeed({ showId }: { showId: string }) {
   )
   const [layer, setLayer] = useState('')
   const [kind, setKind] = useState<KindFilter>('all')
-  const query = useActivity(showId, { layer: layer || undefined, kind })
+  const query = useActivity(showId, { layer: layer || undefined, kind, from })
   const { revert, pending, dialog } = useRevertAction(showId)
   const ids = useId()
   const reasonId = `${ids}-reason`
@@ -82,6 +83,14 @@ export function ActivityFeed({ showId }: { showId: string }) {
   return (
     <section className="activity" aria-labelledby={`${ids}-heading`}>
       <h1 id={`${ids}-heading`}>Activity</h1>
+      {from && (
+        <p className="muted">
+          Changes since {formatWhen(from)}.{' '}
+          <Link to="/shows/$showId/activity" params={{ showId }} search={{}}>
+            Show all
+          </Link>
+        </p>
+      )}
       <div className="activity-filters">
         <label>
           Layer

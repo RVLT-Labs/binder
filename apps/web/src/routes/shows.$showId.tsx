@@ -40,6 +40,10 @@ function ShowPage() {
         ·{' '}
         <Link to="/shows/$showId/activity" params={{ showId }}>
           Activity
+        </Link>{' '}
+        ·{' '}
+        <Link to="/shows/$showId/exports" params={{ showId }}>
+          Exports
         </Link>
       </p>
       <nav aria-label="Cue lists">

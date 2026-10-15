@@ -15,6 +15,8 @@ export interface ActivityFilters {
   /** A layer key: `department:<id>` or `personal:<userId>`. Absent means every layer. */
   layer?: string
   kind?: KindFilter
+  /** Only changes made at or after this ISO timestamp. */
+  from?: string
 }
 
 export const PAGE_SIZE = 25
@@ -78,7 +80,13 @@ export function useActivity(showId: string, filters: ActivityFilters) {
     readonly unknown[],
     number | null
   >({
-    queryKey: [...historyKey(showId), 'activity', filters.layer ?? '', filters.kind ?? 'all'],
+    queryKey: [
+      ...historyKey(showId),
+      'activity',
+      filters.layer ?? '',
+      filters.kind ?? 'all',
+      filters.from ?? '',
+    ],
     enabled: online,
     initialPageParam: null,
     queryFn: ({ pageParam }) =>
@@ -87,6 +95,7 @@ export function useActivity(showId: string, filters: ActivityFilters) {
           layer: filters.layer,
           // `all` is the route's default: leave it off so the URL stays short.
           kind: filters.kind === 'all' ? undefined : filters.kind,
+          from: filters.from,
           limit: PAGE_SIZE,
           before: pageParam ?? undefined,
         }),

@@ -13,6 +13,7 @@ import { signOutAndClear } from '../auth/signOut'
 import { Notices } from '../components/Notices'
 import { clearNotices } from '../components/noticeStore'
 import { SyncStatus } from '../components/SyncStatus'
+import { clearOutbox } from '../exports/outbox'
 import { clearLocalData, PowerSyncProvider } from '../powersync/provider'
 import type { RouterContext } from '../router'
 
@@ -39,7 +40,7 @@ function RootLayout() {
         </nav>
         <SyncStatus />
         <span className="user">{user.email}</span>
-        <SignOut />
+        <SignOut userId={user.id} />
       </header>
       <Notices />
       <main className="page">
@@ -49,7 +50,7 @@ function RootLayout() {
   )
 }
 
-function SignOut() {
+function SignOut({ userId }: { userId: string }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   return (
@@ -58,6 +59,7 @@ function SignOut() {
       onClick={() =>
         signOutAndClear({
           signOut: () => authClient.signOut(),
+          clearOutbox: () => clearOutbox(userId),
           clearLocalData,
           clearCache: () => {
             clearNotices()

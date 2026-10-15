@@ -2,6 +2,7 @@ import { useQuery } from '@powersync/react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { blobUrl } from '../blobs/fetchBlob'
+import { PrintButton } from '../exports/PrintDialog'
 import { AnnotationHistory, CueHistory } from '../history/HistoryPanel'
 import { AnnotationEditor } from '../markup/AnnotationEditor'
 import { CueEditor } from '../markup/CueEditor'
@@ -107,6 +108,9 @@ function DocumentPage() {
         <Link to="/shows/$showId" params={{ showId }}>
           ← Documents
         </Link>
+        <Link to="/shows/$showId/exports" params={{ showId }}>
+          Exports
+        </Link>
         <h1>{doc.title}</h1>
         {version && (
           <select
@@ -160,7 +164,12 @@ function DocumentPage() {
             initialPage={(p ?? 1) - 1}
             onPageChange={onPageChange}
             renderOverlay={renderOverlay}
-            tools={<MarkupTools />}
+            tools={
+              <>
+                <MarkupTools />
+                <PrintButton />
+              </>
+            }
             side={<MarkupSide showId={showId} />}
           />
         </MarkupSessionProvider>
