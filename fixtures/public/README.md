@@ -13,3 +13,4 @@ redistribution without the header and trademark.
 - `pirates-libretto.pdf`: text PDF (A4, 11 pt, 48 lines per page).
 - `pirates-scan.pdf`: first 8 pages rasterised at 150 dpi, image only (for OCR tests).
 - `mixed.pdf`: A4 portrait text, an A4 page with `/Rotate 90`, a Letter page, and a rasterised page.
+- `offset.pdf`: one A4 page whose media box and crop box start at (50, 50), with `OFFSET` at the visible top-left.

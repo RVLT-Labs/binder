@@ -15,4 +15,6 @@ export const FIXTURES = {
   librettoShortPdf: join(GENERATED_DIR, 'pirates-short.pdf'),
   scanPdf: join(GENERATED_DIR, 'pirates-scan.pdf'),
   mixedPdf: join(GENERATED_DIR, 'mixed.pdf'),
+  /** One A4 page whose media and crop boxes start at (50, 50), with OFFSET at the visible top-left. */
+  offsetPdf: join(GENERATED_DIR, 'offset.pdf'),
 }

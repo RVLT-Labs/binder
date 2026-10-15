@@ -1,6 +1,7 @@
+import { helveticaWidth } from '@binder/core'
 import { fireEvent, render } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
-import { CueMarker, cueAccessibleName, markerTextWidth } from './CueMarker'
+import { CueMarker, cueAccessibleName } from './CueMarker'
 import { SvgText } from './SvgText'
 
 test('SvgText counter-flips so text inside the y-up overlay reads upright', () => {
@@ -15,12 +16,6 @@ test('SvgText counter-flips so text inside the y-up overlay reads upright', () =
   expect(text.getAttribute('transform')).toBe('translate(12 34) scale(1 -1)')
   expect(text.getAttribute('x')).toBeNull()
   expect(text.textContent).toBe('LX 10')
-})
-
-test('marker text width follows Helvetica metrics', () => {
-  // "LX 10": L 556 + X 667 + space 278 + 1 556 + 0 556 = 2613 thousandths of an em.
-  expect(markerTextWidth('LX 10', 10)).toBeCloseTo(26.13)
-  expect(markerTextWidth('', 10)).toBe(0)
 })
 
 const cue = {
@@ -44,7 +39,7 @@ test('a go marker is a solid box in the department colour with its label to the 
   const g = container.querySelector('[data-cue-id="c1"]') as SVGGElement
   expect(g.getAttribute('data-cue-label')).toBe('LX 10.5')
   const box = g.querySelector('rect.cue-marker-box') as SVGRectElement
-  const width = markerTextWidth('LX 10.5', 10) + 8
+  const width = helveticaWidth('LX 10.5', 10) + 8
   expect(box.getAttribute('x')).toBe('100')
   expect(box.getAttribute('y')).toBe('493')
   expect(Number(box.getAttribute('width'))).toBeCloseTo(width)

@@ -33,6 +33,21 @@ export async function makeMixedPdf(): Promise<Uint8Array> {
   return doc.save()
 }
 
+/**
+ * One A4 page whose media box and crop box both start at (50, 50), so displayed coordinates
+ * (relative to the visible box) differ from user-space ones; "OFFSET" sits at the visible top-left.
+ */
+export async function makeOffsetPdf(): Promise<Uint8Array> {
+  const doc = await newDoc()
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const [w, h] = sizeOf('A4')
+  const page = doc.addPage([w, h])
+  page.setMediaBox(50, 50, w, h)
+  page.setCropBox(50, 50, w, h)
+  page.drawText('OFFSET', { x: 50 + 72, y: 50 + h - 100, size: 24, font })
+  return doc.save()
+}
+
 /** The first `count` pages of a PDF, as a new PDF. */
 export async function firstPages(pdfPath: string, count: number): Promise<Uint8Array> {
   const src = await PDFDocument.load(await readFile(pdfPath), { updateMetadata: false })
@@ -73,6 +88,7 @@ async function generate(): Promise<void> {
     await rasterisePages(FIXTURES.librettoPdf, [1, 2, 3, 4, 5, 6, 7, 8], 150),
   )
   await publish(FIXTURES.mixedPdf, await makeMixedPdf())
+  await publish(FIXTURES.offsetPdf, await makeOffsetPdf())
   await publish(FIXTURES.librettoShortPdf, await firstPages(FIXTURES.librettoPdf, 3))
 }
 
@@ -85,9 +101,13 @@ let inflight: Promise<typeof FIXTURES> | undefined
 export function ensureFixtures(): Promise<typeof FIXTURES> {
   inflight ??= (async () => {
     const present = await Promise.all(
-      [FIXTURES.librettoPdf, FIXTURES.scanPdf, FIXTURES.mixedPdf, FIXTURES.librettoShortPdf].map(
-        exists,
-      ),
+      [
+        FIXTURES.librettoPdf,
+        FIXTURES.scanPdf,
+        FIXTURES.mixedPdf,
+        FIXTURES.offsetPdf,
+        FIXTURES.librettoShortPdf,
+      ].map(exists),
     )
     if (!present.every(Boolean)) await generate()
     return FIXTURES

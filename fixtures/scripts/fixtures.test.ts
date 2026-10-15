@@ -51,3 +51,21 @@ test('mixed.pdf: rotated page displays landscape with ROTATED top-left; page 3 i
   expect(p3.width).toBeCloseTo(612, 0)
   expect(p3.height).toBeCloseTo(792, 0)
 })
+
+test('offset.pdf: one A4 page whose boxes start at (50, 50), OFFSET at the visible top-left', async () => {
+  const f = await ensureFixtures()
+  expect(await pageCount(f.offsetPdf)).toBe(1)
+  const { stdout: info } = await run('pdfinfo', ['-box', f.offsetPdf])
+  expect(info).toMatch(/MediaBox:\s+50\.00\s+50\.00\s+/)
+  expect(info).toMatch(/CropBox:\s+50\.00\s+50\.00\s+/)
+  const { stdout } = await run('pdftotext', ['-bbox-layout', f.offsetPdf, '-'])
+  const w = stdout.match(
+    /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">OFFSET<\/word>/,
+  )
+  if (!w) throw new Error('OFFSET not found')
+  const [xMin, yMin] = w.slice(1).map(Number) as [number, number]
+  // Displayed coordinates are relative to the visible box: 72 from the left, ~100 from the top.
+  expect(xMin).toBeCloseTo(72, 0)
+  expect(yMin).toBeLessThan(100)
+  expect(yMin).toBeGreaterThan(60)
+}, 120_000)

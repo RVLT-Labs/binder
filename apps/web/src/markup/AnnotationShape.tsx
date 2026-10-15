@@ -1,18 +1,27 @@
+import {
+  type Box,
+  DEFAULT_NOTE_FONT,
+  DEFAULT_STAMP_FONT,
+  DEFAULT_STROKE,
+  helveticaWidth,
+  NOTE_LINE_HEIGHT as LINE_HEIGHT,
+  NOTE_MAX_WIDTH,
+  ANNOTATION_PAD as PAD,
+  UNBOUND_FONT,
+  unboundSnippet,
+  wordBoxes,
+  wrapText,
+} from '@binder/core'
 import type { AnnotationType, WordLayer } from '@binder/shared'
 import type { KeyboardEvent, PointerEventHandler, ReactNode } from 'react'
-import { markerTextWidth } from './CueMarker'
 import type { AnnotationRow } from './markupView'
 import { fromAnnotationRow } from './mutations'
 import { SvgText } from './SvgText'
-import { type Box, highlightBoxes } from './wordRange'
 
 const FONT_FAMILY = 'Helvetica, Arial, sans-serif'
-export const DEFAULT_STROKE = 1.5
-export const DEFAULT_NOTE_FONT = 10
-export const DEFAULT_STAMP_FONT = 12
-const NOTE_MAX_WIDTH = 160
-const PAD = 4
-const LINE_HEIGHT = 1.25
+
+export { DEFAULT_NOTE_FONT, DEFAULT_STAMP_FONT, DEFAULT_STROKE, wrapText }
+
 const NAME_WORDS = 5
 
 /** The parts of an annotation row a shape draws; geometry and style are parsed. */
@@ -52,25 +61,6 @@ const firstWords = (text: string): string => {
 export function annotationAccessibleName(a: ShapeAnnotation, layerName: string): string {
   const detail = firstWords(a.type === 'highlight' ? (a.anchor.text?.quote ?? '') : a.text)
   return `${layerName} ${a.type}${detail ? `: ${detail}` : ''}, page ${a.anchor.pageIndex + 1}`
-}
-
-/** Greedy word wrap at `maxWidth` points in Helvetica; a new line starts a paragraph. */
-export function wrapText(text: string, size: number, maxWidth: number): string[] {
-  const lines: string[] = []
-  for (const paragraph of text.split('\n')) {
-    let line = ''
-    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-      const candidate = line ? `${line} ${word}` : word
-      if (line && markerTextWidth(candidate, size) > maxWidth) {
-        lines.push(line)
-        line = word
-      } else {
-        line = candidate
-      }
-    }
-    lines.push(line)
-  }
-  return lines
 }
 
 /** The three points of an arrowhead whose tip is (x2, y2) on a line from (x1, y1). */
@@ -161,7 +151,7 @@ function drawLine(a: ShapeAnnotation, colour: string, sw: number): Drawn {
 function drawNote(a: ShapeAnnotation, colour: string): Drawn {
   const size = a.style.fontSize ?? DEFAULT_NOTE_FONT
   const lines = wrapText(a.text, size, NOTE_MAX_WIDTH)
-  const textWidth = Math.max(...lines.map((l) => markerTextWidth(l, size)))
+  const textWidth = Math.max(...lines.map((l) => helveticaWidth(l, size)))
   const lineHeight = size * LINE_HEIGHT
   const w = textWidth + PAD * 2 + 3
   const h = lines.length * lineHeight + PAD * 2
@@ -204,7 +194,7 @@ function drawNote(a: ShapeAnnotation, colour: string): Drawn {
 
 function drawStamp(a: ShapeAnnotation, colour: string, sw: number): Drawn {
   const size = a.style.fontSize ?? DEFAULT_STAMP_FONT
-  const w = markerTextWidth(a.text, size) + PAD * 3
+  const w = helveticaWidth(a.text, size) + PAD * 3
   const h = size + PAD * 2
   // A stamp sits centred on the point it was placed at.
   const box = { x: a.anchor.x - w / 2, y: a.anchor.y - h / 2, w, h }
@@ -239,12 +229,9 @@ function drawStamp(a: ShapeAnnotation, colour: string, sw: number): Drawn {
   }
 }
 
-const UNBOUND_FONT = 8
-const UNBOUND_CHARS = 24
-
 function drawHighlight(a: ShapeAnnotation, colour: string, words: WordLayer | null): Drawn {
   const text = a.anchor.text
-  const boxes = words && text ? highlightBoxes(words, text) : []
+  const boxes = words && text ? wordBoxes(words, text) : []
   if (boxes.length > 0) {
     const left = Math.min(...boxes.map((b) => b.x))
     const bottom = Math.min(...boxes.map((b) => b.y))
@@ -272,8 +259,8 @@ function drawHighlight(a: ShapeAnnotation, colour: string, words: WordLayer | nu
   }
   // Re-anchoring could not bind the words (or the page's words are not here): a dashed marker.
   const quote = text?.quote ?? ''
-  const snippet = quote.length > UNBOUND_CHARS ? `${quote.slice(0, UNBOUND_CHARS)}…` : quote
-  const w = markerTextWidth(snippet, UNBOUND_FONT) + 8
+  const snippet = unboundSnippet(quote)
+  const w = helveticaWidth(snippet, UNBOUND_FONT) + 8
   const h = 12
   const box = { x: a.anchor.x, y: a.anchor.y - h / 2, w, h }
   return {

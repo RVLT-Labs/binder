@@ -17,6 +17,20 @@ export { renumberByBlocks } from './cues/renumber'
 export type { SummaryRow } from './history/summarise'
 export { actorLabel, summariseBatch } from './history/summarise'
 export { columnEqual, jsonEqual } from './json/jsonEqual'
+export {
+  ANNOTATION_PAD,
+  DEFAULT_NOTE_FONT,
+  DEFAULT_STAMP_FONT,
+  DEFAULT_STROKE,
+  MARKER_FONT_SIZE,
+  NOTE_LINE_HEIGHT,
+  NOTE_MAX_WIDTH,
+  UNBOUND_CHARS,
+  UNBOUND_FONT,
+  unboundSnippet,
+  wrapText,
+} from './markup/annotationLayout'
+export { helveticaWidth } from './markup/helvetica'
 export type { Box, MarkerStyle } from './markup/markers'
 export {
   cueMarkerBox,
@@ -25,6 +39,14 @@ export {
   markerStyle,
   markerText,
 } from './markup/markers'
+export { wordBoxes } from './markup/wordBoxes'
+export type { FooterInfo } from './print/footer'
+export { footerText, layerSelectionLabel } from './print/footer'
+export type { StampInput, StampItem } from './print/stampItems'
+export { buildStampItems } from './print/stampItems'
+export type { PageFrame } from './print/stampScript'
+export { displayedToUser, stampScript } from './print/stampScript'
+export { toWinAnsi } from './print/winAnsi'
 export { normaliseToken } from './search/normalise'
 export type { DocHit, Hit } from './search/search'
 export { searchDocument, searchWordLayer } from './search/search'
