@@ -479,11 +479,11 @@ describe('trigger underline and connector', () => {
     expect(one(cue('a', { side: 'right', triggerBoxes: [nearRight] })).leader).toBeNull()
   })
 
-  test('an unbound cue has an 8 point tick from 4 above its anchor to 7 below, the connector at its bottom', () => {
+  test('an unbound cue has an 11 point tick from 4 above its anchor to 7 below, the connector at its bottom', () => {
     const t = one(cue('a', { anchorX: 250 }))
     expect(t.triggerBoxes).toEqual([])
     expect(t.underlines).toEqual([])
-    expect(t.tick).toEqual({ x: 250, y1: 493, y2: 501 })
+    expect(t.tick).toEqual({ x: 250, y1: 493, y2: 504 })
     expect(t.leader).toEqual([
       { x: expect.closeTo(t.tag.x + t.tag.w - TAG_RADIUS), y: 493 },
       { x: 250, y: 493 },

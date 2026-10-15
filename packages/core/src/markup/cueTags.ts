@@ -26,8 +26,8 @@ export const SELECTED_FILL_OPACITY = 0.1
 export const LEADER_WIDTH = 0.75
 /** A connector that has to jog turns in a gutter this far into the margin from the text block. */
 export const LEADER_GUTTER = 2
-export const TICK_HEIGHT = 8
-/** The tick reaches this far below the anchor, clear of the glyphs; the rest of its height is above. */
+export const TICK_HEIGHT = 11
+/** The tick reaches this far below the anchor, clear of the glyphs; the other 4 pt are above it. */
 const TICK_BELOW = 7
 /** Leaders of several cues on one line run this far apart, so they separate in black and white. */
 export const LEADER_STEP = 1.5

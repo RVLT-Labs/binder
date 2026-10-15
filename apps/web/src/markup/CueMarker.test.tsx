@@ -202,7 +202,7 @@ test('an unbound cue has a tick at its anchor instead of an underline', () => {
   const tick = trigger.querySelector('line.cue-tick') as SVGLineElement
   expect(tick.getAttribute('x1')).toBe('100')
   expect(tick.getAttribute('y1')).toBe('493')
-  expect(tick.getAttribute('y2')).toBe('501')
+  expect(tick.getAttribute('y2')).toBe('504')
   expect(trigger.querySelector('polyline.cue-leader')).not.toBeNull()
 })
 
