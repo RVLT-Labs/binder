@@ -85,9 +85,20 @@ export const annotationObjectSchema = z.object({
 export const annotationPatchSchema = annotationObjectSchema.partial()
 
 /**
+ * A highlight that re-anchoring left unbound (-1, -1, status `unresolved`). Creating one is allowed so
+ * that reverting its deletion, or a personal undo re-inserting it, is not refused; any other create
+ * needs a bound word range.
+ */
+function isUnboundRestore(anchor: z.infer<typeof anchorSchema>): boolean {
+  return (
+    anchor.status === 'unresolved' && anchor.text?.wordStart === -1 && anchor.text.wordEnd === -1
+  )
+}
+
+/**
  * The cross-field rules: geometry fits the type, a note has text, a stamp 1 to 40 characters, a
- * highlight an anchor text range. `wordStart >= 0` is enforced on create only: re-anchoring can leave
- * a highlight unbound (-1, -1), and accepting or moving it must still validate.
+ * highlight an anchor text range. `wordStart >= 0` is enforced on create only (bar the unbound restore
+ * above): re-anchoring can leave a highlight unbound (-1, -1), and accepting or moving it must still validate.
  */
 export function annotationFieldsSchema(mode: 'create' | 'update') {
   return annotationObjectSchema.superRefine((a, ctx) => {
@@ -107,7 +118,7 @@ export function annotationFieldsSchema(mode: 'create' | 'update') {
     if (a.type === 'highlight') {
       if (!a.anchor.text) {
         ctx.addIssue({ code: 'custom', path: ['anchor'], message: 'a highlight needs anchor text' })
-      } else if (mode === 'create' && a.anchor.text.wordStart < 0) {
+      } else if (mode === 'create' && a.anchor.text.wordStart < 0 && !isUnboundRestore(a.anchor)) {
         ctx.addIssue({
           code: 'custom',
           path: ['anchor', 'text', 'wordStart'],

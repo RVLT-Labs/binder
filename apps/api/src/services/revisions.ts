@@ -1,7 +1,7 @@
 import {
   columnEqual,
   compareReadingOrder,
-  diffVersionLines,
+  diffVersionLinesBounded,
   formatCueNumber,
   type LineDiffEntry,
   reanchor,
@@ -25,7 +25,7 @@ import { hasNoNul } from '../validation'
 import { type Annotation, loadAnnotationRow, updateAnnotation } from './annotations'
 import { type Cue, loadCueRow, updateCue } from './cues'
 import type { Executor } from './executor'
-import { visibleTo } from './history'
+import { visibleAnnotationsTo, visibleTo } from './history'
 import { requireLayerEdit } from './layers'
 import { requireShowRole } from './tenancy'
 import { loadVersionText } from './wordLayers'
@@ -40,6 +40,8 @@ export const COMPARE_DEFAULT_LIMIT = 2000
 export const COMPARE_MAX_LIMIT = 10000
 export const COMPARE_DEFAULT_CONTEXT = 2
 export const COMPARE_MAX_CONTEXT = 20
+/** The most differing lines a server compare works out before giving up (a near-total rewrite). */
+const COMPARE_MAX_EDITS = 4000
 
 /** How many words of an annotation's text or highlight quote a review title carries. */
 const TITLE_WORDS = 6
@@ -127,10 +129,7 @@ async function candidates(db: Executor, actor: Actor, documentId: string, showId
       and(
         eq(annotations.showId, showId),
         sql`${annotations.anchor}->>'documentId' = ${documentId}`,
-        or(
-          eq(annotations.layerKind, 'department'),
-          and(eq(annotations.layerKind, 'personal'), eq(annotations.layerId, actor.userId)),
-        ),
+        visibleAnnotationsTo(actor),
       ),
     )
 
@@ -510,7 +509,11 @@ export async function compareDocumentVersions(
     loadVersionText(db, blobs, from.id),
     loadVersionText(db, blobs, to.id),
   ])
-  const { entries, added, removed } = diffVersionLines(fromText, toText)
+  // Two near-total rewrites of a long script would hold the event loop for seconds, so the diff
+  // gives up past this many differing lines (the web compares with the same bounded form).
+  const diff = diffVersionLinesBounded(fromText, toText, COMPARE_MAX_EDITS)
+  if (!diff) throw invalid('Too many changes to compare line by line.')
+  const { entries, added, removed } = diff
 
   // The changed entries that fit, then them and their unchanged neighbours.
   const changed = entries.flatMap((e, i) => (e.op === 'same' ? [] : [i]))

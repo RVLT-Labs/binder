@@ -165,13 +165,20 @@ test('an editor writes only on their scoped departments and their own personal l
   await expect(deleteAnnotation(db, lxEditor, theirs)).rejects.toMatchObject({ code: 'forbidden' })
   expect(all('SELECT * FROM annotations')).toEqual(snapshot)
   expect(groups).toEqual([])
-  // Its own: moving to its personal layer and back is fine.
-  await updateAnnotation(db, lxEditor, lx, { layerKind: 'personal', layerId: 'u1' })
+  // Shared markup never moves onto a personal layer (it would vanish from everyone else): refused
+  // before anything is written, so nothing queues for upload.
+  await expect(
+    updateAnnotation(db, lxEditor, lx, { layerKind: 'personal', layerId: 'u1' }),
+  ).rejects.toMatchObject({ code: 'invalid', message: 'Copy it to your personal layer instead.' })
+  expect(all('SELECT * FROM annotations')).toEqual(snapshot)
+  expect(groups).toEqual([])
+  // Its own personal note is editable, and publishing it to a department it may edit is fine.
   await updateAnnotation(db, lxEditor, mine, { text: 'mine' })
-  await deleteAnnotation(db, lxEditor, mine)
-  expect(all('SELECT layer_kind FROM annotations WHERE id = ?'.replace('?', `'${lx}'`))).toEqual([
-    { layer_kind: 'personal' },
+  await updateAnnotation(db, lxEditor, mine, { layerKind: 'department', layerId: 'lx' })
+  expect(all('SELECT layer_kind FROM annotations WHERE id = ?'.replace('?', `'${mine}'`))).toEqual([
+    { layer_kind: 'department' },
   ])
+  await deleteAnnotation(db, lxEditor, mine)
 })
 
 test('a viewer may write on their own personal layer only', async () => {

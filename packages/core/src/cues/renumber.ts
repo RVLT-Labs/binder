@@ -8,6 +8,12 @@ export interface RenumberCue {
   anchor: { pageIndex: number; y: number } | null
   /** The scene or song resolved from the anchor (spec 4.5), or null when none resolves. */
   groupKey: string | null
+  /**
+   * True when the anchor is not on the document's current version. Those cues are numbered after
+   * the current ones (each set in its own reading order), because a page and y on an older version
+   * say nothing about where the cue falls on the current one.
+   */
+  stale?: boolean
 }
 
 export interface RenumberResult {
@@ -18,7 +24,8 @@ export interface RenumberResult {
 const MAX_MINOR = 99
 
 /**
- * "Renumber from script order" (spec 4.5): cues in reading order are grouped by scene or song, each
+ * "Renumber from script order" (spec 4.5): cues in reading order (current-version cues first, then
+ * any left on an older version) are grouped by scene or song, each
  * group starts at the next multiple of the block size and takes consecutive integers; cues that do
  * not fit spill into points of the block's last integer and are flagged. Unplaced cues and the 0
  * range (line checks) are untouched, and cues whose number would not change are not in `changes`.
@@ -36,10 +43,12 @@ export function renumberByBlocks(
     .filter((c) => c.anchor !== null && c.major > 0)
     .sort(
       (a, b) =>
+        Number(a.stale === true) - Number(b.stale === true) ||
         compareReadingOrder(
           a.anchor as { pageIndex: number; y: number },
           b.anchor as { pageIndex: number; y: number },
-        ) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+        ) ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     )
 
   const runs: RenumberCue[][] = []

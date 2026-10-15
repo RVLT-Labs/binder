@@ -8,14 +8,28 @@ export interface SignOutDeps {
   clearOutbox: () => Promise<void>
   clearCache: () => void
   toLogin: () => Promise<void>
+  /** How many local changes are still queued for upload (`ps_crud`); signing out would discard them. */
+  pendingUploads: () => Promise<number>
+  /** Asks the user a yes/no question (the browser's `confirm`). */
+  confirm: (message: string) => boolean | Promise<boolean>
 }
 
 /**
- * Ends the session on the server first. Only once that succeeds are local rows, queued uploads (sync writes and
+ * Asks first when changes are still waiting to upload (clearing the local database would lose them).
+ * Then ends the session on the server first. Only once that succeeds are local rows, queued uploads (sync writes and
  * pending exports) and cached queries thrown away; if it fails (offline, 5xx) the user stays signed in with everything
  * intact and is told why.
  */
 export async function signOutAndClear(deps: SignOutDeps): Promise<void> {
+  // A queue that cannot be counted must not strand the sign-out.
+  const pending = await deps.pendingUploads().catch((err) => {
+    console.error('could not count pending uploads', err)
+    return 0
+  })
+  if (pending > 0) {
+    const what = pending === 1 ? '1 change hasn' : `${pending} changes haven`
+    if (!(await deps.confirm(`${what}'t uploaded yet. Sign out anyway?`))) return
+  }
   let failure: string | undefined
   try {
     const { error } = await deps.signOut()

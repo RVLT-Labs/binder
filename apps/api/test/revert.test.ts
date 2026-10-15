@@ -338,6 +338,38 @@ describe('revertChange: inserts and deletes', () => {
   })
 })
 
+describe('revertChange: unbound highlights', () => {
+  test('reverting the delete of a re-anchored (unbound, unresolved) highlight re-creates it', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const bound = await createAnnotation(db, s.actors.owner, {
+      showId: s.show.id,
+      ...noteFields(s, lx(s), {
+        type: 'highlight',
+        text: '',
+        anchor: {
+          ...anchorAt(s.docId, s.versionId, 1),
+          text: { quote: 'to be or', wordStart: 4, wordEnd: 6 },
+        },
+      }),
+    })
+    // Re-anchoring left it unbound and unresolved (written as the re-anchor job would).
+    const unbound = {
+      ...bound.anchor,
+      status: 'unresolved' as const,
+      text: { quote: 'to be or', wordStart: -1, wordEnd: -1 },
+    }
+    await db.update(annotations).set({ anchor: unbound }).where(eq(annotations.id, bound.id))
+    await deleteAnnotations(db, s.actors.owner, { annotationIds: [bound.id] })
+    await revertChange(db, s.actors.owner, { seq: await lastSeq(s, bound.id, 'delete') })
+    expect(await getAnnotation(db, s.actors.owner, { annotationId: bound.id })).toMatchObject({
+      id: bound.id,
+      type: 'highlight',
+      anchor: { status: 'unresolved', text: { wordStart: -1, wordEnd: -1 } },
+    })
+  })
+})
+
 describe('revertChange: other tables', () => {
   test('department, document, and show updates revert; their inserts and deletes do not', async () => {
     const s = await setupMarkupShow()

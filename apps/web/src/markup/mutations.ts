@@ -396,6 +396,10 @@ export async function updateAnnotation(
     const merged = { ...current, ...defined }
     // Re-anchoring can leave a highlight unbound, so a stored row is held to the update rules.
     assertValidAnnotation(merged, 'update')
+    // The server refuses this too: shared markup moved onto a personal layer would vanish for everyone else.
+    if (current.layerKind === 'department' && merged.layerKind === 'personal') {
+      throw new MarkupError('invalid', 'Copy it to your personal layer instead.')
+    }
     assertCanEditAnnotationLayer(ctx, merged.layerKind, merged.layerId)
     const next = toAnnotationRow(merged)
     const jsonCols = JSON_COLUMNS.annotations

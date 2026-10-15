@@ -9,12 +9,13 @@ import {
   layerKey,
   newId,
 } from '@binder/shared'
-import { and, eq, type InferSelectModel, inArray, or, type SQL, sql } from 'drizzle-orm'
+import { and, eq, type InferSelectModel, inArray, type SQL, sql } from 'drizzle-orm'
 import { AppError, forbidden, IdTaken, invalid, notFound } from '../errors'
 import { hasNoNul, parseOrInvalid } from '../validation'
 import { logChange } from './changeLog'
 import { assertAnchorTarget } from './cues'
 import type { Executor } from './executor'
+import { visibleAnnotationsTo } from './history'
 import { requireLayerEdit } from './layers'
 import { requireShowRole } from './tenancy'
 
@@ -145,6 +146,11 @@ export async function updateAnnotation(
     patch: Partial<AnnotationFields>
     batchId?: string
     clientTs?: Date
+    /**
+     * Internal (the revert service only): lets a department annotation go back to a personal layer,
+     * which is what reverting its owner's own publish does. Never set from the API, MCP or sync.
+     */
+    allowDemote?: boolean
   },
 ): Promise<Annotation> {
   const batchId = input.batchId ?? newId()
@@ -175,6 +181,15 @@ export async function updateAnnotation(
     if (Object.keys(after).length === 0) return current
 
     if (after.layerKind !== undefined || after.layerId !== undefined) {
+      // Moving shared markup onto a personal layer would pull it out of everyone else's stream and
+      // history (the change is logged on the personal layer, which only its owner reads), with no undo.
+      if (
+        current.layerKind === 'department' &&
+        merged.layerKind === 'personal' &&
+        !input.allowDemote
+      ) {
+        throw invalid('Copy it to your personal layer instead.')
+      }
       await requireWritableLayer(tx, actor, current.showId, layerRef(merged))
     }
     if (after.anchor) await assertAnchorTarget(tx, current.showId, merged.anchor)
@@ -267,11 +282,10 @@ export async function listAnnotations(
   if (input.layer?.kind === 'personal' && input.layer.id !== actor.userId) {
     throw notFound('Layer not found')
   }
-  const visible = or(
-    eq(annotations.layerKind, 'department'),
-    and(eq(annotations.layerKind, 'personal'), eq(annotations.layerId, actor.userId)),
-  )
-  const filters: (SQL | undefined)[] = [eq(annotations.showId, input.showId), visible]
+  const filters: (SQL | undefined)[] = [
+    eq(annotations.showId, input.showId),
+    visibleAnnotationsTo(actor),
+  ]
   if (input.layer) {
     filters.push(
       eq(annotations.layerKind, input.layer.kind),

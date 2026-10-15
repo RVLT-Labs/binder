@@ -163,6 +163,20 @@ describe('annotationFieldsSchema', () => {
     expect(ok(update, highlight)).toBe(false)
     expect(ok(create, { ...highlight, anchor: highlightAnchor(4, 6) })).toBe(true)
     expect(ok(create, { ...highlight, anchor: highlightAnchor(-1, -1) })).toBe(false)
+    expect(ok(create, { ...highlight, anchor: highlightAnchor(-1, 6) })).toBe(false)
+    // Restoring a deleted highlight that re-anchoring left unbound: the -1/-1 range, status unresolved.
+    expect(
+      ok(create, {
+        ...highlight,
+        anchor: { ...highlightAnchor(-1, -1), status: 'unresolved' },
+      }),
+    ).toBe(true)
+    expect(
+      ok(create, {
+        ...highlight,
+        anchor: { ...highlightAnchor(-1, -1), status: 'approximate' },
+      }),
+    ).toBe(false)
     expect(ok(update, { ...highlight, anchor: highlightAnchor(-1, -1) })).toBe(true)
     expect(ok(update, { ...highlight, anchor: highlightAnchor(4, 6) })).toBe(true)
   })

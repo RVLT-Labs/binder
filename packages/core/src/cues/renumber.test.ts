@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { renumberByBlocks } from './renumber'
+import { type RenumberCue, renumberByBlocks } from './renumber'
 
 const at = (
   id: string,
@@ -136,4 +136,30 @@ test('a group of blockSize + 150 has one more overflow cue and the same distinct
   const minors = r.changes.slice(10).map((c) => c.minor)
   expect(minors).toEqual(Array.from({ length: 99 }, (_, i) => i + 1))
   expect(r.flagged.filter((f) => f.reason === 'overflow')).toHaveLength(51)
+})
+
+test('cues left on an older version come after the current ones, each group in its own reading order', () => {
+  // The stale cues sit earlier on the page than the current ones; they must not interleave.
+  const stale = (id: string, page: number, y: number): RenumberCue => ({
+    ...at(id, page, y),
+    stale: true,
+  })
+  const cues: RenumberCue[] = [
+    stale('s2', 0, 500),
+    at('c2', 3, 100),
+    stale('s1', 0, 800),
+    at('c1', 2, 700),
+    stale('s3', 4, 900),
+  ]
+  expect(nums(renumberByBlocks(cues))).toEqual([
+    'c1:10.0',
+    'c2:11.0',
+    's1:12.0',
+    's2:13.0',
+    's3:14.0',
+  ])
+  // Without any stale flag the order is the plain reading order.
+  expect(
+    nums(renumberByBlocks(cues.map(({ stale: _stale, ...c }) => c))).map((n) => n.split(':')[0]),
+  ).toEqual(['s1', 's2', 'c1', 'c2', 's3'])
 })

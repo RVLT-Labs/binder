@@ -177,19 +177,31 @@ test('a stamp no longer in the set is still shown as it is', () => {
   expect(stamp.options).toHaveLength(4)
 })
 
-test('the layer is chosen among the layers the user can edit', () => {
-  const { getByLabelText } = render(<AnnotationEditor annotationId="a1" />)
+test('a department annotation offers the department layers only; a personal one offers them all', () => {
+  const { getByLabelText, rerender } = render(<AnnotationEditor annotationId="a1" />)
   const layer = getByLabelText('Layer') as HTMLSelectElement
-  expect([...layer.options].map((o) => o.value)).toEqual([
+  // Shared markup cannot move onto a personal layer (the server refuses it).
+  expect([...layer.options].map((o) => o.value)).toEqual(['department:lx', 'department:snd'])
+  expect(layer.value).toBe('department:lx')
+  fireEvent.change(layer, { target: { value: 'department:snd' } })
+  expect(session.editAnnotation).toHaveBeenCalledWith('a1', {
+    layerKind: 'department',
+    layerId: 'snd',
+  })
+
+  row = make({ layer_kind: 'personal', layer_id: 'u1' })
+  rerender(<AnnotationEditor annotationId="a1" />)
+  const mine = getByLabelText('Layer') as HTMLSelectElement
+  expect([...mine.options].map((o) => o.value)).toEqual([
     'department:lx',
     'department:snd',
     'personal:u1',
   ])
-  expect(layer.value).toBe('department:lx')
-  fireEvent.change(layer, { target: { value: 'personal:u1' } })
-  expect(session.editAnnotation).toHaveBeenCalledWith('a1', {
-    layerKind: 'personal',
-    layerId: 'u1',
+  expect(mine.value).toBe('personal:u1')
+  fireEvent.change(mine, { target: { value: 'department:lx' } })
+  expect(session.editAnnotation).toHaveBeenLastCalledWith('a1', {
+    layerKind: 'department',
+    layerId: 'lx',
   })
 })
 

@@ -22,7 +22,11 @@ export interface CueNumberRow {
  * The department's cues anchored in the document, as `renumberByBlocks` takes them. M1 has no
  * script items, so no cue resolves to a scene or song and every group key is null.
  */
-export function renumberCuesOf(rows: readonly CueNumberRow[], documentId: string): RenumberCue[] {
+export function renumberCuesOf(
+  rows: readonly CueNumberRow[],
+  documentId: string,
+  currentVersionId?: string | null,
+): RenumberCue[] {
   const out: RenumberCue[] = []
   for (const row of rows) {
     let anchor: unknown = null
@@ -31,7 +35,12 @@ export function renumberCuesOf(rows: readonly CueNumberRow[], documentId: string
     } catch {
       // an unreadable anchor is an unplaced cue here
     }
-    const a = anchor as { documentId?: unknown; pageIndex?: unknown; y?: unknown } | null
+    const a = anchor as {
+      documentId?: unknown
+      documentVersionId?: unknown
+      pageIndex?: unknown
+      y?: unknown
+    } | null
     const placed =
       a !== null &&
       a.documentId === documentId &&
@@ -43,6 +52,7 @@ export function renumberCuesOf(rows: readonly CueNumberRow[], documentId: string
       minor: Number(row.minor),
       anchor: placed ? { pageIndex: a.pageIndex as number, y: a.y as number } : null,
       groupKey: null,
+      stale: placed && !!currentVersionId && a.documentVersionId !== currentVersionId,
     })
   }
   return out
@@ -53,8 +63,9 @@ export function previewRenumber(
   rows: readonly CueNumberRow[],
   documentId: string,
   blockSize: number,
+  currentVersionId?: string | null,
 ): RenumberResult {
-  return renumberByBlocks(renumberCuesOf(rows, documentId), { blockSize })
+  return renumberByBlocks(renumberCuesOf(rows, documentId, currentVersionId), { blockSize })
 }
 
 /**
@@ -70,7 +81,16 @@ export async function renumberLocally(
     'SELECT id, major, minor, anchor FROM cues WHERE show_id = ? AND department_id = ?',
     [ctx.showId, target.departmentId],
   )
-  const result = previewRenumber(rows, target.documentId, target.blockSize)
+  const current = await db.getAll<{ current_version_id: string | null }>(
+    'SELECT current_version_id FROM documents WHERE id = ?',
+    [target.documentId],
+  )
+  const result = previewRenumber(
+    rows,
+    target.documentId,
+    target.blockSize,
+    current[0]?.current_version_id,
+  )
   if (result.changes.length > 0) {
     await updateCues(
       db,

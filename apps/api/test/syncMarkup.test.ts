@@ -911,6 +911,65 @@ describe('annotations', () => {
     expect((await logRows(id)).map((l) => l.op)).toEqual(['insert', 'delete'])
   })
 
+  test('a PUT of an unbound unresolved highlight (a personal undo re-insert) applies; an unbound approximate one is invalid', async () => {
+    const s = await setup()
+    const { db, viewer, viewerSync, annRows } = s
+    const unbound = (status: string) =>
+      highlight(s, {
+        anchor: JSON.stringify({
+          ...anchorAt(s.docId, s.versionId, 3),
+          status,
+          text: { quote: 'to be or', wordStart: -1, wordEnd: -1 },
+        }),
+      })
+    const ok = newId()
+    const bad = newId()
+    const r = await applyCrudBatch(db, viewerSync, {
+      batchId: `${viewer.id}:undo-1`,
+      entries: [
+        put('annotations', ok, unbound('unresolved')),
+        put('annotations', bad, unbound('approximate')),
+      ],
+    })
+    expect(r.applied).toBe(1)
+    expect(r.rejected.map((x) => [x.index, x.reason])).toEqual([[1, 'invalid']])
+    expect((await annRows(ok))[0].anchor).toMatchObject({
+      status: 'unresolved',
+      text: { wordStart: -1, wordEnd: -1 },
+    })
+    expect(await annRows(bad)).toHaveLength(0)
+  })
+
+  test('a PATCH or re-PUT that moves a department annotation onto the personal layer is rejected invalid and the row is unchanged', async () => {
+    const s = await setup()
+    const { db, editorLx, editorLxSync, annRow, annRows, logRows } = s
+    const id = newId()
+    expect(
+      await applyCrudBatch(db, editorLxSync, {
+        batchId: `${editorLx.id}:mv-1`,
+        entries: [put('annotations', id, annRow())],
+      }),
+    ).toEqual({ applied: 1, rejected: [] })
+    const logs = (await logRows(id)).length
+    const r = await applyCrudBatch(db, editorLxSync, {
+      batchId: `${editorLx.id}:mv-2`,
+      entries: [
+        patch('annotations', id, { layer_kind: 'personal', layer_id: editorLx.id }),
+        put('annotations', id, annRow({ layer_kind: 'personal', layer_id: editorLx.id })),
+      ],
+    })
+    expect(r.applied).toBe(0)
+    expect(r.rejected.map((x) => [x.index, x.reason])).toEqual([
+      [0, 'invalid'],
+      [1, 'invalid'],
+    ])
+    expect((await annRows(id))[0]).toMatchObject({
+      layerKind: 'department',
+      layerId: s.depts.LX.id,
+    })
+    expect(await logRows(id)).toHaveLength(logs)
+  })
+
   test("a viewer cannot PUT onto another user's personal layer or a department layer", async () => {
     const s = await setup()
     const { db, viewer, viewerSync, annRow, annRows } = s

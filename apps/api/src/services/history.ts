@@ -1,5 +1,5 @@
 import { actorLabel, type SummaryRow, summariseBatch } from '@binder/core'
-import { changeLog, departments, user } from '@binder/db'
+import { annotations, changeLog, departments, user } from '@binder/db'
 import {
   type ActivityGroup,
   type Actor,
@@ -9,7 +9,7 @@ import {
   parseLayerKey,
   redactPersonalLayer,
 } from '@binder/shared'
-import { and, desc, eq, gte, isNotNull, isNull, lt, type SQL, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, isNotNull, isNull, lt, or, type SQL, sql } from 'drizzle-orm'
 import { invalid } from '../errors'
 import { hasNoNul } from '../validation'
 import type { Executor } from './executor'
@@ -69,6 +69,18 @@ function pageSize(limit: number | undefined): number {
  */
 export const visibleTo = (actor: Actor): SQL =>
   sql`(${changeLog.layer} IS NULL OR ${changeLog.layer} NOT LIKE 'personal:%' OR ${changeLog.layer} = ${`personal:${actor.userId}`})`
+
+/**
+ * The privacy filter every read of the annotations table carries: every department layer, and the
+ * actor's own personal layer, never another member's. Internal (not in the barrel), next to
+ * `visibleTo`, which is the same rule for the change log; the annotation, export and revisions
+ * services all read with it.
+ */
+export const visibleAnnotationsTo = (actor: Actor): SQL =>
+  or(
+    eq(annotations.layerKind, 'department'),
+    and(eq(annotations.layerKind, 'personal'), eq(annotations.layerId, actor.userId)),
+  ) as SQL
 
 function conditions(actor: Actor, f: RowFilter): SQL[] {
   const where: SQL[] = [eq(changeLog.showId, f.showId), visibleTo(actor)]

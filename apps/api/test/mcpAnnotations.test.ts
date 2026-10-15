@@ -200,16 +200,25 @@ describe('annotation tools', () => {
     expect(resultText(retyped)).toMatch(/^invalid:/)
     const toSnd = await callTool(lx, 'update_annotation', { annotationId: id, layer: 'SND' })
     expect(resultText(toSnd)).toMatch(/^forbidden:/)
+    // A department annotation stays on the shared layers: copying is the way to a personal one.
     const toPersonal = await callTool(lx, 'update_annotation', {
       annotationId: id,
       layer: 'personal',
     })
-    expect(toPersonal.structuredContent).toMatchObject({
-      layerKind: 'personal',
-      layerId: s.editorLx.id,
+    expect(resultText(toPersonal)).toMatch(/^invalid: .*Copy it to your personal layer instead\./)
+    // Publishing a personal one to a department is allowed.
+    const mine = await callTool(lx, 'create_annotation', {
+      showId: s.show.id,
+      layer: 'personal',
+      type: 'note',
+      text: 'private',
+      anchor: place(3, 10, 20),
     })
-    const back = await callTool(lx, 'update_annotation', { annotationId: id, layer: 'LX' })
-    expect(back.structuredContent).toMatchObject({
+    const published = await callTool(lx, 'update_annotation', {
+      annotationId: mine.structuredContent?.id,
+      layer: 'LX',
+    })
+    expect(published.structuredContent).toMatchObject({
       layerKind: 'department',
       layerId: s.depts.LX.id,
     })

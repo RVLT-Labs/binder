@@ -1,3 +1,4 @@
+import { usePowerSync } from '@powersync/react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   createRootRouteWithContext,
@@ -53,6 +54,7 @@ function RootLayout() {
 function SignOut({ userId }: { userId: string }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const db = usePowerSync()
   return (
     <button
       type="button"
@@ -66,6 +68,9 @@ function SignOut({ userId }: { userId: string }) {
             queryClient.clear()
           },
           toLogin: () => navigate({ to: '/login' }),
+          pendingUploads: async () =>
+            (await db.get<{ n: number }>('SELECT count(*) AS n FROM ps_crud')).n,
+          confirm: (message) => window.confirm(message),
         })
       }
     >

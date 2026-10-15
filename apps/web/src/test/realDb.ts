@@ -35,5 +35,6 @@ export function realDb() {
     },
   }
   const all = (sql: string) => sqlite.prepare(sql).all() as Array<Record<string, unknown>>
-  return { db: db as never, all }
+  const exec = (sql: string) => sqlite.exec(sql)
+  return { db: db as never, all, exec }
 }

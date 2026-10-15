@@ -1,4 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render as rtlRender, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 const claimLocalDb = vi.fn()
@@ -14,7 +16,12 @@ vi.mock('../exports/outbox', () => ({ clearOtherOutboxes: (u: string) => clearOt
 
 const { PowerSyncProvider } = await import('./provider')
 
+let queryClient: QueryClient
+const render = (ui: ReactElement) =>
+  rtlRender(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+
 beforeEach(() => {
+  queryClient = new QueryClient()
   claimLocalDb.mockReset()
   connect.mockClear()
 })
@@ -41,6 +48,30 @@ test("a change of owner also clears every other user's export outbox", async () 
   )
   expect(await screen.findByText('the app')).toBeTruthy()
   expect(clearOtherOutboxes).toHaveBeenCalledWith('u1')
+})
+
+test("a change of owner clears the previous user's cached query answers; the same owner keeps them", async () => {
+  queryClient.setQueryData(['history', 'show-1'], ['the previous user saw this'])
+  claimLocalDb.mockImplementation(async () => {})
+  const same = render(
+    <PowerSyncProvider userId="u1">
+      <p>the app</p>
+    </PowerSyncProvider>,
+  )
+  expect(await screen.findByText('the app')).toBeTruthy()
+  expect(queryClient.getQueryData(['history', 'show-1'])).toBeDefined()
+  same.unmount()
+
+  claimLocalDb.mockImplementation(async (_db, _user, clearForeign: () => Promise<void>) => {
+    await clearForeign()
+  })
+  render(
+    <PowerSyncProvider userId="u2">
+      <p>the app</p>
+    </PowerSyncProvider>,
+  )
+  expect(await screen.findByText('the app')).toBeTruthy()
+  expect(queryClient.getQueryData(['history', 'show-1'])).toBeUndefined()
 })
 
 test('a failure to open local storage shows why instead of a blank screen', async () => {

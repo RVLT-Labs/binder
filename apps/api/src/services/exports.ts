@@ -33,8 +33,9 @@ import { type BlobStore, readBlobBytes } from '../blob/BlobStore'
 import { exportBlobKey } from '../blob/keys'
 import { AppError, forbidden, IdTaken, invalid, notFound, payloadTooLarge } from '../errors'
 import { MAX_UPLOAD_BYTES } from '../upload/multipart'
-import { parseOrInvalid, text } from '../validation'
+import { hasNoNul, parseOrInvalid, text } from '../validation'
 import type { Executor } from './executor'
+import { visibleAnnotationsTo } from './history'
 import { requireShowRole } from './tenancy'
 import { loadVersionText } from './wordLayers'
 
@@ -287,6 +288,7 @@ export async function exportMarkedScript(
   actor: Actor,
   input: { documentId: string; versionId?: string; layers: 'all' | 'none' | LayerRef[] },
 ): Promise<{ record: ExportRecord; uri: string }> {
+  if (!hasNoNul(input)) throw invalid('ids must not contain NUL')
   const [document] = await db.select().from(documents).where(eq(documents.id, input.documentId))
   if (!document) throw notFound('Document not found')
   await requireShowRole(db, actor, document.showId, 'viewer')
@@ -333,15 +335,7 @@ export async function exportMarkedScript(
     db
       .select()
       .from(annotations)
-      .where(
-        and(
-          eq(annotations.showId, document.showId),
-          or(
-            eq(annotations.layerKind, 'department'),
-            and(eq(annotations.layerKind, 'personal'), eq(annotations.layerId, actor.userId)),
-          ),
-        ),
-      ),
+      .where(and(eq(annotations.showId, document.showId), visibleAnnotationsTo(actor))),
   ])
   if (!pdf) throw new Error(`searchable PDF ${version.searchableKey} is missing`)
 
@@ -394,7 +388,7 @@ export async function exportCueList(
 ): Promise<{ record: ExportRecord; uri: string }> {
   if (!Object.hasOwn(SHEET_FORMAT_KIND, input.format))
     throw invalid('format must be pdf, xlsx or csv')
-  if (input.departmentId.includes('\u0000')) throw notFound('Department not found')
+  if (!hasNoNul(input.departmentId)) throw invalid('departmentId must not contain NUL')
   const [department] = await db
     .select()
     .from(departmentsTable)

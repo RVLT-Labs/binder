@@ -58,7 +58,7 @@ TLS; everything behind it is plain HTTP.
    does not register magic links at all (the endpoint is 404, the login page hides the option, and no
    link is ever written to the log); password sign-in still works. Do not set the `SERVICE_*` secrets by hand; Coolify generates them.
 5. **Deploy.** The build takes a few minutes the first time (the API image installs OCR tools).
-   Order is enforced by health checks: postgres, then powersync and api, then web. Open
+   Order is enforced by health checks: postgres, then api (it applies the migrations), then powersync and web. Open
    `https://binder.rvlt.app/api/health`: it returns `{"ok":true,"magicLink":false}` (`true` once
    `SMTP_URL` is set).
 
@@ -91,9 +91,12 @@ published tables to `powersync_role` only if that role already exists. The Postg
 (`postgres/init-prod.sh`) creates it when the data directory is first created, and the API waits for
 Postgres to be healthy, so on a fresh volume the order is always right.
 
-PowerSync only waits for Postgres, not for the API, so on a fresh volume it can start before the API
-has migrated and created the publication. It logs that the publication is missing and retries until
-the API's first start creates it; no action is needed (seen in the local smoke from a wiped volume).
+PowerSync waits for the API to be healthy (as well as Postgres), and the API only reports healthy after
+it has applied its migrations, so the publication and the role's grants exist before PowerSync first
+connects and no manual restart after the migrations is needed. (Before that dependency was added,
+PowerSync could start first; it logged that the publication was missing and retried until the API's
+first start created it. If you ever see that, or a stack was brought up some other way, restarting the
+`powersync` service is the fallback.)
 
 If the init script failed part way (for example the first start was interrupted), it is safe to
 run again: it only creates what is missing and re-applies the role's attributes and password.
@@ -155,16 +158,35 @@ lost).
 The API applies them when it starts, as for every upgrade, and each one that adds a synced table extends the `powersync` publication and the
 `powersync_role` grant (conditional `DO` blocks, like `0003_publication`). Take the database dump
 from [Upgrades](#upgrades) first. After the deploy, `select tablename from pg_publication_tables where
-pubname = 'powersync'` should list the four new tables, and the PowerSync log should show
+pubname = 'powersync'` should list the four new tables, and `powersync_role` must be able to read them
+(a missing grant leaves a table out of sync without an obvious error):
+
+```sql
+select t, has_table_privilege('powersync_role', 'public.' || t, 'SELECT') as can_select
+from unnest(array['departments', 'cues', 'annotations', 'export_records']) as t;
+-- all four rows must say true; or one at a time:
+-- SELECT has_table_privilege('powersync_role', 'public.departments', 'SELECT');
+```
+
+The PowerSync log should show
 `To replicate: "public"."departments"`, `cues`, `annotations` and `export_records`.
+
+**Reverting a revert of a re-anchoring run.** A re-anchoring run moves every cue and annotation it
+could place or not place, other members' personal notes included. Reverting the run restores only the
+rows the person reverting can see, so other members' personal notes stay where re-anchoring left
+them. Those notes surface in their owners' own review list under "On an older version" (or as
+unresolved), where each owner can accept, revert or re-anchor them; nothing is lost.
 
 **PowerSync after sync-config changes.** `powersync/sync-config.yaml` is baked into the PowerSync
 image, so a change ships with a redeploy. PowerSync reprocesses a changed sync config when it
 starts, rebuilding its buckets from the main database, so the first client sync after such a deploy
 takes longer than usual; clients keep working from their local data meanwhile and nothing is lost.
-Restart the `powersync` service (Coolify: the service's Restart; locally `docker compose ... restart
-powersync`) after any change to the sync config or to the publication's tables, so it re-reads them.
-Rows written while it was down are picked up from the replication slot.
+PowerSync now starts only once the API is healthy (it depends on the `api` service), so on a normal
+deploy the migrations have already run when it first reads the publication and the manual restart that
+used to follow them is no longer needed. As a fallback, restart the `powersync` service (Coolify: the
+service's Restart; locally `docker compose ... restart powersync`) after any change to the sync config
+or to the publication's tables if the PowerSync log still lists the old set of tables, so it re-reads
+them. Rows written while it was down are picked up from the replication slot.
 
 **Presence websocket.** Live presence is a WebSocket at `GET /api/shows/<showId>/presence` on the app
 hostname. The path is the same as every other API call: Cloudflare tunnel, Coolify's Traefik, then
@@ -186,7 +208,7 @@ pass it in the environment only: it is never written to a file or printed.
 
 ```sh
 # Production: create the token with the First owner commands above, then
-read -rsp 'Token: ' BINDER_TOKEN; echo; export BINDER_TOKEN
+printf 'Token: '; read -rs BINDER_TOKEN; echo; export BINDER_TOKEN
 BINDER_URL=https://binder.rvlt.app \
   pnpm --filter @binder/api exec tsx ../../deploy/scripts/m1-smoke.ts --stage full
 unset BINDER_TOKEN

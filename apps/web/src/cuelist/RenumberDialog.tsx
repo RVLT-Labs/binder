@@ -43,6 +43,12 @@ export function RenumberDialog({
     [departmentId],
   )
 
+  const { data: current } = useQuery<{ current_version_id: string | null }>(
+    'SELECT current_version_id FROM documents WHERE id = ?',
+    [documentId],
+  )
+  const currentVersionId = current[0]?.current_version_id ?? null
+
   useEffect(() => {
     dialog.current?.showModal()
   }, [])
@@ -50,12 +56,15 @@ export function RenumberDialog({
   const blockSize = /^\d+$/.test(blockText.trim()) ? Number(blockText.trim()) : Number.NaN
   const blockValid = Number.isInteger(blockSize) && blockSize >= 2 && blockSize <= 1000
   const placed = useMemo(
-    () => renumberCuesOf(rows, documentId).filter((c) => c.anchor !== null && c.major > 0).length,
-    [rows, documentId],
+    () =>
+      renumberCuesOf(rows, documentId, currentVersionId).filter(
+        (c) => c.anchor !== null && c.major > 0,
+      ).length,
+    [rows, documentId, currentVersionId],
   )
   const preview = useMemo(
-    () => (blockValid ? previewRenumber(rows, documentId, blockSize) : null),
-    [rows, documentId, blockSize, blockValid],
+    () => (blockValid ? previewRenumber(rows, documentId, blockSize, currentVersionId) : null),
+    [rows, documentId, blockSize, blockValid, currentVersionId],
   )
 
   const spilled = preview?.flagged.filter((f) => f.reason === 'spilled').length ?? 0

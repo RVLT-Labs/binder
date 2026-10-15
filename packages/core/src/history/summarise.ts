@@ -117,9 +117,20 @@ export function summariseBatch(rows: SummaryRow[]): string {
   return sentences.join('; ')
 }
 
-/** `'Jayden'`, or `'Jayden via Claude Code'` for an agent, taking its name up to the first `/`. */
+/** Display names for the MCP client ids we know; any other agent shows as it calls itself. */
+const KNOWN_AGENTS: ReadonlyMap<string, string> = new Map([
+  ['claude-code', 'Claude Code'],
+  ['claude-desktop', 'Claude Desktop'],
+  ['claude-ai', 'Claude'],
+])
+
+/**
+ * `'Jayden'`, or `'Jayden via Claude Code'` for an agent, taking its name up to the first `/` and
+ * showing a known client id as its product name. The stored agent string is untouched.
+ */
 export function actorLabel(name: string, agent: string | null): string {
   if (!agent) return name
   const product = agent.split('/')[0].trim()
-  return product ? `${name} via ${product}` : name
+  if (!product) return name
+  return `${name} via ${KNOWN_AGENTS.get(product.toLowerCase()) ?? product}`
 }

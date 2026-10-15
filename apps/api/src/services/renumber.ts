@@ -9,7 +9,8 @@ import { requireLayerEdit } from './layers'
 
 /**
  * "Renumber from script order" (spec 4.5) for one department within one document. Cues whose
- * anchor is in the document (any version) are ordered by reading order and renumbered in blocks;
+ * anchor is in the document (any version) are ordered by reading order, those on the current
+ * version first and those left on an older version after them, and renumbered in blocks;
  * unplaced cues, the 0 range and other documents are untouched. Every change is written through
  * `updateCue` in one transaction under one batch id, so it is one revertable batch. M1 has no
  * script items, so there are no groups and the cues take consecutive integers from the block size.
@@ -39,7 +40,7 @@ export async function renumberCues(
     if (!dept) throw notFound('Department not found')
     await requireLayerEdit(tx, actor, dept.showId, { kind: 'department', id: input.departmentId })
     const [doc] = await tx
-      .select({ showId: documents.showId })
+      .select({ showId: documents.showId, currentVersionId: documents.currentVersionId })
       .from(documents)
       .where(eq(documents.id, input.documentId))
     if (!doc || doc.showId !== dept.showId) throw notFound('Document not found')
@@ -56,6 +57,9 @@ export async function renumberCues(
         minor: r.minor,
         anchor: r.anchor ? { pageIndex: r.anchor.pageIndex, y: r.anchor.y } : null,
         groupKey: null,
+        // Cues left on an older version are numbered after the current ones.
+        stale:
+          doc.currentVersionId !== null && r.anchor?.documentVersionId !== doc.currentVersionId,
       }))
 
     const result = renumberByBlocks(inDocument, { blockSize })

@@ -110,4 +110,14 @@ describe('actorLabel', () => {
     expect(actorLabel('Jayden', 'Claude Code/2.1.0')).toBe('Jayden via Claude Code'))
   test('an agent without a version is used whole', () =>
     expect(actorLabel('Jayden', 'test-client')).toBe('Jayden via test-client'))
+  test('known client ids read as their product names', () => {
+    expect(actorLabel('Jayden', 'claude-code/2.1.76 (cli)')).toBe('Jayden via Claude Code')
+    expect(actorLabel('Jayden', 'claude-desktop/1.4')).toBe('Jayden via Claude Desktop')
+    expect(actorLabel('Jayden', 'claude-ai')).toBe('Jayden via Claude')
+    expect(actorLabel('Jayden', 'Claude-Code/2')).toBe('Jayden via Claude Code')
+  })
+  test('an unknown agent keeps its own name, and an empty one is the person alone', () => {
+    expect(actorLabel('Jayden', 'cursor/0.5')).toBe('Jayden via cursor')
+    expect(actorLabel('Jayden', '/1.0')).toBe('Jayden')
+  })
 })

@@ -52,10 +52,11 @@ export function AnnotationEditor({ annotationId, historySlot }: AnnotationEditor
   const layer: LayerRef = { kind: a.layerKind, id: a.layerId }
   const reason = session.whyCantEditAnnotation({ layer_kind: a.layerKind, layer_id: a.layerId })
   const editable = reason === null
-  const layers = [layer, ...session.editable.filter((l) => layerKey(l) !== layerKey(layer))]
-  const sortedLayers = session.editable.some((l) => layerKey(l) === layerKey(layer))
-    ? session.editable
-    : layers
+  // Shared markup cannot move onto a personal layer (it would vanish for everyone else), so a
+  // department annotation's picker leaves the personal layer out.
+  const choices = session.editable.filter((l) => layer.kind === 'personal' || l.kind !== 'personal')
+  const layers = [layer, ...choices.filter((l) => layerKey(l) !== layerKey(layer))]
+  const sortedLayers = choices.some((l) => layerKey(l) === layerKey(layer)) ? choices : layers
   const layerColour = session.layerColour(layer)
   const hasStroke = ['rect', 'ellipse', 'line', 'arrow', 'stamp'].includes(a.type)
   const hasFont = a.type === 'note' || a.type === 'stamp'

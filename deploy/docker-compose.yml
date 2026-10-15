@@ -35,8 +35,12 @@ services:
     # The image declares no port; Traefik needs one to build the route for the sync domain.
     expose:
       - '8080'
+    # api, too: its first start applies the migrations that create the publication and the role's
+    # grants, and the API only reports healthy once they are done.
     depends_on:
       postgres:
+        condition: service_healthy
+      api:
         condition: service_healthy
     environment:
       - SERVICE_FQDN_POWERSYNC_8080

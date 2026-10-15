@@ -1,4 +1,5 @@
-import { changeLog } from '@binder/db'
+import { changeLog, documents, documentVersions } from '@binder/db'
+import { newId } from '@binder/shared'
 import type { Client } from '@modelcontextprotocol/client'
 import { eq } from 'drizzle-orm'
 import { afterAll, describe, expect, test } from 'vitest'
@@ -102,6 +103,47 @@ describe('renumberCues', () => {
     })
     expect(again.changed).toBe(0)
     expect(await db.select().from(changeLog)).toHaveLength(before.length + 3)
+  })
+
+  test('cues left on an older version are numbered after the current-version cues, never interleaved by page and y', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const v2 = newId()
+    await db.insert(documentVersions).values({
+      id: v2,
+      showId: s.show.id,
+      documentId: s.docId,
+      versionNumber: 2,
+      originalKey: `test/${v2}.pdf`,
+      pageCount: 20,
+      uploadedBy: s.owner.id,
+      status: 'ready',
+    })
+    await db.update(documents).set({ currentVersionId: v2 }).where(eq(documents.id, s.docId))
+    const make = (label: string, versionId: string, pageIndex: number, y: number) =>
+      createCue(db, s.actors.owner, {
+        showId: s.show.id,
+        departmentId: s.depts.LX.id,
+        number: { major: 500, minor: 0 },
+        label,
+        anchor: anchorAt(s.docId, versionId, pageIndex, 100, y),
+      })
+    // The older-version cues sit earlier in the script than the current ones.
+    await make('old early', s.versionId, 0, 800)
+    await make('new late', v2, 3, 100)
+    await make('old late', s.versionId, 2, 100)
+    await make('new early', v2, 1, 700)
+    await renumberCues(db, s.actors.owner, { departmentId: s.depts.LX.id, documentId: s.docId })
+    const rows = await listCues(db, s.actors.owner, {
+      showId: s.show.id,
+      departmentId: s.depts.LX.id,
+    })
+    expect(rows.map((r) => `${r.label}:${r.major}`).sort()).toEqual([
+      'new early:10',
+      'new late:11',
+      'old early:12',
+      'old late:13',
+    ])
   })
 
   test('the block size applies: three cues at block size 100 are 100, 101, 102', async () => {

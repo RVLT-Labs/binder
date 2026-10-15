@@ -1,5 +1,6 @@
 import { PowerSyncContext } from '@powersync/react'
 import type { PowerSyncDatabase } from '@powersync/web'
+import { useQueryClient } from '@tanstack/react-query'
 import { type ReactNode, useEffect, useState } from 'react'
 import { forgetSessionUser } from '../auth/session'
 import { clearBlobCache } from '../blobs/fetchBlob'
@@ -40,6 +41,7 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
     }
   })
   const db = 'db' in opened ? opened.db : null
+  const queryClient = useQueryClient()
   const [claimedFor, setClaimedFor] = useState<string | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
 
@@ -52,6 +54,8 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
           await clearBlobCache()
           // Exports another user left waiting to upload go too (see clearOtherOutboxes).
           await clearOtherOutboxes(userId)
+          // Cached history, review and version-anchor answers belong to the previous user.
+          queryClient.clear()
         })
       } catch (err) {
         console.error('could not open the local database', err)
@@ -70,7 +74,7 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
     return () => {
       cancelled = true
     }
-  }, [db, userId])
+  }, [db, userId, queryClient])
 
   const error = 'error' in opened ? opened.error : failure
   if (error !== null) {

@@ -288,6 +288,17 @@ describe('export_cue_list', () => {
 })
 
 describe('exportCueList', () => {
+  test('a department id containing NUL is invalid before it reaches the database', async () => {
+    expect(
+      await code(
+        exportCueList(s.deps.db, s.deps.blobs, s.actors.owner, {
+          departmentId: 'a\u0000b',
+          format: 'csv',
+        }),
+      ),
+    ).toBe('invalid')
+  })
+
   test('a viewer can export, an unknown format is invalid, and an archived show still exports (M1-R20)', async () => {
     const fresh = await setupMarkupShow()
     expect(

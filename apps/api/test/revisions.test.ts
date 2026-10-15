@@ -553,6 +553,28 @@ describe.skipIf(skip)('comparing versions', () => {
     expect((await compare({ limit: 3 })).truncated).toBe(false)
   })
 
+  test('two very different long versions give up with invalid (instead of holding the event loop) and name the reason', async () => {
+    const lines = (tag: string) =>
+      Array.from({ length: 6000 }, (_, i) => `${tag} line ${i} alpha beta gamma`)
+    textOverrides.set(F.v1, versionFromLines(lines('first'), { versionId: F.v1 }))
+    textOverrides.set(F.v2, versionFromLines(lines('second'), { versionId: F.v2 }))
+    const started = Date.now()
+    const err = await compareDocumentVersions(db(), blobs(), actors().owner, {
+      fromVersionId: F.v1,
+      toVersionId: F.v2,
+    }).then(
+      () => null,
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(AppError)
+    expect(err).toMatchObject({
+      code: 'invalid',
+      message: 'Too many changes to compare line by line.',
+    })
+    // The bounded diff stops early; the unbounded one took ~3 s on this input.
+    expect(Date.now() - started).toBeLessThan(2000)
+  })
+
   test('limit and context are validated: out of range is invalid, never clamped', async () => {
     const bad = (over: { limit?: number; context?: number }) =>
       code(
@@ -687,6 +709,27 @@ describe.skipIf(skip)('routes', () => {
         query,
       ).toBe(400)
     }
+    // two versions too different to diff line by line are a 400 with the reason
+    textOverrides.set(
+      F.v1,
+      versionFromLines(
+        Array.from({ length: 6000 }, (_, i) => `first line ${i}`),
+        { versionId: F.v1 },
+      ),
+    )
+    textOverrides.set(
+      F.v2,
+      versionFromLines(
+        Array.from({ length: 6000 }, (_, i) => `second line ${i}`),
+        { versionId: F.v2 },
+      ),
+    )
+    const tooMany = await api(`/documents/${F.docId}/compare?from=${F.v1}&to=${F.v2}`)
+    expect(tooMany.status).toBe(400)
+    expect(JSON.stringify(await tooMany.json())).toContain(
+      'Too many changes to compare line by line.',
+    )
+    textOverrides.clear()
     const withContext: Json = await (
       await api(`/documents/${F.docId}/compare?from=${F.v1}&to=${F.v2}&limit=20&context=1`)
     ).json()

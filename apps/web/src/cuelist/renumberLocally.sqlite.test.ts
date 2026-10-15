@@ -102,3 +102,32 @@ test('the preview reports changed cues and no spills (M1 has no groups) without 
   expect(preview.flagged).toEqual([])
   expect(groups).toEqual([])
 })
+
+test('cues left on an older version are numbered after the current ones', async () => {
+  const h = realDb()
+  const onVersion = (versionId: string, pageIndex: number, y: number): Anchor => ({
+    ...anchor('d1', pageIndex, y),
+    documentVersionId: versionId,
+  })
+  await insertCue(h.db, owner, fields('old early', 5, onVersion('d1-v1', 0, 800)))
+  await insertCue(h.db, owner, fields('new late', 6, onVersion('d1-v2', 3, 100)))
+  await insertCue(h.db, owner, fields('old late', 7, onVersion('d1-v1', 2, 100)))
+  await insertCue(h.db, owner, fields('new early', 8, onVersion('d1-v2', 1, 700)))
+  h.exec(
+    "INSERT INTO documents (id, show_id, kind, title, current_version_id) VALUES ('d1', 's1', 'libretto', 'L', 'd1-v2')",
+  )
+  await renumberLocally(h.db, owner, { departmentId: 'lx', documentId: 'd1', blockSize: 10 })
+  expect(numbers(h)).toEqual({
+    'new early': '10.0',
+    'new late': '11.0',
+    'old early': '12.0',
+    'old late': '13.0',
+  })
+  const rows = h.all('SELECT id, major, minor, anchor FROM cues') as Array<{
+    id: string
+    major: number
+    minor: number
+    anchor: string | null
+  }>
+  expect(previewRenumber(rows, 'd1', 10, 'd1-v2').changes).toEqual([])
+})

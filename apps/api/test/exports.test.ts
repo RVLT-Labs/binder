@@ -688,6 +688,19 @@ describe('exportMarkedScript', () => {
     ).toBe('forbidden')
   })
 
+  test('ids containing NUL are invalid before they reach the database', async () => {
+    const f = await ready()
+    for (const input of [
+      { documentId: 'a\u0000b', layers: 'none' as const },
+      { documentId: f.docId, versionId: 'a\u0000b', layers: 'none' as const },
+      { documentId: f.docId, layers: [{ kind: 'department' as const, id: 'a\u0000b' }] },
+    ]) {
+      expect(await code(exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, input))).toBe(
+        'invalid',
+      )
+    }
+  })
+
   test.skipIf(skipPoppler)(
     "a selection with my personal layer prints my notes and never another member's",
     async () => {

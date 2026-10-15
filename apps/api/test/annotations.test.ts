@@ -226,6 +226,51 @@ describe('personal layers are private', () => {
       'department',
     )
   })
+
+  test('a department annotation cannot be moved onto a personal layer (it would vanish from everyone else); publishing and department moves still work', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const lx = { kind: 'department' as const, id: s.depts.LX.id }
+    const shared = await createAnnotation(db, s.actors.editorLx, {
+      showId: s.show.id,
+      ...fields(s, lx),
+    })
+    const logsBefore = (await logRows(db, shared.id)).length
+    for (const actor of [s.actors.editorLx, s.actors.owner]) {
+      const err = await updateAnnotation(db, actor, {
+        annotationId: shared.id,
+        patch: { layerKind: 'personal', layerId: actor.userId },
+      }).then(
+        () => null,
+        (e) => e,
+      )
+      expect(err).toBeInstanceOf(AppError)
+      expect(err).toMatchObject({
+        code: 'invalid',
+        message: 'Copy it to your personal layer instead.',
+      })
+    }
+    expect(await getAnnotation(db, s.actors.owner, { annotationId: shared.id })).toMatchObject({
+      layerKind: 'department',
+      layerId: s.depts.LX.id,
+    })
+    expect(await logRows(db, shared.id)).toHaveLength(logsBefore)
+
+    // personal -> department publishing, and department -> department, are unchanged.
+    const mine = await createAnnotation(db, s.actors.owner, {
+      showId: s.show.id,
+      ...fields(s, personal(s.owner.id)),
+    })
+    await updateAnnotation(db, s.actors.owner, {
+      annotationId: mine.id,
+      patch: { layerKind: 'department', layerId: s.depts.LX.id },
+    })
+    const moved = await updateAnnotation(db, s.actors.owner, {
+      annotationId: mine.id,
+      patch: { layerId: s.depts.SND.id },
+    })
+    expect(moved).toMatchObject({ layerKind: 'department', layerId: s.depts.SND.id })
+  })
 })
 
 describe('department layers', () => {

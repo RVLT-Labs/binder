@@ -131,6 +131,7 @@ async function writeUpdate(
         annotationId: row.rowId,
         patch: patch as Partial<AnnotationFields>,
         batchId,
+        allowDemote: true,
       })
       return
     case 'departments':

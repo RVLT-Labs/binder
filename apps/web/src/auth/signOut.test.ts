@@ -11,6 +11,8 @@ function deps(signOut: () => Promise<{ error: { message?: string } | null }>) {
     clearOutbox: vi.fn(async () => {}),
     clearCache: vi.fn(),
     toLogin: vi.fn(async () => {}),
+    pendingUploads: vi.fn(async () => 0),
+    confirm: vi.fn(() => true),
   }
 }
 
@@ -56,5 +58,51 @@ test('a failing outbox clear does not stop the sign-out', async () => {
   vi.spyOn(console, 'error').mockImplementation(() => {})
   await signOutAndClear(d)
   expect(d.clearLocalData).toHaveBeenCalledOnce()
+  expect(d.toLogin).toHaveBeenCalledOnce()
+})
+
+test('with changes still waiting to upload, asks first and signs out only on yes', async () => {
+  const d = deps(async () => ({ error: null }))
+  d.pendingUploads.mockResolvedValue(3)
+  await signOutAndClear(d)
+  expect(d.confirm).toHaveBeenCalledWith("3 changes haven't uploaded yet. Sign out anyway?")
+  expect(d.signOut).toHaveBeenCalledOnce()
+  expect(d.clearLocalData).toHaveBeenCalledOnce()
+  expect(d.toLogin).toHaveBeenCalledOnce()
+})
+
+test('says "1 change hasn\'t" for a single pending change', async () => {
+  const d = deps(async () => ({ error: null }))
+  d.pendingUploads.mockResolvedValue(1)
+  await signOutAndClear(d)
+  expect(d.confirm).toHaveBeenCalledWith("1 change hasn't uploaded yet. Sign out anyway?")
+})
+
+test('a no leaves the session and every local row alone', async () => {
+  const d = deps(async () => ({ error: null }))
+  d.pendingUploads.mockResolvedValue(2)
+  d.confirm.mockReturnValue(false)
+  await signOutAndClear(d)
+  expect(d.signOut).not.toHaveBeenCalled()
+  expect(d.clearOutbox).not.toHaveBeenCalled()
+  expect(d.clearLocalData).not.toHaveBeenCalled()
+  expect(d.clearCache).not.toHaveBeenCalled()
+  expect(d.toLogin).not.toHaveBeenCalled()
+  expect(getNotices()).toEqual([])
+})
+
+test('nothing pending means no question', async () => {
+  const d = deps(async () => ({ error: null }))
+  await signOutAndClear(d)
+  expect(d.confirm).not.toHaveBeenCalled()
+  expect(d.toLogin).toHaveBeenCalledOnce()
+})
+
+test('a queue that cannot be counted does not stop the sign-out', async () => {
+  const d = deps(async () => ({ error: null }))
+  d.pendingUploads.mockRejectedValue(new Error('database is closed'))
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  await signOutAndClear(d)
+  expect(d.confirm).not.toHaveBeenCalled()
   expect(d.toLogin).toHaveBeenCalledOnce()
 })
