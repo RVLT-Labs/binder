@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
 import { versionFromLines } from '../../test/textLayers'
-import { diffVersionLines } from './lineDiff'
+import { diffVersionLines, diffVersionLinesBounded } from './lineDiff'
 
 const pirates = readFileSync(
   new URL('../../../../fixtures/public/pirates.txt', import.meta.url),
@@ -77,5 +77,24 @@ describe('diffVersionLines', () => {
     const d = diffVersionLines(old, versionFromLines(edited, { versionId: 'v2' }))
     expect(d.added).toBe(0)
     expect(d.removed).toBe(0)
+  })
+})
+
+describe('diffVersionLinesBounded', () => {
+  const lines = (prefix: string, n: number) =>
+    Array.from({ length: n }, (_, i) => `${prefix} word${i} extra${i}`)
+
+  test('gives the same diff as diffVersionLines when the edit is within the bound', () => {
+    const old = versionFromLines(pirates, { versionId: 'v1' })
+    const cut = versionFromLines([...pirates.slice(0, 100), ...pirates.slice(130)], {
+      versionId: 'v2',
+    })
+    expect(diffVersionLinesBounded(old, cut, 2000)).toEqual(diffVersionLines(old, cut))
+  })
+
+  test('gives up on a near-total rewrite instead of diffing it', () => {
+    const old = versionFromLines(lines('alpha', 3000), { versionId: 'v1' })
+    const rewritten = versionFromLines(lines('beta', 3000), { versionId: 'v2' })
+    expect(diffVersionLinesBounded(old, rewritten, 500)).toBeUndefined()
   })
 })

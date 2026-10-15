@@ -1,5 +1,5 @@
-export type { LineDiffEntry, LineRef } from './anchors/lineDiff'
-export { diffVersionLines } from './anchors/lineDiff'
+export type { LineDiff, LineDiffEntry, LineRef } from './anchors/lineDiff'
+export { diffVersionLines, diffVersionLinesBounded } from './anchors/lineDiff'
 export { compareReadingOrder } from './anchors/order'
 export type { QuoteMatch, StreamWord } from './anchors/quote'
 export { anchorAtMatch, buildWordStream, findQuote, normaliseForMatch } from './anchors/quote'

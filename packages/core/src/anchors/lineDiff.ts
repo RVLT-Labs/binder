@@ -57,10 +57,34 @@ function linesOf(version: VersionText): Line[] {
  * A line diff between two versions: lines in stream order, compared by their normalised tokens joined by
  * spaces, so case and punctuation changes are not differences.
  */
-export function diffVersionLines(
+export function diffVersionLines(from: VersionText, to: VersionText): LineDiff {
+  // Without a bound the diff always finishes.
+  return diffLines(from, to, undefined) as LineDiff
+}
+
+/**
+ * `diffVersionLines` that gives up (returns `undefined`) when the versions differ by more than
+ * `maxEditLength` lines, so a near-total rewrite of a long script cannot hold the thread for seconds.
+ */
+export function diffVersionLinesBounded(
   from: VersionText,
   to: VersionText,
-): { entries: LineDiffEntry[]; added: number; removed: number } {
+  maxEditLength: number,
+): LineDiff | undefined {
+  return diffLines(from, to, maxEditLength)
+}
+
+export interface LineDiff {
+  entries: LineDiffEntry[]
+  added: number
+  removed: number
+}
+
+function diffLines(
+  from: VersionText,
+  to: VersionText,
+  maxEditLength: number | undefined,
+): LineDiff | undefined {
   const a = linesOf(from)
   const b = linesOf(to)
   const entries: LineDiffEntry[] = []
@@ -68,10 +92,14 @@ export function diffVersionLines(
   let removed = 0
   let i = 0
   let j = 0
-  for (const change of diffArrays(
-    a.map((l) => l.key),
-    b.map((l) => l.key),
-  )) {
+  const oldKeys = a.map((l) => l.key)
+  const newKeys = b.map((l) => l.key)
+  const changes =
+    maxEditLength === undefined
+      ? diffArrays(oldKeys, newKeys)
+      : diffArrays(oldKeys, newKeys, { maxEditLength })
+  if (!changes) return undefined
+  for (const change of changes) {
     const n = change.value.length
     for (let k = 0; k < n; k++) {
       if (change.added) {

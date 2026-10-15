@@ -1,7 +1,7 @@
-import type { LineDiffEntry } from '@binder/core'
+import type { LineDiffEntry, VersionText } from '@binder/core'
 import type { WordLayer } from '@binder/shared'
 import { expect, test } from 'vitest'
-import { changeList, lineBox, tintedLines } from './compareModel'
+import { changeList, compareTexts, incompleteMessage, lineBox, tintedLines } from './compareModel'
 
 const same = (text: string, o: [number, number], n: [number, number]): LineDiffEntry => ({
   op: 'same',
@@ -68,4 +68,35 @@ test('tinted lines gather the changed lines of one side by page', () => {
   expect(map.get(1)).toEqual([{ lineIndex: 0 }])
   const news = tintedLines(entries, 'new')
   expect(news.get(1)).toEqual([{ lineIndex: 0 }])
+})
+
+const textOf = (id: string, lines: string[]): VersionText => {
+  const words = lines.map((t, i) => ({ t, x: 0, y: 800 - i * 10, w: 10, h: 8 }))
+  return {
+    versionId: id,
+    documentId: 'd',
+    pageCount: 1,
+    pages: [{ width: 600, height: 800 }],
+    layers: new Map([[0, { words, lines: words.map((_, i) => [i]) }]]),
+  }
+}
+const lines = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}${i}`)
+
+test('a comparison with unreadable pages is incomplete and has no diff', () => {
+  const out = compareTexts(
+    { text: textOf('a', lines('x', 3)), unavailable: 1 },
+    { text: textOf('b', lines('x', 3)), unavailable: 2 },
+  )
+  expect(out).toEqual({ kind: 'incomplete', unavailable: 3 })
+  expect(incompleteMessage(1)).toBe(
+    '1 page has no text available offline, so the comparison is incomplete.',
+  )
+  expect(incompleteMessage(3)).toMatch(/^3 pages have /)
+})
+
+test('versions that differ by more than the bound give up instead of diffing', () => {
+  const old = { text: textOf('a', lines('a', 50)), unavailable: 0 }
+  const next = { text: textOf('b', lines('b', 50)), unavailable: 0 }
+  expect(compareTexts(old, next, 10)).toEqual({ kind: 'too-many' })
+  expect(compareTexts(old, next, 1000).kind).toBe('diff')
 })

@@ -78,13 +78,14 @@ function fakeCache(entries: Record<string, Response> = {}) {
   }
 }
 
-/** Rows as the local database returns them: one versions query, one pages query. */
-function fakeDb(rows: { versions: unknown[]; pages: unknown[] }) {
+/** Rows as the local database returns them: a versions query, a pages query, a documents query. */
+function fakeDb(rows: { versions: unknown[]; pages: unknown[]; documents?: unknown[] }) {
   const calls: [string, unknown[] | undefined][] = []
   return {
     calls,
     async getAll<T>(sql: string, params?: unknown[]) {
       calls.push([sql, params])
+      if (sql.includes('FROM documents')) return (rows.documents ?? []) as T[]
       return (sql.includes('FROM pages') ? rows.pages : rows.versions) as T[]
     },
   }
@@ -135,7 +136,7 @@ test('prefetchShow stores every blob where fetchBlob finds it later, and reports
 test('prefetchShow scopes its queries to the show', async () => {
   const db = fakeDb(rows)
   await prefetchShow(db, 'show-1', () => {})
-  expect(db.calls).toHaveLength(2)
+  expect(db.calls).toHaveLength(3)
   for (const [, params] of db.calls) expect(params).toEqual(['show-1'])
 })
 
@@ -184,4 +185,54 @@ test('prefetchShow with nothing ready finishes immediately', async () => {
     () => {},
   )
   expect(result).toEqual({ fetched: 0, failed: [] })
+})
+
+const numbered = (id: string, n: number, documentId = 'd1') => ({
+  ...version(id, 'ready'),
+  document_id: documentId,
+  version_number: n,
+})
+
+test('blobUrlsForShow stores a document’s current version first, then the one before, then newest to oldest', () => {
+  const urls = blobUrlsForShow({
+    versions: [numbered('v1', 1), numbered('v2', 2), numbered('v3', 3), numbered('v4', 4)],
+    pages: [page('v1', 0), page('v2', 0), page('v3', 0), page('v4', 0)],
+    documents: [{ id: 'd1', current_version_id: 'v3' }],
+  })
+  const versionsInOrder = urls
+    .filter((u) => u.endsWith('searchable.pdf'))
+    .map((u) => u.split('/')[7])
+  // v3 is current, v2 is the one before it, then v4 (newest of the rest) and v1.
+  expect(versionsInOrder).toEqual(['v3', 'v2', 'v4', 'v1'])
+  // A version's pdf comes before its own pages, and the pages come in page order.
+  expect(urls.slice(0, 3)).toEqual([
+    `/blobs/${base('v3')}/searchable.pdf`,
+    `/blobs/${base('v3')}/pages/0/thumb.png`,
+    `/blobs/${base('v3')}/pages/0/words.json`,
+  ])
+})
+
+test('blobUrlsForShow keeps each document’s versions together, in document order', () => {
+  const urls = blobUrlsForShow({
+    versions: [numbered('a1', 1, 'dA'), numbered('a2', 2, 'dA'), numbered('b1', 1, 'dB')],
+    pages: [],
+    documents: [
+      { id: 'dA', current_version_id: 'a2' },
+      { id: 'dB', current_version_id: 'b1' },
+    ],
+  })
+  expect(urls.map((u) => u.split('/')[7])).toEqual(['a2', 'a1', 'b1'])
+})
+
+test('prefetchShow fetches the current version first even when it is not the newest', async () => {
+  await prefetchShow(
+    fakeDb({
+      versions: [numbered('v1', 1), numbered('v2', 2)],
+      pages: [],
+      documents: [{ id: 'd1', current_version_id: 'v1' }],
+    }),
+    'show-1',
+    () => {},
+  )
+  expect(network.mock.calls[0]?.[0]).toBe(`/blobs/${base('v1')}/searchable.pdf`)
 })

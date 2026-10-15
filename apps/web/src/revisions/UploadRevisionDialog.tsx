@@ -2,6 +2,10 @@ import { useQuery } from '@powersync/react'
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import { MAX_UPLOAD_BYTES, PROXY_LIMIT_MESSAGE, postWithProgress } from '../documents/UploadDialog'
 import { revisionPhase } from './revisionPhase'
+import { LEAVE_UPLOAD_QUESTION, useUploadGuard } from './useUploadGuard'
+
+export const NO_VERSION_MESSAGE =
+  'The upload went through, but the server did not say which version it made, so it cannot be followed here. Check the version list.'
 
 export interface UploadRevisionDialogProps {
   showId: string
@@ -33,6 +37,16 @@ export function UploadRevisionDialog({
   const [error, setError] = useState<string | null>(null)
   const [versionId, setVersionId] = useState<string | null>(null)
 
+  const uploading = progress !== null && versionId === null
+  useUploadGuard(uploading)
+
+  /** Closes the dialog; while the file is still going up, asks first and stops the upload. */
+  function requestClose() {
+    if (uploading && !window.confirm(LEAVE_UPLOAD_QUESTION)) return
+    request.current?.abort()
+    onClose()
+  }
+
   useEffect(() => {
     dialog.current?.showModal()
     return () => request.current?.abort()
@@ -62,7 +76,10 @@ export function UploadRevisionDialog({
         request.current = null
         const id = (body as { version?: { id?: unknown } } | null)?.version?.id
         if (typeof id === 'string') setVersionId(id)
-        else onClose()
+        else {
+          setProgress(null)
+          setError(NO_VERSION_MESSAGE)
+        }
       },
       (err: Error) => {
         request.current = null
@@ -72,9 +89,20 @@ export function UploadRevisionDialog({
     )
   }
 
-  const uploading = progress !== null && versionId === null
   return (
-    <dialog ref={dialog} className="upload-dialog" aria-labelledby={headingId} onClose={onClose}>
+    <dialog
+      ref={dialog}
+      className="upload-dialog"
+      aria-labelledby={headingId}
+      onCancel={(e) => {
+        // Escape while uploading asks first instead of dropping the file silently.
+        if (uploading) {
+          e.preventDefault()
+          requestClose()
+        }
+      }}
+      onClose={onClose}
+    >
       <h2 id={headingId}>Upload revision</h2>
       {versionId ? (
         <RevisionProgress
@@ -114,10 +142,13 @@ export function UploadRevisionDialog({
           )}
           {error && <p role="alert">{error}</p>}
           <div className="dialog-actions">
-            <button type="button" onClick={onClose}>
+            <button type="button" onClick={requestClose}>
               Cancel
             </button>
-            <button type="submit" disabled={uploading || !file || label.trim() === ''}>
+            <button
+              type="submit"
+              disabled={uploading || !file || label.trim() === '' || error === NO_VERSION_MESSAGE}
+            >
               Upload
             </button>
           </div>

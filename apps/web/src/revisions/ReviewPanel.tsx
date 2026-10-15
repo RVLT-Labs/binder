@@ -113,9 +113,14 @@ export function ReviewPanel({ documentId, versionNumbers, onClose }: ReviewPanel
 
   function run(item: ReviewItem, action: ReviewAction) {
     if (action.kind === 'move') {
-      void move(
+      move(
         item,
         item.anchor.documentVersionId === review.data?.currentVersionId ? 'pending' : 'older',
+      ).catch((err: unknown) =>
+        pushNotice({
+          kind: 'error',
+          message: `Could not start moving ${item.title}: ${err instanceof Error ? err.message : String(err)}`,
+        }),
       )
       return
     }

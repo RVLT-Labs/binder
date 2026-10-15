@@ -1,4 +1,10 @@
-import type { Box, LineDiffEntry } from '@binder/core'
+import {
+  type Box,
+  diffVersionLinesBounded,
+  type LineDiff,
+  type LineDiffEntry,
+  type VersionText,
+} from '@binder/core'
 import type { WordLayer } from '@binder/shared'
 
 export interface Change {
@@ -86,3 +92,34 @@ export function tintedLines(
   }
   return out
 }
+
+/**
+ * The most lines two versions may differ by for the line diff to run: a few seconds of work at most
+ * for a full-length libretto, where a near-total rewrite would otherwise hold the main thread.
+ */
+export const MAX_COMPARE_EDITS = 2000
+
+export type CompareOutcome =
+  | { kind: 'diff'; diff: LineDiff }
+  | { kind: 'too-many' }
+  | { kind: 'incomplete'; unavailable: number }
+
+/**
+ * The comparison of two versions' text: the diff, or why there is none. A page whose text could not
+ * be read makes the whole comparison incomplete (a diff would show that page as removed or added).
+ */
+export function compareTexts(
+  old: { text: VersionText; unavailable: number },
+  next: { text: VersionText; unavailable: number },
+  maxEdits = MAX_COMPARE_EDITS,
+): CompareOutcome {
+  const unavailable = old.unavailable + next.unavailable
+  if (unavailable > 0) return { kind: 'incomplete', unavailable }
+  const diff = diffVersionLinesBounded(old.text, next.text, maxEdits)
+  return diff ? { kind: 'diff', diff } : { kind: 'too-many' }
+}
+
+export const incompleteMessage = (n: number): string =>
+  `${n} ${n === 1 ? 'page has' : 'pages have'} no text available offline, so the comparison is incomplete.`
+
+export const TOO_MANY_MESSAGE = 'Too many changes to compare line by line.'

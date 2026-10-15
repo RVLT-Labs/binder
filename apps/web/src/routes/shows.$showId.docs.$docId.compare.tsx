@@ -1,11 +1,16 @@
-import { diffVersionLines } from '@binder/core'
 import { useQuery } from '@powersync/react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { DocumentRow, DocumentVersionRow } from '../powersync/schema'
 import { ComparePane } from '../revisions/ComparePane'
-import { changeList, tintedLines } from '../revisions/compareModel'
-import { useVersionText } from '../revisions/useVersionText'
+import {
+  changeList,
+  compareTexts,
+  incompleteMessage,
+  TOO_MANY_MESSAGE,
+  tintedLines,
+} from '../revisions/compareModel'
+import { clearVersionTextCache, useVersionText } from '../revisions/useVersionText'
 
 interface CompareSearch {
   from?: string
@@ -48,12 +53,23 @@ function ComparePage() {
     versions.find((v) => v.id === from) ??
     versions.filter((v) => (v.version_number ?? 0) < (toVersion?.version_number ?? 0)).at(-1)
 
-  const oldText = useVersionText(fromVersion?.id ?? null)
-  const newText = useVersionText(toVersion?.id ?? null)
-  const diff = useMemo(
-    () => (oldText && newText ? diffVersionLines(oldText, newText) : null),
-    [oldText, newText],
+  const oldState = useVersionText(fromVersion?.id ?? null)
+  const newState = useVersionText(toVersion?.id ?? null)
+  const oldText = oldState.text
+  const newText = newState.text
+  // The parsed texts are large; they go when the screen does.
+  useEffect(() => clearVersionTextCache, [])
+  const outcome = useMemo(
+    () =>
+      oldText && newText
+        ? compareTexts(
+            { text: oldText, unavailable: oldState.unavailable },
+            { text: newText, unavailable: newState.unavailable },
+          )
+        : null,
+    [oldText, newText, oldState.unavailable, newState.unavailable],
   )
+  const diff = outcome?.kind === 'diff' ? outcome.diff : null
   const changes = useMemo(() => (diff ? changeList(diff.entries) : []), [diff])
   const oldTint = useMemo(() => (diff ? tintedLines(diff.entries, 'old') : new Map()), [diff])
   const newTint = useMemo(() => (diff ? tintedLines(diff.entries, 'new') : new Map()), [diff])
@@ -132,8 +148,12 @@ function ComparePage() {
             tint={newTint}
           />
           <nav className="compare-changes" aria-label="Changes">
-            {!diff ? (
+            {!outcome ? (
               <p role="status">Comparing…</p>
+            ) : outcome.kind === 'incomplete' ? (
+              <p role="alert">{incompleteMessage(outcome.unavailable)}</p>
+            ) : outcome.kind === 'too-many' || !diff ? (
+              <p role="status">{TOO_MANY_MESSAGE}</p>
             ) : (
               <>
                 <p role="status" className="compare-summary">

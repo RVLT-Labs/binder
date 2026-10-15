@@ -2,8 +2,11 @@ import { blobUrl, storeBlob } from '../blobs/fetchBlob'
 import type { DocumentVersionRow, PageRow } from '../powersync/schema'
 
 export interface ShowBlobRows {
-  versions: readonly Pick<DocumentVersionRow, 'id' | 'status' | 'searchable_key'>[]
+  versions: readonly (Pick<DocumentVersionRow, 'id' | 'status' | 'searchable_key'> &
+    Partial<Pick<DocumentVersionRow, 'document_id' | 'version_number'>>)[]
   pages: readonly Pick<PageRow, 'document_version_id' | 'thumb_key' | 'words_key'>[]
+  /** Each document's current version, which is stored before its older ones. */
+  documents?: readonly { id: string; current_version_id: string | null }[]
 }
 
 /** The part of the local database prefetching reads. */
@@ -27,19 +30,50 @@ export interface PrefetchResult {
 const CONCURRENCY = 6
 
 /**
- * Everything the viewer and search read from a show's ready versions, in the order a reader needs
- * it: each version's searchable PDF, then its pages' thumbnails and word layers. Versions still
- * processing or failed have nothing worth storing yet.
+ * The order a document's versions are stored in, so a dropped connection or a full disk leaves the
+ * most useful ones cached: the current version, then the one before it, then the rest from newest
+ * to oldest. Rows without version numbers keep their given order.
  */
-export function blobUrlsForShow({ versions, pages }: ShowBlobRows): string[] {
+function versionOrder<T extends { id: string; version_number?: number | null }>(
+  versions: readonly T[],
+  currentId: string | null | undefined,
+): T[] {
+  const newestFirst = [...versions].sort(
+    (a, b) => (b.version_number ?? 0) - (a.version_number ?? 0),
+  )
+  const current = newestFirst.find((v) => v.id === currentId)
+  const below = current
+    ? newestFirst.find((v) => (v.version_number ?? 0) < (current.version_number ?? 0))
+    : undefined
+  return [
+    ...(current ? [current] : []),
+    ...(below ? [below] : []),
+    ...newestFirst.filter((v) => v !== current && v !== below),
+  ]
+}
+
+/**
+ * Everything the viewer, search, review and compare read from a show's ready versions, document by
+ * document: each version's searchable PDF, then its pages' thumbnails and word layers in page order.
+ * Versions still processing or failed have nothing worth storing yet. Every URL appears once.
+ */
+export function blobUrlsForShow({ versions, pages, documents = [] }: ShowBlobRows): string[] {
   const urls = new Set<string>()
+  const currentOf = new Map(documents.map((d) => [d.id, d.current_version_id]))
+  const byDocument = new Map<string, (typeof versions)[number][]>()
   for (const version of versions) {
     if (version.status !== 'ready') continue
-    if (version.searchable_key) urls.add(blobUrl(version.searchable_key))
-    for (const page of pages) {
-      if (page.document_version_id !== version.id) continue
-      if (page.thumb_key) urls.add(blobUrl(page.thumb_key))
-      if (page.words_key) urls.add(blobUrl(page.words_key))
+    const key = version.document_id ?? ''
+    byDocument.set(key, [...(byDocument.get(key) ?? []), version])
+  }
+  for (const [documentId, group] of byDocument) {
+    for (const version of versionOrder(group, currentOf.get(documentId))) {
+      if (version.searchable_key) urls.add(blobUrl(version.searchable_key))
+      for (const page of pages) {
+        if (page.document_version_id !== version.id) continue
+        if (page.thumb_key) urls.add(blobUrl(page.thumb_key))
+        if (page.words_key) urls.add(blobUrl(page.words_key))
+      }
     }
   }
   return [...urls]
@@ -61,14 +95,18 @@ export async function prefetchShow(
   } catch {}
 
   const versions = await db.getAll<ShowBlobRows['versions'][number]>(
-    'SELECT id, status, searchable_key FROM document_versions WHERE show_id = ?',
+    'SELECT id, document_id, version_number, status, searchable_key FROM document_versions WHERE show_id = ? ORDER BY document_id, version_number',
+    [showId],
+  )
+  const documents = await db.getAll<NonNullable<ShowBlobRows['documents']>[number]>(
+    'SELECT id, current_version_id FROM documents WHERE show_id = ? ORDER BY sort_order, created_at, id',
     [showId],
   )
   const pages = await db.getAll<ShowBlobRows['pages'][number]>(
     'SELECT document_version_id, thumb_key, words_key FROM pages WHERE show_id = ? ORDER BY document_version_id, "index"',
     [showId],
   )
-  const urls = blobUrlsForShow({ versions, pages })
+  const urls = blobUrlsForShow({ versions, pages, documents })
 
   const failed: string[] = []
   let done = 0
