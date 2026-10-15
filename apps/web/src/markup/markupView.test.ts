@@ -22,6 +22,7 @@ const cueRow = (id: string, departmentId: string, pageIndex: number, y: number, 
   dept_code: departmentId.toUpperCase(),
   dept_colour: '#F5A623',
   dept_number_format: 'decimal',
+  dept_sort_order: 0,
   dept_hidden: 0,
   ...extra,
 })

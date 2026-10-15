@@ -19,7 +19,8 @@ import {
   annotationBox,
   toShapeAnnotation,
 } from './AnnotationShape'
-import { CueMarker, cueBox } from './CueMarker'
+import { CueMarker, CueTrigger } from './CueMarker'
+import { layoutPageCues } from './cueLayout'
 import { useDragSlot } from './dragGesture'
 import { Handles } from './Handles'
 import { useMarkupSession } from './MarkupSession'
@@ -73,6 +74,19 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const pageIndex = page.index ?? 0
   const size = { width: page.width ?? 0, height: page.height ?? 0 }
   const cues = session.view.cuesByPage.get(pageIndex) ?? []
+  const { markerSide, departments } = session
+  // One layout for the page's tags, highlights and leaders: the same core code print stamps with.
+  const tags = useMemo(
+    () =>
+      layoutPageCues(
+        cues,
+        words,
+        size.width,
+        (id) => markerSide(id),
+        (id) => departments.find((d) => d.id === id)?.sort_order ?? 0,
+      ),
+    [cues, words, size.width, markerSide, departments],
+  )
   const annotations = session.view.annotationsByPage.get(pageIndex) ?? []
   const placing = tool === 'cue' && !('disabled' in session.cueTarget)
   const annotating =
@@ -136,7 +150,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
           width: dropPage.width ?? 0,
           height: dropPage.height ?? 0,
         })
-        void session.moveCue(cue.id, drop.pageIndex, point)
+        void session.moveCue(cue.id, drop.pageIndex, point, { dropped: true })
       },
       onStop: () => setGhost(null),
     })
@@ -187,6 +201,20 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
         onClick={onSurfaceClick}
         onPointerDown={gestures.onSurfaceDown}
       />
+      {cues.map((cue) => {
+        const tag = tags.get(cue.id)
+        return (
+          tag && (
+            <CueTrigger
+              key={cue.id}
+              cue={cue}
+              tag={tag}
+              interactive={tool === 'select' && !rebind}
+              onActivate={() => select('cues', cue.id)}
+            />
+          )
+        )
+      })}
       {annotations.map((row) => {
         const layer = layerOf(row)
         const selected = selection?.table === 'annotations' && selection.id === row.id
@@ -223,15 +251,19 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
       {cues.map((cue) => {
         const selected = selection?.table === 'cues' && selection.id === cue.id
         const movable = selected && session.canEditCue(cue)
+        const tag = tags.get(cue.id)
         return (
-          <CueMarker
-            key={cue.id}
-            cue={cue}
-            selected={selected}
-            movable={movable}
-            onPointerDown={(e) => onMarkerDown(e, cue)}
-            onActivate={() => select('cues', cue.id)}
-          />
+          tag && (
+            <CueMarker
+              key={cue.id}
+              cue={cue}
+              tag={tag}
+              selected={selected}
+              movable={movable}
+              onPointerDown={(e) => onMarkerDown(e, cue)}
+              onActivate={() => select('cues', cue.id)}
+            />
+          )
         )
       })}
       {annotations.map((row) => {
@@ -242,7 +274,8 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
       })}
       {cues.map((cue) => {
         const who = peerOn.get(`cues:${cue.id}`)
-        return who && <PeerOutline key={cue.id} box={cueBox(cue)} peers={who} />
+        const tag = tags.get(cue.id)
+        return who && tag && <PeerOutline key={cue.id} box={tag.tag} peers={who} />
       })}
       {ghost && createPortal(<DragGhost ghost={ghost} />, document.body)}
     </g>

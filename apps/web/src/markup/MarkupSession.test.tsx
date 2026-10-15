@@ -130,6 +130,16 @@ test('moveCue moves a cue on an editable, unlocked layer', async () => {
   })
 })
 
+test('a cue dropped by its tag takes the first word of the line when the pointer is outside it', async () => {
+  const session = renderSession()
+  await session.moveCue('c1', 0, { x: 10, y: 20 }, { dropped: true })
+  expect(updateCue).toHaveBeenCalledOnce()
+  // (This page has no word layer, so the drop is unsnapped; the option must not break that.)
+  expect(vi.mocked(updateCue).mock.calls[0]?.[3]).toEqual({
+    anchor: { documentId: 'd1', documentVersionId: 'v1', pageIndex: 0, x: 10, y: 20, status: 'ok' },
+  })
+})
+
 test('a cue that has gone (deleted by someone else) is left alone without a notice', async () => {
   db.getOptional.mockResolvedValue(null)
   const session = renderSession()

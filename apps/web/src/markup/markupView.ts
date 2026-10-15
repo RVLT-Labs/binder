@@ -10,6 +10,7 @@ export type CueRowWithDept = Omit<Database['cues'], 'anchor'> & {
   dept_code: string
   dept_colour: string
   dept_number_format: NumberFormat
+  dept_sort_order: number | null
   dept_hidden: number
 }
 

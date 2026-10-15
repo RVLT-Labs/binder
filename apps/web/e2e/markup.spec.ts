@@ -99,25 +99,34 @@ test('A places an LX cue snapped to a line on page 1 and B sees it within 5s', a
     expect(row?.anchor?.text?.quote.length).toBeGreaterThan(0)
     expect(row?.anchor?.status).toBe('ok')
 
-    // B's device draws it, upright, within five seconds, as a named control.
+    // B's device draws it, upright, within five seconds, as a named control: an opaque tag with the
+    // department code and the number, the label only in its accessible name and hover title.
     const bMarker = marker(b.page, id)
     await expect(bMarker).toBeVisible({ timeout: 5_000 })
     await expect(b.page.getByRole('button', { name: 'LX 10, page 1', exact: true })).toBeVisible()
-    const number = bMarker.locator('text').first()
-    await expect(number).toHaveText('LX 10')
-    const scaleY = await number.evaluate((t: SVGTextElement) => t.getCTM()?.d ?? 0)
+    const lead = bMarker.locator('text').first()
+    await expect(bMarker.locator('text')).toHaveText(['LX', '10'])
+    const scaleY = await lead.evaluate((t: SVGTextElement) => t.getCTM()?.d ?? 0)
     expect(scaleY).toBeGreaterThan(0)
-    const box = await number.boundingBox()
+    const box = await lead.boundingBox()
     const lineTop = await clientPoint(b.page, 0, line.x, line.centre)
     // Upright text centred on the line: the line's centre falls inside the text's box.
     expect(box?.y ?? 0).toBeLessThan(lineTop.y)
     expect((box?.y ?? 0) + (box?.height ?? 0)).toBeGreaterThan(lineTop.y)
+    // The tag sits in the left margin, clear of the line's words, which are highlighted instead.
+    const tagBox = await bMarker.locator('rect.cue-tag-body').boundingBox()
+    expect((tagBox?.x ?? 0) + (tagBox?.width ?? 0)).toBeLessThan(lineTop.x)
+    await expect(b.page.locator(`[data-cue-trigger="${id}"] rect.cue-highlight`)).toHaveCount(1)
 
-    // Editing the label in A's editor reaches B's marker.
+    // Editing the label in A's editor reaches B's marker, in its name and hover title.
     await editor.getByLabel('Label').fill('Sunrise')
     await editor.getByLabel('Label').press('Enter')
     await expect.poll(async () => (await localCue(a.page, id))?.label).toBe('Sunrise')
-    await expect(bMarker.locator('text').nth(1)).toHaveText('Sunrise', { timeout: 5_000 })
+    await expect(
+      b.page.getByRole('button', { name: 'LX 10, Sunrise, page 1', exact: true }),
+    ).toBeVisible({ timeout: 5_000 })
+    await expect(bMarker.locator('title')).toHaveText('LX 10, Sunrise')
+    await expect(bMarker.locator('text')).toHaveText(['LX', '10'])
     expect((await localCue(b.page, id))?.label).toBe('Sunrise')
 
     // The number is read as a cue number: nonsense is refused with a hint, 10.5 is 10 and 50.
@@ -132,7 +141,7 @@ test('A places an LX cue snapped to a line on page 1 and B sees it within 5s', a
     await numberField.press('Enter')
     await expect(editor.getByRole('alert')).toHaveCount(0)
     await expect(editor.getByRole('heading')).toHaveText('LX 10.5')
-    await expect(number).toHaveText('LX 10.5', { timeout: 5_000 })
+    await expect(bMarker.locator('text')).toHaveText(['LX', '10.5'], { timeout: 5_000 })
     const renumbered = await localCue(b.page, id)
     expect([renumbered?.major, renumbered?.minor]).toEqual([10, 50])
     await expect(
@@ -170,7 +179,7 @@ test('dragging the cue to page 2 moves it for both users', async ({ browser }) =
     const id = await placeWithTool(a.page, 0, page1)
 
     // Drag the selected marker onto a line of page 2.
-    const from = await a.page.locator(`[data-cue-id="${id}"] rect.cue-marker-box`).boundingBox()
+    const from = await marker(a.page, id).boundingBox()
     if (!from) throw new Error('marker not on screen')
     const to = await clientPoint(a.page, 1, page2.x, page2.centre + 4)
     await a.page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
@@ -229,7 +238,7 @@ test("B (SND only) cannot drag A's LX cue and has SND and personal as the only a
     await expect(editor.getByRole('button', { name: 'Delete cue' })).toBeDisabled()
 
     // Dragging does nothing: no ghost, and the anchor stays put on both devices.
-    const from = await b.page.locator(`[data-cue-id="${id}"] rect.cue-marker-box`).boundingBox()
+    const from = await marker(b.page, id).boundingBox()
     if (!from) throw new Error('marker not on screen')
     await b.page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await b.page.mouse.down()
@@ -242,6 +251,66 @@ test("B (SND only) cannot drag A's LX cue and has SND and personal as the only a
     expect(await localCue(b.page, id)).toEqual(before)
     expect((await localCue(a.page, id))?.anchor).toEqual(before?.anchor)
     await expect(marker(b.page, id)).toBeVisible()
+  })
+})
+
+test("an owner sets SND to the right and an SND cue's tag renders in the right margin for another member", async ({
+  browser,
+}) => {
+  const { sharedShow } = readRun()
+  await withUsers(browser, ['owner', 'lxEditor'], async ([a, b]) => {
+    // Everyone's markers come from the show's settings, which the owner changes on the settings page.
+    const settings = await a.context.newPage()
+    await settings.goto(`/shows/${sharedShow.id}/settings`)
+    const sndSide = settings.getByRole('group', { name: 'SND', exact: true })
+    await expect(sndSide.getByRole('radio', { name: 'Left' })).toBeChecked({ timeout: 20_000 })
+    let id = ''
+    try {
+      await sndSide.getByRole('radio', { name: 'Right' }).click()
+      await expect(sndSide.getByRole('radio', { name: 'Right' })).toBeChecked()
+
+      await a.page.getByLabel('Active layer SND').check()
+      id = await placeWithTool(a.page, 0, lineOf((await pageText(a.page, 0)).words, 5))
+      await expect(marker(b.page, id)).toBeVisible({ timeout: 10_000 })
+
+      // On B's device the tag is flush in the page's right margin, past the middle of the sheet and
+      // within a few points of the right edge; an LX tag on the same page is still on the left.
+      const sheet = await b.page.locator('[data-page-index="0"]').boundingBox()
+      const tag = await marker(b.page, id).locator('rect.cue-tag-body').boundingBox()
+      if (!sheet || !tag) throw new Error('page or tag not on screen')
+      const zoom = sheet.width / (await pageText(b.page, 0)).width
+      expect(tag.x).toBeGreaterThan(sheet.x + sheet.width / 2)
+      expect(sheet.x + sheet.width - (tag.x + tag.width)).toBeLessThan(6 * zoom)
+      expect(sheet.x + sheet.width - (tag.x + tag.width)).toBeGreaterThan(2 * zoom)
+
+      // Its leader runs from the highlighted words out to the tag: the near edge of the highlight
+      // is left of the tag.
+      const highlight = await b.page
+        .locator(`[data-cue-trigger="${id}"] rect.cue-highlight`)
+        .first()
+        .boundingBox()
+      expect((highlight?.x ?? 0) + (highlight?.width ?? 0)).toBeLessThan(tag.x)
+
+      // Back on the left, B's tag follows.
+      await sndSide.getByRole('radio', { name: 'Left' }).click()
+      await expect(sndSide.getByRole('radio', { name: 'Left' })).toBeChecked()
+      await expect
+        .poll(
+          async () => (await marker(b.page, id).locator('rect.cue-tag-body').boundingBox())?.x,
+          {
+            timeout: 10_000,
+          },
+        )
+        .toBeLessThan(sheet.x + sheet.width / 2)
+    } finally {
+      await sndSide.getByRole('radio', { name: 'Left' }).click()
+      await expect(sndSide.getByRole('radio', { name: 'Left' })).toBeChecked()
+      if (id) {
+        await marker(a.page, id).click()
+        await a.page.keyboard.press('Delete')
+        await expect(marker(a.page, id)).toHaveCount(0, { timeout: 5_000 })
+      }
+    }
   })
 })
 
@@ -424,7 +493,7 @@ test('a drag ends cleanly when a collaborator deletes the cue mid-drag', async (
     await expect(marker(b.page, id)).toBeVisible({ timeout: 5_000 })
 
     // A picks the selected marker up and holds it.
-    const from = await a.page.locator(`[data-cue-id="${id}"] rect.cue-marker-box`).boundingBox()
+    const from = await marker(a.page, id).boundingBox()
     if (!from) throw new Error('marker not on screen')
     await a.page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await a.page.mouse.down()

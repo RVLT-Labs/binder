@@ -82,3 +82,23 @@ test('the moving cue and unplaced cues are not neighbours', () => {
     { major: 11, minor: 0 },
   )
 })
+
+test('a dropped cue starts at the nearest word when the pointer is within the line, else the first word', () => {
+  const drop = { ...base, words: layer, snap: true, firstWordOutside: true }
+  // Within the line's extent (x 50 to 124): the nearest word, and x follows the word.
+  expect(anchorAt({ ...drop, point: { x: 90, y: 705 } })).toMatchObject({
+    x: 86,
+    y: 705,
+    text: { quote: 'or not', wordStart: 2, wordEnd: 3 },
+    status: 'ok',
+  })
+  // In the left margin, or right of the line: the line's first word.
+  for (const x of [10, 300]) {
+    expect(anchorAt({ ...drop, point: { x, y: 705 } })).toMatchObject({
+      x: 50,
+      text: { quote: 'To be or not', wordStart: 0, wordEnd: 3 },
+    })
+  }
+  // Not near a line: exactly where it was dropped.
+  expect(anchorAt({ ...drop, point: { x: 10, y: 600 } })).toMatchObject({ x: 10, y: 600 })
+})

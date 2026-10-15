@@ -1,5 +1,5 @@
 import { compareReadingOrder, snapToLine, suggestCueNumber } from '@binder/core'
-import type { Anchor, CueNumber, WordLayer } from '@binder/shared'
+import { type Anchor, type CueNumber, SNAP_DISTANCE_PT, type WordLayer } from '@binder/shared'
 
 export interface PlacementInput {
   documentId: string
@@ -11,6 +11,11 @@ export interface PlacementInput {
   words: WordLayer | null
   /** The document's snap setting, after the session toggle. */
   snap: boolean
+  /**
+   * A cue dropped by its margin tag: a pointer outside the line's extent starts the trigger at the
+   * line's first word (not the nearest), and the anchor's x follows the trigger's first word.
+   */
+  firstWordOutside?: boolean
 }
 
 /**
@@ -25,8 +30,10 @@ export function anchorAt({
   point,
   words,
   snap,
+  firstWordOutside = false,
 }: PlacementInput): Anchor {
-  const snapped = snap && words ? snapToLine(words, point) : null
+  const snapped =
+    snap && words ? snapToLine(words, point, SNAP_DISTANCE_PT, { firstWordOutside }) : null
   const anchor: Anchor = {
     documentId,
     documentVersionId,
@@ -35,7 +42,10 @@ export function anchorAt({
     y: point.y,
     status: 'ok',
   }
-  return snapped ? { ...anchor, y: snapped.y, text: snapped.text } : anchor
+  if (!snapped) return anchor
+  // A dropped cue's pointer was in the margin: its x is where its trigger starts instead.
+  const first = firstWordOutside ? words?.words[snapped.text.wordStart] : undefined
+  return { ...anchor, x: first?.x ?? anchor.x, y: snapped.y, text: snapped.text }
 }
 
 export interface NumberedCue {

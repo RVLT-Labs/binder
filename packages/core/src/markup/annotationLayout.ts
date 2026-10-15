@@ -1,7 +1,5 @@
 import { helveticaWidth } from './helvetica'
 
-/** Text size inside a cue marker box and beside it, in points. */
-export const MARKER_FONT_SIZE = 10
 export const DEFAULT_STROKE = 1.5
 export const DEFAULT_NOTE_FONT = 10
 export const DEFAULT_STAMP_FONT = 12

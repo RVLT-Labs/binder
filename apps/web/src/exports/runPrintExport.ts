@@ -94,6 +94,7 @@ interface DepartmentRow {
   code: string
   colour: string
   number_format: string | null
+  sort_order: number | null
   hidden: number | null
 }
 interface CueRow {
@@ -145,9 +146,10 @@ export async function runPrintExport(
   effects: Partial<PrintEffects> = {},
 ): Promise<PrintResult> {
   const fx = { ...defaultEffects, ...effects }
-  const [show] = await db.getAll<{ title: string }>('SELECT title FROM shows WHERE id = ?', [
-    ctx.showId,
-  ])
+  const [show] = await db.getAll<{ title: string; settings: string | null }>(
+    'SELECT title, settings FROM shows WHERE id = ?',
+    [ctx.showId],
+  )
   const [document] = await db.getAll<{ title: string }>(
     'SELECT title FROM documents WHERE id = ? AND show_id = ?',
     [input.documentId, ctx.showId],
@@ -160,7 +162,7 @@ export async function runPrintExport(
   if (!version.searchable_key) throw new Error('This version has not finished processing yet.')
 
   const departments = await db.getAll<DepartmentRow>(
-    'SELECT id, code, colour, number_format, hidden FROM departments WHERE show_id = ? ORDER BY sort_order, code',
+    'SELECT id, code, colour, number_format, sort_order, hidden FROM departments WHERE show_id = ? ORDER BY sort_order, code',
     [ctx.showId],
   )
 
@@ -221,8 +223,9 @@ export async function runPrintExport(
     })
   }
 
-  // Word layers matter only for highlights (their rectangles come from the words), so only the
-  // pages with a selected highlight need theirs. Without them a highlight prints as its quote.
+  // Word layers matter only for what is drawn from the words: a highlight's rectangles and a
+  // cue's trigger highlight. Only the pages with a selected one need theirs. Without them a
+  // highlight prints as its quote and a cue's trigger as a tick.
   const picked = new Set(layers.map(layerKey))
   const highlightPages = new Set(
     annotations
@@ -234,6 +237,15 @@ export async function runPrintExport(
       )
       .map((a) => a.anchor.pageIndex),
   )
+  for (const c of cues) {
+    if (
+      c.anchor?.documentVersionId === input.versionId &&
+      c.anchor.text &&
+      c.anchor.text.wordStart >= 0 &&
+      picked.has(layerKey({ kind: 'department', id: c.departmentId }))
+    )
+      highlightPages.add(c.anchor.pageIndex)
+  }
   const wordKeys = new Map(pageRows.map((p) => [p.index, p.words_key]))
 
   const pdf = await blobBytes(version.searchable_key, 'The script PDF')
@@ -264,7 +276,9 @@ export async function runPrintExport(
       code: d.code,
       colour: d.colour,
       numberFormat: (d.number_format === 'point' ? 'point' : 'decimal') as NumberFormat,
+      sortOrder: d.sort_order ?? 0,
     })),
+    settings: parseRecord(show.settings),
     wordLayers,
   })
   const createdAt = fx.now()

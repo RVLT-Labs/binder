@@ -148,3 +148,18 @@ export type PaperSize = 'A4' | 'Letter'
 export function paperSize(settings: Record<string, unknown>): PaperSize {
   return settings.paperSize === 'Letter' ? 'Letter' : 'A4'
 }
+
+export type MarkerSide = 'left' | 'right'
+
+/**
+ * The page margin a department's cue tags sit in: `settings.markerSides[departmentId]` when it is
+ * `'right'`, else `'left'`. Anything malformed falls back to left.
+ */
+export function markerSide(settings: Record<string, unknown>, departmentId: string): MarkerSide {
+  const sides = settings.markerSides
+  if (!sides || typeof sides !== 'object' || Array.isArray(sides)) return 'left'
+  const side = Object.hasOwn(sides, departmentId)
+    ? (sides as Record<string, unknown>)[departmentId]
+    : undefined
+  return side === 'right' ? 'right' : 'left'
+}

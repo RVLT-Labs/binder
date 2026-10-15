@@ -6,26 +6,38 @@ import {
   type CueType,
   type LayerRef,
   layerKey,
+  type MarkerSide,
+  markerSide,
   type NumberFormat,
   PERSONAL_LAYER_COLOUR,
   type WordLayer,
 } from '@binder/shared'
 import { formatCueNumber } from '../cues/numbering'
 import { DEFAULT_NOTE_FONT, DEFAULT_STAMP_FONT, DEFAULT_STROKE } from '../markup/annotationLayout'
-import { type Box, markerText } from '../markup/markers'
+import { type Box, markerLead } from '../markup/markers'
 import { wordBoxes } from '../markup/wordBoxes'
 
 /** One thing to draw on a script page, in displayed page space (points, origin bottom-left). */
 export type StampItem =
   | {
       kind: 'cue'
+      id: string
       pageIndex: number
+      /** The anchor: where an unbound cue's tick stands. */
       x: number
+      /** The anchor's y: the tag is level with it. */
       y: number
       type: CueType
-      boxText: string
-      labelText: string
+      /** The department half of the tag (`LX`, `SB LX`, `W LX`) and the formatted cue number. */
+      lead: string
+      number: string
       colour: string
+      /** The page margin the department's tags sit in. */
+      side: MarkerSide
+      /** Crowded tags are laid out in this order: department sort order, then cue number. */
+      sortKey: { department: number; major: number; minor: number }
+      /** The trigger words' boxes, one per line; empty when unbound or the page's words are unknown. */
+      triggerBoxes: Box[]
     }
   | {
       kind: 'annotation'
@@ -48,7 +60,16 @@ export interface StampInput {
   layers: LayerRef[]
   cues: Array<CueFields & { id: string }>
   annotations: Array<AnnotationFields & { id: string }>
-  departments: Array<{ id: string; code: string; colour: string; numberFormat: NumberFormat }>
+  departments: Array<{
+    id: string
+    code: string
+    colour: string
+    numberFormat: NumberFormat
+    sortOrder: number
+  }>
+  /** The show's settings: `markerSides` says which margin each department's tags sit in. */
+  settings: Record<string, unknown>
+  /** The word layers of the pages that have a bound cue or highlight, by page index. */
   wordLayers: ReadonlyMap<number, WordLayer>
 }
 
@@ -99,15 +120,20 @@ export function buildStampItems(input: StampInput): StampItem[] {
     if (!selected.has(layerKey({ kind: 'department', id: c.departmentId }))) continue
     const dept = departments.get(c.departmentId)
     if (!dept) continue
+    const words = input.wordLayers.get(c.anchor.pageIndex)
     items.push({
       kind: 'cue',
+      id: c.id,
       pageIndex: c.anchor.pageIndex,
       x: c.anchor.x,
       y: c.anchor.y,
       type: c.type,
-      boxText: markerText(c.type, dept.code, formatCueNumber(c.major, c.minor, dept.numberFormat)),
-      labelText: c.label,
+      lead: markerLead(c.type, dept.code),
+      number: formatCueNumber(c.major, c.minor, dept.numberFormat),
       colour: dept.colour,
+      side: markerSide(input.settings, dept.id),
+      sortKey: { department: dept.sortOrder, major: c.major, minor: c.minor },
+      triggerBoxes: words && c.anchor.text ? wordBoxes(words, c.anchor.text) : [],
     })
   }
   return items

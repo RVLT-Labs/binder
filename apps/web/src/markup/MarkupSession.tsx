@@ -4,6 +4,7 @@ import {
   canEditLayer,
   type LayerRef,
   layerKey,
+  type MarkerSide,
   PERSONAL_LAYER_COLOUR,
   type WordLayer,
 } from '@binder/shared'
@@ -24,6 +25,7 @@ import type { ViewerHandle } from '../viewer/Viewer'
 import { annotationToolState, cueToolState } from './activeDepartment'
 import { focusCueMarker } from './CueMarker'
 import type { LayerState, LayerStore } from './layerState'
+import { readMarkerSide } from './markerSideSettings'
 import type { CueRowWithDept, MarkupView } from './markupView'
 import { deleteCue, type EditContext, insertCue, updateCue } from './mutations'
 import { anchorAt, numberAt } from './placement'
@@ -70,6 +72,8 @@ export interface MarkupSession extends AnnotationActions {
   annotationTarget: { layer: LayerRef } | { disabled: string }
   /** The show's stamp set (its own, else the defaults). */
   stamps: string[]
+  /** The page margin a department's cue tags sit in (the show's setting; left by default). */
+  markerSide(departmentId: string | null): MarkerSide
   snap: boolean
   setSnap(on: boolean): void
   view: MarkupView
@@ -91,7 +95,16 @@ export interface MarkupSession extends AnnotationActions {
   layerColour(layer: LayerRef): string
   /** `words` is the page's word layer when the caller already has it; otherwise it is loaded. */
   placeCue(pageIndex: number, point: Point, type: CueType, words?: WordLayer | null): Promise<void>
-  moveCue(id: string, pageIndex: number, point: Point): Promise<void>
+  /**
+   * `dropped` is a cue dropped by its margin tag: a pointer outside the line's extent starts the
+   * trigger at the line's first word, not the nearest.
+   */
+  moveCue(
+    id: string,
+    pageIndex: number,
+    point: Point,
+    options?: { dropped?: boolean },
+  ): Promise<void>
   removeCue(id: string): Promise<void>
   /**
    * Puts a review item (a cue or annotation anchored to an older version) at a point of this
@@ -192,6 +205,11 @@ export function MarkupSessionProvider({
     layerName,
   })
   const stamps = readStamps(shows[0]?.settings)
+  const showSettings = shows[0]?.settings
+  const markerSide = useCallback(
+    (departmentId: string | null) => readMarkerSide(showSettings, departmentId ?? ''),
+    [showSettings],
+  )
   const snap = effectiveSnap(snapDefault, snapOverride)
 
   /** The live edit context: the membership scope as it is now, never a copy from an earlier render. */
@@ -285,7 +303,12 @@ export function MarkupSessionProvider({
   )
 
   const anchorFor = useCallback(
-    async (pageIndex: number, point: Point, loaded?: WordLayer | null) => {
+    async (
+      pageIndex: number,
+      point: Point,
+      loaded?: WordLayer | null,
+      firstWordOutside = false,
+    ) => {
       const page = latest.current.pages[pageIndex]
       const snapOn = latest.current.snap
       const words =
@@ -297,6 +320,7 @@ export function MarkupSessionProvider({
         point,
         words,
         snap: snapOn,
+        firstWordOutside,
       })
     },
     [documentId, versionId],
@@ -340,10 +364,10 @@ export function MarkupSessionProvider({
   )
 
   const moveCue = useCallback(
-    async (id: string, pageIndex: number, point: Point) => {
+    async (id: string, pageIndex: number, point: Point, options: { dropped?: boolean } = {}) => {
       try {
         if (!(await mayChange(id))) return
-        const anchor = await anchorFor(pageIndex, point)
+        const anchor = await anchorFor(pageIndex, point, undefined, options.dropped === true)
         const ctxNow = latest.current.ctx
         if (!ctxNow) return
         await updateCue(db, ctxNow, id, { anchor })
@@ -419,6 +443,7 @@ export function MarkupSessionProvider({
     cueTarget,
     annotationTarget,
     stamps,
+    markerSide,
     snap,
     setSnap,
     view,

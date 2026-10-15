@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { DEFAULT_STAMPS, paperSize, stampSet } from './markup'
+import { DEFAULT_STAMPS, markerSide, paperSize, stampSet } from './markup'
 import {
   anchorSchema,
   annotationFieldsSchema,
@@ -213,5 +213,24 @@ describe('paperSize', () => {
     expect(paperSize({ paperSize: 'A4' })).toBe('A4')
     expect(paperSize({ paperSize: 'legal' })).toBe('A4')
     expect(paperSize({ paperSize: 3 })).toBe('A4')
+  })
+})
+
+describe('markerSide', () => {
+  test('is left unless the show puts the department on the right', () => {
+    expect(markerSide({}, 'd1')).toBe('left')
+    expect(markerSide({ markerSides: { d1: 'right' } }, 'd1')).toBe('right')
+    expect(markerSide({ markerSides: { d1: 'right' } }, 'd2')).toBe('left')
+    expect(markerSide({ markerSides: { d1: 'left' } }, 'd1')).toBe('left')
+  })
+
+  test('falls back to left for anything malformed', () => {
+    expect(markerSide({ markerSides: 'right' }, 'd1')).toBe('left')
+    expect(markerSide({ markerSides: ['right'] }, '0')).toBe('left')
+    expect(markerSide({ markerSides: null }, 'd1')).toBe('left')
+    expect(markerSide({ markerSides: { d1: 'middle' } }, 'd1')).toBe('left')
+    expect(markerSide({ markerSides: { d1: 3 } }, 'd1')).toBe('left')
+    // An inherited key is not a department.
+    expect(markerSide({ markerSides: {} }, 'constructor')).toBe('left')
   })
 })

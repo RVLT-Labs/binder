@@ -77,3 +77,29 @@ describe('snapping', () => {
     expect(snapToLine(layer, { x: 110, y: 712 }, 5)).toBeNull()
   })
 })
+
+describe('a dropped cue (the first word outside the line)', () => {
+  const drop = { firstWordOutside: true }
+
+  test('within the line extent it starts at the nearest word, as before', () => {
+    expect(snapToLine(layer, { x: 110, y: 706 }, 12, drop)?.text.wordStart).toBe(1)
+    expect(snapToLine(layer, { x: 150, y: 706 }, 12, drop)?.text.wordStart).toBe(2)
+  })
+
+  test('left of the line, in the margin, it starts at the first word', () => {
+    expect(snapToLine(layer, { x: 10, y: 706 }, 12, drop)?.text).toEqual({
+      quote: 'THE PIRATES OF PENZANCE',
+      wordStart: 0,
+      wordEnd: 3,
+    })
+  })
+
+  test('right of the line it starts at the first word too, where the plain rule picks the last', () => {
+    expect(snapToLine(layer, { x: 400, y: 706 })?.text.wordStart).toBe(3)
+    expect(snapToLine(layer, { x: 400, y: 706 }, 12, drop)?.text.wordStart).toBe(0)
+  })
+
+  test('a point too far from every line still does not snap', () => {
+    expect(snapToLine(layer, { x: 10, y: 600 }, 12, drop)).toBeNull()
+  })
+})

@@ -1,9 +1,5 @@
 import { expect, test } from 'vitest'
-import { cueMarkerBox, hitTest } from './geometry'
-
-test('cueMarkerBox is 14 high, centred on y, left edge at x', () => {
-  expect(cueMarkerBox(100, 500, 30)).toEqual({ x: 100, y: 493, w: 38, h: 14 })
-})
+import { hitTest } from './geometry'
 
 const items = [
   { table: 'cues' as const, id: 'a', box: { x: 0, y: 0, w: 50, h: 14 } },

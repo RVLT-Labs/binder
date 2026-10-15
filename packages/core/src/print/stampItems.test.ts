@@ -10,8 +10,8 @@ import { expect, test } from 'vitest'
 import { buildStampItems, type StampItem } from './stampItems'
 
 const departments = [
-  { id: 'd-lx', code: 'LX', colour: '#F5A623', numberFormat: 'decimal' as const },
-  { id: 'd-tm', code: 'TM', colour: '#9B51E0', numberFormat: 'point' as const },
+  { id: 'd-lx', code: 'LX', colour: '#F5A623', numberFormat: 'decimal' as const, sortOrder: 0 },
+  { id: 'd-tm', code: 'TM', colour: '#9B51E0', numberFormat: 'point' as const, sortOrder: 20 },
 ]
 const anchor = (over: Partial<Anchor> = {}): Anchor => ({
   documentId: 'doc',
@@ -49,7 +49,12 @@ const annotation = (
   ...over,
 })
 const dept = (id: string): LayerRef => ({ kind: 'department', id })
-const base = { versionId: 'v1', departments, wordLayers: new Map<number, WordLayer>() }
+const base = {
+  versionId: 'v1',
+  departments,
+  settings: {},
+  wordLayers: new Map<number, WordLayer>(),
+}
 const annotations = (items: StampItem[]) => items.filter((i) => i.kind === 'annotation')
 
 test('buildStampItems keeps only the version and the selected layers, with marker text and colour', () => {
@@ -68,23 +73,31 @@ test('buildStampItems keeps only the version and the selected layers, with marke
   expect(items).toEqual([
     {
       kind: 'cue',
+      id: 'a',
       pageIndex: 0,
       x: 100,
       y: 500,
       type: 'go',
-      boxText: 'LX 10',
-      labelText: 'Sunrise',
+      lead: 'LX',
+      number: '10',
       colour: '#F5A623',
+      side: 'left',
+      sortKey: { department: 0, major: 10, minor: 0 },
+      triggerBoxes: [],
     },
     {
       kind: 'cue',
+      id: 'e',
       pageIndex: 2,
       x: 100,
       y: 300,
       type: 'standby',
-      boxText: 'SB LX 14.5',
-      labelText: 'Sunrise',
+      lead: 'SB LX',
+      number: '14.5',
       colour: '#F5A623',
+      side: 'left',
+      sortKey: { department: 0, major: 14, minor: 50 },
+      triggerBoxes: [],
     },
   ])
 })
@@ -96,7 +109,7 @@ test('point-format departments show two-digit minors', () => {
     cues: [cue('a', { departmentId: 'd-tm', major: 14, minor: 50, type: 'warn' })],
     annotations: [],
   })
-  expect(item).toMatchObject({ boxText: 'W TM 14.50', colour: '#9B51E0' })
+  expect(item).toMatchObject({ lead: 'W TM', number: '14.50', colour: '#9B51E0' })
 })
 
 test('annotations follow their layer: department colour, personal grey, style override', () => {
@@ -181,3 +194,48 @@ test('an empty layer selection stamps nothing', () =>
   expect(
     buildStampItems({ ...base, layers: [], cues: [cue('a')], annotations: [annotation('b')] }),
   ).toEqual([]))
+
+test('a cue carries its department side from the show settings, left by default', () => {
+  const items = buildStampItems({
+    ...base,
+    settings: { markerSides: { 'd-tm': 'right' } },
+    layers: [dept('d-lx'), dept('d-tm')],
+    cues: [cue('a'), cue('b', { departmentId: 'd-tm' })],
+    annotations: [],
+  })
+  expect(items.map((i) => (i.kind === 'cue' ? [i.side, i.sortKey.department] : null))).toEqual([
+    ['left', 0],
+    ['right', 20],
+  ])
+})
+
+test('a bound cue carries the word boxes of its trigger, one per line; unbound or no words carry none', () => {
+  const layer: WordLayer = {
+    words: [
+      { t: 'one', x: 50, y: 700, w: 30, h: 10 },
+      { t: 'two', x: 90, y: 700, w: 30, h: 10 },
+      { t: 'three', x: 50, y: 680, w: 40, h: 10 },
+    ],
+    lines: [[0, 1], [2]],
+  }
+  const items = buildStampItems({
+    ...base,
+    wordLayers: new Map([[0, layer]]),
+    layers: [dept('d-lx')],
+    cues: [
+      cue('a', { anchor: anchor({ text: { quote: 'two three', wordStart: 1, wordEnd: 2 } }) }),
+      cue('b', { anchor: anchor({ text: { quote: 'gone', wordStart: -1, wordEnd: -1 } }) }),
+      cue('c', {
+        anchor: anchor({ pageIndex: 4, text: { quote: 'no page', wordStart: 0, wordEnd: 0 } }),
+      }),
+      cue('d'),
+    ],
+    annotations: [],
+  })
+  const boxes = items.map((i) => (i.kind === 'cue' ? i.triggerBoxes : null))
+  expect(boxes[0]).toEqual([
+    { x: 90, y: 700, w: 30, h: 10 },
+    { x: 50, y: 680, w: 40, h: 10 },
+  ])
+  expect(boxes.slice(1)).toEqual([[], [], []])
+})

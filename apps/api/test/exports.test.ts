@@ -735,9 +735,52 @@ describe('exportMarkedScript', () => {
       })
       expect(record.privateTo).toBe(f.viewer.id)
       const text = await footerOf(await readRecord(f, record))
-      expect(text).toContain('CUELABELX')
+      // The cue's tag is on the page; its label is not.
+      expect(text.replace(/\s+/g, ' ')).toContain('LX 10')
+      expect(text).not.toContain('CUELABELX')
       expect(text).toContain('MINEZEBRA')
       expect(text).not.toContain('THEIRSQUOKKA')
+    },
+  )
+
+  test.skipIf(skipPoppler)(
+    "each department's tags sit on the side the show's markerSides sets",
+    async () => {
+      const f = await ready()
+      await f.deps.db
+        .update(shows)
+        .set({ settings: { markerSides: { [f.depts.SND.id]: 'right' } } })
+        .where(eq(shows.id, f.show.id))
+      for (const [dept, major] of [
+        [f.depts.LX, 10],
+        [f.depts.SND, 20],
+      ] as const) {
+        await createCue(f.deps.db, f.actors.owner, {
+          showId: f.show.id,
+          departmentId: dept.id,
+          number: { major, minor: 0 },
+          label: 'x',
+          anchor: anchorAt(f.docId, f.versionId, 0, 300, 400 + major),
+        })
+      }
+      const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+        documentId: f.docId,
+        layers: 'all',
+      })
+      const path = join(work, `${newId()}.pdf`)
+      await writeFile(path, await readRecord(f, record))
+      const { stdout } = await run('pdftotext', ['-f', '1', '-l', '1', '-bbox-layout', path, '-'])
+      const xOf = (t: string, num: string) => {
+        // The tag's department word sits level with its number word.
+        const words = [
+          ...stdout.matchAll(
+            /<word xMin="([\d.]+)" yMin="[\d.]+" xMax="[\d.]+" yMax="[\d.]+">([^<]*)<\/word>/g,
+          ),
+        ].map((m) => ({ x: Number(m[1]), t: m[2] }))
+        return words.filter((w) => w.t === t || w.t === num).map((w) => w.x)
+      }
+      expect(Math.min(...xOf('LX', '10'))).toBeLessThan(40)
+      expect(Math.max(...xOf('SND', '20'))).toBeGreaterThan(500)
     },
   )
 

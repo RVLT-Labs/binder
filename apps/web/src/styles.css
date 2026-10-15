@@ -469,7 +469,7 @@ body:has(.document-page) #root {
 .cue-marker {
   outline: none;
 }
-.cue-marker:focus-visible .cue-marker-box {
+.cue-marker:focus-visible .cue-tag-body {
   stroke: #1d4ed8;
   stroke-width: 2.5;
 }

@@ -25,7 +25,6 @@ export {
   DEFAULT_NOTE_FONT,
   DEFAULT_STAMP_FONT,
   DEFAULT_STROKE,
-  MARKER_FONT_SIZE,
   NOTE_LINE_HEIGHT,
   NOTE_MAX_WIDTH,
   UNBOUND_CHARS,
@@ -33,15 +32,29 @@ export {
   unboundSnippet,
   wrapText,
 } from './markup/annotationLayout'
-export { helveticaWidth } from './markup/helvetica'
-export type { Box, MarkerStyle } from './markup/markers'
+export type { CueTagInput, CueTagLayout } from './markup/cueTags'
 export {
-  cueMarkerBox,
-  MARKER_HEIGHT,
-  MARKER_PADDING,
-  markerStyle,
-  markerText,
-} from './markup/markers'
+  GRIP_RADIUS,
+  HIGHLIGHT_OPACITY,
+  HIGHLIGHT_OUTLINE,
+  HIGHLIGHT_PAD,
+  LEADER_WIDTH,
+  layoutCueTags,
+  TAG_BAR,
+  TAG_DIVIDER,
+  TAG_EDGE,
+  TAG_FONT_SIZE,
+  TAG_GAP,
+  TAG_HEIGHT,
+  TAG_OUTLINE,
+  TAG_PAD,
+  TAG_RADIUS,
+  TICK_HEIGHT,
+  tagWidth,
+} from './markup/cueTags'
+export { helveticaWidth } from './markup/helvetica'
+export type { Box } from './markup/markers'
+export { markerLead, markerText } from './markup/markers'
 export { wordBoxes } from './markup/wordBoxes'
 export type { FooterInfo } from './print/footer'
 export { footerText, layerSelectionLabel } from './print/footer'

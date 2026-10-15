@@ -202,7 +202,7 @@ test("B sees A's avatar on page 3's thumbnail within 3s and an outline on the cu
       await expect(group).toHaveAttribute('aria-hidden', 'true')
       await expect(outline).toHaveAttribute('pointer-events', 'none')
       const [markerBox, outlineBox] = await Promise.all([
-        bMarker.locator('rect.cue-marker-box').boundingBox(),
+        bMarker.locator('rect.cue-tag-body').boundingBox(),
         outline.boundingBox(),
       ])
       expect(outlineBox?.x ?? 0).toBeLessThan((markerBox?.x ?? 0) - 1)
@@ -213,9 +213,12 @@ test("B sees A's avatar on page 3's thumbnail within 3s and an outline on the cu
         'SELECT colour FROM departments WHERE id = ?',
         [departments.LX],
       )
-      const box = bMarker.locator('rect.cue-marker-box')
-      const drawn = (await box.getAttribute('fill')) === '#fff' ? 'stroke' : 'fill'
-      await expect(box).toHaveAttribute(drawn, deptColour.colour)
+      // The tag keeps its department colour: on its outline and its bar.
+      await expect(bMarker.locator('rect.cue-tag-body')).toHaveAttribute(
+        'stroke',
+        deptColour.colour,
+      )
+      await expect(bMarker.locator('rect.cue-tag-bar')).toHaveAttribute('fill', deptColour.colour)
       expect(deptColour.colour.toLowerCase()).not.toBe(colour)
       // Not focusable, and the marker under it is still B's to click.
       await expect(group.locator('[tabindex]')).toHaveCount(0)

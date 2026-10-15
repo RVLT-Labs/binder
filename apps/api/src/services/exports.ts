@@ -350,7 +350,9 @@ export async function exportMarkedScript(
       code: d.code,
       colour: d.colour,
       numberFormat: d.numberFormat,
+      sortOrder: d.sortOrder,
     })),
+    settings: (show.settings ?? {}) as Record<string, unknown>,
     wordLayers: text.layers,
   })
   const stamped = await stampScript(new Uint8Array(pdf), items, {

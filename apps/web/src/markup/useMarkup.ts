@@ -14,7 +14,8 @@ type RawAnnotation = Parameters<typeof groupMarkup>[1][number]
 /** Cues on a document version (`documentVersionId`) or anywhere in a document (`documentId`). */
 const cuesBy = (field: 'documentVersionId' | 'documentId') => `
   SELECT c.*, d.code AS dept_code, d.colour AS dept_colour,
-         d.number_format AS dept_number_format, d.hidden AS dept_hidden
+         d.number_format AS dept_number_format, d.sort_order AS dept_sort_order,
+         d.hidden AS dept_hidden
   FROM cues c JOIN departments d ON d.id = c.department_id
   WHERE c.show_id = ? AND json_extract(c.anchor, '$.${field}') = ?`
 

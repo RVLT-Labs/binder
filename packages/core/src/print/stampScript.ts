@@ -1,6 +1,8 @@
 import {
+  appendBezierCurve,
   closePath,
   degrees,
+  fillAndStroke,
   fill as fillPath,
   lineTo,
   moveTo,
@@ -11,10 +13,13 @@ import {
   pushGraphicsState,
   rgb,
   StandardFonts,
+  setDashPattern,
   setFillingColor,
+  setLineWidth,
+  setStrokingColor,
+  stroke as strokePath,
 } from 'pdf-lib'
 import {
-  MARKER_FONT_SIZE,
   NOTE_LINE_HEIGHT,
   NOTE_MAX_WIDTH,
   ANNOTATION_PAD as PAD,
@@ -22,8 +27,19 @@ import {
   unboundSnippet,
   wrapText,
 } from '../markup/annotationLayout'
+import {
+  type CueTagInput,
+  type CueTagLayout,
+  GRIP_RADIUS,
+  HIGHLIGHT_OPACITY,
+  HIGHLIGHT_OUTLINE,
+  LEADER_WIDTH,
+  layoutCueTags,
+  TAG_FONT_SIZE,
+  TAG_OUTLINE,
+  TAG_RADIUS,
+} from '../markup/cueTags'
 import { helveticaWidth } from '../markup/helvetica'
-import { cueMarkerBox, MARKER_PADDING, markerStyle } from '../markup/markers'
 import { type FooterInfo, footerText } from './footer'
 import type { StampItem } from './stampItems'
 import { toWinAnsi } from './winAnsi'
@@ -202,6 +218,55 @@ class DisplayedPage {
     })
   }
 
+  /** A white-or-coloured rounded rectangle, filled and/or outlined, in displayed space. */
+  roundedRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number,
+    o: {
+      fill?: ReturnType<typeof rgb>
+      stroke?: ReturnType<typeof rgb>
+      strokeWidth?: number
+      dash?: number[]
+    },
+  ) {
+    const k = r * 0.5523
+    const u = (dx: number, dy: number) => displayedToUser(this.frame, dx, dy)
+    const corner = (c1: [number, number], c2: [number, number], to: [number, number]) => {
+      const [a, b, e] = [u(...c1), u(...c2), u(...to)]
+      return appendBezierCurve(a.x, a.y, b.x, b.y, e.x, e.y)
+    }
+    const line = (to: [number, number]) => lineTo(u(...to).x, u(...to).y)
+    const start = u(x + r, y)
+    const both = o.fill && o.stroke
+    this.page.pushOperators(
+      pushGraphicsState(),
+      ...(o.fill ? [setFillingColor(o.fill)] : []),
+      ...(o.stroke ? [setStrokingColor(o.stroke), setLineWidth(o.strokeWidth ?? 1)] : []),
+      ...(o.dash ? [setDashPattern(o.dash, 0)] : []),
+      moveTo(start.x, start.y),
+      line([x + w - r, y]),
+      corner([x + w - r + k, y], [x + w, y + r - k], [x + w, y + r]),
+      line([x + w, y + h - r]),
+      corner([x + w, y + h - r + k], [x + w - r + k, y + h], [x + w - r, y + h]),
+      line([x + r, y + h]),
+      corner([x + r - k, y + h], [x, y + h - r + k], [x, y + h - r]),
+      line([x, y + r]),
+      corner([x, y + r - k], [x + r - k, y], [x + r, y]),
+      closePath(),
+      both ? fillAndStroke() : o.fill ? fillPath() : strokePath(),
+      popGraphicsState(),
+    )
+  }
+
+  /** A filled circle centred on displayed (x, y). */
+  dot(x: number, y: number, r: number, colour: ReturnType<typeof rgb>) {
+    const c = displayedToUser(this.frame, x, y)
+    this.page.drawCircle({ x: c.x, y: c.y, size: r, color: colour })
+  }
+
   /** A filled polygon through displayed points. */
   polygon(points: Array<[number, number]>, colour: ReturnType<typeof rgb>) {
     const [first, ...rest] = points.map(([x, y]) => displayedToUser(this.frame, x, y))
@@ -218,40 +283,70 @@ class DisplayedPage {
   }
 }
 
-function drawCue(d: DisplayedPage, item: Extract<StampItem, { kind: 'cue' }>) {
-  const colour = colourOf(item.colour)
-  const text = toWinAnsi(item.boxText)
-  const box = cueMarkerBox(item.x, item.y, helveticaWidth(text, MARKER_FONT_SIZE))
-  const style = markerStyle(item.type)
-  const solid = style.fill === 'solid'
-  d.rect(box.x, box.y, box.w, box.h, {
-    // An outline marker keeps a white backing so its number reads over the script's text.
-    fill: solid ? colour : WHITE,
-    fillOpacity: solid ? 1 : 0.85,
-    stroke: style.stroke === 'none' ? undefined : colour,
-    strokeWidth: 1.25,
-    dash: style.stroke === 'dashed' ? [3, 2] : undefined,
-  })
-  d.centredText(text, box.x + MARKER_PADDING / 2, item.y, MARKER_FONT_SIZE, solid ? WHITE : colour)
-  if (item.labelText)
-    haloText(d, item.labelText, box.x + box.w + 3, item.y, MARKER_FONT_SIZE, colour)
+type CueItem = Extract<StampItem, { kind: 'cue' }>
+
+/**
+ * The cues of one page, laid out together so crowded tags step aside. Highlights and leaders go
+ * down first, then the opaque tags, so a tag is never crossed by another cue's leader or highlight.
+ */
+function drawCues(d: DisplayedPage, pageWidth: number, items: CueItem[]) {
+  const inputs: CueTagInput[] = items.map((c) => ({
+    id: c.id,
+    y: c.y,
+    side: c.side,
+    lead: toWinAnsi(c.lead),
+    number: toWinAnsi(c.number),
+    dash: c.type === 'standby',
+    triggerBoxes: c.triggerBoxes,
+    anchorX: c.x,
+    sortKey: c.sortKey,
+  }))
+  const layouts = layoutCueTags({ pageWidth, cues: inputs })
+  const parts = layouts.map((layout, i) => ({
+    layout,
+    input: inputs[i] as CueTagInput,
+    colour: colourOf((items[i] as CueItem).colour),
+  }))
+  for (const { layout, colour } of parts) drawTrigger(d, layout, colour)
+  for (const { layout, colour } of parts) drawLeader(d, layout, colour)
+  for (const { layout, input, colour } of parts) drawTag(d, layout, input, colour)
 }
 
-/** Label text over a white backing that stands in for the screen's white halo. */
-function haloText(
+function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
+  for (const b of t.triggerBoxes) {
+    d.rect(b.x, b.y, b.w, b.h, {
+      fill: colour,
+      fillOpacity: HIGHLIGHT_OPACITY,
+      stroke: colour,
+      strokeWidth: HIGHLIGHT_OUTLINE,
+    })
+  }
+  if (t.tick) d.line(t.tick.x, t.tick.y1, t.tick.x, t.tick.y2, colour, LEADER_WIDTH * 1.5)
+}
+
+function drawLeader(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
+  if (t.leader) d.line(t.leader.x1, t.leader.y, t.leader.x2, t.leader.y, colour, LEADER_WIDTH)
+}
+
+function drawTag(
   d: DisplayedPage,
-  s: string,
-  x: number,
-  y: number,
-  size: number,
+  t: CueTagLayout,
+  input: CueTagInput,
   colour: ReturnType<typeof rgb>,
 ) {
-  const text = toWinAnsi(s)
-  d.rect(x - 1.5, y - size * 0.7, helveticaWidth(text, size) + 3, size * 1.4, {
-    fill: WHITE,
-    fillOpacity: 0.8,
+  const { tag, bar } = t
+  // An opaque white body, so the script never shows through, then the bar, grip dots and divider.
+  d.roundedRect(tag.x, tag.y, tag.w, tag.h, TAG_RADIUS, { fill: WHITE })
+  d.rect(bar.x, bar.y, bar.w, bar.h, { fill: colour })
+  for (const g of t.grips) d.dot(g.x, g.y, GRIP_RADIUS, WHITE)
+  d.rect(t.divider.x, t.divider.y, t.divider.w, t.divider.h, { fill: colour })
+  d.centredText(input.lead, t.leadX, t.centreY, TAG_FONT_SIZE, INK)
+  d.centredText(input.number, t.numberX, t.centreY, TAG_FONT_SIZE, INK)
+  d.roundedRect(tag.x, tag.y, tag.w, tag.h, TAG_RADIUS, {
+    stroke: colour,
+    strokeWidth: TAG_OUTLINE,
+    dash: t.dash ? [3, 2] : undefined,
   })
-  d.centredText(text, x, y, size, colour)
 }
 
 function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'annotation' }>) {
@@ -332,7 +427,7 @@ function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'anno
 }
 
 /**
- * The script PDF with its markup drawn on: markers, annotations, and a footer on every page.
+ * The script PDF with its markup drawn on: cue tags, annotations, and a footer on every page.
  * Pages are only drawn on, so sizes, boxes, rotation and the invisible text layer are untouched.
  * Item coordinates are displayed page space, relative to each page's visible box; items for
  * pages the PDF does not have are skipped.
@@ -347,11 +442,18 @@ export async function stampScript(
   const pages = doc.getPages()
   const drawers = pages.map((page) => new DisplayedPage(page, frameOf(page), font))
 
+  const cuesByPage = new Map<number, CueItem[]>()
   for (const item of items) {
     const d = drawers[item.pageIndex]
     if (!d) continue
-    if (item.kind === 'cue') drawCue(d, item)
-    else drawAnnotation(d, item)
+    if (item.kind === 'annotation') drawAnnotation(d, item)
+    else cuesByPage.set(item.pageIndex, [...(cuesByPage.get(item.pageIndex) ?? []), item])
+  }
+  // Cues go on last, so their tags sit on top of every annotation.
+  for (const [pageIndex, cues] of cuesByPage) {
+    const frame = frameOf(pages[pageIndex] as PDFPage)
+    const quarter = frame.rotation === 90 || frame.rotation === 270
+    drawCues(drawers[pageIndex] as DisplayedPage, quarter ? frame.h : frame.w, cues)
   }
 
   const line = footerText(footer)

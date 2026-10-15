@@ -85,8 +85,8 @@ async function removeRows(page: Page, table: 'cues' | 'annotations', ids: string
 }
 
 const marker = (page: Page, id: string) => page.locator(`[data-cue-id="${id}"]`)
-/** The marker's number box: the centre of the whole marker can fall on its label, beside the box. */
-const markerBox = (page: Page, id: string) => marker(page, id).locator('.cue-marker-box')
+/** The marker's tag: the control that is clicked and dragged. */
+const markerBox = (page: Page, id: string) => marker(page, id).locator('.cue-tag-body')
 const cueEditor = (page: Page) => page.getByRole('region', { name: 'Cue editor' })
 const annotationEditor = (page: Page) => page.getByRole('region', { name: 'Annotation editor' })
 

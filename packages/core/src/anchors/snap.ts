@@ -17,12 +17,15 @@ export function lineCentreY(layer: WordLayer, lineIndex: number): number {
 /**
  * Spec 5.2 snapping: the line whose centre is nearest `point.y` within `maxDistance`, with the text
  * anchor taken from the word nearest `point.x` forward to the line end, up to eight words. `x` is
- * not snapped. Null when no line is close enough.
+ * not snapped. Null when no line is close enough. With `firstWordOutside` (a cue dropped by its
+ * margin tag) a point outside the line's horizontal extent starts at the line's first word instead
+ * of the nearest one.
  */
 export function snapToLine(
   layer: WordLayer,
   point: { x: number; y: number },
   maxDistance = SNAP_DISTANCE_PT,
+  options: { firstWordOutside?: boolean } = {},
 ): { y: number; text: TextAnchor } | null {
   let best: { lineIndex: number; centre: number; distance: number } | null = null
   for (let lineIndex = 0; lineIndex < layer.lines.length; lineIndex++) {
@@ -38,15 +41,21 @@ export function snapToLine(
   const line = (layer.lines[best.lineIndex] ?? []).filter((i) => layer.words[i])
   let nearest = 0
   let nearestDx = Number.POSITIVE_INFINITY
-  line.forEach((wordIndex, pos) => {
-    const w = layer.words[wordIndex]
-    if (!w) return
-    const dx = point.x < w.x ? w.x - point.x : point.x > w.x + w.w ? point.x - (w.x + w.w) : 0
-    if (dx < nearestDx) {
-      nearestDx = dx
-      nearest = pos
-    }
-  })
+  const extent = line.map((i) => layer.words[i] as { x: number; w: number })
+  const outside =
+    point.x < Math.min(...extent.map((w) => w.x)) ||
+    point.x > Math.max(...extent.map((w) => w.x + w.w))
+  if (!(options.firstWordOutside && outside)) {
+    line.forEach((wordIndex, pos) => {
+      const w = layer.words[wordIndex]
+      if (!w) return
+      const dx = point.x < w.x ? w.x - point.x : point.x > w.x + w.w ? point.x - (w.x + w.w) : 0
+      if (dx < nearestDx) {
+        nearestDx = dx
+        nearest = pos
+      }
+    })
+  }
   const picked = line.slice(nearest, nearest + QUOTE_MAX_WORDS)
   const first = picked[0] as number
   const last = picked.at(-1) as number

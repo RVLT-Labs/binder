@@ -225,7 +225,8 @@ test('exporting the calling script downloads a PDF with the same page count whos
       expect(firstLine).not.toBe('')
       expect(exported[i]).toContain(firstLine)
     }
-    expect(exported[0]).toContain('LX 10')
+    // The cue is a tag in the margin: its code and number, not its label, not over the script.
+    expect(exported[0]).toMatch(/LX\s+10/)
     expect(exported.join('\n')).toContain(`${show.title} · Export libretto v1 · All layers`)
 
     // The exports screen lists the record once it has uploaded and synced back.

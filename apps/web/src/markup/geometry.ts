@@ -1,9 +1,7 @@
-import { type Box, cueMarkerBox } from '@binder/core'
+import type { Box } from '@binder/core'
 import type { MarkupTable } from './mutations'
 
 export type { Box }
-/** The cue marker's geometry lives in core so print stamping draws the same box. */
-export { cueMarkerBox }
 
 export interface HitItem {
   table: MarkupTable

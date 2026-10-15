@@ -2,7 +2,8 @@ import { stampSet } from '@binder/shared'
 
 export const STAMP_NAME_MAX = 40
 
-function parse(settings: string | null | undefined): Record<string, unknown> {
+/** A show's `settings` JSON text as a record; anything unreadable is empty. */
+export function parseSettings(settings: string | null | undefined): Record<string, unknown> {
   try {
     const value = settings ? JSON.parse(settings) : {}
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -13,12 +14,12 @@ function parse(settings: string | null | undefined): Record<string, unknown> {
 
 /** The stamps a show offers, from its `settings` JSON text: its own set, else the defaults. */
 export function readStamps(settings: string | null | undefined): string[] {
-  return stampSet(parse(settings))
+  return stampSet(parseSettings(settings))
 }
 
 /** The show's `settings` JSON text with its stamp set replaced; every other setting is kept. */
 export function withStamps(settings: string | null | undefined, stamps: string[]): string {
-  return JSON.stringify({ ...parse(settings), stampSet: stamps })
+  return JSON.stringify({ ...parseSettings(settings), stampSet: stamps })
 }
 
 /** Why `name` cannot join a set that already holds `others`, or null. A stamp is 1 to 40 characters. */

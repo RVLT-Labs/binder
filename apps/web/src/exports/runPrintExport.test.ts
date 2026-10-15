@@ -32,20 +32,44 @@ const ctx: EditContext = {
   scope: { role: 'editor', departments: [] },
 }
 
-const anchor = (pageIndex: number, versionId = 'v1') =>
+const anchor = (pageIndex: number, versionId = 'v1', text?: object) =>
   JSON.stringify({
     documentId: 'doc-1',
     documentVersionId: versionId,
     pageIndex,
     x: 100,
     y: 200,
+    ...(text ? { text } : {}),
     status: 'ok',
   })
 
+/** Page 0's words: the first LX cue goes on the second one. */
+const pageWords = {
+  words: [
+    { t: 'one', x: 100, y: 195, w: 30, h: 10 },
+    { t: 'two', x: 134, y: 195, w: 30, h: 10 },
+  ],
+  lines: [[0, 1]],
+}
+
 const departments = [
-  { id: 'd-lx', code: 'LX', colour: '#F5A623', number_format: 'decimal', hidden: 0 },
-  { id: 'd-snd', code: 'SND', colour: '#2E90FA', number_format: 'decimal', hidden: 0 },
-  { id: 'd-old', code: 'OLD', colour: '#667085', number_format: 'point', hidden: 1 },
+  { id: 'd-lx', code: 'LX', colour: '#F5A623', number_format: 'decimal', sort_order: 0, hidden: 0 },
+  {
+    id: 'd-snd',
+    code: 'SND',
+    colour: '#2E90FA',
+    number_format: 'decimal',
+    sort_order: 10,
+    hidden: 0,
+  },
+  {
+    id: 'd-old',
+    code: 'OLD',
+    colour: '#667085',
+    number_format: 'point',
+    sort_order: 20,
+    hidden: 1,
+  },
 ]
 const cues = [
   {
@@ -57,7 +81,7 @@ const cues = [
     type: 'go',
     notes: '',
     colour: null,
-    anchor: anchor(0),
+    anchor: anchor(0, 'v1', { quote: 'two', wordStart: 1, wordEnd: 1 }),
   },
   {
     id: 'c2',
@@ -102,14 +126,15 @@ function fakeDb(): ExportDb {
   return {
     async getAll<T>(sql: string): Promise<T[]> {
       const rows = (() => {
-        if (sql.includes('FROM shows')) return [{ title: 'Pirates: A/B' }]
+        if (sql.includes('FROM shows'))
+          return [{ title: 'Pirates: A/B', settings: '{"markerSides":{"d-snd":"right"}}' }]
         if (sql.includes('FROM documents')) return [{ title: 'Libretto' }]
         if (sql.includes('FROM document_versions'))
           return [{ version_number: 2, searchable_key: 'shows/show-1/v1/searchable.pdf' }]
         if (sql.includes('FROM departments')) return departments
         if (sql.includes('FROM cues')) return cues
         if (sql.includes('FROM annotations')) return annotations
-        if (sql.includes('FROM pages')) return [{ index: 0, words_key: null }]
+        if (sql.includes('FROM pages')) return [{ index: 0, words_key: 'w0' }]
         throw new Error(`unexpected query ${sql}`)
       })()
       return rows as T[]
@@ -140,6 +165,7 @@ async function run(layers: LayerRef[]) {
       download: (filename, bytes) => downloads.push({ filename, bytes }),
       enqueue: async (p) => void queued.push(p),
       now: () => new Date(2026, 9, 15, 14, 2),
+      loadWords: async (key) => (key === 'w0' ? pageWords : null),
     },
   )
   const items = (stamp.calls[0]?.[1] ?? []) as core.StampItem[]
@@ -152,9 +178,11 @@ const personal: LayerRef = { kind: 'personal', id: ME }
 
 test('stamps the chosen layers for this version, downloads the file, and queues it for upload', async () => {
   const { result, downloads, queued, items, footer } = await run([dept('d-lx'), personal])
-  const kinds = items.map((i) => (i.kind === 'cue' ? `cue:${i.labelText}` : `note:${i.text}`))
+  const kinds = items.map((i) =>
+    i.kind === 'cue' ? `cue:${i.lead} ${i.number}` : `note:${i.text}`,
+  )
   // Only LX and the user's own personal layer, only on this version; never the other's note.
-  expect(kinds.sort()).toEqual(['cue:Sunrise', 'note:lx note', 'note:mine'])
+  expect(kinds.sort()).toEqual(['cue:LX 10', 'note:lx note', 'note:mine'])
   expect(footer).toMatchObject({
     showTitle: 'Pirates: A/B',
     documentLabel: 'Libretto v2',
@@ -182,6 +210,23 @@ test('stamps the chosen layers for this version, downloads the file, and queues 
     },
   })
   expect(queued[0].bytes).toBe(result.bytes)
+})
+
+test("a cue carries its department's side from the show's settings and its sort order", async () => {
+  const { items } = await run([dept('d-lx'), dept('d-snd')])
+  const cueItems = items.flatMap((i) => (i.kind === 'cue' ? [i] : []))
+  expect(cueItems.map((c) => [c.lead, c.side, c.sortKey.department])).toEqual([
+    ['LX', 'left', 0],
+    ['SND', 'right', 10],
+  ])
+})
+
+test('a bound cue carries the boxes of its trigger words, read from its page', async () => {
+  const { items } = await run([dept('d-lx'), dept('d-snd')])
+  const cueItems = items.flatMap((i) => (i.kind === 'cue' ? [i] : []))
+  expect(cueItems[0]?.triggerBoxes).toEqual([{ x: 134, y: 195, w: 30, h: 10 }])
+  // The SND cue is unbound: a tick, not a highlight.
+  expect(cueItems[1]?.triggerBoxes).toEqual([])
 })
 
 test('a clean copy stamps nothing but the footer', async () => {

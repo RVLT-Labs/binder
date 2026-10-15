@@ -253,7 +253,7 @@ test('the version switcher shows v1 read-only with its cues where they were', as
     await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Redo' })).toBeDisabled()
     await expect(page.locator('.tool-hint').first()).toHaveText('Viewing v1 — read-only')
-    await marker(ids.twenty).locator('rect.cue-marker-box').click()
+    await marker(ids.twenty).locator('rect.cue-tag-body').click()
     const editor = page.getByRole('region', { name: 'Cue editor' })
     await expect(editor).toContainText('Viewing v1 — read-only')
     await expect(editor.getByLabel('Label')).toBeDisabled()
