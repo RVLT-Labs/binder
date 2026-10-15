@@ -75,8 +75,15 @@ interface Unit {
   end: number
 }
 
-/** Normalised tokens of the stream; a hyphenated line end joins with the next word. */
+const unitsCache = new WeakMap<StreamWord[], Unit[]>()
+
+/**
+ * Normalised tokens of the stream; a hyphenated line end joins with the next word. Cached per stream
+ * array (streams are never mutated once built), so many quote lookups share one pass.
+ */
 function unitsOf(stream: StreamWord[]): Unit[] {
+  const cached = unitsCache.get(stream)
+  if (cached) return cached
   const units: Unit[] = []
   for (let i = 0; i < stream.length; i++) {
     const w = stream[i] as StreamWord
@@ -91,6 +98,7 @@ function unitsOf(stream: StreamWord[]): Unit[] {
     const norm = normaliseForMatch(w.t)
     if (norm !== '') units.push({ norm, start: i, end: i })
   }
+  unitsCache.set(stream, units)
   return units
 }
 
