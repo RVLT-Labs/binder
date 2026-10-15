@@ -7,7 +7,8 @@ export const APPLE_TOUCH_ICON = '/apple-touch-icon.png'
  * The web app manifest (spec 3.1: an installable PWA; the iPad is a target). vite.config.ts hands it
  * to vite-plugin-pwa, which writes manifest.webmanifest and links it. Colours are styles.css's: the
  * page background (#fafafa) while launching and the header (#fff) for the browser chrome. The icons in
- * public/ are a plain B monogram, safe for a maskable crop.
+ * public/ are the Binder mark drawn by scripts/make-icons.mjs: rounded tiles for "any", and a
+ * full-bleed tile for "maskable" so the OS crop keeps the letter inside its safe zone.
  */
 export const webManifest = {
   name: 'Binder',
@@ -21,6 +22,6 @@ export const webManifest = {
   icons: [
     { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
     { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    { src: '/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
   ],
 } satisfies Partial<ManifestOptions>

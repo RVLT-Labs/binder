@@ -114,7 +114,7 @@ function offlineShell(): Plugin[] {
     injectRegister: false,
     manifest: webManifest,
     // The icons and manifest are precached with the shell, so an installed app opens offline.
-    includeAssets: ['apple-touch-icon.png'],
+    includeAssets: ['apple-touch-icon.png', 'favicon.svg', 'favicon-32.png'],
     workbox: {
       globPatterns: ['**/*.{html,js,mjs,css,wasm}', 'pdfjs/**/*'],
       maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,

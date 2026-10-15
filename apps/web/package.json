@@ -11,7 +11,8 @@
     "test": "vitest run",
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "e2e:offline": "playwright test -c e2e/playwright.offline.config.ts",
-    "e2e:all": "pnpm e2e && pnpm e2e:offline"
+    "e2e:all": "pnpm e2e && pnpm e2e:offline",
+    "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
     "@binder/core": "workspace:*",

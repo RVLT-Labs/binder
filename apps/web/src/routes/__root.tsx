@@ -11,6 +11,7 @@ import {
 import { authClient } from '../auth/client'
 import { useSessionUser } from '../auth/session'
 import { signOutAndClear } from '../auth/signOut'
+import { BinderMark } from '../brand/BinderMark'
 import { Notices } from '../components/Notices'
 import { clearNotices } from '../components/noticeStore'
 import { SyncStatus } from '../components/SyncStatus'
@@ -33,6 +34,7 @@ function RootLayout() {
     <PowerSyncProvider userId={user.id}>
       <header className="app-header">
         <Link to="/" className="brand">
+          <BinderMark className="brand-mark" />
           Binder
         </Link>
         <nav>

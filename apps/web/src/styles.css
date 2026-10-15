@@ -20,9 +20,17 @@ body {
   flex: 1;
 }
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 700;
   text-decoration: none;
   color: inherit;
+}
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  flex: none;
 }
 .sync-status[data-state="offline"] {
   color: #b42318;
