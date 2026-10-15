@@ -119,3 +119,10 @@ export function stampSet(settings: Record<string, unknown>): string[] {
   }
   return [...DEFAULT_STAMPS]
 }
+
+export type PaperSize = 'A4' | 'Letter'
+
+/** The paper cue sheets are laid out for: `settings.paperSize` when it is `'A4'` or `'Letter'`, else `'A4'`. */
+export function paperSize(settings: Record<string, unknown>): PaperSize {
+  return settings.paperSize === 'Letter' ? 'Letter' : 'A4'
+}

@@ -41,6 +41,7 @@ export const TOOL_NAMES = [
   'revert_batch',
   'list_exports',
   'export_marked_script',
+  'export_cue_list',
 ] as const
 
 export type ToolName = (typeof TOOL_NAMES)[number]
@@ -88,6 +89,7 @@ export const OPERATION_TO_TOOL: Record<string, ToolName> = {
   revertBatch: 'revert_batch',
   listExportRecords: 'list_exports',
   exportMarkedScript: 'export_marked_script',
+  exportCueList: 'export_cue_list',
 }
 
 const TOKEN_REASON = 'token management stays in the UI so an agent cannot mint credentials'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { DEFAULT_STAMPS, stampSet } from './markup'
+import { DEFAULT_STAMPS, paperSize, stampSet } from './markup'
 import {
   anchorSchema,
   annotationFieldsSchema,
@@ -189,5 +189,15 @@ describe('stampSet', () => {
     expect(stampSet({ stampSet: 'Go' })).toEqual([...DEFAULT_STAMPS])
     expect(stampSet({ stampSet: ['Go', 3] })).toEqual([...DEFAULT_STAMPS])
     expect(stampSet({ stampSet: ['Hold', 'Go'] })).toEqual(['Hold', 'Go'])
+  })
+})
+
+describe('paperSize', () => {
+  test('is A4 unless the settings say Letter', () => {
+    expect(paperSize({})).toBe('A4')
+    expect(paperSize({ paperSize: 'Letter' })).toBe('Letter')
+    expect(paperSize({ paperSize: 'A4' })).toBe('A4')
+    expect(paperSize({ paperSize: 'legal' })).toBe('A4')
+    expect(paperSize({ paperSize: 3 })).toBe('A4')
   })
 })

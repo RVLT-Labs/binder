@@ -1,10 +1,12 @@
 import type { LayerRef } from '@binder/shared'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
-import { exportMarkedScript, getDocument, listExportRecords } from '../../services'
+import { invalid } from '../../errors'
+import { exportCueList, exportMarkedScript, getDocument, listExportRecords } from '../../services'
 import type { McpContext } from '../context'
 import { guarded, jsonResult, pageArgs, paginate, toJson } from '../results'
 import { resolveLayer } from './annotations'
+import { resolveDepartment } from './cues'
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
 const CREATE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
@@ -77,6 +79,58 @@ export function registerExportTools(server: McpServer, mcp: McpContext): void {
         versionId,
         layers: selection,
       })
+      const result = jsonResult({ record, uri })
+      return {
+        ...result,
+        content: [
+          ...result.content,
+          {
+            type: 'resource_link',
+            uri,
+            name: record.filename,
+            mimeType: exportMimeType(record.kind),
+          },
+        ],
+        structuredContent: toJson({ record, uri }),
+      }
+    }),
+  )
+
+  server.registerTool(
+    'export_cue_list',
+    {
+      title: 'Export a department cue list',
+      description:
+        "Makes a department's cue sheet as a PDF (laid out for the show's paper size, A4 or " +
+        'Letter), an XLSX workbook or a CSV file, with columns Cue, Type, Label, Page, Document, ' +
+        'Trigger, Notes and Status, in cue-number order with unplaced cues last. Name the ' +
+        'department with `department` (a code like LX, or an id) and the `showId`, or give ' +
+        '`departmentId` alone. Records the export and returns the record and a resource_link to ' +
+        'read the file (binder://shows/{showId}/exports/{exportId}).',
+      inputSchema: z.object({
+        department: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('The department code (like LX) or id. Needs showId unless it is an id.'),
+        departmentId: z.string().min(1).optional().describe('The department id.'),
+        showId: z.string().min(1).optional().describe('The show id, to resolve a department code.'),
+        format: z.enum(['pdf', 'xlsx', 'csv']).describe('The file to make.'),
+      }),
+      annotations: CREATE,
+    },
+    guarded(async ({ department, departmentId, showId, format }, ctx) => {
+      const actor = mcp.actor(ctx)
+      if ((department === undefined) === (departmentId === undefined)) {
+        throw invalid('give either department or departmentId')
+      }
+      // With a showId the department is looked up in that show (so a code works, and an id from
+      // another show is refused); an id alone is looked up on its own.
+      const ref = (department ?? departmentId) as string
+      let id = ref
+      if (showId !== undefined) id = await resolveDepartment(db, actor, showId, ref)
+      else if (department !== undefined) throw invalid('showId is required with a department code')
+      const { record, uri } = await exportCueList(db, blobs, actor, { departmentId: id, format })
       const result = jsonResult({ record, uri })
       return {
         ...result,

@@ -45,7 +45,9 @@ function ExportsPage() {
         </section>
       )}
       {records.length === 0 && pending.length === 0 ? (
-        <p className="muted">No exports yet. Use Print in a document to make one.</p>
+        <p className="muted">
+          No exports yet. Use Print in a document, or Export on a cue list, to make one.
+        </p>
       ) : (
         <ul className="export-list" aria-label="Exports">
           {records.map((r) => (

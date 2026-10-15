@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { type FormEvent, useState } from 'react'
 import { api } from '../api/client'
+import { PaperSizeEditor } from '../exports/PaperSizeEditor'
 import { canUncheckDepartment, LAST_DEPARTMENT_HINT, nextScope } from '../markup/memberScope'
 import { StampSetEditor } from '../markup/StampSetEditor'
 import { type DepartmentRow, useDepartments } from '../markup/useDepartments'
@@ -39,6 +40,7 @@ function SettingsPage() {
       {!isOwner && <p>Only owners can change these settings.</p>}
       <DepartmentsSection showId={showId} departments={departments} editable={isOwner} />
       <StampSetEditor showId={showId} editable={isOwner} />
+      <PaperSizeEditor showId={showId} editable={isOwner} />
       <MembersSection showId={showId} departments={departments} editable={isOwner} />
     </>
   )

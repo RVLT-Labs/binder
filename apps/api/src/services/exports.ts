@@ -1,5 +1,14 @@
 import { Readable } from 'node:stream'
-import { buildStampItems, layerSelectionLabel, stampScript } from '@binder/core'
+import {
+  buildStampItems,
+  cueListRows,
+  cueSheetCsv,
+  cueSheetPdf,
+  cueSheetXlsx,
+  layerSelectionLabel,
+  stampScript,
+  toCueSheetRows,
+} from '@binder/core'
 import {
   annotations,
   cues as cuesTable,
@@ -9,7 +18,7 @@ import {
   exportRecords,
   shows,
 } from '@binder/db'
-import { type Actor, type LayerRef, layerKey, newId } from '@binder/shared'
+import { type Actor, type LayerRef, layerKey, newId, paperSize } from '@binder/shared'
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { z } from 'zod'
 import { type BlobStore, readBlobBytes } from '../blob/BlobStore'
@@ -259,9 +268,9 @@ export async function listExportRecords(
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are the point
 const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|\u0000-\u001f]/g
 
-function exportFilename(parts: string[]): string {
+function exportFilename(parts: string[], ext: 'pdf' | 'xlsx' | 'csv' = 'pdf'): string {
   const base = parts.join(' - ').replace(UNSAFE_FILENAME_CHARS, '-').trim()
-  return `${base.slice(0, 196)}.pdf`
+  return `${base.slice(0, 196)}.${ext}`
 }
 
 /**
@@ -366,6 +375,86 @@ export async function exportMarkedScript(
     filename: exportFilename([show.title, documentLabel, layerLabel]),
     layerSelection: selection,
     file: Readable.from(Buffer.from(stamped)),
+  })
+  return { record, uri: exportUri(record.showId, record.id) }
+}
+
+const CUE_LIST_FORMATS = {
+  pdf: { kind: 'pdf-sheet', ext: 'pdf' },
+  xlsx: { kind: 'xlsx', ext: 'xlsx' },
+  csv: { kind: 'csv', ext: 'csv' },
+} as const
+
+/**
+ * Viewer or above. A department's cue sheet as a PDF (on the show's paper size), an XLSX or a CSV,
+ * made from the same rows as the cue list screen and recorded like any export. The layer selection
+ * is the department, so the record is public to the show; the filename is
+ * `<show> - <CODE> cue sheet.<ext>`. Like the other server-side export it works on archived shows.
+ * Clients normally make the file themselves (so it works offline) and upload it; this is for agents.
+ */
+export async function exportCueList(
+  db: Executor,
+  blobs: BlobStore,
+  actor: Actor,
+  input: { departmentId: string; format: 'pdf' | 'xlsx' | 'csv' },
+): Promise<{ record: ExportRecord; uri: string }> {
+  if (!Object.hasOwn(CUE_LIST_FORMATS, input.format))
+    throw invalid('format must be pdf, xlsx or csv')
+  if (input.departmentId.includes('\u0000')) throw notFound('Department not found')
+  const [department] = await db
+    .select()
+    .from(departmentsTable)
+    .where(eq(departmentsTable.id, input.departmentId))
+  if (!department) throw notFound('Department not found')
+  try {
+    await requireShowRole(db, actor, department.showId, 'viewer')
+  } catch (err) {
+    // A non-member gets the message a missing id gets; token scope stays forbidden (R27).
+    if (err instanceof AppError && err.code === 'not_found') throw notFound('Department not found')
+    throw err
+  }
+  const [show] = await db.select().from(shows).where(eq(shows.id, department.showId))
+  if (!show) throw notFound('Show not found')
+
+  const [cueRows, documentRows] = await Promise.all([
+    db.select().from(cuesTable).where(eq(cuesTable.departmentId, department.id)),
+    db.select().from(documents).where(eq(documents.showId, department.showId)),
+  ])
+  const rows = toCueSheetRows(cueListRows(cueRows, [department], documentRows))
+
+  const exportId = newId()
+  const now = new Date()
+  const { kind, ext } = CUE_LIST_FORMATS[input.format]
+  const title = `${department.code} cue sheet`
+  let bytes: Uint8Array
+  if (input.format === 'pdf') {
+    const settings = (show.settings ?? {}) as Record<string, unknown>
+    bytes = await cueSheetPdf(rows, {
+      title: `${show.title} ${title}`,
+      paper: paperSize(settings),
+      footer: {
+        showTitle: show.title,
+        documentLabel: title,
+        layerLabel: department.code,
+        binderVersion: null,
+        exportId,
+        date: now,
+      },
+    })
+  } else if (input.format === 'xlsx') {
+    bytes = cueSheetXlsx(rows, { sheetName: department.code })
+  } else {
+    bytes = new TextEncoder().encode(cueSheetCsv(rows))
+  }
+
+  const record = await createExportRecord(db, blobs, actor, {
+    id: exportId,
+    showId: department.showId,
+    kind,
+    filename: exportFilename([show.title, title], ext),
+    layerSelection: [{ kind: 'department', id: department.id }],
+    file: Readable.from(Buffer.from(bytes)),
+    createdAt: now,
   })
   return { record, uri: exportUri(record.showId, record.id) }
 }

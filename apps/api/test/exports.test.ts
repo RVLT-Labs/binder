@@ -325,8 +325,8 @@ describe('POST /api/shows/:showId/exports', () => {
     ).toBe('invalid')
   })
 
-  test('a non-PDF file is 400 and nothing is stored, for the csv kind too', async () => {
-    for (const kind of ['pdf-sheet', 'csv'] as const) {
+  test('a non-PDF file is 400 and nothing is stored, for both PDF kinds (CSV and XLSX have their own checks)', async () => {
+    for (const kind of ['pdf-script', 'pdf-sheet'] as const) {
       const id = newId()
       const res = await post(s.owner, meta({ id, kind }), {
         bytes: new TextEncoder().encode('a,b\n1,2\n'),

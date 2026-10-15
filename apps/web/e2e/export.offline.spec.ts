@@ -60,3 +60,50 @@ test('after a cold offline reload, print downloads at once and the record is mad
   await expect(records).toHaveCount(before + 1, { timeout: 60_000 })
   await expect(waiting).toHaveCount(0, { timeout: 30_000 })
 })
+
+/**
+ * A cue sheet with no network after a cold reload: the XLSX writer is a lazy chunk (fflate), so it
+ * must come from the precache, and the rows from the local database.
+ */
+test('after a cold offline reload, the cue list exports an XLSX at once and its record is made on reconnecting', async ({
+  page,
+  context,
+}, testInfo) => {
+  test.setTimeout(180_000)
+  const { sharedShow } = readRun()
+  await page.goto(`/shows/${sharedShow.id}/exports`)
+  await expect(page.getByRole('heading', { name: 'Exports' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByLabel('Sync status')).toHaveText('Connected', { timeout: 30_000 })
+  const records = page.locator('li[data-export-id]')
+  const before = await records.count()
+
+  await page.goto(`/shows/${sharedShow.id}/cues`)
+  await expect(page.getByRole('heading', { name: /cue list$/ })).toBeVisible({ timeout: 30_000 })
+  await page.evaluate(() => navigator.serviceWorker.ready)
+  await expect
+    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
+    .toBe(true)
+
+  await context.setOffline(true)
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false)
+  await page.reload()
+  await expect(page.getByRole('heading', { name: /cue list$/ })).toBeVisible({ timeout: 30_000 })
+
+  const group = page.getByRole('group', { name: 'Export cue sheet' })
+  // The list may hold no cues in this show; the sheet is still made (header only).
+  await expect(group).toBeVisible()
+  const exportButton = group.getByRole('button', { name: 'XLSX' })
+  await expect(exportButton).toBeEnabled({ timeout: 20_000 })
+  const [download] = await Promise.all([page.waitForEvent('download'), exportButton.click()])
+  const saved = join(testInfo.outputDir, 'offline-sheet.xlsx')
+  await download.saveAs(saved)
+  expect(readFileSync(saved).subarray(0, 2).toString()).toBe('PK')
+
+  await page.goto(`/shows/${sharedShow.id}/exports`)
+  const waiting = page.getByRole('region', { name: 'Waiting to upload' })
+  await expect(waiting).toContainText(download.suggestedFilename(), { timeout: 30_000 })
+
+  await context.setOffline(false)
+  await expect(records).toHaveCount(before + 1, { timeout: 60_000 })
+  await expect(waiting).toHaveCount(0, { timeout: 30_000 })
+})

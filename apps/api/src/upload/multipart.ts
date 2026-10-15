@@ -6,15 +6,26 @@ import { AppError, invalid, payloadTooLarge } from '../errors'
 
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
-const PDF_MAGIC = Buffer.from('%PDF-')
 const MAX_FIELD_BYTES = 64 * 1024
 
-export interface PdfUpload {
+export interface Upload {
   /** Text fields that arrived before the file part. Clients must send the file last. */
   fields: Record<string, string>
-  /** The PDF bytes, beginning with `%PDF-`. Errors with `payload_too_large` or `invalid` if the upload fails mid-stream. */
+  /** The file bytes, beginning with the expected magic when one was asked for. Errors with `payload_too_large` or `invalid` if the upload fails mid-stream. */
   file: { stream: Readable; filename: string }
 }
+
+export interface UploadOptions {
+  /**
+   * The bytes the file must begin with (`%PDF-` for a PDF, `PK` for a zip such as an XLSX); none to
+   * take any file. A function gets the text fields that arrived before the file part and answers
+   * for this upload (an export's `kind` is in its `meta` field); if it throws, the upload fails with that error.
+   */
+  magic?: string | ((fields: Record<string, string>) => string | undefined)
+}
+
+/** What a failed magic check calls the file the caller wanted. */
+const MAGIC_NAMES: Record<string, string> = { '%PDF-': 'a PDF', PK: 'an XLSX workbook' }
 
 /** Counts every request byte and fails the stream past `max`, whatever Content-Length claimed. */
 export function byteLimit(max: number): Transform {
@@ -29,26 +40,54 @@ export function byteLimit(max: number): Transform {
 }
 
 /**
- * Passes bytes through after checking that the stream starts with `%PDF-`. `onValid` fires once,
+ * Passes bytes through after checking that the stream starts with `magic`. `onValid` fires once,
  * on the first chunk that settles the question, so callers see a rejection before any byte is stored.
  */
-export function pdfMagicCheck(onValid: () => void, onClose: () => void): Transform {
+export function magicCheck(magic: string, onValid: () => void, onClose: () => void): Transform {
+  const expected = Buffer.from(magic, 'latin1')
+  const wrong = () => invalid(`File is not ${MAGIC_NAMES[magic] ?? 'the expected type'}`)
   let head = Buffer.alloc(0)
   let checked = false
   return new Transform({
     transform(chunk: Buffer, _enc, cb: TransformCallback) {
       if (checked) return cb(null, chunk)
       head = Buffer.concat([head, chunk])
-      if (head.length < PDF_MAGIC.length) return cb()
-      if (!head.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
-        return cb(invalid('File is not a PDF'))
-      }
+      if (head.length < expected.length) return cb()
+      if (!head.subarray(0, expected.length).equals(expected)) return cb(wrong())
       checked = true
       onValid()
       cb(null, head)
     },
     flush(cb) {
-      cb(checked ? null : invalid('File is not a PDF'))
+      cb(checked ? null : wrong())
+    },
+    destroy(err, cb) {
+      onClose()
+      cb(err)
+    },
+  })
+}
+
+/** `magicCheck` for a PDF (`%PDF-`): what a fetched PDF and every PDF upload pass through. */
+export const pdfMagicCheck = (onValid: () => void, onClose: () => void): Transform =>
+  magicCheck('%PDF-', onValid, onClose)
+
+/** A pass-through for uploads with no expected type: settles on the first byte (or the end of an empty file). */
+function anyFile(onValid: () => void, onClose: () => void): Transform {
+  let started = false
+  const start = () => {
+    if (started) return
+    started = true
+    onValid()
+  }
+  return new Transform({
+    transform(chunk: Buffer, _enc, cb: TransformCallback) {
+      start()
+      cb(null, chunk)
+    },
+    flush(cb) {
+      start()
+      cb()
     },
     destroy(err, cb) {
       onClose()
@@ -58,12 +97,17 @@ export function pdfMagicCheck(onValid: () => void, onClose: () => void): Transfo
 }
 
 /**
- * Parse a multipart request, resolving as soon as the file part has begun and its first bytes are
- * confirmed to be a PDF. The rest of the file keeps streaming; nothing is buffered beyond stream
- * back-pressure. Rejects `payload_too_large` on an oversize Content-Length (before reading) or when
- * the bytes actually received pass `maxBytes`, and `invalid` for malformed, aborted or non-PDF uploads.
+ * Parse a multipart request, resolving as soon as the file part has begun and (when `opts.magic` is
+ * given) its first bytes are confirmed to start with it. The rest of the file keeps streaming;
+ * nothing is buffered beyond stream back-pressure. Rejects `payload_too_large` on an oversize
+ * Content-Length (before reading) or when the bytes actually received pass `maxBytes`, and `invalid`
+ * for malformed, aborted or wrong-type uploads.
  */
-export function readPdfUpload(c: Context, maxBytes: number): Promise<PdfUpload> {
+export function readUpload(
+  c: Context,
+  maxBytes: number,
+  opts: UploadOptions = {},
+): Promise<Upload> {
   const declared = Number(c.req.header('content-length'))
   if (Number.isFinite(declared) && declared > maxBytes) {
     return Promise.reject(
@@ -77,7 +121,7 @@ export function readPdfUpload(c: Context, maxBytes: number): Promise<PdfUpload> 
   const body = c.req.raw.body
   if (!body) return Promise.reject(invalid('Request body is empty'))
 
-  return new Promise<PdfUpload>((resolve, reject) => {
+  return new Promise<Upload>((resolve, reject) => {
     let parser: busboy.Busboy
     try {
       parser = busboy({
@@ -115,19 +159,26 @@ export function readPdfUpload(c: Context, maxBytes: number): Promise<PdfUpload> 
         stream.resume()
         return
       }
-      const check = pdfMagicCheck(
-        () => {
-          if (settled) return
-          settled = true
-          resolve({ fields, file: { stream: check, filename: info.filename || 'upload.pdf' } })
-        },
-        // Closing the stream early (consumer gave up) must not leave the request half-read.
-        () => {
-          if (!check.writableFinished) source.destroy()
-        },
-      )
-      fileStream = check
+      const onValid = () => {
+        if (settled) return
+        settled = true
+        resolve({ fields, file: { stream: check, filename: info.filename || 'upload' } })
+      }
+      // Closing the stream early (consumer gave up) must not leave the request half-read.
+      const onClose = () => {
+        if (!check.writableFinished) source.destroy()
+      }
       stream.on('error', fail)
+      let magic: string | undefined
+      try {
+        magic = typeof opts.magic === 'function' ? opts.magic(fields) : opts.magic
+      } catch (err) {
+        stream.resume()
+        return fail(err)
+      }
+      const check =
+        magic === undefined ? anyFile(onValid, onClose) : magicCheck(magic, onValid, onClose)
+      fileStream = check
       stream.pipe(check)
       check.on('error', fail)
     })

@@ -106,6 +106,7 @@ quoting problems. For a local API on plain http, add `"--allow-http"` after the 
 | `search_script` | read-only | Phrase search over a version, with page, snippet and the first word's box. |
 | `list_exports` | read-only | A show's export records, newest first. Exports that include someone else's personal layer are never listed. Paginated. |
 | `export_marked_script` | write | Print a document version with chosen layers (`"all"`, `"none"`, or department codes, `"personal"`, layer keys) to a PDF with a footer; returns the record and a `resource_link` to the file. Including your personal layer makes the export private to you. |
+| `export_cue_list` | write | A department's cue sheet as `pdf` (A4 or Letter, per the show's paper size), `xlsx` or `csv`, in cue-number order with unplaced cues last. Name the department by `department` (code or id) with `showId`, or by `departmentId` alone; returns the record and a `resource_link` to the file. |
 
 Only `remove_show_member` is marked destructive. Hard-to-reverse calls return `CONFIRMATION_REQUIRED` with a
 plain-language summary and change nothing until called again with `confirm: true` (spec 3.10).

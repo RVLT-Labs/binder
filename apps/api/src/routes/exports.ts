@@ -5,7 +5,7 @@ import { requireUser } from '../auth/middleware'
 import { invalid } from '../errors'
 import { createExportRecord, listExportRecords } from '../services'
 import { assertCanExport } from '../services/exports'
-import { MAX_UPLOAD_BYTES, readPdfUpload } from '../upload/multipart'
+import { MAX_UPLOAD_BYTES, readUpload } from '../upload/multipart'
 import { issuesMessage } from '../validation'
 
 export const exportRoutes = new Hono<AppEnv>()
@@ -21,6 +21,14 @@ const metaSchema = z.object({
   layerSelection: z.array(z.object({ kind: z.enum(['department', 'personal']), id: z.string() })),
   createdAt: z.string().optional(),
 })
+
+/** What each kind of file must start with; a CSV has no signature (it only has a byte order mark by convention). */
+const MAGIC: Record<Meta['kind'], string | undefined> = {
+  'pdf-script': '%PDF-',
+  'pdf-sheet': '%PDF-',
+  xlsx: 'PK',
+  csv: undefined,
+}
 
 type Meta = Omit<z.infer<typeof metaSchema>, 'createdAt'> & { createdAt?: Date }
 
@@ -48,13 +56,15 @@ exportRoutes.get('/shows/:showId/exports', requireUser, async (c) =>
   }),
 )
 
-// Multipart: a `meta` field (JSON), then the `file`. Every kind passes the `%PDF-` check until the
-// CSV and XLSX exports arrive with their own readers.
+// Multipart: a `meta` field (JSON), then the `file`. The file must start with the signature of its
+// kind: `%PDF-` for the PDFs, `PK` for an XLSX, anything for a CSV.
 exportRoutes.post('/shows/:showId/exports', requireUser, async (c) => {
   const { db, blobs } = c.var.deps
   const showId = c.req.param('showId')
   await assertCanExport(db, actorOf(c), showId)
-  const upload = await readPdfUpload(c, MAX_UPLOAD_BYTES)
+  const upload = await readUpload(c, MAX_UPLOAD_BYTES, {
+    magic: (fields) => MAGIC[parseMeta(fields.meta).kind],
+  })
   try {
     const meta = parseMeta(upload.fields.meta)
     const record = await createExportRecord(db, blobs, actorOf(c), {

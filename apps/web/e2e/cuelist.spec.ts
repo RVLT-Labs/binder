@@ -1,15 +1,18 @@
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { FIXTURES } from '@binder/fixtures'
 import {
   type Browser,
   type BrowserContext,
+  type Download,
   expect,
   type Locator,
   type Page,
   test,
 } from '@playwright/test'
+import { strFromU8, unzipSync } from 'fflate'
 import { API_URL, APP_URL, readRun, storageStateFor, type UserKey } from './env'
 
 /**
@@ -21,6 +24,7 @@ test.use({ viewport: { width: 1440, height: 1000 } })
 
 interface Fixture {
   showId: string
+  title: string
   lxId: string
   documentId: string
   versionId: string
@@ -52,6 +56,7 @@ async function signIn(email: string, password: string): Promise<string> {
 
 async function createFixture(): Promise<Fixture> {
   const { users, password } = readRun()
+  const showTitle = `Cue lists ${Date.now()}`
   const owner = await signIn(users.owner.email, password)
   const { organisations } = await call<{ organisations: { id: string }[] }>(
     owner,
@@ -62,7 +67,7 @@ async function createFixture(): Promise<Fixture> {
     owner,
     'POST',
     `/api/orgs/${organisations[0]?.id}/shows`,
-    { title: `Cue lists ${Date.now()}` },
+    { title: showTitle },
   )
   const { departments } = await call<{ departments: { id: string; code: string }[] }>(
     owner,
@@ -114,7 +119,13 @@ async function createFixture(): Promise<Fixture> {
     if (status === 'failed' || Date.now() > deadline) throw new Error(`libretto ${status}`)
     await new Promise((r) => setTimeout(r, 1_000))
   }
-  return { showId: created.id, lxId, documentId: document.id, versionId: version.id }
+  return {
+    showId: created.id,
+    title: showTitle,
+    lxId,
+    documentId: document.id,
+    versionId: version.id,
+  }
 }
 
 test.beforeAll(async () => {
@@ -408,6 +419,115 @@ test('600 renumbered cues upload cleanly', async ({ browser }) => {
     expect(await inScriptOrder(a)).toEqual(expected)
     await expect.poll(() => inScriptOrder(b), { timeout: 60_000 }).toEqual(expected)
     await expect(b.getByRole('alert')).toHaveCount(0)
+  } finally {
+    for (const context of contexts) await context.close()
+  }
+})
+
+const hasPdftotext = (() => {
+  try {
+    execFileSync('pdftotext', ['-v'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+})()
+
+/** Clicks one of the cue list's export buttons and resolves to the download it makes. */
+async function exportSheet(page: Page, format: 'PDF' | 'XLSX' | 'CSV'): Promise<Download> {
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page
+      .getByRole('group', { name: 'Export cue sheet' })
+      .getByRole('button', { name: format })
+      .click(),
+  ])
+  return download
+}
+
+test('the cue list exports a CSV, an XLSX and a PDF that download at once, read back with the cues, and are recorded in Exports', async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(150_000)
+  const contexts: BrowserContext[] = []
+  try {
+    const page = await openList(browser, 'owner', contexts)
+    await clearCues(page)
+    const [a, b, free] = [randomUUID(), randomUUID(), randomUUID()]
+    await seed(page, [
+      { id: b, major: 10, minor: 50, label: 'Second, =wow', pageIndex: 1 },
+      { id: a, major: 10, label: 'First', pageIndex: 0 },
+      { id: free, major: 99, label: 'Unplaced', pageIndex: null },
+    ])
+    await expect(page.locator('tbody tr')).toHaveCount(3)
+    const names = (ext: string) => `${show.title} - LX cue sheet.${ext}`
+
+    // CSV: UTF-8 with a byte order mark, CRLF, quoting, the formula guard, a blank page when unplaced.
+    const csvDownload = await exportSheet(page, 'CSV')
+    expect(csvDownload.suggestedFilename()).toBe(names('csv'))
+    const csvPath = join(testInfo.outputDir, 'sheet.csv')
+    await csvDownload.saveAs(csvPath)
+    const csvBytes = readFileSync(csvPath)
+    expect([...csvBytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+    const lines = csvBytes.subarray(3).toString('utf8').split('\r\n')
+    expect(lines.slice(0, 5)).toEqual([
+      'Cue,Type,Label,Page,Document,Trigger,Notes,Status',
+      '10,go,First,1,,,,',
+      '10.5,go,"Second, =wow",2,,,,',
+      '99,go,Unplaced,,,,,',
+      '',
+    ])
+
+    // XLSX: the cue number stays text, the page is a number cell.
+    const xlsxDownload = await exportSheet(page, 'XLSX')
+    expect(xlsxDownload.suggestedFilename()).toBe(names('xlsx'))
+    const xlsxPath = join(testInfo.outputDir, 'sheet.xlsx')
+    await xlsxDownload.saveAs(xlsxPath)
+    const files = unzipSync(new Uint8Array(readFileSync(xlsxPath)))
+    const sheet = strFromU8(files['xl/worksheets/sheet1.xml'] as Uint8Array)
+    expect(sheet).toContain('<c r="A2" t="inlineStr"><is><t>10</t></is></c>')
+    expect(sheet).toContain('<c r="A3" t="inlineStr"><is><t>10.5</t></is></c>')
+    expect(sheet).toContain('<c r="D2" t="n"><v>1</v></c>')
+    expect(sheet).not.toContain('r="D4"')
+
+    // PDF: A4 portrait by default, with the cues and the footer.
+    const pdfDownload = await exportSheet(page, 'PDF')
+    expect(pdfDownload.suggestedFilename()).toBe(names('pdf'))
+    const pdfPath = join(testInfo.outputDir, 'sheet.pdf')
+    await pdfDownload.saveAs(pdfPath)
+    expect(readFileSync(pdfPath).subarray(0, 5).toString()).toBe('%PDF-')
+    if (hasPdftotext) {
+      const text = execFileSync('pdftotext', ['-layout', pdfPath, '-'], { encoding: 'utf8' })
+      expect(text).toContain('First')
+      expect(text).toContain('Unplaced')
+      expect(text).toContain(`${show.title} · LX cue sheet · LX · export `)
+    }
+
+    // Each was queued for upload: the Exports screen lists all three once they have synced back.
+    await page.getByRole('link', { name: '← Show' }).click()
+    await page.getByRole('link', { name: 'Exports', exact: true }).click()
+    for (const ext of ['csv', 'xlsx', 'pdf']) {
+      await expect(page.locator('li[data-export-id]').filter({ hasText: names(ext) })).toHaveCount(
+        1,
+        { timeout: 40_000 },
+      )
+    }
+  } finally {
+    for (const context of contexts) await context.close()
+  }
+})
+
+test('a viewer can export the cue list too', async ({ browser }) => {
+  const contexts: BrowserContext[] = []
+  try {
+    const page = await openList(browser, 'viewer', contexts)
+    // The owner puts a cue on the list; it syncs to the viewer, who can export it.
+    const owner = await openList(browser, 'owner', contexts)
+    await clearCues(owner)
+    await seed(owner, [{ id: randomUUID(), major: 7, label: 'Seen by all', pageIndex: 0 }])
+    await expect(page.locator('tbody tr')).toHaveCount(1, { timeout: 30_000 })
+    const download = await exportSheet(page, 'CSV')
+    expect(download.suggestedFilename()).toBe(`${show.title} - LX cue sheet.csv`)
   } finally {
     for (const context of contexts) await context.close()
   }

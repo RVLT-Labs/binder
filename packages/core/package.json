@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@binder/shared": "workspace:*",
+    "fflate": "^0.8.3",
     "pdf-lib": "^1.17.1"
   }
 }

@@ -5,6 +5,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { pushNotice } from '../components/noticeStore'
 import { CueListTable } from '../cuelist/CueListTable'
+import { CueSheetButtons } from '../cuelist/CueSheetButtons'
 import { RenumberDialog } from '../cuelist/RenumberDialog'
 import { ARCHIVED_HINT } from '../markup/MarkupSession'
 import { type EditContext, fromCueRow, updateCue } from '../markup/mutations'
@@ -145,6 +146,11 @@ function CueListPage() {
           Renumber from script order…
         </button>
       </p>
+      <CueSheetButtons
+        departmentId={current.id}
+        departmentCode={current.code ?? ''}
+        editContext={editContext}
+      />
       {rows.length === 0 ? (
         <p>No {current.code} cues yet.</p>
       ) : (

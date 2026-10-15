@@ -59,14 +59,18 @@ const ANNOTATION_TYPES: readonly string[] = [
 const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|\u0000-\u001f]/g
 
 /** The same name the server gives its own exports: `<show> - <document> v<n> - <layers>.pdf`. */
-export function exportFilename(parts: string[]): string {
+export function exportFilename(parts: string[], ext: 'pdf' | 'xlsx' | 'csv' = 'pdf'): string {
   const base = parts.join(' - ').replace(UNSAFE_FILENAME_CHARS, '-').trim()
-  return `${base.slice(0, 196)}.pdf`
+  return `${base.slice(0, 196)}.${ext}`
 }
 
 /** Saves the bytes through the browser's download, at once, with no network involved. */
-export function downloadBytes(filename: string, bytes: Uint8Array): void {
-  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }))
+export function downloadBytes(
+  filename: string,
+  bytes: Uint8Array,
+  contentType = 'application/pdf',
+): void {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: contentType }))
   const a = document.createElement('a')
   a.href = url
   a.download = filename

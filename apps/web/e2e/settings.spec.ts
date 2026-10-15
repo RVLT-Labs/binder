@@ -74,3 +74,30 @@ test('an owner manages departments and member scope; an editor sees them read-on
   // The editor's page shows no controls.
   await expect(b.getByRole('combobox', { name: /role$/ })).toHaveCount(0)
 })
+
+test('the owner picks the paper size for cue sheets; another member sees it read-only and it reaches them', async ({
+  browser,
+}) => {
+  const { sharedShow } = readRun()
+  const url = `/shows/${sharedShow.id}/settings`
+  const a = await (await browser.newContext({ storageState: storageStateFor('owner') })).newPage()
+  const b = await (
+    await browser.newContext({ storageState: storageStateFor('sndEditor') })
+  ).newPage()
+  await a.goto(url)
+  await b.goto(url)
+  const paper = a.getByLabel('Paper size')
+  try {
+    await expect(paper).toHaveValue('A4', { timeout: 20_000 })
+    await expect(b.getByLabel('Paper size')).toHaveCount(0)
+    await expect(b.getByText('A4 (210 × 297 mm)')).toBeVisible({ timeout: 20_000 })
+
+    await paper.selectOption('Letter')
+    await expect(b.getByText('Letter (8.5 × 11 in)')).toBeVisible({ timeout: 20_000 })
+    // Other settings are not lost: the stamp set is still the seven defaults.
+    await expect(a.getByRole('list', { name: 'Stamps' }).getByRole('listitem')).toHaveCount(7)
+  } finally {
+    await paper.selectOption('A4')
+    await expect(b.getByText('A4 (210 × 297 mm)')).toBeVisible({ timeout: 20_000 })
+  }
+})

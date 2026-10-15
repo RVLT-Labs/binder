@@ -9,7 +9,7 @@ import {
   createDocument,
   listDocuments,
 } from '../services'
-import { MAX_UPLOAD_BYTES, readPdfUpload } from '../upload/multipart'
+import { MAX_UPLOAD_BYTES, readUpload as readMultipart } from '../upload/multipart'
 
 const title = z.string().trim().min(1).max(200)
 const createFields = z.object({
@@ -26,10 +26,10 @@ const actorOf = (c: { var: AppEnv['Variables'] }) => c.var.actor!
 
 /** Authorise, read the multipart body, and validate its text fields; nothing is stored on any failure. */
 async function readUpload<T extends z.ZodType>(
-  c: Parameters<typeof readPdfUpload>[0],
+  c: Parameters<typeof readMultipart>[0],
   schema: T,
-): Promise<{ fields: z.infer<T>; file: Awaited<ReturnType<typeof readPdfUpload>>['file'] }> {
-  const upload = await readPdfUpload(c, MAX_UPLOAD_BYTES)
+): Promise<{ fields: z.infer<T>; file: Awaited<ReturnType<typeof readMultipart>>['file'] }> {
+  const upload = await readMultipart(c, MAX_UPLOAD_BYTES, { magic: '%PDF-' })
   const parsed = schema.safeParse(upload.fields)
   if (!parsed.success) {
     upload.file.stream.destroy()
