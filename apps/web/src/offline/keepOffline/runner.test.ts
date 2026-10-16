@@ -480,3 +480,47 @@ test('status listeners hear every change', async () => {
 test('blobUrl paths from keys match the cache listing format', () => {
   expect(blobUrl('shows/s/documents/d/versions/v1/searchable.pdf')).toBe(searchable('s', 'd', 'v1'))
 })
+
+test('Off for a show still queued behind another never starts it', async () => {
+  const releases: (() => void)[] = []
+  h = setup()
+  h.fetchBlob.mockImplementation(async (url: string) => {
+    h.fetchStarted.push(url)
+    if (url.includes('/shows/a/')) await new Promise<void>((r) => releases.push(r))
+    return new Response('x', { status: 200 })
+  })
+  h.rows.a = showRows('a', 'd', ['v1'])
+  h.rows.b = showRows('b', 'd', ['v1'])
+  h.runner.update(on('a', 'b'))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(h.fetchStarted.every((u) => u.includes('/shows/a/'))).toBe(true)
+
+  h.runner.update(on('a')) // B switched Off while A is mid-pass
+  for (const r of releases) r()
+  await h.runner.whenIdle()
+  expect(h.fetchStarted.some((u) => u.includes('/shows/b/'))).toBe(false)
+  expect(h.cache.has(searchable('a', 'd', 'v1'))).toBe(true)
+  expect(h.runner.getStatus().has('b')).toBe(false)
+})
+
+test('onStored is called for blobs stored before a switch-on restarted the pass', async () => {
+  const onStored = vi.fn()
+  h = setup({ onStored })
+  h.fetchBlob.mockImplementation((url: string, signal: AbortSignal) =>
+    url.endsWith('searchable.pdf')
+      ? Promise.resolve(new Response('x', { status: 200 }))
+      : new Promise<Response>((_res, rej) =>
+          signal.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))),
+        ),
+  )
+  h.rows.s = showRows('s', 'd', ['v1'])
+  h.runner.update(on('s'))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(h.cache.size).toBe(1)
+  h.rows.t = { versions: [], pages: [] }
+  h.runner.update(on('s', 't')) // a switch-on aborts the running pass and starts a new one
+  await vi.advanceTimersByTimeAsync(0)
+  expect(onStored).toHaveBeenCalledOnce()
+  h.runner.update(on('t')) // Off for s ends the new pass's fetches
+  await h.runner.whenIdle()
+})

@@ -300,7 +300,8 @@ export function createKeepOfflineRunner(deps: RunnerDeps): KeepOfflineRunner {
     if (waiting) return
 
     for (const p of plans) {
-      if (p.missing.length === 0) continue
+      // Switched Off while queued behind another show: it never starts.
+      if (p.missing.length === 0 || !enabled.includes(p.id)) continue
       const signal = linked(pass.signal, showAbortFor(p.id).signal).signal
       const queue = [...p.missing]
 
@@ -328,7 +329,7 @@ export function createKeepOfflineRunner(deps: RunnerDeps): KeepOfflineRunner {
           }
         }
       }
-      while (queue.length > 0 && outcome === 'ok' && !signal.aborted) {
+      while (queue.length > 0 && outcome === 'ok' && !signal.aborted && enabled.includes(p.id)) {
         if (await lowOnSpace()) {
           outcome = 'full'
           break
@@ -345,7 +346,9 @@ export function createKeepOfflineRunner(deps: RunnerDeps): KeepOfflineRunner {
       }
     }
 
-    if (anyStored && !pass.signal.aborted) deps.onStored?.()
+    // Also after an abort that is not a stop (a show switched Off or on mid-pass), so what was
+    // stored before it is counted.
+    if (anyStored && !stopped) deps.onStored?.()
     // Aborted (a show was added, or stop): the next pass, if any, reports.
     if (pass.signal.aborted) return
     for (const p of plans) {

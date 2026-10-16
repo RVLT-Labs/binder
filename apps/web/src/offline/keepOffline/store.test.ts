@@ -87,3 +87,25 @@ test('a refused persist or a store write that fails leaves the mirror true to th
   await expect(setKeepOffline('u1', 'show-z', true, broken)).rejects.toThrow('blocked')
   expect(getOfflinePrefs().prefs.has('show-z')).toBe(false)
 })
+
+test('overlapping toggles all land in the mirror and the store', async () => {
+  await loadOfflinePrefs('u1')
+  const slow = (inner: OfflinePrefsStore, ms: number): OfflinePrefsStore => ({
+    ...inner,
+    set: async (id, pref) => {
+      await new Promise((r) => setTimeout(r, ms))
+      return inner.set(id, pref)
+    },
+  })
+  const real = idbOfflinePrefsStore('u1')
+  await Promise.all([
+    setKeepOffline('u1', 'show-a', true, slow(real, 20)),
+    setKeepOffline('u1', 'show-b', true, slow(real, 5)),
+    setKeepOffline('u1', 'show-c', true, real),
+  ])
+  expect([...getOfflinePrefs().prefs.keys()].sort()).toEqual(['show-a', 'show-b', 'show-c'])
+  expect((await real.list()).map(([id]) => id).sort()).toEqual(['show-a', 'show-b', 'show-c'])
+  // And an Off racing an On keeps the other show.
+  await Promise.all([setKeepOffline('u1', 'show-a', false), setKeepOffline('u1', 'show-d', true)])
+  expect([...getOfflinePrefs().prefs.keys()].sort()).toEqual(['show-b', 'show-c', 'show-d'])
+})

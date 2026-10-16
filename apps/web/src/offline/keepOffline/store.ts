@@ -112,17 +112,24 @@ export async function setKeepOffline(
   store: OfflinePrefsStore = idbOfflinePrefsStore(userId),
 ): Promise<void> {
   if (snapshot.userId !== userId) await loadOfflinePrefs(userId, store)
-  const prefs = new Map(snapshot.prefs)
+  // The mirror is re-read after each await: another call may have published meanwhile, and
+  // publishing a copy taken before the write would drop its change.
+  const current = () => (snapshot.userId === userId ? snapshot.prefs : null)
   if (on) {
-    if (prefs.has(showId)) return
+    if (current()?.has(showId)) return
     const pref: OfflinePref = { on: true, enabledAt: new Date().toISOString() }
     await store.set(showId, pref)
-    prefs.set(showId, pref)
-    publish({ userId, prefs })
+    const prefs = current()
+    if (prefs) publish({ userId, prefs: new Map(prefs).set(showId, pref) })
     await requestPersistence()
   } else {
     await store.remove(showId)
-    if (prefs.delete(showId)) publish({ userId, prefs })
+    const prefs = current()
+    if (prefs?.has(showId)) {
+      const next = new Map(prefs)
+      next.delete(showId)
+      publish({ userId, prefs: next })
+    }
   }
 }
 
