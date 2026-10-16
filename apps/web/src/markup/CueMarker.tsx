@@ -13,9 +13,14 @@ import type { CueType, NumberFormat } from '@binder/shared'
 import type { KeyboardEvent, PointerEventHandler } from 'react'
 import { SvgText } from './SvgText'
 
+/** The mockup's `.sel`: a 2 px red outline, 2 px clear of the tag, 4 px radius (stroke centre 3 out). */
+const SELECTION_WIDTH = 2
+const SELECTION_OFFSET = 3
+const SELECTION_RADIUS = 6
+
 const FONT_FAMILY = 'Helvetica, Arial, sans-serif'
-/** The number is dark bold ink; the code beside it is in the department colour. */
-const INK = '#111827'
+/** The number is dark bold page ink; the code beside it is in the department colour. */
+const INK = 'var(--page-ink)'
 
 export interface MarkerCue {
   id: string
@@ -199,15 +204,15 @@ export function CueMarker({
       {selected && (
         <rect
           className="cue-marker-selection"
-          x={box.x - 2}
-          y={box.y - 2}
-          width={box.w + 4}
-          height={box.h + 4}
-          rx={TAG_RADIUS + 2}
+          x={box.x - SELECTION_OFFSET}
+          y={box.y - SELECTION_OFFSET}
+          width={box.w + 2 * SELECTION_OFFSET}
+          height={box.h + 2 * SELECTION_OFFSET}
+          rx={SELECTION_RADIUS}
           fill="none"
-          stroke="#111827"
-          strokeWidth={1}
-          strokeDasharray="2 1.5"
+          stroke="var(--red)"
+          strokeWidth={SELECTION_WIDTH}
+          pointerEvents="none"
         />
       )}
       <rect
@@ -218,7 +223,7 @@ export function CueMarker({
         height={box.h}
         rx={TAG_RADIUS}
         // Opaque white: the script never shows through the tag.
-        fill="#fff"
+        fill="var(--page)"
         stroke={colour}
         strokeWidth={tag.outlineWidth}
         strokeDasharray={tag.dash ? '3 2' : undefined}

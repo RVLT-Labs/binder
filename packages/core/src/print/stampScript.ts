@@ -296,6 +296,7 @@ type CueItem = Extract<StampItem, { kind: 'cue' }>
 interface PlacedCue {
   layout: CueTagLayout
   colour: ReturnType<typeof rgb>
+  numberInk: ReturnType<typeof rgb>
 }
 
 /**
@@ -326,6 +327,7 @@ function layoutCues(pageWidth: number, pageHeight: number, items: CueItem[]): Pl
   return layouts.map((layout, i) => ({
     layout,
     colour: colourOf((items[i] as CueItem).colour),
+    numberInk: colourOf((items[i] as CueItem).numberInk),
   }))
 }
 
@@ -338,7 +340,12 @@ function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeo
   }
 }
 
-function drawTag(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
+function drawTag(
+  d: DisplayedPage,
+  t: CueTagLayout,
+  colour: ReturnType<typeof rgb>,
+  numberInk: ReturnType<typeof rgb>,
+) {
   const { tag } = t
   // An opaque white pill outlined in the department colour: the script never shows through.
   d.roundedRect(tag.x, tag.y, tag.w, tag.h, TAG_RADIUS, {
@@ -348,7 +355,7 @@ function drawTag(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rg
     dash: t.dash ? [3, 2] : undefined,
   })
   if (t.lead) d.centredText(t.lead, t.leadX, t.centreY, TAG_FONT_SIZE, colour)
-  d.centredText(t.number, t.numberX, t.centreY, TAG_FONT_SIZE, INK, true)
+  d.centredText(t.number, t.numberX, t.centreY, TAG_FONT_SIZE, numberInk, true)
 }
 
 function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'annotation' }>) {
@@ -470,8 +477,8 @@ export async function stampScript(
     if (d && item.kind === 'annotation') drawAnnotation(d, item)
   }
   for (const [pageIndex, cues] of placed)
-    for (const { layout, colour } of cues)
-      drawTag(drawers[pageIndex] as DisplayedPage, layout, colour)
+    for (const { layout, colour, numberInk } of cues)
+      drawTag(drawers[pageIndex] as DisplayedPage, layout, colour, numberInk)
 
   const line = footerText(footer)
   for (const d of drawers) d.text(line, FOOTER_LEFT, FOOTER_BOTTOM, FOOTER_SIZE, FOOTER_GREY)

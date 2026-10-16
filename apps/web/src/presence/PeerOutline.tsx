@@ -1,6 +1,6 @@
 import type { PresencePeer } from '@binder/shared'
 
-/** Gap between a marker and the outline around it, in points: clear of the marker's own selection box. */
+/** Gap between a marker and the outline around it, in points: the mockup's `.peer-outline` (3 px offset, 2 px stroke). */
 const OUTLINE_GAP = 4
 /** The outline's width: 2 pt, in the page's point space. */
 const OUTLINE_WIDTH = 2
@@ -32,7 +32,7 @@ export function PeerOutline({
             y={box.y - gap}
             width={box.w + 2 * gap}
             height={box.h + 2 * gap}
-            rx={3}
+            rx={6}
             fill="none"
             stroke={peer.colour}
             strokeWidth={OUTLINE_WIDTH}

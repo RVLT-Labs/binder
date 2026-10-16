@@ -18,6 +18,9 @@ import { type TextExtent, textExtent } from '../markup/cueTags'
 import { type Box, markerLead, markerTypeWord } from '../markup/markers'
 import { wordBoxes } from '../markup/wordBoxes'
 
+/** The page's ink: the cue tag number. The same value as the `--page-ink` token on screen. */
+export const PAGE_INK = '#1A1715'
+
 /** One thing to draw on a script page, in displayed page space (points, origin bottom-left). */
 export type StampItem =
   | {
@@ -34,6 +37,8 @@ export type StampItem =
       /** The type word alone (`SB`, `W`, or empty): what the lead shrinks to in a narrow margin. */
       typeWord: string
       number: string
+      /** The tag number's ink: dark page ink, not the department colour. */
+      numberInk: string
       colour: string
       /** The page margin the department's tags sit in. */
       side: MarkerSide
@@ -136,6 +141,7 @@ export function buildStampItems(input: StampInput): StampItem[] {
       lead: markerLead(c.type, dept.code),
       typeWord: markerTypeWord(c.type),
       number: formatCueNumber(c.major, c.minor, dept.numberFormat),
+      numberInk: PAGE_INK,
       colour: dept.colour,
       side: markerSide(input.settings, dept.id),
       sortKey: { department: dept.sortOrder, major: c.major, minor: c.minor },

@@ -61,8 +61,8 @@ export function Handles({ annotation, zoom, onHandleDown }: HandlesProps) {
           y={y - size / 2}
           width={size}
           height={size}
-          fill="#fff"
-          stroke="#1d4ed8"
+          fill="var(--page)"
+          stroke="var(--red)"
           strokeWidth={1.25 / zoom}
           style={{ pointerEvents: 'auto', cursor: CURSOR[handle], touchAction: 'none' }}
           onPointerDown={(e) => {

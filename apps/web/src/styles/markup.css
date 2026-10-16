@@ -1,0 +1,20 @@
+/* Page objects drawn in SVG: keyboard focus and selection. Colours come from the tokens. */
+.cue-marker,
+.annotation-shape {
+  outline: none;
+}
+
+/* Keyboard focus is a 2 pt red ring: the tag body (or the shape) takes the red stroke. */
+.cue-marker:focus-visible .cue-tag-body {
+  stroke: var(--red);
+  stroke-width: 2;
+}
+.annotation-shape:focus-visible .annotation-rect,
+.annotation-shape:focus-visible .annotation-ellipse,
+.annotation-shape:focus-visible .annotation-line,
+.annotation-shape:focus-visible .annotation-note,
+.annotation-shape:focus-visible .annotation-stamp,
+.annotation-shape:focus-visible .annotation-highlight {
+  stroke: var(--red);
+  stroke-width: 2;
+}

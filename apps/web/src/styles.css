@@ -84,26 +84,6 @@
   white-space: nowrap;
   border: 0;
 }
-.cue-marker {
-  outline: none;
-}
-.cue-marker:focus-visible .cue-tag-body {
-  stroke: #1d4ed8;
-  stroke-width: 2.5;
-}
-.annotation-shape {
-  outline: none;
-}
-.annotation-shape:focus-visible .annotation-rect,
-.annotation-shape:focus-visible .annotation-ellipse,
-.annotation-shape:focus-visible .annotation-line,
-.annotation-shape:focus-visible .annotation-note,
-.annotation-shape:focus-visible .annotation-stamp,
-.annotation-shape:focus-visible .annotation-highlight {
-  stroke: #1d4ed8;
-  stroke-width: 2.5;
-}
-
 /* Cue list */
 .cue-list-departments {
   display: flex;

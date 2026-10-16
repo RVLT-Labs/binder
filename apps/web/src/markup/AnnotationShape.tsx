@@ -167,7 +167,7 @@ function drawNote(a: ShapeAnnotation, colour: string): Drawn {
           y={box.y}
           width={w}
           height={h}
-          fill="#fff"
+          fill="var(--page)"
           fillOpacity={0.92}
           stroke={colour}
           strokeWidth={1.25}
@@ -179,7 +179,7 @@ function drawNote(a: ShapeAnnotation, colour: string): Drawn {
             key={i}
             x={box.x + PAD + 3}
             y={a.anchor.y - PAD - lineHeight * (i + 0.5)}
-            fill="#111827"
+            fill="var(--page-ink)"
             fontFamily={FONT_FAMILY}
             fontSize={size}
             dominantBaseline="central"
@@ -209,7 +209,7 @@ function drawStamp(a: ShapeAnnotation, colour: string, sw: number): Drawn {
           width={w}
           height={h}
           rx={3}
-          fill="#fff"
+          fill="var(--page)"
           fillOpacity={0.85}
           stroke={colour}
           strokeWidth={sw}
@@ -273,7 +273,7 @@ function drawHighlight(a: ShapeAnnotation, colour: string, words: WordLayer | nu
           width={w}
           height={h}
           rx={2}
-          fill="#fff"
+          fill="var(--page)"
           fillOpacity={0.85}
           stroke={colour}
           strokeWidth={1.25}
@@ -386,14 +386,14 @@ export function AnnotationShape({
       {selected && (
         <rect
           className="annotation-selection"
-          x={box.x - 2}
-          y={box.y - 2}
-          width={box.w + 4}
-          height={box.h + 4}
+          x={box.x - 3}
+          y={box.y - 3}
+          width={box.w + 6}
+          height={box.h + 6}
+          rx={6}
           fill="none"
-          stroke="#111827"
-          strokeWidth={1}
-          strokeDasharray="2 1.5"
+          stroke="var(--red)"
+          strokeWidth={2}
           pointerEvents="none"
         />
       )}

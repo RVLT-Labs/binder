@@ -64,6 +64,7 @@ const cueAt = (
   lead,
   typeWord: /^(SB|W) /.test(lead) ? (lead.split(' ')[0] as string) : '',
   number,
+  numberInk: '#1A1715',
   colour: AMBER,
   side: 'left',
   sortKey: { department: 0, major: Number.parseInt(number, 10) || 0, minor: 0 },
