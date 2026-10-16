@@ -11,8 +11,10 @@ import {
 } from '@/components/icons'
 import { PersonAvatar } from '@/components/ui/avatar'
 import { cn, focusRing } from '@/lib/utils'
-import { OfflineButton } from '../offline/OfflineButton'
+import { useDocumentEntries } from '../documents/useDocumentEntries'
+import { KeepOfflineSwitch } from '../offline/keepOffline/KeepOfflineSwitch'
 import { useOfflineSummary } from '../offline/useOfflineSummary'
+import { documentNames } from '../overview/documentNames'
 import { OfflineLine } from '../overview/OfflineCard'
 import { useAccount } from '../shell/useAccount'
 import { useConfirm } from '../shell/useConfirm'
@@ -52,7 +54,7 @@ function Row({
 
 /**
  * The phone's fifth tab (DESIGN §7): what has no tab of its own. Exports, Settings, Members, the
- * access tokens and the shows list, then the offline copy and the account.
+ * access tokens and the shows list, then the offline switch and the account.
  */
 function MorePage() {
   const { showId } = Route.useParams()
@@ -61,6 +63,7 @@ function MorePage() {
   const who = account.name || account.email
   const offlineHeading = useId()
   const offline = useOfflineSummary(showId)
+  const documents = useDocumentEntries(showId)
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-3">
       <h1 className="sr-only">More</h1>
@@ -93,13 +96,16 @@ function MorePage() {
           </h2>
           {offline && (
             <p className="m-0 text-[13px] leading-[1.5] text-muted">
-              <OfflineLine summary={offline} />
+              <OfflineLine
+                summary={offline}
+                names={
+                  offline.cached === offline.total ? documentNames(documents.entries) : undefined
+                }
+              />
             </p>
           )}
         </div>
-        <div className="flex min-h-11 items-center border-t border-line pt-2.5">
-          <OfflineButton showId={showId} />
-        </div>
+        <KeepOfflineSwitch showId={showId} className="border-t border-line pt-2.5" />
       </section>
       <section aria-label="Account" className={cn(card, 'flex items-center gap-3 px-3.5 py-3')}>
         <PersonAvatar name={who} className="size-9" />
