@@ -116,7 +116,8 @@ export async function setCurrentVersion(
 }
 
 /** Spec 4.3: snapping is on for text-bearing kinds and off for scores and blocking. */
-const defaultSnapToText = (kind: DocumentKind): boolean => kind === 'libretto' || kind === 'other'
+export const defaultSnapToText = (kind: DocumentKind): boolean =>
+  kind === 'libretto' || kind === 'other'
 
 /** Editor or above on an unarchived show. Call before reading an upload body so refusals cost nothing. */
 export async function assertShowAcceptsUploads(
@@ -151,8 +152,11 @@ async function storeThenWrite<T>(
   }
 }
 
-/** The version row exists and is durable; a failed enqueue marks it failed so a retry can find it. */
-async function enqueueProcessing(
+/**
+ * The version row exists and is durable; a failed enqueue marks it failed so a retry can find it.
+ * Internal (not in the services barrel): `retryVersion` uses it too.
+ */
+export async function enqueueProcessing(
   db: Executor,
   jobs: JobQueue,
   version: DocumentVersion,
@@ -164,7 +168,7 @@ async function enqueueProcessing(
     console.error(`could not enqueue processing for version ${version.id}`, err)
     const [failed] = await db
       .update(documentVersions)
-      .set({ status: 'failed', error: 'Could not queue processing' })
+      .set({ status: 'failed', error: 'Could not queue processing', failureCode: 'enqueue_failed' })
       .where(eq(documentVersions.id, version.id))
       .returning()
     return failed

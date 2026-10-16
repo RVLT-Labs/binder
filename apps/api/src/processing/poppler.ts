@@ -54,12 +54,47 @@ export async function pdfInfo(path: string): Promise<PdfInfo> {
   return { pageCount, pages }
 }
 
-/** Zero-based indices of the pages that draw at least one raster image (`pdfimages -list`). */
-export async function listImagePages(pdf: string): Promise<Set<number>> {
+export interface ImageStats {
+  /** Zero-based indices of the pages that draw at least one raster image. */
+  pages: Set<number>
+  /**
+   * The median over all images of min(x-ppi, y-ppi), the effective scan resolution; null when the
+   * listing has no usable resolution (no images, or columns this poppler does not print).
+   */
+  medianPpi: number | null
+}
+
+/**
+ * Which pages carry raster images and at what resolution (`pdfimages -list`). Its columns are
+ * `page num type width height color comp bpc enc interp object ID x-ppi y-ppi size ratio`; the
+ * object and ID are two fields, so x-ppi and y-ppi are fields 12 and 13 (zero-based).
+ */
+export async function imageStats(pdf: string): Promise<ImageStats> {
   const { stdout } = await poppler('pdfimages', ['-list', pdf])
   const pages = new Set<number>()
-  for (const m of stdout.matchAll(/^\s*(\d+)\s+\d+\s+\S+/gm)) pages.add(Number(m[1]) - 1)
-  return pages
+  const ppis: number[] = []
+  for (const line of stdout.split('\n')) {
+    const fields = line.trim().split(/\s+/)
+    if (!/^\d+$/.test(fields[0] ?? '') || !/^\d+$/.test(fields[1] ?? '')) continue
+    pages.add(Number(fields[0]) - 1)
+    const ppi = Math.min(Number(fields[12]), Number(fields[13]))
+    if (Number.isFinite(ppi) && ppi > 0) ppis.push(ppi)
+  }
+  ppis.sort((a, b) => a - b)
+  const mid = Math.floor(ppis.length / 2)
+  const medianPpi =
+    ppis.length === 0
+      ? null
+      : ppis.length % 2 === 1
+        ? (ppis[mid] as number)
+        : ((ppis[mid - 1] as number) + (ppis[mid] as number)) / 2
+  return { pages, medianPpi }
+}
+
+/** The number of non-whitespace characters in the PDF's text layer, over every page (`pdftotext`). */
+export async function countTextChars(pdf: string): Promise<number> {
+  const { stdout } = await poppler('pdftotext', ['-enc', 'UTF-8', pdf, '-'])
+  return stdout.replace(/\s/g, '').length
 }
 
 const pageArgs = (pageIndex: number) => ['-f', String(pageIndex + 1), '-l', String(pageIndex + 1)]

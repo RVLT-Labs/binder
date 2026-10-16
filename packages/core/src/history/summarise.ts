@@ -12,6 +12,9 @@ type Verb =
   | 'placed'
   | 'added'
   | 'uploaded'
+  | 'cancelled'
+  | 'retried'
+  | 'removed'
   | 'moved'
   | 'renumbered'
   | 'relabelled'
@@ -23,6 +26,9 @@ const VERB_ORDER: readonly Verb[] = [
   'placed',
   'added',
   'uploaded',
+  'cancelled',
+  'retried',
+  'removed',
   'moved',
   'renumbered',
   'relabelled',
@@ -70,10 +76,20 @@ function verbsOf(row: SummaryRow): Verb[] {
   }
   if (row.table === 'documents' || row.table === 'document_versions') {
     if (row.op === 'insert') return ['uploaded']
-    return [row.op === 'delete' ? 'deleted' : 'updated']
+    if (row.op === 'delete') return ['removed']
+    if (row.table === 'document_versions') {
+      // Processing controls (spec Feature 3): a cancel fails the version with code `cancelled`, a
+      // retry takes a failed version back to queued.
+      if (row.after?.failureCode === 'cancelled') return ['cancelled']
+      if (row.before?.status === 'failed' && row.after?.status === 'queued') return ['retried']
+    }
+    return ['updated']
   }
   return [row.op === 'insert' ? 'added' : row.op === 'delete' ? 'deleted' : 'updated']
 }
+
+/** The verbs that act on a whole upload, which people call an "upload" whichever table it lives in. */
+const UPLOAD_VERBS: ReadonlySet<Verb> = new Set(['cancelled', 'retried', 'removed'])
 
 /**
  * `cue`, `annotation`, `document` and `revision` read naturally (a `document_versions` row is a
@@ -98,13 +114,19 @@ interface Group {
   counts: Map<Verb, number>
 }
 
-/** The rows that count: a first version uploaded with its document is one upload, the document. */
+/**
+ * The rows that count: a first version uploaded with its document is one upload, the document; and
+ * the version deleted with its document (removing a document's only version) is one removal.
+ */
 function countable(rows: SummaryRow[]): SummaryRow[] {
-  const withDocument = rows.some((r) => r.table === 'documents' && r.op === 'insert')
-  if (!withDocument) return rows
-  return rows.filter(
-    (r) => !(r.table === 'document_versions' && r.op === 'insert' && r.after?.versionNumber === 1),
-  )
+  const documentInserted = rows.some((r) => r.table === 'documents' && r.op === 'insert')
+  const documentDeleted = rows.some((r) => r.table === 'documents' && r.op === 'delete')
+  if (!documentInserted && !documentDeleted) return rows
+  return rows.filter((r) => {
+    if (r.table !== 'document_versions') return true
+    if (documentInserted && r.op === 'insert' && r.after?.versionNumber === 1) return false
+    return !(documentDeleted && r.op === 'delete')
+  })
 }
 
 /** One group per table and department, in order of first appearance, with its verb counts. */
@@ -132,7 +154,8 @@ function renderGroup(g: Group, codeFirst: boolean): string {
     const n = g.counts.get(verb)
     if (!n) continue
     if (clauses.length === 0) {
-      const noun = n === 1 ? singular(g.table) : `${singular(g.table)}s`
+      const base = UPLOAD_VERBS.has(verb) ? 'upload' : singular(g.table)
+      const noun = n === 1 ? base : `${base}s`
       const code = g.code ? `${g.code} ` : ''
       clauses.push(codeFirst ? `${code}${verb} ${n} ${noun}` : `${verb} ${n} ${code}${noun}`)
     } else {
@@ -171,9 +194,14 @@ export function cardSentence(rows: SummaryRow[]): string {
     const [g] = groups
     if (g.table === 'cues' || g.table === 'annotations') return renderGroup(g, true)
     if (g.table === 'documents' || g.table === 'document_versions') {
-      const inserts = counted.length
       if (counted.every((r) => r.op === 'insert')) {
-        return uploaded(inserts, singular(g.table))
+        return uploaded(counted.length, singular(g.table))
+      }
+      // Only cancels, only retries or only removals: "upload cancelled", "2 uploads removed".
+      const verbs = [...g.counts.keys()]
+      if (verbs.length === 1 && UPLOAD_VERBS.has(verbs[0])) {
+        const n = g.counts.get(verbs[0]) ?? 0
+        return `${n === 1 ? 'upload' : `${n} uploads`} ${verbs[0]}`
       }
     }
   }

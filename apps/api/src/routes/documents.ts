@@ -6,8 +6,11 @@ import { invalid } from '../errors'
 import {
   addDocumentVersion,
   assertShowAcceptsUploads,
+  cancelVersionProcessing,
   createDocument,
   listDocuments,
+  removeVersion,
+  retryVersion,
 } from '../services'
 import { MAX_UPLOAD_BYTES, readUpload as readMultipart } from '../upload/multipart'
 
@@ -71,4 +74,32 @@ documents.post('/shows/:showId/documents/:docId/versions', requireUser, async (c
     file: file.stream,
   })
   return c.json({ version }, 201)
+})
+
+// Processing controls (spec Feature 3). Editors and owners; document_versions is not writable
+// through sync, so the web calls these.
+documents.post('/shows/:showId/versions/:versionId/cancel', requireUser, async (c) => {
+  const version = await cancelVersionProcessing(c.var.deps.db, actorOf(c), {
+    versionId: c.req.param('versionId'),
+    showId: c.req.param('showId'),
+  })
+  return c.json({ version })
+})
+
+documents.post('/shows/:showId/versions/:versionId/retry', requireUser, async (c) => {
+  const { db, blobs, jobs } = c.var.deps
+  const version = await retryVersion(db, blobs, jobs, actorOf(c), {
+    versionId: c.req.param('versionId'),
+    showId: c.req.param('showId'),
+  })
+  return c.json({ version })
+})
+
+documents.delete('/shows/:showId/versions/:versionId', requireUser, async (c) => {
+  const { db, blobs } = c.var.deps
+  const removed = await removeVersion(db, blobs, actorOf(c), {
+    versionId: c.req.param('versionId'),
+    showId: c.req.param('showId'),
+  })
+  return c.json({ removed })
 })

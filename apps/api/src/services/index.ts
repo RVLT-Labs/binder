@@ -34,6 +34,8 @@ export { latestChangePerShow } from './homePulse'
 export { getPage, getPageImage } from './pages'
 export type { PlaceCueAtTextInput, PlaceCueAtTextResult } from './placement'
 export { placeCueAtText } from './placement'
+export type { RemovedVersion } from './processingControls'
+export { cancelVersionProcessing, removeVersion, retryVersion } from './processingControls'
 export { renumberCues } from './renumber'
 export { revertBatch, revertChange } from './revert'
 export {

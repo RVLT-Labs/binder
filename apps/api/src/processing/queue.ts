@@ -1,4 +1,5 @@
 import type { Db } from '@binder/db'
+import type { FailureCode } from '@binder/shared'
 import type { JobWithMetadata, PgBoss } from 'pg-boss'
 import type { BlobStore } from '../blob/BlobStore'
 import { APPLIED_CHUNK_TTL_MS, deleteAppliedChunksBefore } from '../sync/apply'
@@ -103,11 +104,26 @@ function afterRetries(what: string, output: object | null): string {
   return message ? `${what} failed after retries: ${message}` : `${what} failed after retries.`
 }
 
+/**
+ * Maps a failed version's `error` text to its failure code. The same rules, in the same order, as
+ * the backfill in `packages/db/drizzle/0016_version_processing_controls.sql`, which a test runs
+ * over the same sample strings. A timeout anywhere in the text (a job expiry, or a tool killed at
+ * its timeout and quoted after "Processing failed after retries:") is `timeout`.
+ */
+export function classifyJobFailure(error: string): FailureCode {
+  if (error.includes('password-protected')) return 'password_protected'
+  if (error.startsWith('This file could not be read')) return 'unreadable'
+  if (error.includes('timed out')) return 'timeout'
+  if (error === 'Could not queue processing') return 'enqueue_failed'
+  return 'unknown'
+}
+
 export async function handleDocumentDeadLetter(
   deps: Pick<ProcessingDeps, 'db'>,
   job: DeadLetter<{ versionId: string }>,
 ): Promise<void> {
-  await markVersionFailed(deps.db, job.data.versionId, afterRetries('Processing', job.sourceOutput))
+  const error = afterRetries('Processing', job.sourceOutput)
+  await markVersionFailed(deps.db, job.data.versionId, error, classifyJobFailure(error))
 }
 
 export async function handlePageDeadLetter(
