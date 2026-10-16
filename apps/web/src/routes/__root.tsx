@@ -45,8 +45,12 @@ function RootLayout() {
 /** The shell around the account's own pages. The shows home and a show draw their own shell. */
 const SHOWS_ROOT: Crumb = { label: 'Shows', link: { to: '/' }, phoneOnly: true, backLabel: true }
 
-function crumbsFor(pathname: string): Crumb[] {
-  if (pathname === '/settings/tokens') return [SHOWS_ROOT, { label: 'Personal access tokens' }]
+function crumbsFor(pathname: string, accountName: string): Crumb[] {
+  // The mockup's trail: the person ("Jayden"), then the page. The phone shows only the back button to Shows.
+  if (pathname === '/settings/tokens') {
+    const first = accountName.trim().split(/\s+/)[0]
+    return [...(first ? [{ label: first }] : []), SHOWS_ROOT, { label: 'Personal access tokens' }]
+  }
   return [SHOWS_ROOT, { label: 'Binder' }]
 }
 
@@ -58,7 +62,7 @@ function SignedIn() {
   // the shows home draws its own too, for the one primary action in the top bar.
   if (pathname === '/' || pathname.startsWith('/shows/')) return <Outlet />
   return (
-    <AppShell crumbs={crumbsFor(pathname)} account={account} lastShowId={lastShowId}>
+    <AppShell crumbs={crumbsFor(pathname, account.name)} account={account} lastShowId={lastShowId}>
       <Outlet />
     </AppShell>
   )

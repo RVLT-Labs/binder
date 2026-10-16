@@ -19,13 +19,14 @@
   stroke-width: 2;
 }
 
-/* Search hits on the page: a wash of the warning amber, and a stronger orange for the one looked at. */
+/* Search hits on the page: a yellow wash, and a stronger orange for the one looked at. The page is
+   white in every theme, so these are fixed (never a theme token or a department's colour). */
 .search-hit {
-  fill: color-mix(in srgb, var(--warn) 45%, transparent);
+  fill: color-mix(in srgb, var(--page-hit) 55%, transparent);
 }
 .search-hit-active {
-  fill: color-mix(in srgb, var(--dept-stg) 50%, transparent);
-  stroke: var(--dept-stg);
+  fill: color-mix(in srgb, var(--page-hit-active) 45%, transparent);
+  stroke: var(--page-hit-active);
   stroke-width: 1;
 }
 

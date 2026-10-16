@@ -61,6 +61,10 @@
   /* === the page (DESIGN 4.2): the PDF ground and its ink, the same in every theme === */
   --page: #ffffff;
   --page-ink: #1a1715;
+  /* Search hits on the page: a highlighter yellow, and a stronger orange for the one looked at. Fixed, like
+     the page itself, and never a department's colour. */
+  --page-hit: #ffd21f;
+  --page-hit-active: #e8710a;
   /* The script screen's stage (DESIGN 6.2): the dark the page sits on, in every theme. */
   --stage: #0e0c0a;
   /* === department defaults (DESIGN 4.3): ink on white paper. Stored per department;

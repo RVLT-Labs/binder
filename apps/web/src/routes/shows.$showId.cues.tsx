@@ -4,7 +4,7 @@ import { usePowerSync, useQuery } from '@powersync/react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState } from '@/components/EmptyState'
-import { MoreIcon, SearchIcon } from '@/components/icons'
+import { FilterIcon, MoreIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { pushNotice } from '../components/noticeStore'
@@ -20,6 +20,7 @@ import {
 import { CueListTable } from '../cuelist/CueListTable'
 import { CueSheetButtons } from '../cuelist/CueSheetButtons'
 import { duplicateStats } from '../cuelist/duplicates'
+import { firstCueDocument } from '../cuelist/placeFirstCue'
 import { RenumberDialog } from '../cuelist/RenumberDialog'
 import { type CuePanelTab, useCuePanel } from '../cuelist/useCuePanel'
 import { HistoryPanel } from '../history/HistoryPanel'
@@ -290,6 +291,7 @@ function CueListPage() {
     </>
   )
 
+  const placeInto = firstCueDocument(documents, readOnly)
   const list =
     rows.length === 0 ? (
       <EmptyState
@@ -306,18 +308,15 @@ function CueListPage() {
         heading={`No ${(current.name || current.code || '').toLowerCase()} cues yet.`}
         hand="the quiet before the pad comes in"
         action={
-          // Cues are placed on the page: into the first document, or the documents when there is none.
-          <Button asChild variant="line">
-            {documents[0] ? (
-              <Link to="/shows/$showId/docs/$docId" params={{ showId, docId: documents[0].id }}>
+          // Cues are placed on the page, so the way in is a document that can be marked up, and only
+          // for someone who can place cues in this department.
+          placeInto ? (
+            <Button asChild variant="line">
+              <Link to="/shows/$showId/docs/$docId" params={{ showId, docId: placeInto }}>
                 Place the first cue
               </Link>
-            ) : (
-              <Link to="/shows/$showId/docs" params={{ showId }}>
-                Place the first cue
-              </Link>
-            )}
-          </Button>
+            </Button>
+          ) : undefined
         }
       />
     ) : shownRows.length === 0 ? (
@@ -509,7 +508,7 @@ function PhoneBar({
         className="shrink-0"
         onClick={onSearch}
       >
-        <SearchIcon className="!size-[22px]" />
+        <FilterIcon className="!size-[22px]" />
       </Button>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>

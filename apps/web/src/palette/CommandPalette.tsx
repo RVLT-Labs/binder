@@ -162,7 +162,7 @@ function PaletteBody({ showId }: { showId: string }) {
               setPicked('')
             }}
             placeholder="Cue, page, script text or action"
-            className="min-w-0 flex-1 bg-transparent font-mono text-[18px] text-ink caret-ink outline-none placeholder:font-sans placeholder:text-[15px] placeholder:text-faint"
+            className="min-w-0 flex-1 bg-transparent font-mono text-[18px] max-md:h-11 text-ink caret-ink outline-none placeholder:font-sans placeholder:text-[15px] placeholder:text-faint"
           />
           <span aria-hidden className="max-md:hidden">
             <Kbd>esc</Kbd>

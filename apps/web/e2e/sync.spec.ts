@@ -42,7 +42,11 @@ test('edits sync between two users, survive offline, rejections converge, and no
     await a.context.setOffline(true)
     await rename(a.page, ii, iii)
     await expect(showLink(a.page, iii)).toBeVisible()
-    await expect(a.page.getByLabel('Sync status')).toHaveText('Offline · 1 pending')
+    await expect(a.page.getByLabel('Sync status')).toHaveText('Offline')
+    await expect(a.page.getByLabel('Sync status')).toHaveAttribute('data-pending', '1')
+    await expect(a.page.getByRole('status').filter({ hasText: 'waiting to sync' })).toContainText(
+      '1 waiting to sync',
+    )
     // Long enough for an upload attempt and retry: B must still see the old title.
     await b.page.waitForTimeout(3_000)
     await expect(showLink(b.page, ii)).toBeVisible()

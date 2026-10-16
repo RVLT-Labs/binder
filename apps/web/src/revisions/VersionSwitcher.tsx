@@ -134,6 +134,9 @@ export function VersionSwitcher({
           search={compare}
           className={cn(
             'flex h-11 items-center rounded-full px-2 text-[12px] font-semibold text-ink-2 hover:text-ink md:h-8',
+            // On the top bar at tablet width there is no room beside Print, undo and the panel
+            // toggles: Compare stays on the Documents list and the overview.
+            chip && 'md:max-[1024px]:hidden',
             focusRing,
           )}
         >

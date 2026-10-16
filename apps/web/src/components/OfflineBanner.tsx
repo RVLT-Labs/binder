@@ -4,18 +4,24 @@ import { usePendingChanges } from './usePendingChanges'
 
 /**
  * The words and the look: the mockups' `.ov-banner`. Offline is a state, not an error (DESIGN §11),
- * so it is a muted bar read politely, never an alert, and it says how much is waiting.
+ * so it is a muted bar, never an alert, and it says how much is waiting (nothing, when nothing is).
+ * It is read politely by the live region that holds it (`ShellOfflineBanner`), which stays mounted
+ * so that the bar arriving is announced.
  */
 export function OfflineBanner({ waiting }: { waiting: number }) {
   return (
-    <div
-      role="status"
-      className="offline-banner flex min-h-11 items-center gap-3 rounded-[12px] border-2 border-line-2 bg-elev px-4 py-2 text-[13.5px] text-ink-2 md:h-11 md:py-0"
-    >
+    <div className="offline-banner flex min-h-11 items-center gap-3 rounded-[12px] border-2 border-line-2 bg-elev px-4 py-2 text-[13.5px] text-ink-2 md:h-11 md:py-0">
       <WifiOffIcon aria-hidden className="size-4 shrink-0 text-muted" />
       <span>
-        Offline. Changes are saved on this device —{' '}
-        <span className="font-mono tabular-nums">{waiting}</span> waiting to sync.
+        Offline. Changes are saved on this device
+        {waiting > 0 ? (
+          <>
+            {' '}
+            — <span className="font-mono tabular-nums">{waiting}</span> waiting to sync.
+          </>
+        ) : (
+          '.'
+        )}
       </span>
     </div>
   )
@@ -31,10 +37,11 @@ function WaitingBanner() {
  */
 export function ShellOfflineBanner({ className }: { className?: string }) {
   const online = useOnline()
-  if (online) return null
+  // One live region for the life of the shell: a region that arrives already holding text is often
+  // not announced, so the text is what gets mounted inside it.
   return (
-    <div className={className}>
-      <WaitingBanner />
+    <div role="status" className={online ? undefined : className}>
+      {!online && <WaitingBanner />}
     </div>
   )
 }

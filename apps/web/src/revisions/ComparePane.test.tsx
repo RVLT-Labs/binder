@@ -60,6 +60,8 @@ test('the old side tints the cut lines (`.compare-tint[data-op=removed]`), strik
   const { container } = render(<ComparePane {...props} />)
   const tints = container.querySelectorAll('.compare-tint[data-op="removed"]')
   expect(tints).toHaveLength(2)
+  // each wash says which line it is on, so a test can tell the line that was cut
+  expect(Array.from(tints).map((t) => t.getAttribute('aria-label'))).toEqual(['a', 'b'])
   expect(container.querySelectorAll('line')).toHaveLength(2)
   expect(container.querySelector('text')?.textContent).toBe('−2')
 })

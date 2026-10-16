@@ -143,6 +143,14 @@ export function lineBox(layer: WordLayer, lineIndex: number): Box | null {
   return { x: left, y: bottom, w: right - left, h: top - bottom }
 }
 
+/** The words of line `lineIndex` of a page, as a sentence ("Two and twenty"). */
+export function lineText(layer: WordLayer, lineIndex: number): string {
+  return (layer.lines[lineIndex] ?? [])
+    .map((i) => layer.words[i]?.t ?? '')
+    .filter((t) => t !== '')
+    .join(' ')
+}
+
 /**
  * The lines to tint on one side: the removed lines on the old version, the added ones on the new,
  * by zero-based page.

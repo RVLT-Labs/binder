@@ -14,6 +14,8 @@ test('tokens.css defines the RVLT espresso chrome and the Binder page tokens', (
     '--page: #ffffff',
     '--page-ink: #1a1715',
     '--stage: #0e0c0a',
+    '--page-hit: #ffd21f',
+    '--page-hit-active: #e8710a',
   ]) {
     expect(tokens).toContain(decl)
   }

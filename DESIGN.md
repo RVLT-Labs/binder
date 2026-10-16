@@ -142,7 +142,7 @@ Binder-specific components (each has a mockup in the gallery):
 | **ActivityRow** | avatar, sentence (who, via agent in purple, what), meta line, mono time, Revert (with count when >10 rows) |
 | **ReviewRow** | old and new thumbnails, quote and page change in words, Accept (red) / Move / Revert |
 | **DocumentRow** | thumbnail, title, version and page count, status pills, actions; processing rows show a progress bar and the four steps (Upload → Extract text → Build word layer → Re-anchor), derived from what the data knows; a failed row says the plain reason and keeps the tool's own output behind "Details"; a cancelled row is neutral, not red |
-| **SyncState** | dot plus word: Synced (ok), Syncing… n (warn), Offline (muted; with "· n pending" when changes wait), Conflict n (red, not built: see ConflictCard) |
+| **SyncState** | dot plus word: Synced (ok), Syncing… n (warn), Offline (muted; the count of waiting changes is in the OfflineBanner, not here), Conflict n (red, not built: see ConflictCard) |
 | **Presence** | stacked avatars; "In the binder now" list with document and page |
 | **CommandPalette** | 640 px, 20 px radius, groups as in §7, current result with the red edge and ↵ hint, footer of keys in mono |
 | **CallingStrip** | page ‹ n / N ›, next cue on the active department (swatch, code, mono number, label), Go to…, Exit |
@@ -229,3 +229,8 @@ Lockups: in the app header, the tile and "Binder" in Archivo 800 with a "by RVLT
 | 2026-10-16 | Offline is a muted banner and a notice, never an alert; the conflict card and "Conflict n" are designed but not built (task 15a) | Binder has no conflict flow; sync words stay Synced, Syncing… n, Offline |
 | 2026-10-16 | The shell honours all four safe-area insets, and touch screens (`pointer: coarse`) get 44 px hit areas on the tool strip and the Checkbox, with the strip scrolling instead of shrinking (task 15a) | a notched phone in landscape clipped the rail; iPad mini in landscape got 32 px buttons |
 | 2026-10-16 | `styles.css` is gone: tokens, base, Tailwind utilities and `markup.css` carry all styling (task 15a) | one source for colour, and no literal hex outside data |
+| 2026-10-16 | `Segmented` is an accessible radio group: `role="radiogroup"` with `role="radio"` items and `aria-checked` (R5) | the contract is the pattern a screen reader knows, not the library under it |
+| 2026-10-16 | A document no version of which can be read says so in its own words and names the way through: remove the upload and upload the file again as a new document with Text recognition set to Never, then mark it up by position (R44) | accurate to what Remove leaves; the API has no new surface for it |
+| 2026-10-16 | The print dialog's Segmented controls (pages, paper), its file name and its preview, which R19 left out as unbuilt, were built with the print options (Feature 2); the stamp picker and cue type stay inline flyouts | R19's reason (no page-range or paper choice) no longer held once the options existed; the flyout half stands |
+| 2026-10-16 | The top bar's sync word is "Offline" with no count; "N waiting to sync" lives in the OfflineBanner, a live region that stays mounted so its arrival is announced (R47) | the states mockup draws it so (R21); tests read the count from `data-pending` |
+| 2026-10-16 | Search hits on the page use fixed page colours (a yellow wash, an orange active hit), never a theme token or a department's colour | the page is white in every theme and a department colour on it means that department's own markup |

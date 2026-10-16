@@ -44,6 +44,25 @@ test('make available offline, go offline, reload, view and search', async ({ pag
   await expect(link).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('region', { name: 'In the binder now' })).toHaveCount(0)
 
+  // The fonts come from the precache too: the display and mono faces load with no network. `check`
+  // alone is also true for a face the page never declared, so the faces are asked to load first and
+  // must be among those the page holds, loaded.
+  const fonts = await page.evaluate(async () => {
+    await document.fonts.load('800 16px Archivo')
+    await document.fonts.load('400 13px "Geist Mono"')
+    return {
+      archivo: document.fonts.check('800 16px Archivo'),
+      mono: document.fonts.check('400 13px "Geist Mono"'),
+      loaded: Array.from(document.fonts)
+        .filter((f) => f.status === 'loaded')
+        .map((f) => `${f.family} ${f.weight}`),
+    }
+  })
+  expect(fonts.archivo).toBe(true)
+  expect(fonts.mono).toBe(true)
+  expect(fonts.loaded.some((f) => /Archivo.* 800/.test(f))).toBe(true)
+  expect(fonts.loaded.some((f) => /Geist Mono.* 400/.test(f))).toBe(true)
+
   // The document opens and its first page renders, from cached bytes.
   await link.click()
   const toolbar = page.getByRole('toolbar', { name: 'Viewer' })

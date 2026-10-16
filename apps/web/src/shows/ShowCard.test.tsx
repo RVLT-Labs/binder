@@ -240,6 +240,14 @@ test('a long sentence gives way (basis 0, truncated) before the avatars wrap und
   expect(within(card).getByText(sentence).className).toContain('truncate')
 })
 
+test('beside the empty-show chip the sentence takes its own line, so it reads whole', async () => {
+  const sentence = 'added 1 member'
+  await renderCard({ cueCount: 0, lastChange: { ...CHANGE, sentence } })
+  const line = within(screen.getByRole('listitem')).getByTitle('Mikaela relabelled 3 LX cues')
+  expect(line.className).toContain('basis-full')
+  expect(line.className).not.toContain('basis-0')
+})
+
 test('with no avatars the foot may wrap, and so may the empty-show chip beside the sentence', async () => {
   await renderCard({ lastChange: CHANGE })
   expect(screen.getByRole('listitem').querySelector('.show-card-foot')?.className).toContain(

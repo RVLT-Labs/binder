@@ -240,6 +240,11 @@ export function TokensPage() {
           </TokenRow>
         ))}
       </ul>
+      {tokens.data && list.length === 0 && (
+        <p className="m-0 mt-3 px-2.5 text-[13px] text-muted">
+          No tokens yet. Name one above and create it.
+        </p>
+      )}
     </div>
   )
 }

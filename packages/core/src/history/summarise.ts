@@ -93,14 +93,17 @@ const UPLOAD_VERBS: ReadonlySet<Verb> = new Set(['cancelled', 'retried', 'remove
 
 /**
  * `cue`, `annotation`, `document` and `revision` read naturally (a `document_versions` row is a
- * revision to a person); any other table is its name, singularised.
+ * revision to a person, a `show_memberships` row a member); any other table is its name,
+ * singularised, with its underscores as spaces so a column or table name never reads as code.
  */
 function singular(table: string): string {
   if (table === 'cues') return 'cue'
   if (table === 'annotations') return 'annotation'
   if (table === 'documents') return 'document'
   if (table === 'document_versions') return 'revision'
-  return table.endsWith('ies') ? `${table.slice(0, -3)}y` : table.replace(/s$/, '')
+  if (table === 'show_memberships') return 'member'
+  const name = table.replace(/_/g, ' ')
+  return name.endsWith('ies') ? `${name.slice(0, -3)}y` : name.replace(/s$/, '')
 }
 
 function joinClauses(parts: string[]): string {

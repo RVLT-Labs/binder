@@ -87,7 +87,8 @@ export function TopBar({
         {showId && <PaletteButton />}
         <div ref={slotRefs?.phone} data-phone-slot className="contents" />
         <div className="flex items-center gap-1.5 group-has-[[data-phone-slot]:not(:empty)]/bar:hidden">
-          <SyncStatus />
+          {/* With a primary action beside it the word gives way to the dot (it is still read out). */}
+          <SyncStatus compact={Boolean(primary)} />
           {primary}
           <AccountMenu account={account} showId={showId} side="bottom" />
         </div>
@@ -97,7 +98,7 @@ export function TopBar({
 
   const shown = crumbs.filter((c) => !c.phoneOnly)
   return (
-    <header className="flex h-[calc(44px+env(safe-area-inset-top))] shrink-0 items-center gap-3.5 border-b border-line bg-paper px-3.5 pt-[env(safe-area-inset-top)]">
+    <header className="group/bar flex h-[calc(44px+env(safe-area-inset-top))] shrink-0 items-center gap-3.5 border-b border-line bg-paper px-3.5 pt-[env(safe-area-inset-top)]">
       <nav aria-label="Breadcrumb" className="min-w-0">
         <ol className="flex items-center gap-1.5 text-[13px]">
           {shown.map((crumb, i) => {
@@ -140,10 +141,12 @@ export function TopBar({
       </nav>
       <div ref={slotRefs?.chip} className="contents" />
       <div className="ml-auto flex items-center gap-3">
-        <SyncStatus />
+        {/* At tablet width, a screen with its own controls here (the script's) has no room for the
+            word: the dot stays and the word is read out. */}
+        <SyncStatus crowded />
         {actions}
         {/* A screen's own controls (see TopBarSlots) sit after the shell's, before the primary. */}
-        <div ref={slotRefs?.actions} className="contents" />
+        <div ref={slotRefs?.actions} data-bar-actions className="contents" />
         {primary}
       </div>
     </header>

@@ -95,6 +95,9 @@ describe('summariseBatch', () => {
       'updated 2 departments',
     )
     expect(summariseBatch([row('shows', 'update')])).toBe('updated 1 show')
+    // a membership is a member to a person, and no table name leaks with its underscore
+    expect(summariseBatch([row('show_memberships', 'insert')])).toBe('added 1 member')
+    expect(summariseBatch([row('stamp_sets', 'update')])).toBe('updated 1 stamp set')
   })
 
   test('an upload reads as "uploaded", with the nouns document and revision', () => {

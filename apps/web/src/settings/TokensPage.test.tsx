@@ -101,3 +101,14 @@ test('a token that was never used says so; a revoked one is marked and has no Re
   expect(screen.getByText('Revoked')).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Revoke Old' })).toBeNull()
 })
+
+test('with no tokens the list says so, and says nothing while there are some', async () => {
+  tokens = []
+  const { unmount } = renderPage()
+  expect(await screen.findByText('No tokens yet. Name one above and create it.')).toBeTruthy()
+  unmount()
+  tokens = [record('t1', 'Laptop')]
+  renderPage()
+  await screen.findByText('Laptop')
+  expect(screen.queryByText(/No tokens yet/)).toBeNull()
+})

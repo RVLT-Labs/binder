@@ -324,6 +324,10 @@ test('compare shows the cut lines as removed', async ({ browser }) => {
     ).toBeVisible()
     await expect(oldPane.locator('.compare-tint[data-op="added"]')).toHaveCount(0)
     await expect(newPane.locator('.compare-tint[data-op="removed"]')).toHaveCount(0)
+    // ...and it is the right lines: "Two and twenty" is the first of the ones the revision cut.
+    await expect(
+      oldPane.locator('.compare-tint[data-op="removed"][aria-label*="Two and twenty"]'),
+    ).toHaveCount(1)
   } finally {
     for (const c of contexts) await c.close()
   }

@@ -42,30 +42,37 @@ test('EmptyState says what is empty, in plain words, with Kalam only when it is 
   expect(screen.getByRole('button', { name: 'Place the first cue' })).toBeTruthy()
 })
 
-test("the offline banner is a muted status with the brief's words, never an alert", () => {
-  render(<OfflineBanner waiting={3} />)
-  const banner = screen.getByRole('status')
+test("the offline banner is a muted bar with the brief's words, never an alert", () => {
+  const { container, rerender } = render(<OfflineBanner waiting={3} />)
+  const banner = container.querySelector('.offline-banner') as HTMLElement
   expect(banner.textContent).toBe('Offline. Changes are saved on this device — 3 waiting to sync.')
   expect(within(banner).getByText('3').className).toContain('font-mono')
   expect(screen.queryByRole('alert')).toBeNull()
   expect(banner.className).toContain('bg-elev')
+  // with nothing queued there is no count to give
+  rerender(<OfflineBanner waiting={0} />)
+  expect(container.textContent).toBe('Offline. Changes are saved on this device.')
 })
 
-test('the shell banner shows only while offline, and reads the upload queue only then', () => {
+test('the shell banner is one live region that stays mounted; its bar shows only while offline and reads the queue only then', () => {
   const online = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true)
-  const { container } = render(<ShellOfflineBanner />)
-  expect(container.textContent).toBe('')
+  render(<ShellOfflineBanner />)
+  const region = screen.getByRole('status')
+  expect(region.textContent).toBe('')
   expect(h.queried).toBe(0)
   online.mockReturnValue(false)
   act(() => {
     window.dispatchEvent(new Event('offline'))
   })
-  expect(screen.getByRole('status').textContent).toContain('3 waiting to sync')
+  // the same element: the text arrives inside it, so it is announced
+  expect(screen.getByRole('status')).toBe(region)
+  expect(region.textContent).toContain('3 waiting to sync')
   online.mockReturnValue(true)
   act(() => {
     window.dispatchEvent(new Event('online'))
   })
-  expect(container.textContent).toBe('')
+  expect(screen.getByRole('status')).toBe(region)
+  expect(region.textContent).toBe('')
 })
 
 test('the skeleton keeps its words for a screen reader and its column widths for the eye', () => {

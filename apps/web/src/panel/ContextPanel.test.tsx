@@ -205,6 +205,16 @@ test('arrow keys move over the tabs without opening them', async () => {
   expect(screen.getByText('cue content')).toBeTruthy()
 })
 
+/** What the body gained since `before`: portalled content, such as a drawer or its scrim. */
+function addedSince(before: Set<Element>): (string | null)[] {
+  return (
+    Array.from(document.body.children)
+      // Radix's two focus guards are empty spans, not drawn
+      .filter((el) => !before.has(el) && !el.hasAttribute('data-radix-focus-guard'))
+      .map((el) => el.getAttribute('data-panel') ?? el.className)
+  )
+}
+
 test('phone draws nothing until opened, then a dialog with the same tabs', () => {
   setWidth(390)
   const { rerender } = render(
@@ -218,6 +228,7 @@ test('phone draws nothing until opened, then a dialog with the same tabs', () =>
   )
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(screen.queryByRole('complementary')).toBeNull()
+  const before = new Set(Array.from(document.body.children))
   rerender(
     <ContextPanel
       tabs={tabs()}
@@ -233,10 +244,10 @@ test('phone draws nothing until opened, then a dialog with the same tabs', () =>
       .getAllByRole('tab')
       .map((t) => t.textContent),
   ).toEqual(['Cue', 'Layers', 'History', 'Review 4'])
-  // no scrim: nothing but the drawer is added to the page
-  expect(
-    document.querySelector('[data-state][class*="scrim"], [data-radix-dialog-overlay]'),
-  ).toBeNull()
+  // no scrim: the drawer is the only thing the panel added to the page (an overlay would be a
+  // second element beside it in the body), and nothing blocks the page's pointer
+  expect(addedSince(before)).toEqual(['drawer'])
+  expect(document.body.style.pointerEvents).not.toBe('none')
   // the mockup's sheet: radius 20 20 0 0, a 2 px top outline, over the tab bar
   expect(dialog.className).toContain('rounded-t-[20px]')
   expect(dialog.className).toContain('border-t-2')
@@ -375,7 +386,7 @@ test('tablet draws a 360 px sheet with no scrim, and closing it returns focus to
   setWidth(834)
   const tag = document.createElement('button')
   document.body.append(tag)
-  const { rerender } = render(
+  const { container, rerender } = render(
     <ContextPanel
       tabs={tabs()}
       value="cue"
@@ -389,9 +400,11 @@ test('tablet draws a 360 px sheet with no scrim, and closing it returns focus to
   expect(sheet.className).toContain('w-[360px]')
   expect(sheet.className).toContain('rounded-l-[20px]')
   expect(sheet.className).toContain('border-l-2')
-  expect(
-    document.querySelector('[data-radix-dialog-overlay], [data-state][class*="scrim"]'),
-  ).toBeNull()
+  // no scrim: the sheet is all the panel drew, in place, and the page's pointer is not blocked
+  expect(Array.from(container.children).map((el) => el.getAttribute('data-panel'))).toEqual([
+    'sheet',
+  ])
+  expect(document.body.style.pointerEvents).not.toBe('none')
   rerender(
     <ContextPanel
       tabs={tabs()}

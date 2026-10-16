@@ -8,7 +8,7 @@ import { fitWidthZoom } from '../viewer/controls'
 import { PageCanvas } from '../viewer/PageCanvas'
 import { PageOverlay } from '../viewer/PageOverlay'
 import { usePdfDocument } from '../viewer/usePdfDocument'
-import { lineBox, tintBands } from './compareModel'
+import { lineBox, lineText, tintBands } from './compareModel'
 
 interface PageSize {
   index: number
@@ -150,6 +150,8 @@ export function ComparePane({
                             : 'fill-[color-mix(in_srgb,var(--green)_16%,transparent)]',
                         )}
                         data-op={removed ? 'removed' : 'added'}
+                        // Which line this wash is on, for tests and tools: the overlay is drawn, not read.
+                        aria-label={lineText(layer, lineIndex)}
                         x={box.x - 1}
                         y={box.y - 1}
                         width={box.w + 2}

@@ -199,7 +199,12 @@ export function ShowCard({
             {ago &&
               (lastChange ? (
                 <span
-                  className="ml-auto flex min-w-0 flex-1 basis-0 items-baseline justify-end gap-1 text-[12px] text-muted"
+                  className={cn(
+                    'ml-auto flex min-w-0 items-baseline justify-end gap-1 text-[12px] text-muted',
+                    // Beside the chip (which cannot shrink) the sentence takes its own line, so it
+                    // reads whole; with avatars it shares the line and truncates before they wrap.
+                    cueCount === 0 ? 'basis-full' : 'flex-1 basis-0',
+                  )}
                   title={`${lastChange.label} ${lastChange.summary}`}
                 >
                   {/* The mockup sets the whole line in the body face, the time included. The tooltip

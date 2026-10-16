@@ -24,8 +24,8 @@ const BUTTON = cn(
   // The active tool is red (DESIGN 8): live state, never decoration.
   'aria-pressed:bg-red aria-pressed:text-primary-foreground aria-pressed:shadow-stk aria-pressed:hover:bg-red aria-pressed:hover:text-primary-foreground',
 )
-/** The glyph: 19 px, and 17 px in the desktop's 34 px button. */
-const GLYPH = 'size-[19px] min-[1025px]:size-[17px]'
+/** The glyph: 19 px, and 17 px in the desktop's 34 px button (a mouse, above 1024 px). */
+const GLYPH = 'size-[19px] pointer-fine:min-[1025px]:size-[17px]'
 const FIELD = cn(
   'h-9 rounded-[8px] border-2 border-line-2 bg-card px-2.5 font-sans text-[13px] text-ink',
   focusRing,

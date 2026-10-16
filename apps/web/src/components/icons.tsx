@@ -136,6 +136,8 @@ export const SearchIcon = icon(
     <path d="M20 20l-4.5-4.5" />
   </>,
 )
+/** Three narrowing bars: filtering a list on the page, so it reads apart from the palette's magnifier. */
+export const FilterIcon = icon('filter', <path d="M4 7h16M7 12h10M10 17h4" />)
 export const UndoIcon = icon(
   'undo',
   <>
