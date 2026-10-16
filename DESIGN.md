@@ -158,7 +158,7 @@ Required states for every interactive element are Flow's §9.1 (rest, hover, foc
 
 ## 10. Keyboard
 
-Global: ⌘K palette, `g` go to page, `]` / `[` next / previous cue, `esc` closes the top overlay or clears selection. Script tools: `v` select, `c` cue, `h` highlight, `n` note, `r` rectangle, `a` arrow, `s` stamp, `/` search. Calling: ←/→ page, `g` keypad, ⇧C toggles Calling. Shortcuts are shown as key caps (`.kbd`) next to the actions they trigger.
+Global: ⌘K palette, ⌘P print (in a document), `g` go to page, `]` / `[` next / previous cue, `esc` closes the top overlay or clears selection. Script tools: `v` select, `c` cue, `h` highlight, `n` note, `r` rectangle, `a` arrow, `s` stamp, `/` search. Calling: ←/→ page, `g` keypad, ⇧C toggles Calling. Shortcuts are shown as key caps (`.kbd`) next to the actions they trigger.
 
 ## 11. Voice
 

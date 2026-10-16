@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react'
+import { modalIsOpen } from '@/lib/modalDialog'
+import { isPaletteOpen } from '../palette/paletteState'
 import { useUndo } from '../undo/useUndo'
 import { useMarkupSession } from './MarkupSession'
 import { stepCue } from './markupView'
@@ -19,13 +21,7 @@ const NON_TEXT_INPUTS = new Set([
   'file',
 ])
 
-/**
- * True while a modal dialog is open. Everything behind a modal is inert, so the markup keys stay out
- * of it: `s` on a checkbox in Print must not switch the tool behind it, and Escape belongs to the dialog.
- */
-export function modalIsOpen(): boolean {
-  return document.querySelector('dialog[open]') !== null
-}
+export { modalIsOpen }
 
 /** True for elements that take typed keys (text fields, selects, editable content). */
 export function isEditableTarget(target: EventTarget | null): boolean {
@@ -56,7 +52,8 @@ export function useMarkupShortcuts(): void {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const { session, selection, tool, undo } = latest.current
-      if (e.defaultPrevented || e.repeat || modalIsOpen()) return
+      // The palette's results are not editable fields, so a key pressed on one must be kept out too.
+      if (e.defaultPrevented || e.repeat || modalIsOpen() || isPaletteOpen()) return
       const action = resolveShortcut({
         key: e.key,
         metaKey: e.metaKey,

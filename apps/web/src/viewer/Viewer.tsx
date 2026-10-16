@@ -105,6 +105,10 @@ export interface ViewerHandle {
   focusPageInput(): void
   /** Opens the Find card (if it is closed) and focuses its search box. */
   focusSearch(): void
+  /** Scrolls to a page (zero-based). */
+  goToPage(index: number): void
+  /** Opens the Find card on `query` and goes to its first hit (the command palette's "In the script"). */
+  searchFor(query: string): void
   /**
    * The page under the middle of the view and the point of it that sits there (displayed points, y
    * up), or null before the pages are drawn. Where the phone's Place cue button places a cue.
@@ -155,6 +159,8 @@ export function Viewer({
   const [findOpen, setFindOpen] = useState(false)
   /** What had focus when Find opened, so closing it puts the cursor back there. */
   const findOpener = useRef<Element | null>(null)
+  /** A search the Find card is asked to run as it opens (see `searchFor`); `n` makes a repeat count. */
+  const [findSeed, setFindSeed] = useState<{ text: string; n: number } | null>(null)
 
   const widest = useMemo(() => Math.max(...pages.map((p) => p.width)), [pages])
   const gutter = phone
@@ -232,6 +238,14 @@ export function Viewer({
         if (searchInput.current) return searchInput.current.focus()
         findOpener.current = document.activeElement
         setFindOpen(true)
+      },
+      goToPage: (index) => goTo(index),
+      searchFor(query) {
+        if (!searchInput.current) {
+          findOpener.current = document.activeElement
+          setFindOpen(true)
+        }
+        setFindSeed((prev) => ({ text: query, n: (prev?.n ?? 0) + 1 }))
       },
       visiblePoint() {
         const at = list.current?.visibleCentre()
@@ -378,6 +392,7 @@ export function Viewer({
               // the card sits left of it, never behind it.
               className="absolute top-3 right-6 z-20 w-[min(20rem,calc(100%-2rem))] max-md:right-4 md:max-[1024px]:right-[calc(360px+1.5rem)]"
               inputRef={searchInput}
+              seed={findSeed}
               search={documentSearch.search}
               loading={documentSearch.loading}
               unavailable={documentSearch.unavailable}

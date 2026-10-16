@@ -36,6 +36,8 @@ interface CueListSearch {
   department?: string
   /** List only the cues that share a number with another (the overview's "Fix" link). */
   duplicates?: boolean
+  /** Open Renumber from script order once (the command palette's action; the address drops it). */
+  renumber?: boolean
 }
 
 export const Route = createFileRoute('/shows/$showId/cues')({
@@ -43,6 +45,7 @@ export const Route = createFileRoute('/shows/$showId/cues')({
     department:
       typeof search.department === 'string' && search.department ? search.department : undefined,
     duplicates: search.duplicates === true || search.duplicates === 'true' ? true : undefined,
+    renumber: search.renumber === true || search.renumber === 'true' ? true : undefined,
   }),
   component: CueListPage,
 })
@@ -61,7 +64,7 @@ const NO_FLAGS: Record<FlagFilter, boolean> = {
 
 function CueListPage() {
   const { showId } = Route.useParams()
-  const { department, duplicates: onlyDuplicates } = Route.useSearch()
+  const { department, duplicates: onlyDuplicates, renumber } = Route.useSearch()
   const db = usePowerSync()
   const navigate = useNavigate()
   const breakpoint = useBreakpoint()
@@ -108,6 +111,26 @@ function CueListPage() {
   const latest = useRef(ctx)
   latest.current = ctx
   const editContext = useCallback(() => latest.current, [])
+
+  // The command palette's "Renumber from script order" arrives as `?renumber`: it opens the same
+  // dialog the button does, once, as soon as the membership and documents are known, and says why when it cannot.
+  const renumberReady = Boolean(current) && ctx !== null && documents.length > 0
+  useEffect(() => {
+    if (!renumber || !renumberReady) return
+    if (readOnly === null) {
+      renumberOpener.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null
+      setRenumbering(true)
+    } else {
+      pushNotice({ kind: 'info', message: readOnly })
+    }
+    void navigate({
+      to: '/shows/$showId/cues',
+      params: { showId },
+      search: { department, duplicates: onlyDuplicates },
+      replace: true,
+    })
+  }, [renumber, renumberReady, readOnly, navigate, showId, department, onlyDuplicates])
 
   const rows = useMemo(
     () =>

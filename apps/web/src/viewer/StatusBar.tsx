@@ -17,11 +17,12 @@ export interface StatusBarProps {
   className?: string
 }
 
-/** The keys people forget (DESIGN 6.2). ⌘K joins them when the palette lands. */
+/** The keys people forget (DESIGN 6.2). */
 const KEYS: Array<[key: string, does: string]> = [
   ['c', 'place'],
   [']', 'next cue'],
   ['g', 'go to page'],
+  ['⌘K', 'anything'],
 ]
 
 /**

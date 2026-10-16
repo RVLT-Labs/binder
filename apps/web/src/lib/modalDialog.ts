@@ -4,6 +4,14 @@
  * Safari does not focus a button on click at all, so the caller says what to return to.
  */
 
+/**
+ * True while a modal dialog is open. Everything behind a modal is inert, so keys that belong to the
+ * page behind it (the markup keys, the command palette's ⌘K) stay out.
+ */
+export function modalIsOpen(): boolean {
+  return document.querySelector('dialog[open]') !== null
+}
+
 /** Opens `el` as a modal. jsdom has no showModal; the dialog is then just open. */
 export function openModal(el: HTMLDialogElement): void {
   if (el.open) return

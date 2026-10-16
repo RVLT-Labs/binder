@@ -25,6 +25,8 @@ export interface SearchPanelProps {
   onActivate: (index: number) => void
   /** The search box, so the `/` key and the strip's find button can focus it. */
   inputRef?: Ref<HTMLInputElement>
+  /** Text to search for as soon as it arrives (the command palette's "In the script"); each new `n` runs again. */
+  seed?: { text: string; n: number } | null
   /** Escape or the close button: the card hides and the highlights go. */
   onClose?: () => void
   className?: string
@@ -44,6 +46,7 @@ export function SearchPanel({
   onResults,
   onActivate,
   inputRef,
+  seed,
   onClose,
   className,
 }: SearchPanelProps) {
@@ -79,6 +82,15 @@ export function SearchPanel({
       },
     )
   }
+
+  const seeded = useRef(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new seed runs a search; `run` reads current state
+  useEffect(() => {
+    if (!seed || seeded.current === seed.n) return
+    seeded.current = seed.n
+    setQuery(seed.text)
+    run(seed.text, true)
+  }, [seed])
 
   function onChange(text: string) {
     setQuery(text)

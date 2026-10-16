@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { BackIcon } from '@/components/icons'
 import { SyncStatus } from '@/components/SyncStatus'
 import { cn, focusRing } from '@/lib/utils'
+import { PaletteButton } from '../palette/CommandPalette'
 import { AccountMenu } from './AccountMenu'
 import { NavLink } from './NavLink'
 import type { Account, Crumb } from './types'
@@ -82,6 +83,8 @@ export function TopBar({
         {/* A screen can draw its own controls here (the script: page position and menu, see
             TopBarSlots); while it has put something in, the sync state, primary and avatar make
             way for it. A screen that has not (its loading, empty or error states) keeps them. */}
+        {/* No ⌘K on a touch screen: inside a show the palette opens from here. */}
+        {showId && <PaletteButton />}
         <div ref={slotRefs?.phone} data-phone-slot className="contents" />
         <div className="flex items-center gap-1.5 group-has-[[data-phone-slot]:not(:empty)]/bar:hidden">
           <SyncStatus />

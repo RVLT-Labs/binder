@@ -2,6 +2,7 @@ import { useRouterState } from '@tanstack/react-router'
 import { type ReactNode, useMemo, useState } from 'react'
 import { Notices } from '@/components/Notices'
 import { cn } from '@/lib/utils'
+import { CommandPalette } from '../palette/CommandPalette'
 import { activeNavKey } from './navItems'
 import { Rail } from './Rail'
 import { TabBar } from './TabBar'
@@ -106,6 +107,7 @@ export function AppShell({
           </main>
           {tabBar && showId && <TabBar showId={showId} pathname={pathname} />}
         </div>
+        {showId && <CommandPalette showId={showId} />}
         <Notices aboveTabBar={tabBar} />
       </div>
     </TopBarSlotsContext>

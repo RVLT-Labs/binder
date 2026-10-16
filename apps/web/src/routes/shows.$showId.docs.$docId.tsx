@@ -26,6 +26,7 @@ import { ToolStrip } from '../markup/ToolStrip'
 import { UndoRedoButtons } from '../markup/UndoRedoButtons'
 import { useMarkupShortcuts } from '../markup/useMarkupShortcuts'
 import { useOnline } from '../offline/useOnline'
+import { PaletteDocumentHostRegistration } from '../palette/PaletteDocumentHost'
 import { ContextPanel, type PanelTab } from '../panel/ContextPanel'
 import { Note } from '../panel/fields'
 import { type PanelState, type PanelTabId, usePanelState } from '../panel/usePanelState'
@@ -281,6 +282,15 @@ function DocumentPage() {
           historic={historic}
         >
           <MarkupKeys />
+          <PaletteDocumentHostRegistration
+            documentId={doc.id}
+            versionId={version.id}
+            pageCount={pages.length}
+            onPrint={(opener) => {
+              printOpener.current = opener
+              setPrinting(true)
+            }}
+          />
           <PresencePublisher
             showId={showId}
             documentId={doc.id}
@@ -416,6 +426,8 @@ function FocusCue({ cueId, onDone }: { cueId: string | undefined; onDone: () => 
   const handled = useRef<string | null>(null)
   const target = cueId ? session.view.ordered.find((c) => c.id === cueId) : undefined
   useEffect(() => {
+    // The address dropped it: the same cue may be asked for again (the palette does).
+    if (!cueId) handled.current = null
     if (!cueId || !target || handled.current === cueId) return
     handled.current = cueId
     session.showCue(target)
