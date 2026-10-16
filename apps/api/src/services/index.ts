@@ -30,6 +30,7 @@ export {
 } from './exports'
 export type { ActivityGroup, HistoryEntry } from './history'
 export { activityFeed, listHistory } from './history'
+export { latestChangePerShow } from './homePulse'
 export { getPage, getPageImage } from './pages'
 export type { PlaceCueAtTextInput, PlaceCueAtTextResult } from './placement'
 export { placeCueAtText } from './placement'

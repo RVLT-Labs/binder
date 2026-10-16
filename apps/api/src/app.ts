@@ -19,6 +19,7 @@ import { documents } from './routes/documents'
 import { exportRoutes } from './routes/exports'
 import { health } from './routes/health'
 import { history } from './routes/history'
+import { homePulse } from './routes/homePulse'
 import { me } from './routes/me'
 import { createPresenceRoutes } from './routes/presence'
 import { revisions } from './routes/revisions'
@@ -90,6 +91,7 @@ export function createApp(deps: AppDeps): BinderApp {
   const api = new Hono<AppEnv>()
   api.route('/', health)
   api.route('/', me)
+  api.route('/', homePulse)
   api.route('/', tenancy)
   api.route('/', departments)
   api.route('/', tokens)

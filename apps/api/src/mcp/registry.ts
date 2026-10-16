@@ -116,6 +116,8 @@ export const UI_ONLY_OPERATIONS: Record<string, string> = {
   authenticateToken:
     'auth plumbing: the MCP endpoint itself authenticates the bearer token with it',
   tokenAllowsShow: 'auth plumbing: a pure token scope predicate, not an operation',
+  latestChangePerShow:
+    'temporary (Task F1a): F1b maps it into list_shows as lastChange and removes this entry',
   createExportRecord:
     'client-generated exports upload their file over REST; agents export with export_marked_script and export_cue_list, which create the record server side',
 }
