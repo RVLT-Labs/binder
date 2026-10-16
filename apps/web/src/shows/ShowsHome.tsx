@@ -1,7 +1,9 @@
+import type { ShowLastChange, ShowPresence } from '@binder/shared'
 import type { MouseEvent } from 'react'
 import { SectionHeading } from '@/components/SectionHeading'
 import { Button } from '@/components/ui/button'
 import type { ShowRow } from '../powersync/schema'
+import type { StackPerson } from '../presence/Avatars'
 import { ShowCard } from './ShowCard'
 import type { ShowSummary } from './useShowSummaries'
 
@@ -16,6 +18,16 @@ export interface ShowsHomeProps {
   orgName?: string
   /** Per show id: its documents with their current version, and the items waiting for review. */
   summaries?: ReadonlyMap<string, ShowSummary>
+  /**
+   * What the server says about each show: who is in it and its newest change. Both are left off
+   * offline and until the first answer, when the cards use their local fallback.
+   */
+  pulse?: {
+    presence?: Readonly<Record<string, ShowPresence>>
+    lastChanges?: Readonly<Record<string, ShowLastChange | null>>
+  }
+  /** Per show id, when it last changed on this device; the fallback's time. */
+  localActivity?: ReadonlyMap<string, string>
   now?: Date
   /** Start a new show; gets the button that was pressed, so focus can come back to it. */
   onNewShow: (opener: HTMLElement) => void
@@ -29,6 +41,14 @@ export interface ShowsHomeProps {
  */
 const GRID = 'grid grid-cols-1 gap-4 md:max-[1024px]:grid-cols-2 min-[1025px]:grid-cols-3'
 
+/** A person from the presence summary as an avatar: the department scope joins the name in the tooltip. */
+const stackPerson = (p: ShowPresence['people'][number]): StackPerson => ({
+  userId: p.userId,
+  name: p.name,
+  colour: p.colour,
+  detail: p.departments.length > 0 ? p.departments.join(', ') : undefined,
+})
+
 /**
  * The shows home (DESIGN §6): a greeting, the active shows as cards, the archived ones beneath as
  * dashed, muted cards. With no active show it is one Kalam line and a way to start one.
@@ -40,6 +60,8 @@ export function ShowsHome({
   greeting,
   orgName,
   summaries,
+  pulse,
+  localActivity,
   now,
   onNewShow,
   onRename,
@@ -98,6 +120,9 @@ export function ShowsHome({
                     cueCount={cueCounts ? (cueCounts[show.id] ?? 0) : undefined}
                     documents={summaries?.get(show.id)?.documents}
                     toReview={summaries?.get(show.id)?.toReview}
+                    inNow={pulse?.presence?.[show.id]?.people.map(stackPerson)}
+                    lastChange={pulse?.lastChanges?.[show.id]}
+                    localActivityAt={localActivity?.get(show.id)}
                     now={now}
                     onRename={(title) => onRename(show.id, title)}
                   />

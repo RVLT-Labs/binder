@@ -41,3 +41,26 @@ export function useShowSummaries(): ReadonlyMap<string, ShowSummary> {
     return out
   }, [data])
 }
+
+/**
+ * The newest `updated_at` over a show's cues, annotations, documents and versions: when the show
+ * last changed as far as this device knows. The show row's own `updated_at` only moves when the
+ * show itself is edited, so this is the more truthful local answer.
+ */
+const LAST_ACTIVITY_SQL = `
+  SELECT show_id, max(updated_at) AS at FROM (
+    SELECT show_id, updated_at FROM cues
+    UNION ALL SELECT show_id, updated_at FROM annotations
+    UNION ALL SELECT show_id, updated_at FROM documents
+    UNION ALL SELECT show_id, updated_at FROM document_versions
+  ) GROUP BY show_id`
+
+/** Per show id, when it last changed on this device (the card's "Updated ..." fallback; works offline). */
+export function useLocalLastActivity(): ReadonlyMap<string, string> {
+  const { data } = useQuery<{ show_id: string; at: string | null }>(LAST_ACTIVITY_SQL)
+  return useMemo(() => {
+    const out = new Map<string, string>()
+    for (const row of data) if (row.at) out.set(row.show_id, row.at)
+    return out
+  }, [data])
+}

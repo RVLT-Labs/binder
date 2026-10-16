@@ -1,7 +1,8 @@
 import { changeLog } from '@binder/db'
-import { type Actor, newId } from '@binder/shared'
+import { type Actor, newId, presenceColour } from '@binder/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, test } from 'vitest'
+import type { PresenceConn } from '../src/presence/hub'
 import {
   activityFeed,
   createAnnotation,
@@ -10,6 +11,7 @@ import {
   latestChangePerShow,
   listDepartments,
   listOrganisations,
+  presenceSummary,
   updateCue,
   updateShow,
 } from '../src/services'
@@ -246,6 +248,95 @@ describe('latestChangePerShow', () => {
     })
     const outsider = asJson(
       await s.app.request('/api/me/shows/last-changes', { headers: { cookie: s.outsider.cookie } }),
+    )
+    expect(await outsider.json()).toEqual({ shows: {} })
+  })
+})
+
+/** A socket that records nothing: only presence in the hub matters here. */
+const conn = (id: string, userId: string, name: string): PresenceConn => ({
+  id,
+  userId,
+  name,
+  send: () => {},
+  close: () => {},
+})
+
+describe('presenceSummary', () => {
+  test('presence summary lists only shows the caller is a member of', async () => {
+    const s = await setupMarkupShow()
+    const hub = s.deps.presence
+    const db = s.deps.db
+    const org = (await listOrganisations(db, s.ownerActor))[0]
+    const other = await createShow(db, s.ownerActor, { organisationId: org.id, title: 'Other' })
+    hub.join(s.show.id, conn('c1', s.editor.id, 'Ed'))
+    hub.join(other.id, conn('c2', s.editor.id, 'Ed')) // the editor is not a member of Other
+    // the owner belongs to both shows and sees both; a show with nobody in it is not listed
+    const third = await createShow(db, s.ownerActor, { organisationId: org.id, title: 'Empty' })
+    const ownerView = await presenceSummary(db, hub, s.actors.owner)
+    expect(Object.keys(ownerView.shows).sort()).toEqual([s.show.id, other.id].sort())
+    expect(ownerView.shows).not.toHaveProperty(third.id)
+    const editorView = await presenceSummary(db, hub, s.actors.editor)
+    expect(Object.keys(editorView.shows)).toEqual([s.show.id])
+    const outsider: Actor = { userId: s.outsider.id, via: 'web', agent: null }
+    expect(await presenceSummary(db, hub, outsider)).toEqual({ shows: {} })
+    // the caller's own device counts (the card draws their avatar)
+    expect(editorView.shows[s.show.id].people.map((p) => p.userId)).toEqual([s.editor.id])
+  })
+
+  test('presence summary excludes archived shows and shows outside the token scope', async () => {
+    const s = await setupMarkupShow()
+    const hub = s.deps.presence
+    const db = s.deps.db
+    const org = (await listOrganisations(db, s.ownerActor))[0]
+    const old = await createShow(db, s.ownerActor, { organisationId: org.id, title: 'Old' })
+    hub.join(s.show.id, conn('c1', s.editor.id, 'Ed'))
+    hub.join(old.id, conn('c2', s.editor.id, 'Ed'))
+    await updateShow(db, s.ownerActor, { showId: old.id, patch: { status: 'archived' } })
+    expect(Object.keys((await presenceSummary(db, hub, s.actors.owner)).shows)).toEqual([s.show.id])
+    expect(await presenceSummary(db, hub, { ...s.actors.owner, showScope: [old.id] })).toEqual({
+      shows: {},
+    })
+    expect(
+      Object.keys(
+        (await presenceSummary(db, hub, { ...s.actors.owner, showScope: [s.show.id] })).shows,
+      ),
+    ).toEqual([s.show.id])
+  })
+
+  test('presence summary carries name and colour and nothing else', async () => {
+    const s = await setupMarkupShow()
+    const hub = s.deps.presence
+    hub.join(s.show.id, conn('c1', s.editorLx.id, 'Lex'))
+    hub.join(s.show.id, conn('c2', s.editorLx.id, 'Lex'))
+    hub.join(s.show.id, conn('c3', s.owner.id, 'Olive'))
+    const { shows } = await presenceSummary(s.deps.db, hub, s.actors.owner)
+    expect(shows[s.show.id].people).toEqual([
+      {
+        userId: s.editorLx.id,
+        name: 'Lex',
+        colour: presenceColour(s.editorLx.id),
+        departments: ['LX'],
+      },
+      { userId: s.owner.id, name: 'Olive', colour: presenceColour(s.owner.id), departments: [] },
+    ])
+    expect(JSON.stringify(shows)).not.toContain('@')
+  })
+
+  test('GET /api/me/shows/presence needs a session and returns { shows }', async () => {
+    const s = await setupMarkupShow()
+    s.deps.presence.join(s.show.id, conn('c1', s.editor.id, 'Ed'))
+    expect((await s.app.request('/api/me/shows/presence')).status).toBe(401)
+    const res = asJson(
+      await s.app.request('/api/me/shows/presence', { headers: { cookie: s.owner.cookie } }),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.shows[s.show.id].people).toEqual([
+      expect.objectContaining({ userId: s.editor.id, name: 'Ed' }),
+    ])
+    const outsider = asJson(
+      await s.app.request('/api/me/shows/presence', { headers: { cookie: s.outsider.cookie } }),
     )
     expect(await outsider.json()).toEqual({ shows: {} })
   })

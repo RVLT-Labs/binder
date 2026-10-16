@@ -274,4 +274,22 @@ describe('PresenceHub', () => {
     expect(peers.map((p) => p.connId)).toEqual(['tab1', 'tab2'])
     expect(peers[0].colour).toBe(peers[1].colour)
   })
+
+  test('occupants dedupes a user with two connections and omits other shows', () => {
+    const { hub } = setup()
+    hub.join('s', new RecordingConn('a1', 'u1', 'Ann'))
+    hub.join('s', new RecordingConn('a2', 'u1', 'Ann'))
+    hub.join('s', new RecordingConn('b', 'u2', 'Bo'))
+    hub.join('t', new RecordingConn('c', 'u3', 'Cy'))
+    expect(hub.occupants('s')).toEqual([
+      { userId: 'u1', name: 'Ann' },
+      { userId: 'u2', name: 'Bo' },
+    ])
+    expect(hub.occupants('t')).toEqual([{ userId: 'u3', name: 'Cy' }])
+    expect(hub.occupants('nowhere')).toEqual([])
+    hub.leave('s', 'a1')
+    expect(hub.occupants('s').map((o) => o.userId)).toEqual(['u1', 'u2'])
+    hub.leave('s', 'a2')
+    expect(hub.occupants('s').map((o) => o.userId)).toEqual(['u2'])
+  })
 })

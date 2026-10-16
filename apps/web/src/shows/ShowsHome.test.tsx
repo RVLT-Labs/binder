@@ -103,3 +103,27 @@ test('says nothing about cues while they are still being counted', async () => {
   await renderHome({ shows: [row('a', 'Little Women')], cueCounts: undefined })
   expect(screen.queryByText('nothing placed yet')).toBeNull()
 })
+
+test("passes each show's people and last change to its card, and none to archived ones", async () => {
+  const people = [{ userId: 'u2', name: 'Mikaela', colour: '#5b8def', departments: ['LX'] }]
+  const change = {
+    at: '2026-10-16T11:48:00Z',
+    userId: 'u2',
+    label: 'Mikaela',
+    summary: 'relabelled 3 LX cues',
+    sentence: 'LX relabelled 3 cues',
+    count: 3,
+    via: 'web' as const,
+    agent: null,
+    batchId: 'b',
+  }
+  await renderHome({
+    shows: [row('a', 'Little Women'), row('b', 'American Idiot', 'archived')],
+    pulse: { presence: { a: { people } }, lastChanges: { a: change } },
+  })
+  const active = screen.getByRole('list', { name: 'Active shows' })
+  expect(within(active).getByRole('img', { name: 'Mikaela, LX' })).toBeTruthy()
+  expect(active.textContent).toContain('LX relabelled 3 cues')
+  const archived = screen.getByRole('list', { name: 'Archived shows' })
+  expect(within(archived).queryByRole('img')).toBeNull()
+})
