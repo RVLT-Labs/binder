@@ -14,7 +14,7 @@ import {
 const DOCUMENTS_SQL =
   'SELECT id, title, kind, current_version_id FROM documents WHERE show_id = ? ORDER BY sort_order, created_at, id'
 const VERSIONS_SQL =
-  'SELECT id, document_id, version_number, label, status, error, page_count, searchable_key FROM document_versions WHERE show_id = ?'
+  'SELECT id, document_id, version_number, label, status, error, page_count, searchable_key, original_size_bytes, failure_code, failure_dpi FROM document_versions WHERE show_id = ?'
 const PAGES_SQL = `
   SELECT document_version_id AS version_id, count(*) AS total,
          sum(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) AS ready

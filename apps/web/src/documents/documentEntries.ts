@@ -5,6 +5,8 @@
  * by the pipeline, and the progress bar is ready pages over pages or, with no page rows yet, unknown.
  */
 
+import { describeFailure, isFailureCode } from '@binder/shared'
+
 export interface DocumentSource {
   id: string
   title: string | null
@@ -21,6 +23,12 @@ export interface VersionSource {
   error: string | null
   page_count: number | null
   searchable_key: string | null
+  /** The uploaded file's size; null for a version uploaded before it was recorded. */
+  original_size_bytes: number | null
+  /** Why a failed version failed (see `describeFailure`); null for a legacy failure. */
+  failure_code: string | null
+  /** The scan resolution behind a `low_resolution` failure. */
+  failure_dpi: number | null
 }
 
 export interface PageProgress {
@@ -78,6 +86,10 @@ export interface ProcessingEntry {
   /** Ready pages of the pages known; null when page rows have not appeared. */
   progress: PageProgress | null
   steps: VersionStep[]
+  /** The upload's size, for "12 MB uploaded"; null when it was not recorded. */
+  sizeBytes: number | null
+  /** The version is queued or processing, so Cancel can stop it; not the re-anchoring wait, nor before the row syncs. */
+  canCancel: boolean
 }
 
 export interface FailedEntry {
@@ -88,17 +100,25 @@ export interface FailedEntry {
   title: string
   versionNumber: number | null
   currentNumber: number | null
-  /** What went wrong in plain words: the pipeline's sentence, without the tool output after it. */
+  /** The recorded failure code; null for a legacy row that has none. */
+  code: string | null
+  /** The pill: `describeFailure(code).title`, or a stock one for a legacy row. */
+  pill: string
+  /** What went wrong in plain words: the code's copy, or for a legacy row the pipeline's sentence without the tool output after it. */
   reason: string
   /** The full recorded error, when it says more than `reason` (tool output); null otherwise. */
   detail: string | null
   /** A new version of a document that already had one (so "upload again" is another version). */
   isNewVersion: boolean
+  /** Running the same file again can succeed: "Try again" retries in place. Otherwise it opens the upload for a replacement. */
+  canRetryInPlace: boolean
 }
 
 export type DocumentEntry = ReadyEntry | ProcessingEntry | FailedEntry
 
 export const FAILED_FALLBACK = 'Binder could not process this file.'
+/** The pill of a legacy failure, which has no code. */
+export const LEGACY_FAILED_TITLE = 'couldn’t be processed'
 
 /**
  * The pipeline writes "<plain sentence> (<tool output>)" (documentJob.markVersionFailed), so the
@@ -113,6 +133,36 @@ export function splitFailure(error: string | null): { reason: string; detail: st
   }
   return { reason: plain, detail: at < 0 ? null : text }
 }
+
+/** The failed entry's words: from the code when there is one, else the legacy sentence split from the tool output. */
+function failureWords(
+  v: VersionSource,
+): Pick<FailedEntry, 'code' | 'pill' | 'reason' | 'detail' | 'canRetryInPlace'> {
+  const split = splitFailure(v.error)
+  if (!v.failure_code) {
+    return {
+      code: null,
+      pill: LEGACY_FAILED_TITLE,
+      reason: split.reason,
+      detail: split.detail,
+      // We do not know why it failed, so the same file may fail again: ask for another upload.
+      canRetryInPlace: false,
+    }
+  }
+  const described = describeFailure(v.failure_code, { dpi: v.failure_dpi })
+  const code = isFailureCode(v.failure_code) ? v.failure_code : 'unknown'
+  const text = v.error?.trim() || null
+  return {
+    code,
+    pill: described.title,
+    reason: described.message,
+    // The coded copy says it all; only tool output is worth a Details disclosure. An `unknown`
+    // failure sends the reader there ("Details says why"), so it shows whatever was recorded.
+    detail: split.detail ?? (code === 'unknown' ? text : null),
+    canRetryInPlace: described.retryable,
+  }
+}
+
 const num = (v: VersionSource) => v.version_number ?? 0
 
 /** Documents in the order given, each as its ready entry and, if a newer version is not ready, a second one for it. */
@@ -169,7 +219,7 @@ export function buildDocumentEntries(
           title,
           versionNumber: isNew ? num(newest) : null,
           currentNumber: current ? num(current) : null,
-          ...splitFailure(newest.error),
+          ...failureWords(newest),
           isNewVersion: isNew,
         })
       } else {
@@ -223,5 +273,7 @@ function processing(
         : 'queued',
     progress: reanchoring ? null : progress,
     steps,
+    sizeBytes: version?.original_size_bytes ?? null,
+    canCancel: version !== undefined && !reanchoring,
   }
 }

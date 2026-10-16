@@ -28,6 +28,9 @@ const version = (
   error: null,
   page_count: null,
   searchable_key: 'k',
+  original_size_bytes: null,
+  failure_code: null,
+  failure_dpi: null,
   ...over,
 })
 
@@ -131,6 +134,94 @@ describe('buildDocumentEntries', () => {
       reason: 'Binder could not process this file.',
       detail: null,
     })
+  })
+
+  it('failed entry copy comes from the code', () => {
+    const [low, timeout, cancelled] = buildDocumentEntries(
+      [doc('d1', 'Blocking notes.pdf', null), doc('d2', 'Big', null), doc('d3', 'Other', null)],
+      [
+        version('v1', 'd1', 1, 'failed', {
+          error: 'No text could be read from the document (found 0 text characters)',
+          failure_code: 'low_resolution',
+          failure_dpi: 72,
+        }),
+        version('v2', 'd2', 1, 'failed', {
+          error: 'Processing timed out after retries.',
+          failure_code: 'timeout',
+        }),
+        version('v3', 'd3', 1, 'failed', { error: 'Cancelled', failure_code: 'cancelled' }),
+      ],
+      none,
+    )
+    expect(low).toMatchObject({
+      kind: 'failed',
+      code: 'low_resolution',
+      pill: 'couldn’t read text',
+      reason: 'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan.',
+      detail: 'No text could be read from the document (found 0 text characters)',
+      canRetryInPlace: false,
+    })
+    expect(timeout).toMatchObject({
+      code: 'timeout',
+      pill: 'couldn’t finish',
+      canRetryInPlace: true,
+    })
+    expect(cancelled).toMatchObject({
+      code: 'cancelled',
+      pill: 'cancelled',
+      detail: null,
+      canRetryInPlace: true,
+    })
+  })
+
+  it('a coded failure keeps the tool output behind Details', () => {
+    const raw = 'This file could not be read as a PDF. (pdfinfo exit 1: Syntax Error)'
+    const [entry] = buildDocumentEntries(
+      [doc('d1', 'Bad', null)],
+      [version('v1', 'd1', 1, 'failed', { error: raw, failure_code: 'unreadable' })],
+      none,
+    )
+    expect(entry).toMatchObject({ code: 'unreadable', detail: raw, canRetryInPlace: false })
+  })
+
+  it('legacy null code falls back to splitFailure', () => {
+    const raw = 'This file could not be read as a PDF. (ocrmypdf exit 2)'
+    const [entry] = buildDocumentEntries(
+      [doc('d1', 'Old', null)],
+      [version('v1', 'd1', 1, 'failed', { error: raw })],
+      none,
+    )
+    expect(entry).toMatchObject({
+      code: null,
+      pill: 'couldn’t be processed',
+      reason: 'This file could not be read as a PDF.',
+      detail: raw,
+      canRetryInPlace: false,
+    })
+  })
+
+  it('a processing entry carries the upload size and can be cancelled', () => {
+    const [queued, running] = buildDocumentEntries(
+      [doc('d1', 'Libretto', null), doc('d2', 'Score', null)],
+      [
+        version('v1', 'd1', 1, 'queued', { original_size_bytes: 12_400_000 }),
+        version('v2', 'd2', 1, 'processing'),
+      ],
+      none,
+    )
+    expect(queued).toMatchObject({ kind: 'processing', sizeBytes: 12_400_000, canCancel: true })
+    expect(running).toMatchObject({ kind: 'processing', sizeBytes: null, canCancel: true })
+  })
+
+  it('canCancel is false while re-anchoring and while the version row has not synced', () => {
+    const [, wait] = buildDocumentEntries(
+      [doc('d1', 'Libretto', 'v1')],
+      [version('v1', 'd1', 1, 'ready'), version('v2', 'd1', 2, 'ready')],
+      none,
+    )
+    expect(wait).toMatchObject({ kind: 'processing', status: 'reanchoring', canCancel: false })
+    const [fresh] = buildDocumentEntries([doc('d1', 'New', null)], [], none)
+    expect(fresh).toMatchObject({ kind: 'processing', versionId: null, canCancel: false })
   })
 
   it('a failed new version sits beside the current one and is marked as a new version', () => {
