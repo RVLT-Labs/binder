@@ -92,26 +92,25 @@ function joinClauses(parts: string[]): string {
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 }
 
-/**
- * The activity feed sentence for one batch: "moved 3 TM cues and relabelled 1". A clause group is one
- * table and department; groups read in order of first appearance and are joined with "; ".
- */
-export function summariseBatch(rows: SummaryRow[]): string {
-  const groups = new Map<
-    string,
-    { table: string; code: string | null; counts: Map<Verb, number> }
-  >()
-  // A first version uploaded with its document is one upload: count the document, not the version.
+interface Group {
+  table: string
+  code: string | null
+  counts: Map<Verb, number>
+}
+
+/** The rows that count: a first version uploaded with its document is one upload, the document. */
+function countable(rows: SummaryRow[]): SummaryRow[] {
   const withDocument = rows.some((r) => r.table === 'documents' && r.op === 'insert')
+  if (!withDocument) return rows
+  return rows.filter(
+    (r) => !(r.table === 'document_versions' && r.op === 'insert' && r.after?.versionNumber === 1),
+  )
+}
+
+/** One group per table and department, in order of first appearance, with its verb counts. */
+function groupRows(rows: SummaryRow[]): Group[] {
+  const groups = new Map<string, Group>()
   for (const row of rows) {
-    if (
-      withDocument &&
-      row.table === 'document_versions' &&
-      row.op === 'insert' &&
-      row.after?.versionNumber === 1
-    ) {
-      continue
-    }
     const key = `${row.table}\u0000${row.departmentCode ?? ''}`
     let group = groups.get(key)
     if (!group) {
@@ -120,22 +119,65 @@ export function summariseBatch(rows: SummaryRow[]): string {
     }
     for (const verb of verbsOf(row)) group.counts.set(verb, (group.counts.get(verb) ?? 0) + 1)
   }
-  const sentences: string[] = []
-  for (const g of groups.values()) {
-    const clauses: string[] = []
-    for (const verb of VERB_ORDER) {
-      const n = g.counts.get(verb)
-      if (!n) continue
-      if (clauses.length === 0) {
-        const noun = n === 1 ? singular(g.table) : `${singular(g.table)}s`
-        clauses.push(`${verb} ${n} ${g.code ? `${g.code} ` : ''}${noun}`)
-      } else {
-        clauses.push(`${verb} ${n}`)
+  return [...groups.values()]
+}
+
+/**
+ * One group's clauses: "moved 3 TM cues and relabelled 1" (the feed) or, with `codeFirst`, "TM moved
+ * 3 cues and relabelled 1" (the show card).
+ */
+function renderGroup(g: Group, codeFirst: boolean): string {
+  const clauses: string[] = []
+  for (const verb of VERB_ORDER) {
+    const n = g.counts.get(verb)
+    if (!n) continue
+    if (clauses.length === 0) {
+      const noun = n === 1 ? singular(g.table) : `${singular(g.table)}s`
+      const code = g.code ? `${g.code} ` : ''
+      clauses.push(codeFirst ? `${code}${verb} ${n} ${noun}` : `${verb} ${n} ${code}${noun}`)
+    } else {
+      clauses.push(`${verb} ${n}`)
+    }
+  }
+  return joinClauses(clauses)
+}
+
+/**
+ * The activity feed sentence for one batch: "moved 3 TM cues and relabelled 1". A clause group is one
+ * table and department; groups read in order of first appearance and are joined with "; ".
+ */
+export function summariseBatch(rows: SummaryRow[]): string {
+  return groupRows(countable(rows))
+    .map((g) => renderGroup(g, false))
+    .filter((s) => s !== '')
+    .join('; ')
+}
+
+/** `n` of a noun with a past participle: "revision uploaded", "2 revisions uploaded". */
+function uploaded(n: number, noun: string): string {
+  return n === 1 ? `${noun} uploaded` : `${n} ${noun}s uploaded`
+}
+
+/**
+ * The show card's one-line sentence for a batch. One table and department of cues or annotations
+ * leads with the department: "LX relabelled 3 cues". A batch of only revision (or only document)
+ * inserts reads "revision uploaded" ("2 revisions uploaded"). Anything else is the feed sentence,
+ * for example "moved 12 LX cues; added 2 SND annotations".
+ */
+export function cardSentence(rows: SummaryRow[]): string {
+  const counted = countable(rows)
+  const groups = groupRows(counted)
+  if (groups.length === 1) {
+    const [g] = groups
+    if (g.table === 'cues' || g.table === 'annotations') return renderGroup(g, true)
+    if (g.table === 'documents' || g.table === 'document_versions') {
+      const inserts = counted.length
+      if (counted.every((r) => r.op === 'insert')) {
+        return uploaded(inserts, singular(g.table))
       }
     }
-    if (clauses.length > 0) sentences.push(joinClauses(clauses))
   }
-  return sentences.join('; ')
+  return summariseBatch(rows)
 }
 
 /** Display names for the MCP client ids we know; any other agent shows as it calls itself. */

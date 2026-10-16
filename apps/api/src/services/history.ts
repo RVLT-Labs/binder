@@ -29,6 +29,10 @@ interface RowFilter {
   from?: Date
   to?: Date
   before?: number
+  /** Internal (not user input): one batch's rows, for the show card's last change. */
+  batchId?: string
+  /** Internal: exactly this row. */
+  seq?: number
 }
 
 const KINDS: readonly Kind[] = ['human', 'agent', 'all']
@@ -93,6 +97,8 @@ function conditions(actor: Actor, f: RowFilter): SQL[] {
   // Dates carry milliseconds, Postgres microseconds: `to` is inclusive of its whole millisecond.
   if (f.to) where.push(lt(changeLog.serverTs, new Date(f.to.getTime() + 1)))
   if (f.before !== undefined) where.push(lt(changeLog.seq, f.before))
+  if (f.batchId !== undefined) where.push(eq(changeLog.batchId, f.batchId))
+  if (f.seq !== undefined) where.push(eq(changeLog.seq, f.seq))
   if (f.layer !== undefined) {
     const ref = parseLayerKey(f.layer)
     // A department move is logged once, on the destination layer (M1-R3): the source department's
@@ -106,7 +112,7 @@ function conditions(actor: Actor, f: RowFilter): SQL[] {
   return where
 }
 
-async function fetchRows(db: Executor, actor: Actor, f: RowFilter, limit: number) {
+export async function fetchRows(db: Executor, actor: Actor, f: RowFilter, limit: number) {
   return db
     .select({
       seq: changeLog.seq,
@@ -132,7 +138,10 @@ async function fetchRows(db: Executor, actor: Actor, f: RowFilter, limit: number
     .limit(limit)
 }
 
-type LogRow = Awaited<ReturnType<typeof fetchRows>>[number]
+export type LogRow = Awaited<ReturnType<typeof fetchRows>>[number]
+
+/** Department id to code, for the department-code part of a sentence. */
+export type DepartmentCodes = ReadonlyMap<string, string>
 
 const UNKNOWN_USER = 'Unknown user'
 
@@ -185,6 +194,46 @@ export async function listHistory(
   }
 }
 
+/**
+ * A run of change-log rows (newest first, as fetched) as chronological `summariseBatch` input, each
+ * row carrying the code of the department its layer names. Internal (not in the barrel).
+ */
+export function summaryRowsOf(run: LogRow[], codes: DepartmentCodes): SummaryRow[] {
+  const codeOf = (layer: string | null): string | null => {
+    const ref = layer ? parseLayerKey(layer) : null
+    return ref?.kind === 'department' ? (codes.get(ref.id) ?? null) : null
+  }
+  return [...run].reverse().map((r) => ({
+    table: r.tableName,
+    op: r.op,
+    before: r.before,
+    after: r.after,
+    departmentCode: codeOf(r.layer),
+  }))
+}
+
+/**
+ * One run of rows (newest first) as an activity group: the actor's label, the sentence, the span.
+ * The activity feed and the show cards' last change both build their groups here, so the wording is
+ * identical. Internal (not in the barrel).
+ */
+export function toActivityGroup(run: LogRow[], codes: DepartmentCodes): ActivityGroup {
+  const newest = run[0]
+  const oldest = run[run.length - 1]
+  return {
+    batchId: newest.batchId,
+    userId: newest.userId,
+    label: actorLabel(newest.userName ?? UNKNOWN_USER, newest.agent),
+    summary: summariseBatch(summaryRowsOf(run, codes)),
+    at: newest.serverTs.toISOString(),
+    fromSeq: oldest.seq,
+    toSeq: newest.seq,
+    count: run.length,
+    via: newest.via,
+    agent: newest.agent,
+  }
+}
+
 const extendsRun = (run: LogRow[], row: LogRow): boolean =>
   row.batchId !== null && run[0].batchId === row.batchId && run[0].userId === row.userId
 
@@ -232,7 +281,7 @@ export async function activityFeed(
     cursor = rows[rows.length - 1].seq
   }
 
-  const codes = new Map(
+  const codes: DepartmentCodes = new Map(
     (
       await db
         .select({ id: departments.id, code: departments.code })
@@ -240,33 +289,6 @@ export async function activityFeed(
         .where(eq(departments.showId, input.showId))
     ).map((d) => [d.id, d.code]),
   )
-  const codeOf = (layer: string | null): string | null => {
-    const ref = layer ? parseLayerKey(layer) : null
-    return ref?.kind === 'department' ? (codes.get(ref.id) ?? null) : null
-  }
-
-  const groups = runs.map((run): ActivityGroup => {
-    const newest = run[0]
-    const oldest = run[run.length - 1]
-    const chronological: SummaryRow[] = [...run].reverse().map((r) => ({
-      table: r.tableName,
-      op: r.op,
-      before: r.before,
-      after: r.after,
-      departmentCode: codeOf(r.layer),
-    }))
-    return {
-      batchId: newest.batchId,
-      userId: newest.userId,
-      label: actorLabel(newest.userName ?? UNKNOWN_USER, newest.agent),
-      summary: summariseBatch(chronological),
-      at: newest.serverTs.toISOString(),
-      fromSeq: oldest.seq,
-      toSeq: newest.seq,
-      count: run.length,
-      via: newest.via,
-      agent: newest.agent,
-    }
-  })
+  const groups = runs.map((run) => toActivityGroup(run, codes))
   return { groups, nextBefore: more ? (groups[groups.length - 1]?.fromSeq ?? null) : null }
 }

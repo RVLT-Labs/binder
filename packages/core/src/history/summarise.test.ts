@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { actorLabel, type SummaryRow, summariseBatch } from './summarise'
+import { actorLabel, cardSentence, type SummaryRow, summariseBatch } from './summarise'
 
 const cue = (
   op: SummaryRow['op'],
@@ -144,6 +144,74 @@ describe('summariseBatch', () => {
   })
 
   test('an empty batch is an empty sentence', () => expect(summariseBatch([])).toBe(''))
+})
+
+describe('cardSentence', () => {
+  const upload = (
+    table: 'documents' | 'document_versions',
+    versionNumber?: number,
+  ): SummaryRow => ({
+    table,
+    op: 'insert',
+    before: null,
+    after: versionNumber === undefined ? { title: 'Libretto' } : { versionNumber },
+    departmentCode: null,
+  })
+
+  test('one department group leads with the code', () => {
+    expect(cardSentence([relabel('LX'), relabel('LX'), relabel('LX')])).toBe('LX relabelled 3 cues')
+    expect(cardSentence([...moves(3, 'LX'), relabel('LX')])).toBe(
+      'LX moved 3 cues and relabelled 1',
+    )
+    expect(cardSentence(placed(1, 'SND'))).toBe('SND placed 1 cue')
+  })
+
+  test('annotations lead with the code too, and a cue without a code has none', () => {
+    const note: SummaryRow = {
+      table: 'annotations',
+      op: 'insert',
+      before: null,
+      after: { type: 'note' },
+      departmentCode: 'LX',
+    }
+    expect(cardSentence([note, note])).toBe('LX added 2 annotations')
+    expect(cardSentence(added(2, null))).toBe('added 2 cues')
+  })
+
+  test('revision insert', () => {
+    expect(cardSentence([upload('document_versions', 2)])).toBe('revision uploaded')
+    expect(cardSentence([upload('document_versions', 2), upload('document_versions', 3)])).toBe(
+      '2 revisions uploaded',
+    )
+  })
+
+  test('document insert, with its first version counted once', () => {
+    expect(cardSentence([upload('documents'), upload('document_versions', 1)])).toBe(
+      'document uploaded',
+    )
+    expect(cardSentence([upload('documents'), upload('documents')])).toBe('2 documents uploaded')
+  })
+
+  test('mixed groups falls back to summariseBatch', () => {
+    const mixed = [...moves(2, 'LX'), ...placed(1, 'SND')]
+    expect(cardSentence(mixed)).toBe(summariseBatch(mixed))
+    expect(cardSentence(mixed)).toBe('moved 2 LX cues; placed 1 SND cue')
+    const withRevision = [upload('document_versions', 2), relabel('LX')]
+    expect(cardSentence(withRevision)).toBe('uploaded 1 revision; relabelled 1 LX cue')
+  })
+
+  test('an update to a document is not an upload and falls back', () => {
+    const row: SummaryRow = {
+      table: 'documents',
+      op: 'update',
+      before: { title: 'a' },
+      after: { title: 'b' },
+      departmentCode: null,
+    }
+    expect(cardSentence([row])).toBe('updated 1 document')
+  })
+
+  test('an empty batch is an empty sentence', () => expect(cardSentence([])).toBe(''))
 })
 
 describe('actorLabel', () => {
