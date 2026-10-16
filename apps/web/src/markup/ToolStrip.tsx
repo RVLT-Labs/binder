@@ -1,6 +1,6 @@
 import type { CueType } from '@binder/shared'
 import { Magnet, Redo2, Search, Undo2 } from 'lucide-react'
-import { type ReactNode, useId } from 'react'
+import { type ReactNode, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, focusRing } from '@/lib/utils'
@@ -62,14 +62,35 @@ function Tip({
   )
 }
 
-/** Tool options that appear beside their tool while it is chosen (below it when the strip is inline). */
+/**
+ * Tool options that appear beside their tool while it is chosen (below it when the strip is inline).
+ * Beside the strip it is fixed to the viewport, so a strip that scrolls on a short stage does not clip it.
+ */
 function Flyout({ floating, children }: { floating: boolean; children: ReactNode }) {
+  const self = useRef<HTMLDivElement>(null)
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!floating) return
+    const measure = () => {
+      const tool = self.current?.parentElement?.getBoundingClientRect()
+      if (tool) setAt({ top: tool.top + tool.height / 2, left: tool.right + 8 })
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    document.addEventListener('scroll', measure, true)
+    return () => {
+      window.removeEventListener('resize', measure)
+      document.removeEventListener('scroll', measure, true)
+    }
+  }, [floating])
   return (
     <div
+      ref={self}
       className={cn(
-        'absolute z-20 rounded-[12px] border-2 border-line-2 bg-elev p-1.5 shadow-card',
-        floating ? 'top-1/2 left-full ml-2 -translate-y-1/2' : 'top-full left-0 mt-1',
+        'z-20 rounded-[12px] border-2 border-line-2 bg-elev p-1.5 shadow-card',
+        floating ? 'fixed -translate-y-1/2' : 'absolute top-full left-0 mt-1',
       )}
+      style={floating && at ? at : undefined}
     >
       {children}
     </div>
@@ -96,6 +117,10 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
   // One hint element serves both groups when the reason is the same (an archived show).
   const annotationHint = annotationDisabled === disabled ? hintId : annotationHintId
   const readOnly = session.versionReadOnly
+  // On a short stage the strip's buttons shrink first (a 1280x640 window), then the strip scrolls.
+  const BUTTON_CLASS = floating
+    ? cn(BUTTON, '[@media(max-height:760px)]:size-9 [@media(max-height:640px)]:size-8')
+    : BUTTON
 
   function toolButton(def: (typeof TOOL_DEFS)[number]) {
     const { tool: t, label, key, icon: Icon } = def
@@ -109,7 +134,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
         aria-describedby={off ? hint : undefined}
         aria-keyshortcuts={key}
         disabled={off !== null}
-        className={BUTTON}
+        className={BUTTON_CLASS}
         onClick={() => setTool(t === 'select' || tool === t ? 'select' : t)}
       >
         <Icon className="size-[18px]" strokeWidth={1.8} aria-hidden />
@@ -162,7 +187,9 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
         aria-label="Markup tools"
         className={cn(
           'markup-tools m-0 flex min-w-0 items-center gap-0.5 rounded-[14px] border-2 border-line-2 bg-paper-2 p-0.5 shadow-card',
-          floating ? 'absolute top-3 left-2 z-10 flex-col' : 'flex-wrap',
+          floating
+            ? 'absolute top-3 left-2 z-10 max-h-[calc(100%-1.5rem)] flex-col overflow-y-auto [scrollbar-width:none]'
+            : 'flex-wrap',
         )}
       >
         {toolButton(TOOL_DEFS[0])}
@@ -175,7 +202,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
             type="button"
             aria-label="Find in document"
             aria-keyshortcuts="/"
-            className={BUTTON}
+            className={BUTTON_CLASS}
             onClick={() => session.viewer.current?.focusSearch()}
           >
             <Search className="size-[18px]" strokeWidth={1.8} aria-hidden />
@@ -187,7 +214,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
           <button
             type="button"
             aria-label="Undo"
-            className={BUTTON}
+            className={BUTTON_CLASS}
             disabled={!undo.canUndo || readOnly !== null}
             title={readOnly ?? undefined}
             onClick={() => void undo.undo()}
@@ -199,7 +226,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
           <button
             type="button"
             aria-label="Redo"
-            className={BUTTON}
+            className={BUTTON_CLASS}
             disabled={!undo.canRedo || readOnly !== null}
             title={readOnly ?? undefined}
             onClick={() => void undo.redo()}
@@ -210,7 +237,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
         <Tip floating={floating} label="Snap to text">
           <label
             className={cn(
-              BUTTON,
+              BUTTON_CLASS,
               'cursor-pointer has-[:checked]:bg-card has-[:checked]:text-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-red has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper-2',
             )}
           >

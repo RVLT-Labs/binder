@@ -394,6 +394,35 @@ test('opening ?cue= scrolls to the cue and leaves its tag inside the viewport, c
   })
 })
 
+test('on a short window every tool in the strip is still reachable', async ({ browser }) => {
+  await withUsers(browser, ['owner'], async ([a]) => {
+    const snap = a.page.getByLabel('Snap to text')
+    const label = a.page.locator('label').filter({ has: snap })
+    for (const viewport of [
+      { width: 1024, height: 600 },
+      { width: 1280, height: 640 },
+    ]) {
+      await a.page.setViewportSize(viewport)
+      // The strip stays inside the stage (it shrinks or scrolls itself), so the last tool can be
+      // reached by the user and not only by a script that scrolls the layout behind it.
+      const stage = await a.page.locator('.viewer-pages').boundingBox()
+      const strip = await a.page.getByRole('group', { name: 'Markup tools' }).boundingBox()
+      if (!stage || !strip) throw new Error('stage or strip not on screen')
+      expect(strip.y).toBeGreaterThanOrEqual(stage.y)
+      expect(strip.y + strip.height).toBeLessThanOrEqual(stage.y + stage.height)
+      const before = await snap.isChecked()
+      await label.click()
+      const tool = await label.boundingBox()
+      if (!tool) throw new Error('last tool not on screen')
+      expect(tool.y).toBeGreaterThanOrEqual(stage.y)
+      expect(tool.y + tool.height).toBeLessThanOrEqual(stage.y + stage.height)
+      await expect(snap).toBeChecked({ checked: !before })
+      await label.click()
+      await expect(snap).toBeChecked({ checked: before })
+    }
+  })
+})
+
 test('keyboard: c places a cue in the active layer at the pointer, ] selects the next cue, Delete removes it', async ({
   browser,
 }) => {

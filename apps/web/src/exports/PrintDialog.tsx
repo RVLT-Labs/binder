@@ -115,7 +115,8 @@ export function PrintDialog({
       })
       // Right after queueing: a no-op offline, and the online event takes over when it returns.
       flushSoon()
-      onClose()
+      // Through the dialog's own close, so its `close` handler hands focus back to the opener.
+      closeModal(dialog.current, returnFocusTo)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setBusy(false)

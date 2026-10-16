@@ -80,6 +80,17 @@ test('upload, process, and view the libretto', async ({ page }) => {
       return Math.abs(sheetWidth - (stageWidth - FIT_ALLOWANCE))
     })
     .toBeLessThanOrEqual(1)
+  // No sideways scroll, and the page starts clear of the strip's lane at the stage's left edge.
+  await expect
+    .poll(() =>
+      page
+        .getByRole('region', { name: 'Pages' })
+        .evaluate((el) => el.scrollWidth <= el.clientWidth),
+    )
+    .toBe(true)
+  const [sheetBox, stageBox] = await Promise.all([sheet.boundingBox(), stage.boundingBox()])
+  if (!sheetBox || !stageBox) throw new Error('page or stage not on screen')
+  expect(sheetBox.x - stageBox.x).toBeGreaterThanOrEqual(60)
   await expect(toolbar).toContainText(`4 / ${PAGES}`)
 
   // Scroll through the whole document: virtualisation keeps only a handful of canvases alive.
