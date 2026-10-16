@@ -1,4 +1,4 @@
-import { EXPORT_FILE_TYPES } from '@binder/shared'
+import { EXPORT_FILE_TYPES, printOptionsSchema } from '@binder/shared'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app'
@@ -20,6 +20,8 @@ const metaSchema = z.object({
   kind: z.enum(['pdf-script', 'pdf-sheet', 'csv', 'xlsx']),
   filename: z.string(),
   layerSelection: z.array(z.object({ kind: z.enum(['department', 'personal']), id: z.string() })),
+  /** What a script print chose beyond the layers; the file name is checked by the service. */
+  options: printOptionsSchema.optional(),
   createdAt: z.string().optional(),
 })
 

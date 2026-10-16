@@ -4,9 +4,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { type FooterInfo, type StampItem, stampScript } from '@binder/core'
+import { documentVersions, shows } from '@binder/db'
 import { FIXTURES } from '@binder/fixtures'
+import { eq } from 'drizzle-orm'
 import { degrees, PDFDocument } from 'pdf-lib'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { searchableBlobKey } from '../src/blob/keys'
+import { AppError } from '../src/errors'
+import { exportMarkedScript, listExportRecords } from '../src/services'
+import { librettoBytes } from './documentHelpers'
+import { setupMarkupShow } from './markupHelpers'
 import { findMissingTools, skipWithoutTools } from './tools'
 
 const run = promisify(execFile)
@@ -651,5 +658,153 @@ describe.skipIf(skip)('page subset, paper fit and cue notes with poppler', () =>
         pad.xMin < w.xMax && pad.xMax > w.xMin && pad.yMin < w.yMax && pad.yMax > w.yMin
       expect(overlaps, `note over ${w.t}`).toBe(false)
     }
+  })
+})
+
+describe.skipIf(skip)('exportMarkedScript print options with poppler', () => {
+  async function ready(title?: string) {
+    const f = await setupMarkupShow()
+    const key = searchableBlobKey(f.show.id, f.docId, f.versionId)
+    await f.deps.blobs.put(key, new Uint8Array(librettoBytes()), 'application/pdf')
+    await f.deps.db
+      .update(documentVersions)
+      .set({ searchableKey: key })
+      .where(eq(documentVersions.id, f.versionId))
+    if (title) await f.deps.db.update(shows).set({ title }).where(eq(shows.id, f.show.id))
+    return f
+  }
+
+  async function bytesOf(f: Awaited<ReturnType<typeof ready>>, fileKey: string) {
+    const blob = await f.deps.blobs.get(fileKey)
+    if (!blob) throw new Error('export blob missing')
+    const chunks: Buffer[] = []
+    for await (const c of blob.stream) chunks.push(c as Buffer)
+    return new Uint8Array(Buffer.concat(chunks))
+  }
+
+  const code = (p: Promise<unknown>) =>
+    p.then(
+      () => 'ok',
+      (e) => (e instanceof AppError ? e.code : `other: ${e}`),
+    )
+
+  const norm = (s: string) => s.replace(/\s+/g, ' ')
+
+  test('a page range keeps only those pages and pdftotext still finds the script text', async () => {
+    const f = await ready()
+    const whole = new Uint8Array(librettoBytes())
+    const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+      options: { pages: '2-3, 5' },
+    })
+    const out = await bytesOf(f, record.fileKey)
+    expect((await pageSizes(out)).length).toBe(3)
+    expect((await pageSizes(whole)).length).toBeGreaterThan(5)
+    // Output page 1 reads the same as page 2 of the source (plus the footer).
+    const want = norm(await pdftotext(whole, 1)).slice(0, 200)
+    expect(want.length).toBeGreaterThan(40)
+    expect(norm(await pdftotext(out, 0))).toContain(want)
+    expect(norm(await pdftotext(out, 2))).toContain(norm(await pdftotext(whole, 4)).slice(0, 200))
+    expect(out.byteLength).toBeLessThan(whole.byteLength)
+  }, 30_000)
+
+  test('a Letter fit keeps the text layer searchable', async () => {
+    const f = await ready()
+    const whole = new Uint8Array(librettoBytes())
+    const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+      options: { pages: '1-2', paper: 'Letter' },
+    })
+    const out = await bytesOf(f, record.fileKey)
+    const sizes = await pageSizes(out)
+    expect(sizes.map((s) => [s.width, s.height])).toEqual([
+      [612, 792],
+      [612, 792],
+    ])
+    expect(norm(await pdftotext(out, 0))).toContain(norm(await pdftotext(whole, 0)).slice(0, 200))
+  })
+
+  test('options are stored on the export record, defaults filled in, and read back by list', async () => {
+    const f = await ready()
+    const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+      options: { pages: '3, 1-2', paper: 'A4', includeStandbyWarn: false },
+    })
+    const want = {
+      pages: '1-3',
+      paper: 'A4',
+      includeStandbyWarn: false,
+      includeAnnotations: true,
+      includeCueNotes: true,
+    }
+    expect(record.options).toEqual(want)
+    const listed = await listExportRecords(f.deps.db, f.actors.owner, { showId: f.show.id })
+    expect(listed.find((r) => r.id === record.id)?.options).toEqual(want)
+    // No options given: the record says what was done, with no paper refit.
+    const plain = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+    })
+    expect(plain.record.options).toEqual({
+      pages: 'all',
+      includeStandbyWarn: true,
+      includeAnnotations: true,
+      includeCueNotes: true,
+    })
+  })
+
+  test('a range beyond the page count, or not a range, is invalid and stores nothing', async () => {
+    const f = await ready()
+    const count = (await pageSizes(new Uint8Array(librettoBytes()))).length
+    for (const pages of [`1-${count + 1}`, `${count + 1}`, 'a-b', '0', '']) {
+      const res = await code(
+        exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+          documentId: f.docId,
+          layers: 'none',
+          options: { pages },
+        }),
+      )
+      expect([pages, res]).toEqual([pages, 'invalid'])
+    }
+    expect(await listExportRecords(f.deps.db, f.actors.owner, { showId: f.show.id })).toHaveLength(
+      0,
+    )
+  }, 30_000)
+
+  test('a custom file name is used (with .pdf added) and an unsafe one is invalid', async () => {
+    const f = await ready()
+    const named = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+      filename: 'Act one pages',
+    })
+    expect(named.record.filename).toBe('Act one pages.pdf')
+    for (const filename of ['a/b', 'CON', '.hidden', 'x'.repeat(201), '  ']) {
+      const res = await code(
+        exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+          documentId: f.docId,
+          layers: 'none',
+          filename,
+        }),
+      )
+      expect([filename, res]).toEqual([filename, 'invalid'])
+    }
+  })
+
+  test('the default file name is the slug form', async () => {
+    const f = await ready('Songs for a New World')
+    const all = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'all',
+    })
+    expect(all.record.filename).toBe('songs-for-a-new-world-libretto-v1-all-layers.pdf')
+    const lx = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: [{ kind: 'department', id: f.depts.LX.id }],
+    })
+    expect(lx.record.filename).toBe('songs-for-a-new-world-libretto-v1-LX.pdf')
   })
 })

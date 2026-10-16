@@ -150,6 +150,7 @@ const export_records = new Table(
     private_to: column.text,
     file_key: column.text,
     changelog: column.text,
+    options: column.text,
     created_by: column.text,
     created_at: column.text,
     updated_at: column.text,

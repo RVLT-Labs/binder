@@ -22,12 +22,19 @@ import {
   type LayerRef,
   layerKey,
   newId,
+  normalisePageRange,
+  type PrintOptions,
   paperSize,
+  parsePageRange,
+  printOptionsSchema,
   SHEET_FORMAT_KIND,
   type SheetFormat,
   type StoredExportKind,
+  scriptExportFilename,
+  validateExportFilename,
 } from '@binder/shared'
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
+import { PDFDocument } from 'pdf-lib'
 import { z } from 'zod'
 import { type BlobStore, readBlobBytes } from '../blob/BlobStore'
 import { exportBlobKey } from '../blob/keys'
@@ -173,6 +180,8 @@ export async function createExportRecord(
     kind: StoredKind
     filename: string
     layerSelection: LayerRef[]
+    /** What a script print chose beyond the layers; only for `pdf-script`. */
+    options?: unknown
     file: Readable
     declaredSize?: number
     createdAt?: Date
@@ -185,7 +194,20 @@ export async function createExportRecord(
   if (input.showId.includes('\u0000')) throw invalid('showId must not contain NUL')
   if (!Object.hasOwn(EXPORT_FILE_TYPES, input.kind))
     throw invalid('kind must be pdf-script, pdf-sheet, csv or xlsx')
-  const filename = parseOrInvalid(text(200), input.filename)
+  // A script's name is checked as the print dialog checks it, so an unsafe one never reaches a
+  // download; the other kinds' names are built by the app and only need to be text.
+  let filename: string
+  if (input.kind === 'pdf-script') {
+    const checked = validateExportFilename(input.filename)
+    if (!checked.ok) throw invalid(checked.reason)
+    filename = checked.name
+  } else {
+    filename = parseOrInvalid(text(200), input.filename)
+  }
+  if (input.options !== undefined && input.kind !== 'pdf-script')
+    throw invalid('options only apply to a script PDF')
+  const options =
+    input.options === undefined ? null : parseOrInvalid(printOptionsSchema, input.options)
   const selection = dedupe(parseOrInvalid(selectionSchema, input.layerSelection))
   if (input.createdAt !== undefined) {
     const t = input.createdAt.getTime()
@@ -226,6 +248,7 @@ export async function createExportRecord(
           kind: input.kind,
           filename,
           layerSelection: selection,
+          options,
           privateTo: selection.some((l) => l.kind === 'personal') ? actor.userId : null,
           fileKey: key,
           createdBy: actor.userId,
@@ -274,6 +297,23 @@ function exportFilename(parts: string[], ext: 'pdf' | 'xlsx' | 'csv' = 'pdf'): s
   return `${base.slice(0, 196)}.${ext}`
 }
 
+/** The canonical page range text, `'all'` when none was given; anything that is not a range is `invalid`. */
+function normalisedPages(pages: string | undefined): string {
+  if (pages === undefined || pages === 'all') return 'all'
+  const norm = normalisePageRange(pages)
+  if (norm === null) throw invalid('pages look like 1-43 or 3, 7-9')
+  return norm
+}
+
+/** The zero-based pages a range keeps in `pdf`, or undefined for every page; past the end is `invalid`. */
+async function pagesOf(pdf: Uint8Array, pages: string): Promise<number[] | undefined> {
+  if (pages === 'all') return undefined
+  const count = (await PDFDocument.load(pdf, { updateMetadata: false })).getPageCount()
+  const range = parsePageRange(pages, count)
+  if (!range.ok) throw invalid(range.message)
+  return range.indices
+}
+
 /**
  * Viewer or above. Stamps a version's cues and annotations from the chosen layers onto its searchable
  * PDF (so the invisible text layer survives), with the footer of spec 5.3, and records the export.
@@ -281,12 +321,24 @@ function exportFilename(parts: string[], ext: 'pdf' | 'xlsx' | 'csv' = 'pdf'): s
  * list may add the caller's own personal layer, which makes the record private to them. The footer
  * shows `export <last 8 of the id>` because M1 has no Binder versions, and its date is in the
  * server process's local time zone (`TZ`; the API image defaults it to Australia/Sydney).
+ *
+ * `options` are the print dialog's choices and go through the same core calls the browser makes, so
+ * the two outputs match: a page range (`1-5, 8`), a paper to fit every page to, and whether to
+ * include standby and warn cues, annotations and cue notes. The record stores them in full.
  */
 export async function exportMarkedScript(
   db: Executor,
   blobs: BlobStore,
   actor: Actor,
-  input: { documentId: string; versionId?: string; layers: 'all' | 'none' | LayerRef[] },
+  input: {
+    documentId: string
+    versionId?: string
+    layers: 'all' | 'none' | LayerRef[]
+    /** Pages, paper and what to include; anything left out takes its default (every page, no refit). */
+    options?: Partial<PrintOptions>
+    /** The file name; omitted, the slug form of the show, document, version and layers. */
+    filename?: string
+  },
 ): Promise<{ record: ExportRecord; uri: string }> {
   if (!hasNoNul(input)) throw invalid('ids must not contain NUL')
   const [document] = await db.select().from(documents).where(eq(documents.id, input.documentId))
@@ -340,6 +392,23 @@ export async function exportMarkedScript(
   if (!pdf) throw new Error(`searchable PDF ${version.searchableKey} is missing`)
 
   const exportId = newId()
+  // The range is checked against the PDF that is stamped, before any of the work is done.
+  const options = parseOrInvalid(printOptionsSchema, {
+    ...input.options,
+    pages: normalisedPages(input.options?.pages),
+  })
+  const pageIndices = await pagesOf(pdf, options.pages)
+  let filename = scriptExportFilename({
+    show: show.title,
+    document: document.title,
+    versionNumber: version.versionNumber,
+    layerLabel,
+  })
+  if (input.filename !== undefined) {
+    const checked = validateExportFilename(input.filename)
+    if (!checked.ok) throw invalid(checked.reason)
+    filename = checked.name
+  }
   const items = buildStampItems({
     versionId: version.id,
     layers: selection,
@@ -354,22 +423,33 @@ export async function exportMarkedScript(
     })),
     settings: (show.settings ?? {}) as Record<string, unknown>,
     wordLayers: text.layers,
+    include: {
+      standbyWarn: options.includeStandbyWarn,
+      annotations: options.includeAnnotations,
+      cueNotes: options.includeCueNotes,
+    },
   })
-  const stamped = await stampScript(new Uint8Array(pdf), items, {
-    showTitle: show.title,
-    documentLabel,
-    layerLabel,
-    binderVersion: null,
-    exportId,
-    date: new Date(),
-  })
+  const stamped = await stampScript(
+    new Uint8Array(pdf),
+    items,
+    {
+      showTitle: show.title,
+      documentLabel,
+      layerLabel,
+      binderVersion: null,
+      exportId,
+      date: new Date(),
+    },
+    { pages: pageIndices, paper: options.paper },
+  )
 
   const record = await createExportRecord(db, blobs, actor, {
     id: exportId,
     showId: document.showId,
     kind: 'pdf-script',
-    filename: exportFilename([show.title, documentLabel, layerLabel]),
+    filename,
     layerSelection: selection,
+    options,
     file: Readable.from(Buffer.from(stamped)),
   })
   return { record, uri: exportUri(record.showId, record.id) }
