@@ -271,7 +271,7 @@ test('a legacy failed row (no code) shows its sentence, and Try again opens the 
   expect(item.textContent).toContain('No text layer and OCR is off')
   expect(item.querySelector('.version-status')?.getAttribute('data-status')).toBe('failed')
   expect(item.querySelector('.version-status')?.textContent).toBe('couldn’t be processed')
-  fireEvent.click(within(item).getByRole('button', { name: 'Try again' }))
+  fireEvent.click(within(item).getByRole('button', { name: /^Try again/ }))
   // A failed first upload is retried as a version of that same document, never a second document.
   expect(onUpload).toHaveBeenCalledWith(
     { kind: 'version', documentId: 'd2', documentTitle: 'Blocking notes.pdf' },
@@ -311,7 +311,7 @@ test('Try again on a failed new version uploads another version of that document
     isNewVersion: true,
   })
   await renderInRouter(ui)
-  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  fireEvent.click(screen.getByRole('button', { name: /^Try again/ }))
   expect(onUpload).toHaveBeenCalledWith(
     { kind: 'version', documentId: 'd1', documentTitle: 'Libretto' },
     expect.anything(),

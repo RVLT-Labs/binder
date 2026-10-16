@@ -1,6 +1,6 @@
 import { formatBytes } from '@binder/shared'
 import { Link } from '@tanstack/react-router'
-import { Fragment, type ReactNode, useRef } from 'react'
+import { Fragment, type ReactNode, useId, useLayoutEffect, useRef } from 'react'
 import { CheckIcon, ChevronRightIcon, MoreIcon } from '@/components/icons'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -395,7 +395,9 @@ function ProcessingRow({
   const pct = known ? Math.min(100, Math.round((progress.ready / progress.total) * 100)) : null
   const queued = entry.status === 'queued'
   const reanchoring = entry.status === 'reanchoring'
-  const actions = useVersionActions(showId, entry.versionId)
+  const actions = useVersionActions(showId, entry.versionId, entry.status)
+  const noteId = useId()
+  const name = `${entry.title || 'document'}${entry.versionNumber !== null ? ` v${entry.versionNumber}` : ''}`
   // Cancel stops work that is running; the re-anchoring wait is past that, and a viewer cannot.
   const cancellable = canUpload && entry.canCancel
   return (
@@ -463,13 +465,16 @@ function ProcessingRow({
               type="button"
               variant="ghost"
               size="sm"
+              // the visible word first, then which upload it stops (there can be several rows)
+              aria-label={`Cancel ${name}`}
+              aria-describedby={!actions.online ? noteId : undefined}
               disabled={!actions.online || actions.busy}
               loading={actions.cancelling}
               onClick={actions.cancel}
             >
               Cancel
             </Button>
-            {!actions.online && <NeedsConnection />}
+            {!actions.online && <NeedsConnection id={noteId} />}
           </div>
         )}
       </div>
@@ -489,10 +494,10 @@ function Size({ bytes }: { bytes: number }) {
 }
 
 /** Why a button is greyed offline: cancel, try again and remove are server actions. */
-function NeedsConnection() {
+function NeedsConnection({ id, text = 'Needs a connection' }: { id: string; text?: string }) {
   return (
-    <span role="status" className="text-[12px] text-muted">
-      Needs a connection
+    <span id={id} role="status" className="text-[12px] text-muted">
+      {text}
     </span>
   )
 }
@@ -584,8 +589,29 @@ function FailedRow({
   onUpload,
   compact,
 }: DocumentRowProps & { entry: FailedEntry }) {
-  const actions = useVersionActions(showId, entry.versionId)
+  const actions = useVersionActions(showId, entry.versionId, entry.code ?? 'legacy')
   const { confirm, dialog } = useConfirm('Remove upload', 'Remove')
+  const noteId = useId()
+  const row = useRef<HTMLLIElement>(null)
+  const removed = useRef(false)
+  removed.current = actions.removed
+  // A removed row takes its Remove button, and focus with it. Hand focus to the next row's first
+  // control, or else to the list, rather than letting it fall to the page. The row is still in
+  // the page while its layout cleanup runs.
+  useLayoutEffect(
+    () => () => {
+      const li = row.current
+      if (!removed.current || !li) return
+      const active = document.activeElement
+      if (active !== document.body && !li.contains(active)) return
+      const next = li.nextElementSibling?.querySelector<HTMLElement>(
+        'a[href], button:not(:disabled)',
+      )
+      const target = next ?? li.closest<HTMLElement>('ul')
+      target?.focus()
+    },
+    [],
+  )
   // A deterministic failure would fail the same way again, so "Try again" asks for another upload.
   // It is always another version of this document: that needs only the document, and when the
   // document has no ready version the new one becomes its current (so no second document is made).
@@ -594,12 +620,12 @@ function FailedRow({
     documentId: entry.docId,
     documentTitle: entry.title || 'document',
   }
-  const name = `${entry.title}${entry.versionNumber !== null ? ` v${entry.versionNumber}` : ''}`
+  const name = `${entry.title || 'document'}${entry.versionNumber !== null ? ` v${entry.versionNumber}` : ''}`
   const inPlace = entry.canRetryInPlace
   // Cancelling is the person's own choice, not a fault: it gets the quiet pill and card, no red.
   const cancelled = entry.code === 'cancelled'
   return (
-    <li className={shell(compact, cancelled ? 'busy' : 'failed')}>
+    <li ref={row} className={shell(compact, cancelled ? 'busy' : 'failed')}>
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-4">
           <Thumb dashed />
@@ -641,6 +667,8 @@ function FailedRow({
                 variant="line"
                 size="sm"
                 className="md:bg-elev"
+                aria-label={`Try again, ${name}`}
+                aria-describedby={inPlace && !actions.online ? noteId : undefined}
                 disabled={inPlace && (!actions.online || actions.busy)}
                 loading={actions.retrying}
                 onClick={(e) => (inPlace ? actions.retry() : onUpload(target, e.currentTarget))}
@@ -651,6 +679,8 @@ function FailedRow({
                 type="button"
                 variant="ghost"
                 size="sm"
+                aria-label={`Remove ${name}`}
+                aria-describedby={!actions.online ? noteId : undefined}
                 disabled={!actions.online || actions.busy}
                 loading={actions.removing}
                 onClick={async () => {
@@ -663,7 +693,13 @@ function FailedRow({
                 Remove
               </Button>
             </div>
-            {!actions.online && <NeedsConnection />}
+            {!actions.online && (
+              // Try again that opens the upload stays enabled, so the note speaks for Remove alone.
+              <NeedsConnection
+                id={noteId}
+                text={inPlace ? undefined : 'Remove needs a connection'}
+              />
+            )}
           </div>
         )}
       </div>

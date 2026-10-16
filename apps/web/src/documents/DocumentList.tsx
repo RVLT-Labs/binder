@@ -31,8 +31,10 @@ export function DocumentRows({
   return (
     <ul
       aria-label="Documents"
+      // focusable by script only: where focus goes when the last row it held is removed
+      tabIndex={-1}
       className={cn(
-        'm-0 list-none p-0',
+        'm-0 list-none p-0 focus:outline-none',
         compact
           ? 'divide-y divide-line overflow-hidden rounded-[var(--r)] border-2 border-line-2 bg-card shadow-card'
           : 'flex flex-col gap-3',
