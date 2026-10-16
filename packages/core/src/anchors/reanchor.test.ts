@@ -403,6 +403,110 @@ describe('reanchor on small texts', () => {
   })
 })
 
+describe('reanchor when the quote appeared more than once in the old text', () => {
+  const REFRAIN = 'echo of the bell'
+  const PER_PAGE = 4
+  const dims = { linesPerPage: PER_PAGE }
+  // The refrain at lines 1 and 4, with different words before it and the same words after it.
+  const song = [
+    'verse one opens here', // 0
+    REFRAIN, // 1: first copy
+    'and the sea goes on', // 2
+    'verse two follows now', // 3
+    REFRAIN, // 4: second copy
+    'and the sea goes on', // 5
+    'a closing word or two', // 6
+    'last line of the song', // 7
+  ]
+  const from = versionFromLines(song, { versionId: 'v1', ...dims })
+  const without = (start: number, count: number) =>
+    versionFromLines(
+      song.filter((_, i) => i < start || i >= start + count),
+      { versionId: 'v2', ...dims },
+    )
+
+  /** An anchor on the refrain at `line`, the way snapping or place_cue_at_text records it. */
+  const onRefrain = (line: number, v: VersionText = from, perPage = PER_PAGE): Anchor => {
+    const pageIndex = Math.floor(line / perPage)
+    const layer = v.layers.get(pageIndex) as WordLayer
+    const row = line % perPage
+    const wordStart = layer.lines[row]?.[0] as number
+    return {
+      documentId: 'doc',
+      documentVersionId: v.versionId,
+      pageIndex,
+      x: LEFT,
+      y: lineCentreY(layer, row),
+      text: { quote: REFRAIN, wordStart, wordEnd: wordStart + 3 },
+      status: 'ok',
+    }
+  }
+  const yAt = (v: VersionText, line: number) =>
+    lineCentreY(v.layers.get(Math.floor(line / PER_PAGE)) as WordLayer, line % PER_PAGE)
+
+  test('the copy the anchor was on is cut and the other survives: approximate on the survivor, not ok', () => {
+    const to = without(3, 3) // verse two, its refrain and the line after are cut
+    const r = reanchor(onRefrain(4), from, to)
+    expect(r.status).toBe('approximate')
+    // A suggested target: the surviving copy, with the text still bound to it.
+    expect(r.documentVersionId).toBe('v2')
+    expect(r.pageIndex).toBe(0)
+    expect(r.y).toBeCloseTo(yAt(to, 1), 6)
+    expect(r.text).toEqual({ quote: REFRAIN, wordStart: 4, wordEnd: 7 })
+  })
+
+  test('the other copy is cut and the anchored one survives: still ok', () => {
+    const to = without(0, 3) // verse one, its refrain and the line after are cut
+    const r = reanchor(onRefrain(4), from, to)
+    expect(r.status).toBe('ok')
+    expect(r.pageIndex).toBe(0)
+    expect(r.y).toBeCloseTo(yAt(to, 1), 6)
+  })
+
+  test('the first copy was anchored and it survives: ok', () => {
+    const to = without(3, 3)
+    const r = reanchor(onRefrain(1), from, to)
+    expect(r.status).toBe('ok')
+    expect(r.pageIndex).toBe(0)
+    expect(r.y).toBeCloseTo(yAt(to, 1), 6)
+  })
+
+  test('the first copy was anchored and the second survives: approximate', () => {
+    const to = without(0, 3)
+    expect(reanchor(onRefrain(1), from, to).status).toBe('approximate')
+  })
+
+  test('reanchorAll flags the same anchors as reanchor does', () => {
+    const to = without(3, 3)
+    const anchors = [onRefrain(1), onRefrain(4)]
+    expect(reanchorAll(anchors, from, to).map((r) => r.status)).toEqual(['ok', 'approximate'])
+  })
+
+  test('copies with identical neighbours cannot be told apart, so the survivor is approximate', () => {
+    const block = ['verse one opens here', REFRAIN, 'and the sea goes on', 'a closing word or two']
+    const twice = versionFromLines([...block, ...block, 'last line of the song'], {
+      versionId: 'v1',
+      ...dims,
+    })
+    const once = versionFromLines([...block, 'last line of the song'], {
+      versionId: 'v2',
+      ...dims,
+    })
+    // Whichever copy the anchor was on, the text alone cannot say which one was kept.
+    expect(reanchor(onRefrain(1, twice), twice, once).status).toBe('approximate')
+    expect(reanchor(onRefrain(5, twice), twice, once).status).toBe('approximate')
+  })
+
+  test('a quote that was unique in the old text is unaffected: ok on the one match', () => {
+    const to = without(3, 3)
+    const unique = {
+      ...onRefrain(7),
+      text: { quote: 'last line of the song', wordStart: 0, wordEnd: 4 },
+    }
+    expect(reanchor(unique, from, to).status).toBe('ok')
+  })
+})
+
 describe('reanchorAll', () => {
   test('never drops an anchor and agrees with reanchor one by one', () => {
     const to = versionFromLines(
