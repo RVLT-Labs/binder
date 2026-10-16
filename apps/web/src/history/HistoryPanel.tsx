@@ -26,6 +26,8 @@ export interface HistoryPanelProps {
   currentNumber?: { major: number; minor: number }
   /** The row's own department: the fallback for entries that name no department layer. */
   departmentId: string | null
+  /** Show only the latest this many changes and no "Show older changes" (the cue list's Cue tab). */
+  limit?: number
 }
 
 /**
@@ -118,6 +120,7 @@ function HistoryList({
   whyCantRevert,
   currentNumber,
   departmentId,
+  limit,
 }: HistoryPanelProps) {
   const query = useRowHistory(showId, rowId)
   const departments = useDepartments(showId)
@@ -134,7 +137,10 @@ function HistoryList({
     void queryClient.invalidateQueries({ queryKey: [...historyKey(showId), 'row', rowId] })
   }, [rowStamp, uploading, queryClient, showId, rowId])
 
-  const entries = useMemo(() => query.data?.pages.flatMap((p) => p.entries) ?? [], [query.data])
+  const entries = useMemo(() => {
+    const all = query.data?.pages.flatMap((p) => p.entries) ?? []
+    return limit === undefined ? all : all.slice(0, limit)
+  }, [query.data, limit])
   const numbers = useMemo(
     () => (table === 'cues' ? numbersAfter(entries, currentNumber) : []),
     [table, entries, currentNumber],
@@ -220,7 +226,7 @@ function HistoryList({
           )
         })}
       </ol>
-      {query.hasNextPage && (
+      {query.hasNextPage && limit === undefined && (
         <Button
           type="button"
           variant="line"

@@ -113,7 +113,7 @@ test('the cue type and stamp choices appear beside their tool while it is chosen
   expect(screen.queryByLabelText('Stamp', { exact: true })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Cue tool' }))
   const type = screen.getByLabelText('Cue type') as HTMLSelectElement
-  expect([...type.options].map((o) => o.text)).toEqual(['Go', 'Standby', 'Warning'])
+  expect([...type.options].map((o) => o.text)).toEqual(['Go', 'Standby', 'Warn'])
   fireEvent.click(screen.getByRole('button', { name: 'Stamp tool' }))
   const stamp = screen.getByLabelText('Stamp', { exact: true }) as HTMLSelectElement
   expect([...stamp.options].map((o) => o.text)).toEqual(['Hold', 'Go'])

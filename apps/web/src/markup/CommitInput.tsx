@@ -29,6 +29,7 @@ export interface CommitInputProps {
   multiline?: boolean
   disabled?: boolean
   className?: string
+  placeholder?: string
   'aria-label'?: string
   'aria-invalid'?: boolean
   'aria-describedby'?: string

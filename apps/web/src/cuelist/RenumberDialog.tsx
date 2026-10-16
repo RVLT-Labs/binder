@@ -1,7 +1,12 @@
 import { DEFAULT_BLOCK_SIZE } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { DialogFooter, DialogHeader, DialogShell } from '@/components/ui/dialog-shell'
+import { Input } from '@/components/ui/input'
+import { closeModal, openModal, restoreFocus } from '@/lib/modalDialog'
 import type { EditContext } from '../markup/mutations'
+import { Field, FieldError, Note, SelectField } from '../panel/fields'
 import {
   type CueNumberRow,
   previewRenumber,
@@ -16,6 +21,8 @@ export interface RenumberDialogProps {
   /** The edit context as of now (the live membership scope), or null until it has synced. */
   editContext: () => EditContext | null
   onClose: () => void
+  /** The control that opened the dialog: focus goes back to it however the dialog closes. */
+  returnFocusTo?: HTMLElement | null
 }
 
 const BLOCK_ERROR = 'The block size is a whole number from 2 to 1000.'
@@ -30,8 +37,11 @@ export function RenumberDialog({
   documents,
   editContext,
   onClose,
+  returnFocusTo = null,
 }: RenumberDialogProps) {
   const headingId = useId()
+  const ids = useId()
+  const focusBack = useRef(returnFocusTo)
   const db = usePowerSync()
   const dialog = useRef<HTMLDialogElement>(null)
   const [documentId, setDocumentId] = useState(documents[0]?.id ?? '')
@@ -50,7 +60,9 @@ export function RenumberDialog({
   const currentVersionId = current[0]?.current_version_id ?? null
 
   useEffect(() => {
-    dialog.current?.showModal()
+    if (dialog.current) openModal(dialog.current)
+    // The dialog is gone by now (this runs as it unmounts), so its opener can take focus again.
+    return () => restoreFocus(focusBack.current)
   }, [])
 
   const blockSize = /^\d+$/.test(blockText.trim()) ? Number(blockText.trim()) : Number.NaN
@@ -86,35 +98,41 @@ export function RenumberDialog({
   }
 
   return (
-    <dialog ref={dialog} className="renumber-dialog" aria-labelledby={headingId} onClose={onClose}>
-      <form onSubmit={apply}>
-        <h2 id={headingId}>Renumber {departmentCode} from script order</h2>
-        <p className="muted">
+    <DialogShell ref={dialog} labelledBy={headingId} onClose={onClose}>
+      <form onSubmit={apply} className="flex flex-col gap-4">
+        <DialogHeader id={headingId} className="mb-0">
+          Renumber {departmentCode} from script order
+        </DialogHeader>
+        <Note>
           Cues are ordered by where they sit in the script. The first takes the block size and the
           rest the following whole numbers. Unplaced cues and the 0 range are left alone.
-        </p>
-        <label>
-          Document
-          <select value={documentId} onChange={(e) => setDocumentId(e.target.value)}>
+        </Note>
+        <Field label="Document" htmlFor={`${ids}-document`}>
+          <SelectField
+            id={`${ids}-document`}
+            value={documentId}
+            onChange={(e) => setDocumentId(e.target.value)}
+          >
             {documents.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.title}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
-          Block size
-          <input
+          </SelectField>
+        </Field>
+        <Field label="Block size" htmlFor={`${ids}-block`}>
+          <Input
+            id={`${ids}-block`}
             inputMode="numeric"
+            className="font-mono tabular-nums"
             value={blockText}
             onChange={(e) => setBlockText(e.target.value)}
             aria-invalid={blockValid ? undefined : true}
           />
-        </label>
-        {!blockValid && <p className="field-error">{BLOCK_ERROR}</p>}
+        </Field>
+        {!blockValid && <FieldError>{BLOCK_ERROR}</FieldError>}
         {preview && (
-          <p role="status" className="renumber-preview">
+          <p role="status" className="renumber-preview m-0 text-[13px] text-ink-2">
             {placed === 0
               ? 'No placed cues in this document.'
               : `${preview.changes.length} of ${placed} cues will change, ${spilled} will spill into points.${
@@ -124,20 +142,16 @@ export function RenumberDialog({
                 }`}
           </p>
         )}
-        {error && (
-          <p role="alert" className="field-error">
-            {error}
-          </p>
-        )}
-        <div className="dialog-actions">
-          <button type="button" onClick={() => dialog.current?.close()}>
+        {error && <FieldError>{error}</FieldError>}
+        <DialogFooter className="mt-2">
+          <Button type="button" variant="line" onClick={() => closeModal(dialog.current, null)}>
             Cancel
-          </button>
-          <button type="submit" disabled={!preview || busy || placed === 0}>
+          </Button>
+          <Button type="submit" disabled={!preview || busy || placed === 0}>
             Apply renumbering
-          </button>
-        </div>
+          </Button>
+        </DialogFooter>
       </form>
-    </dialog>
+    </DialogShell>
   )
 }

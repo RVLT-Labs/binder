@@ -32,8 +32,9 @@ function ShowLayout() {
   useRememberShow(account.email, showId, Boolean(show))
   const crumbs = useShowCrumbs(showId, show?.title ?? undefined)
   const leaf = useMatches({ select: (matches) => matches.at(-1)?.routeId })
-  // The document lays out and scrolls its own panels, so it gets the content area to itself.
-  const fullBleed = leaf === '/shows/$showId/docs/$docId'
+  // The document and the cue list lay out and scroll their own panels, so they get the content area
+  // to themselves.
+  const fullBleed = leaf === '/shows/$showId/docs/$docId' || leaf === '/shows/$showId/cues'
   const phone = useBreakpoint() === 'phone'
 
   return (

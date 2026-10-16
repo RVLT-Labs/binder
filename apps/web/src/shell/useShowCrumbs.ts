@@ -3,7 +3,7 @@ import { useMatches, useParams, useSearch } from '@tanstack/react-router'
 import type { Crumb } from './types'
 
 const LEAF_LABELS: Record<string, string> = {
-  '/shows/$showId/cues': 'Cues',
+  '/shows/$showId/cues': 'Cue lists',
   '/shows/$showId/docs/': 'Documents',
   '/shows/$showId/activity': 'Activity',
   '/shows/$showId/exports': 'Exports',

@@ -166,7 +166,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
             >
               <option value="go">Go</option>
               <option value="standby">Standby</option>
-              <option value="warn">Warning</option>
+              <option value="warn">Warn</option>
             </select>
           </Flyout>
         )}

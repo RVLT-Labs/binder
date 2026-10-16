@@ -36,6 +36,8 @@ export interface ContextPanelProps {
    * own (the editors carry one beside Delete). It closes the drawer like a drag does.
    */
   showDone?: boolean
+  /** The docked panel's width: the script's 300 px, or the cue list's 340. */
+  dockedWidth?: 300 | 340
 }
 
 /**
@@ -148,7 +150,7 @@ export function ContextPanel(props: ContextPanelProps) {
         data-panel="docked"
         className={cn(
           'context-panel flex min-h-0 shrink-0 flex-col border-l border-line bg-paper-2',
-          wide ? 'w-[420px]' : 'w-[300px]',
+          wide ? 'w-[420px]' : props.dockedWidth === 340 ? 'w-[340px]' : 'w-[300px]',
         )}
       >
         <Body {...props} wide={wide} />

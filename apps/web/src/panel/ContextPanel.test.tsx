@@ -86,6 +86,23 @@ test('desktop docks a complementary landmark with the four tabs, the Review coun
   expect(panel.className).toContain('border-l')
 })
 
+test('the cue list docks it at 340 px (the cues mockup); the script keeps 300', () => {
+  setWidth(1280)
+  render(
+    <ContextPanel
+      tabs={tabs()}
+      value="cue"
+      onValueChange={() => {}}
+      open={false}
+      onOpenChange={() => {}}
+      dockedWidth={340}
+    />,
+  )
+  const panel = screen.getByRole('complementary', { name: 'Context panel' })
+  expect(panel.className).toContain('w-[340px]')
+  expect(panel.className).not.toContain('w-[300px]')
+})
+
 test('the Review pill is a 16 px blue pill and is left out at zero', () => {
   setWidth(1280)
   const { unmount } = render(<Harness count={4} />)

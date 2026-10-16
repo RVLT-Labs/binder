@@ -89,6 +89,8 @@ test('after a cold offline reload, the cue list exports an XLSX at once and its 
   await page.reload()
   await expect(page.getByRole('heading', { name: /cue list$/ })).toBeVisible({ timeout: 30_000 })
 
+  // The formats sit behind the top bar's Export button.
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
   const group = page.getByRole('group', { name: 'Export cue sheet' })
   // The list may hold no cues in this show; the sheet is still made (header only).
   await expect(group).toBeVisible()

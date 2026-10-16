@@ -324,7 +324,7 @@ test('editing a number to "12.5" shows 12.5; "abc" shows an error and changes no
   }
 })
 
-test('a click on a placed row opens the viewer at its page with the cue selected', async ({
+test('selecting a row opens the panel with that cue; "Show on page" opens the viewer at its page with the cue selected', async ({
   browser,
 }) => {
   const contexts: BrowserContext[] = []
@@ -333,7 +333,14 @@ test('a click on a placed row opens the viewer at its page with the cue selected
     await clearCues(page)
     const id = randomUUID()
     await seed(page, [{ id, major: 55, label: 'On page two', pageIndex: 1, y: 600 }])
+    // A click on the row (its page cell here) selects it: the docked panel shows the cue.
     await row(page, id).locator('.cue-page').click()
+    await expect(row(page, id)).toHaveAttribute('data-selected', 'true')
+    const panel = page.getByRole('complementary', { name: 'Context panel' })
+    await expect(panel.getByRole('region', { name: 'Cue details' })).toContainText('55')
+    await expect(panel.getByLabel('Label')).toHaveValue('On page two')
+    await expect(page).toHaveURL(/\/cues/)
+    await panel.getByRole('button', { name: 'Show on page' }).click()
     await expect(page).toHaveURL(new RegExp(`/docs/${show.documentId}`))
     await expect(page.getByRole('toolbar', { name: 'Viewer' })).toContainText('2 / 3', {
       timeout: 30_000,
@@ -344,6 +351,102 @@ test('a click on a placed row opens the viewer at its page with the cue selected
     await expect(page.getByRole('region', { name: 'Cue editor' })).toBeVisible()
     // The cue parameter is used once and leaves the address.
     await expect(page).not.toHaveURL(/cue=/)
+  } finally {
+    for (const context of contexts) await context.close()
+  }
+})
+
+test('the flag pills filter the list and toggle with aria-pressed; the panel opens on Enter', async ({
+  browser,
+}) => {
+  const contexts: BrowserContext[] = []
+  try {
+    const page = await openList(browser, 'owner', contexts)
+    await clearCues(page)
+    const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()]
+    await seed(page, [
+      { id: a, major: 5, label: 'Twin one', pageIndex: 0, y: 700 },
+      { id: b, major: 5, label: 'Twin two', pageIndex: 0, y: 500 },
+      { id: c, major: 6, label: 'Alone', pageIndex: 1, y: 600 },
+    ])
+    await expect(page.locator('tbody tr')).toHaveCount(3)
+    // The department switch is a segmented control with the counts.
+    const department = page.getByRole('radiogroup', { name: 'Department' })
+    await expect(department.getByRole('radio', { name: /^LX\s*3$/ })).toBeChecked()
+
+    const pill = page.getByRole('button', { name: '2 duplicate' })
+    await expect(pill).toHaveAttribute('aria-pressed', 'false')
+    await pill.click()
+    await expect(pill).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('tbody tr')).toHaveCount(2)
+    await expect(page).toHaveURL(/duplicates=true/)
+    await pill.click()
+    await expect(pill).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.locator('tbody tr')).toHaveCount(3)
+
+    // Enter on a focused row selects it, and the docked panel shows that cue.
+    await row(page, c).focus()
+    await page.keyboard.press('Enter')
+    await expect(row(page, c)).toHaveAttribute('data-selected', 'true')
+    await expect(
+      page.getByRole('complementary', { name: 'Context panel' }).getByLabel('Label'),
+    ).toHaveValue('Alone')
+    // History is its own tab.
+    await page.getByRole('tab', { name: 'History' }).click()
+    await expect(page.getByRole('region', { name: 'History' })).toBeVisible()
+  } finally {
+    for (const context of contexts) await context.close()
+  }
+})
+
+test('on a phone the rows are cards: tapping one opens the drawer, where its label is edited', async ({
+  browser,
+}) => {
+  const contexts: BrowserContext[] = []
+  try {
+    const page = await openList(browser, 'owner', contexts)
+    await clearCues(page)
+    const id = randomUUID()
+    const long =
+      'A very long cue label that must stay inside the card and never push the page sideways'
+    await seed(page, [
+      { id, major: 8, label: long, pageIndex: 0, y: 700 },
+      { id: randomUUID(), major: 9, label: 'Second', pageIndex: 0, y: 500 },
+    ])
+    await page.setViewportSize({ width: 390, height: 844 })
+    const list = page.getByRole('list', { name: 'Cues' })
+    await expect(list.getByRole('button')).toHaveCount(2)
+    await expect(page.locator('tr[data-cue-id]')).toHaveCount(0)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true)
+    for (const card of await list.getByRole('button').all()) {
+      const box = await card.boundingBox()
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+    }
+    await expect(page.locator('.badge[data-flag]')).toHaveCount(0)
+
+    await list.getByRole('button', { name: /^8 A very long/ }).click()
+    const drawer = page.getByRole('dialog', { name: 'Context panel' })
+    await expect(drawer).toBeVisible()
+    const label = drawer.getByLabel('Label')
+    await expect(label).toHaveValue(long)
+    await label.fill('Shortened')
+    await label.press('Enter')
+    // (the open drawer takes the page behind it out of the accessibility tree: find the cards by hook)
+    const card = page.locator(`button[data-cue-id="${id}"]`)
+    await expect(card).toHaveAttribute('aria-label', '8 Shortened')
+    // A bad number is an error, a good one is saved.
+    const number = drawer.getByLabel('Number')
+    await number.fill('abc')
+    await number.press('Enter')
+    await expect(drawer.getByRole('alert')).toContainText('Cue numbers look like')
+    await number.fill('8.5')
+    await number.press('Enter')
+    await expect(card).toHaveAttribute('aria-label', '8.5 Shortened')
+    await drawer.getByRole('button', { name: 'Done' }).first().click()
+    await expect(drawer).toBeHidden()
+    await expect(card).toBeFocused()
   } finally {
     for (const context of contexts) await context.close()
   }
@@ -434,8 +537,12 @@ const hasPdftotext = (() => {
   }
 })()
 
-/** Clicks one of the cue list's export buttons and resolves to the download it makes. */
+/**
+ * Opens the top bar's Export button and clicks one of its formats, resolving to the download it
+ * makes. The formats sit behind Export (the cues mockup draws one button), so it opens first.
+ */
 async function exportSheet(page: Page, format: 'PDF' | 'XLSX' | 'CSV'): Promise<Download> {
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page
