@@ -294,3 +294,131 @@ describe('renumberCues', () => {
     expect(ok.structuredContent).toEqual({ changed: 3, flagged: [] })
   })
 })
+
+describe('renumberCues: numbers it does not govern', () => {
+  const byCue = (a: { cueId: string }, b: { cueId: string }) => a.cueId.localeCompare(b.cueId)
+  const duplicateIds = async (s: Awaited<ReturnType<typeof scrambled>>['s']) =>
+    (await listCues(s.deps.db, s.actors.owner, { showId: s.show.id, departmentId: s.depts.LX.id }))
+      .filter((r) => r.duplicate)
+      .map((r) => r.id)
+      .sort()
+
+  test('a cue renumbered onto an unplaced cue’s number is flagged, with the unplaced cue', async () => {
+    const { s, c } = await scrambled()
+    const holder = await createCue(s.deps.db, s.actors.owner, {
+      showId: s.show.id,
+      departmentId: s.depts.LX.id,
+      number: { major: 12, minor: 0 },
+      label: 'unplaced spare',
+    })
+
+    const result = await renumberCues(s.deps.db, s.actors.owner, {
+      departmentId: s.depts.LX.id,
+      documentId: s.docId,
+    })
+
+    // c is third in reading order, so it takes 12.0 and now shares it with the unplaced cue
+    expect(result.changed).toBe(3)
+    expect([...result.flagged].sort(byCue)).toEqual(
+      [
+        { cueId: c.id, reason: 'duplicate' },
+        { cueId: holder.id, reason: 'duplicate' },
+      ].sort(byCue),
+    )
+    // the unplaced cue was not touched, and what is flagged is what the cue list calls duplicate
+    expect((await getCue(s.deps.db, s.actors.owner, { cueId: holder.id })).major).toBe(12)
+    expect(await duplicateIds(s)).toEqual(result.flagged.map((f) => f.cueId).sort())
+  })
+
+  test('a cue in another document is a collision too, one that only shares the major is not', async () => {
+    const { s, a } = await scrambled()
+    const db = s.deps.db
+    const other = await addReadyDocument(db, s.show.id, s.owner.id)
+    const elsewhere = await createCue(db, s.actors.owner, {
+      showId: s.show.id,
+      departmentId: s.depts.LX.id,
+      number: { major: 10, minor: 0 },
+      anchor: anchorAt(other.docId, other.versionId, 0),
+    })
+    await createCue(db, s.actors.owner, {
+      showId: s.show.id,
+      departmentId: s.depts.LX.id,
+      number: { major: 11, minor: 50 },
+      label: 'a point, not 11',
+    })
+
+    const result = await renumberCues(db, s.actors.owner, {
+      departmentId: s.depts.LX.id,
+      documentId: s.docId,
+    })
+
+    // a is first in reading order and takes 10.0, where the cue in the other document already is
+    expect([...result.flagged].sort(byCue)).toEqual(
+      [
+        { cueId: a.id, reason: 'duplicate' },
+        { cueId: elsewhere.id, reason: 'duplicate' },
+      ].sort(byCue),
+    )
+    expect(await duplicateIds(s)).toEqual(result.flagged.map((f) => f.cueId).sort())
+  })
+
+  test('running it again changes nothing and reports the same collision', async () => {
+    const { s } = await scrambled()
+    await createCue(s.deps.db, s.actors.owner, {
+      showId: s.show.id,
+      departmentId: s.depts.LX.id,
+      number: { major: 12, minor: 0 },
+    })
+    const input = { departmentId: s.depts.LX.id, documentId: s.docId }
+    const first = await renumberCues(s.deps.db, s.actors.owner, input)
+    const again = await renumberCues(s.deps.db, s.actors.owner, input)
+    expect(again.changed).toBe(0)
+    expect(first.flagged).toHaveLength(2)
+    expect([...again.flagged].sort(byCue)).toEqual([...first.flagged].sort(byCue))
+  })
+
+  test('duplicates among cues it does not govern are not its to report', async () => {
+    const { s } = await scrambled()
+    for (let i = 0; i < 2; i++) {
+      await createCue(s.deps.db, s.actors.owner, {
+        showId: s.show.id,
+        departmentId: s.depts.LX.id,
+        number: { major: 77, minor: 0 },
+        label: `spare ${i}`,
+      })
+    }
+    const result = await renumberCues(s.deps.db, s.actors.owner, {
+      departmentId: s.depts.LX.id,
+      documentId: s.docId,
+    })
+    expect(result).toEqual({ changed: 3, flagged: [] })
+    expect(await duplicateIds(s)).toHaveLength(2)
+  })
+
+  test('over MCP the collision comes back in flagged', async () => {
+    const { s, c } = await scrambled()
+    const holder = await createCue(s.deps.db, s.actors.owner, {
+      showId: s.show.id,
+      departmentId: s.depts.LX.id,
+      number: { major: 12, minor: 0 },
+    })
+    const { token } = await createToken(s.deps.db, s.ownerActor, { name: 't', showScope: '*' })
+    const client = await connectMcp(s.app, token)
+    clients.push(client)
+
+    const res = await callTool(client, 'renumber_cues', {
+      showId: s.show.id,
+      department: 'LX',
+      documentId: s.docId,
+    })
+    expect(res.isError).toBeFalsy()
+    const out = res.structuredContent as { changed: number; flagged: Array<{ cueId: string }> }
+    expect(out.changed).toBe(3)
+    expect([...out.flagged].sort(byCue)).toEqual(
+      [
+        { cueId: c.id, reason: 'duplicate' },
+        { cueId: holder.id, reason: 'duplicate' },
+      ].sort(byCue),
+    )
+  })
+})

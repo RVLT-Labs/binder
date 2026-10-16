@@ -207,9 +207,11 @@ export function registerCueTools(server: McpServer, mcp: McpContext): void {
         'to bottom): the first cue takes the block size (default 10) and the rest the following ' +
         'integers, and minors reset to zero. Cues in a long scene that overflow a block spill into ' +
         'points and are flagged. Unplaced cues, the 0 range (line checks) and other documents are ' +
-        'untouched, and importing never renumbers. Name the department with departmentId, or with ' +
-        'department (code or id) and showId. You need edit rights on the department layer. It is ' +
-        'one revertable batch. Returns {changed, flagged: [{cueId, reason}]}.',
+        'untouched and their numbers are not avoided, so a renumbered cue can land on one: both are ' +
+        "then flagged 'duplicate'. Importing never renumbers. Name the department with departmentId, " +
+        'or with department (code or id) and showId. You need edit rights on the department layer. ' +
+        'It is one revertable batch. Returns {changed, flagged: [{cueId, reason}]}, reason ' +
+        "'spilled', 'overflow' or 'duplicate'.",
       inputSchema: z.object({
         departmentId: id('department').optional(),
         showId: id('show').optional().describe('Required with department.'),

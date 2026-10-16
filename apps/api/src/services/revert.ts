@@ -7,6 +7,8 @@ import {
   type CueFields,
   canEditLayer,
   isLayerVisibleTo,
+  type LayerRef,
+  layerKey,
   newId,
   parseLayerKey,
   type RevertResult,
@@ -21,7 +23,7 @@ import { createCue, deleteCues, updateCue } from './cues'
 import { updateDepartment } from './departments'
 import { setCurrentVersion, updateDocument } from './documents'
 import type { Executor } from './executor'
-import { getMembershipScope } from './layers'
+import { getMembershipScope, requireLayerEdit } from './layers'
 import { assertShowWritable, requireShowRole, updateShow } from './tenancy'
 
 type LogRow = typeof changeLog.$inferSelect
@@ -114,6 +116,57 @@ async function lockRows(tx: Executor, rows: LogRow[]): Promise<void> {
 
 const driftOf = (current: Columns, values: Columns | null): string[] =>
   Object.keys(values ?? {}).filter((k) => !columnEqual(current[k], (values as Columns)[k]))
+
+/** The role the owning service demands for an update to these tables (they have no layer). */
+const TABLE_ROLE = { departments: 'owner', documents: 'editor', shows: 'owner' } as const
+
+/** The layer a cue's or annotation's columns put it on, or null when they do not say. */
+function layerIn(table: string, cols: Columns): LayerRef | null {
+  if (table === 'cues') {
+    return typeof cols.departmentId === 'string'
+      ? { kind: 'department', id: cols.departmentId }
+      : null
+  }
+  const { layerKind: kind, layerId: id } = cols
+  return (kind === 'department' || kind === 'personal') && typeof id === 'string'
+    ? { kind, id }
+    : null
+}
+
+/**
+ * The rights this row's write will need, demanded before the row is compared with its current
+ * state. A caller who may not write it gets `forbidden` and never a conflict that names the columns
+ * (or the existence) of a row on a layer it cannot edit. The layers are the ones the owning service
+ * checks on the write: where the row sits now (an update or an insert's delete) and where the
+ * before values leave it (an update that moves it, a delete's re-create). A row that is gone is
+ * checked on the layer its change was logged on.
+ */
+async function assertMayRevert(
+  tx: Executor,
+  actor: Actor,
+  row: LogRow,
+  current: Columns | null,
+): Promise<void> {
+  if (
+    row.tableName === 'departments' ||
+    row.tableName === 'documents' ||
+    row.tableName === 'shows'
+  ) {
+    await requireShowRole(tx, actor, row.showId, TABLE_ROLE[row.tableName])
+    return
+  }
+  const logged = row.layer ? parseLayerKey(row.layer) : null
+  const sitting = current ? layerIn(row.tableName, current) : logged
+  const landing = layerIn(row.tableName, { ...current, ...row.before })
+  const layers =
+    row.op === 'update' ? [sitting, landing] : row.op === 'insert' ? [sitting] : [landing]
+  const checked = new Set<string>()
+  for (const layer of layers) {
+    if (!layer || checked.has(layerKey(layer))) continue
+    checked.add(layerKey(layer))
+    await requireLayerEdit(tx, actor, row.showId, layer)
+  }
+}
 
 async function writeUpdate(
   tx: Executor,
@@ -235,6 +288,7 @@ async function revertRows(
     ) {
       throw notFound('Change not found')
     }
+    await assertMayRevert(tx, actor, row, current)
     if (row.op === 'update') {
       if (!current) {
         if (opts.single) throw conflict(`${row.tableName} ${row.rowId} no longer exists`)

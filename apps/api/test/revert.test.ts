@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm'
 import { describe, expect, test, vi } from 'vitest'
 import { AppError } from '../src/errors'
 import {
+  addShowMember,
   createAnnotation,
   createCue,
   deleteAnnotations,
@@ -19,7 +20,7 @@ import {
   updateDocument,
   updateShow,
 } from '../src/services'
-import { APP_ORIGIN } from './helpers'
+import { APP_ORIGIN, createTestUser } from './helpers'
 import { anchorAt, setupMarkupShow } from './markupHelpers'
 
 type Setup = Awaited<ReturnType<typeof setupMarkupShow>>
@@ -1069,5 +1070,132 @@ describe('HTTP', () => {
     })
     expect(anon.status).toBe(401)
     expect((await getCue(s.deps.db, s.actors.owner, { cueId: cue.id })).label).toBe('b')
+  })
+})
+
+/** An editor scoped to SND only, the mirror image of `s.actors.editorLx`. */
+async function sndEditor(s: Setup): Promise<Actor> {
+  const email = `snd-${newId()}@doc.test`
+  const user = await createTestUser(s.app, s.deps, { email, name: 'Sam', password: 'password123' })
+  await addShowMember(s.deps.db, s.ownerActor, {
+    showId: s.show.id,
+    email,
+    role: 'editor',
+    departments: [s.depts.SND.id],
+  })
+  return { userId: user.id, via: 'web', agent: null }
+}
+
+describe('revert: the rights check comes before any conflict', () => {
+  test('an SND editor reverting an LX relabel that has since changed is forbidden and learns nothing', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const snd = await sndEditor(s)
+    const cue = await mkCue(s, s.actors.owner, 'LX', { label: 'Fly out' })
+    await updateCue(db, s.actors.owner, { cueId: cue.id, patch: { label: 'Fly in' } })
+    const seq = await lastSeq(s, cue.id, 'update')
+    await updateCue(db, s.actors.owner, { cueId: cue.id, patch: { label: 'Fly home' } })
+    const logged = await totalLogs(s)
+
+    for (const force of [false, true]) {
+      expect(await code(revertChange(db, snd, { seq, force }))).toBe('forbidden')
+      expect(await message(revertChange(db, snd, { seq, force }))).not.toMatch(
+        /label|changed since/,
+      )
+    }
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).label).toBe('Fly home')
+    expect(await totalLogs(s)).toBe(logged)
+
+    // who may edit that layer is still told about the drift, and the owner can force it
+    expect(await code(revertChange(db, s.actors.editorLx, { seq }))).toBe('conflict')
+    await revertChange(db, s.actors.owner, { seq, force: true })
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).label).toBe('Fly out')
+  })
+
+  test('a row that is gone, was created or exists again is refused the same way, never as a conflict', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const snd = await sndEditor(s)
+
+    // an update of a cue that has since been deleted
+    const gone = await mkCue(s, s.actors.owner, 'LX', { label: 'g0' })
+    await updateCue(db, s.actors.owner, { cueId: gone.id, patch: { label: 'g1' } })
+    const goneSeq = await lastSeq(s, gone.id, 'update')
+    await deleteCues(db, s.actors.owner, { cueIds: [gone.id] })
+
+    // an insert of a cue that has since been edited
+    const made = await mkCue(s, s.actors.owner, 'LX', { label: 'm0' })
+    const madeSeq = await lastSeq(s, made.id, 'insert')
+    await updateCue(db, s.actors.owner, { cueId: made.id, patch: { label: 'm1' } })
+
+    // a delete of a cue that has since come back
+    const back = await mkCue(s, s.actors.owner, 'LX', { label: 'b0' })
+    await deleteCues(db, s.actors.owner, { cueIds: [back.id] })
+    const backSeq = await lastSeq(s, back.id, 'delete')
+    await createCue(db, s.actors.owner, {
+      showId: s.show.id,
+      id: back.id,
+      departmentId: s.depts.LX.id,
+      label: 'b1',
+    })
+
+    const logged = await totalLogs(s)
+    for (const seq of [goneSeq, madeSeq, backSeq]) {
+      expect(await code(revertChange(db, snd, { seq })), `seq ${seq}`).toBe('forbidden')
+    }
+    expect(await totalLogs(s)).toBe(logged)
+  })
+
+  test('reverting a batch the SND editor may not touch is forbidden even when its rows have drifted', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const snd = await sndEditor(s)
+    const cue = await mkCue(s, s.actors.owner, 'LX', { label: 'l0' })
+    await updateCue(db, s.actors.owner, {
+      cueId: cue.id,
+      patch: { label: 'l1' },
+      batchId: 'lx-batch',
+    })
+    await updateCue(db, s.actors.owner, { cueId: cue.id, patch: { label: 'l2' } })
+    const input = { showId: s.show.id, batchId: 'lx-batch', userId: s.owner.id }
+
+    for (const dryRun of [false, true]) {
+      expect(await code(revertBatch(db, snd, { ...input, dryRun }))).toBe('forbidden')
+      expect(await message(revertBatch(db, snd, { ...input, dryRun }))).not.toMatch(
+        /label|changed since/,
+      )
+    }
+    expect(await code(revertBatch(db, s.actors.editorLx, input))).toBe('conflict')
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).label).toBe('l2')
+  })
+
+  test('the same holds for tables with a role rule: department, document and show edits that drifted', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+
+    await updateDepartment(db, s.actors.owner, {
+      departmentId: s.depts.SND.id,
+      patch: { name: 'X' },
+    })
+    const deptSeq = await lastSeq(s, s.depts.SND.id, 'update')
+    await updateDepartment(db, s.actors.owner, {
+      departmentId: s.depts.SND.id,
+      patch: { name: 'Y' },
+    })
+
+    await updateDocument(db, s.actors.editor, { documentId: s.docId, patch: { title: 'Mine' } })
+    const docSeq = await lastSeq(s, s.docId, 'update')
+    await updateDocument(db, s.actors.editor, { documentId: s.docId, patch: { title: 'Mine too' } })
+
+    await updateShow(db, s.actors.owner, { showId: s.show.id, patch: { title: 'Renamed' } })
+    const showSeq = await lastSeq(s, s.show.id, 'update')
+    await updateShow(db, s.actors.owner, { showId: s.show.id, patch: { title: 'Renamed again' } })
+
+    // an editor may not revert a department or show edit, a viewer not a document edit
+    expect(await code(revertChange(db, s.actors.editor, { seq: deptSeq }))).toBe('forbidden')
+    expect(await code(revertChange(db, s.actors.editor, { seq: showSeq }))).toBe('forbidden')
+    expect(await code(revertChange(db, s.actors.viewer, { seq: docSeq }))).toBe('forbidden')
+    // who may is told about the drift
+    expect(await code(revertChange(db, s.actors.owner, { seq: deptSeq }))).toBe('conflict')
   })
 })
