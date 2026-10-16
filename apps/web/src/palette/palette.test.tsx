@@ -119,6 +119,7 @@ function env(): PaletteEnv {
     goToPage: vi.fn(),
     searchScript: vi.fn(),
     print: vi.fn(),
+    toggleCalling: vi.fn(),
     renumber: vi.fn(),
     setLayerHidden: vi.fn(),
   }
@@ -228,16 +229,27 @@ describe('buildPaletteResults', () => {
     expect(labels(groups.cues)).toEqual(['LX 12 · Ship deck wash in', 'LX 12.5 · Deck wash build'])
   })
 
-  it('actions are Print, Renumber and a Hide layer for each visible department', () => {
+  it('actions are Switch to calling mode, Print, Renumber and a Hide layer for each visible department', () => {
     const { actions } = buildPaletteResults(input(), env())
     expect(labels(actions)).toEqual([
+      'Switch to calling mode',
       'Print…',
       'Renumber from script order',
       'Hide LX layer',
       'Hide SND layer',
     ])
-    expect(actions[0].hint).toBe(modLabel('P'))
-    expect(labels(actions)).not.toContain('Switch to calling mode')
+    // ⇧C has no platform modifier, so its key cap is the same everywhere
+    expect(actions[0].hint).toBe('⇧C')
+    expect(actions[1].hint).toBe(modLabel('P'))
+  })
+
+  it('in Calling mode the switch offers the way back, on the same key', () => {
+    const { actions } = buildPaletteResults(
+      input({ document: { pageCount: 43, calling: true } }),
+      env(),
+    )
+    expect(labels(actions)[0]).toBe('Switch to markup mode')
+    expect(actions[0].hint).toBe('⇧C')
   })
 
   it('a hidden layer offers Show instead, and a department hidden for everyone offers nothing', () => {
@@ -253,7 +265,7 @@ describe('buildPaletteResults', () => {
     expect(labels(actions).some((l) => l.includes('TM'))).toBe(false)
   })
 
-  it('outside a document there is no Print; without rights or documents there is no Renumber', () => {
+  it('outside a document there is no Print or Calling; without rights or documents there is no Renumber', () => {
     const { actions } = buildPaletteResults(input({ document: null, canRenumber: false }), env())
     expect(labels(actions)).toEqual(['Hide LX layer', 'Hide SND layer'])
   })
@@ -262,10 +274,13 @@ describe('buildPaletteResults', () => {
     expect(labels(buildPaletteResults(input({ query: 'print' }), env()).actions)).toEqual([
       'Print…',
     ])
+    expect(labels(buildPaletteResults(input({ query: 'calling' }), env()).actions)).toEqual([
+      'Switch to calling mode',
+    ])
     expect(labels(buildPaletteResults(input({ query: 'hide snd' }), env()).actions)).toEqual([
       'Hide SND layer',
     ])
-    expect(buildPaletteResults(input({ query: 'lx 12' }), env()).actions).toHaveLength(4)
+    expect(buildPaletteResults(input({ query: 'lx 12' }), env()).actions).toHaveLength(5)
   })
 
   it('a cue in a department hidden for everyone is not offered', () => {
@@ -284,9 +299,11 @@ describe('buildPaletteResults', () => {
     groups.goTo[1].run()
     expect(e.goToPage).toHaveBeenCalledWith(11)
     const byLabel = (l: string) => groups.actions.find((a) => a.label === l)
+    byLabel('Switch to calling mode')?.run()
     byLabel('Print…')?.run()
     byLabel('Renumber from script order')?.run()
     byLabel('Hide SND layer')?.run()
+    expect(e.toggleCalling).toHaveBeenCalled()
     expect(e.print).toHaveBeenCalled()
     expect(e.renumber).toHaveBeenCalled()
     expect(e.setLayerHidden).toHaveBeenCalledWith('snd', true)
@@ -455,10 +472,12 @@ describe('CommandPalette', () => {
     expect(within(palette()).getAllByText('esc').length).toBeGreaterThan(0)
   })
 
-  it('has no Switch to calling mode (the Calling task adds it)', () => {
+  it('lists Switch to calling mode first under Actions, with its ⇧C key cap', () => {
     render(<Page />)
     act(() => openPalette())
-    expect(within(palette()).queryByText(/calling mode/i)).toBeNull()
+    const row = within(palette()).getByRole('option', { name: /Switch to calling mode/ })
+    expect(row.textContent).toContain('⇧C')
+    expect(within(palette()).getAllByRole('option')[0]).toBe(row)
   })
 })
 

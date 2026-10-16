@@ -12,6 +12,8 @@ import {
 } from 'react'
 import { Button } from '@/components/ui/button'
 import { blobUrl } from '../blobs/fetchBlob'
+import { CallingStatusLine, CallingView } from '../calling/CallingView'
+import { usePageTurn } from '../calling/usePageTurn'
 import { PrintButton, PrintDialog } from '../exports/PrintDialog'
 import { AnnotationHistory, CueHistory } from '../history/HistoryPanel'
 import { AnnotationEditor } from '../markup/AnnotationEditor'
@@ -24,9 +26,10 @@ import { SelectionAnnouncer } from '../markup/SelectionAnnouncer'
 import { clearSelection, useSelection } from '../markup/selection'
 import { ToolStrip } from '../markup/ToolStrip'
 import { UndoRedoButtons } from '../markup/UndoRedoButtons'
-import { useMarkupShortcuts } from '../markup/useMarkupShortcuts'
+import { type CallingKeys, useMarkupShortcuts } from '../markup/useMarkupShortcuts'
 import { useOnline } from '../offline/useOnline'
 import { PaletteDocumentHostRegistration } from '../palette/PaletteDocumentHost'
+import { useCanRenumber } from '../palette/useCanRenumber'
 import { ContextPanel, type PanelTab } from '../panel/ContextPanel'
 import { Note } from '../panel/fields'
 import { type PanelState, type PanelTabId, usePanelState } from '../panel/usePanelState'
@@ -56,7 +59,12 @@ interface DocumentSearch {
   cue?: string
   /** Open the context panel on its Review tab (once: the address drops it). */
   review?: boolean
+  /** Calling mode (DESIGN §9): the page and the strip, nothing to edit. */
+  mode?: 'calling'
 }
+
+/** Why Calling mode takes no edits: the markup session's read-only reason while it is on. */
+const CALLING_READ_ONLY = 'Calling mode is read-only.'
 
 function positiveInt(value: unknown): number | undefined {
   const n = typeof value === 'string' ? Number(value) : value
@@ -69,6 +77,7 @@ export const Route = createFileRoute('/shows/$showId/docs/$docId')({
     p: positiveInt(search.p),
     cue: typeof search.cue === 'string' && search.cue ? search.cue : undefined,
     review: search.review === true || search.review === 'true' ? true : undefined,
+    mode: search.mode === 'calling' ? 'calling' : undefined,
   }),
   component: DocumentPage,
 })
@@ -79,7 +88,8 @@ function versionName(v: DocumentVersionRow): string {
 
 function DocumentPage() {
   const { showId, docId } = Route.useParams()
-  const { v, p, cue, review } = Route.useSearch()
+  const { v, p, cue, review, mode } = Route.useSearch()
+  const calling = mode === 'calling'
   const children = useChildMatches()
   const online = useOnline()
   const canUpload = useCanUpload(showId)
@@ -118,6 +128,11 @@ function DocumentPage() {
     'SELECT * FROM document_versions WHERE document_id = ? ORDER BY version_number',
     [docId],
   )
+  const { data: shows } = useQuery<{ title: string | null }>(
+    'SELECT title FROM shows WHERE id = ?',
+    [showId],
+  )
+  const canRenumber = useCanRenumber(showId)
   const doc = docs[0]
   const version =
     versions.find((x) => x.id === v) ??
@@ -168,6 +183,20 @@ function DocumentPage() {
     [pages],
   )
 
+  // Leaving Calling hands focus back to the control that enters it (on a phone, the menu button).
+  const wasCalling = useRef(false)
+  useEffect(() => {
+    if (wasCalling.current && !calling) {
+      requestAnimationFrame(() =>
+        (
+          document.querySelector<HTMLElement>('[data-calling-toggle]') ??
+          document.querySelector<HTMLElement>('button[aria-label="Document options"]')
+        )?.focus(),
+      )
+    }
+    wasCalling.current = calling
+  }, [calling])
+
   // The URL follows the page in view without adding history entries.
   const onPageChange = useCallback(
     (page: number) => {
@@ -186,6 +215,21 @@ function DocumentPage() {
   if (children.length > 0) return <Outlet />
   if (isLoading) return <p className="p-6 text-ink-2">Loading…</p>
   if (!doc) return <p className="p-6 text-ink-2">Document not found.</p>
+
+  /** Into Calling mode or out of it: the page, its zoom mode and the pages' place stay as they are. */
+  function setCalling(on: boolean) {
+    // The context panel and a selection belong to markup; neither comes back open.
+    panel.onOpenChange(false)
+    clearSelection()
+    // Back from Calling replaces its history entry, so Back goes on to where markup was.
+    void navigate({
+      search: (prev) => ({ ...prev, mode: on ? ('calling' as const) : undefined }),
+      replace: !on,
+      resetScroll: false,
+    })
+  }
+  /** Only a ready version can be called: there is nothing to show before its pages are in. */
+  const inCalling = calling && viewerReady
 
   const controlProps: DocumentControlsProps | null = version
     ? {
@@ -219,6 +263,9 @@ function DocumentPage() {
         thumbnails: { open: thumbsOpen, onToggle: () => setThumbsOpen((open) => !open) },
         print: null,
         onPrint: null,
+        onCalling: null,
+        onGoToPage: null,
+        onRenumber: null,
       }
     : null
   /** The top bar's controls; a ready version adds Print, undo and redo, and (phone) draws its own menu. */
@@ -227,6 +274,18 @@ function DocumentPage() {
       <DocumentControls
         {...controlProps}
         print={ready ? <PrintButton /> : null}
+        onCalling={ready && viewerReady ? () => setCalling(true) : null}
+        onGoToPage={ready ? () => viewer.current?.focusPageInput() : null}
+        onRenumber={
+          ready && canRenumber
+            ? () =>
+                void navigate({
+                  to: '/shows/$showId/cues',
+                  params: { showId },
+                  search: { renumber: true },
+                })
+            : null
+        }
         onPrint={
           ready
             ? (opener) => {
@@ -278,10 +337,16 @@ function DocumentPage() {
           pages={pages}
           snapDefault={doc.snap_to_text}
           viewer={viewer}
-          versionReadOnly={isCurrent ? null : versionReadOnlyReason(version.version_number ?? 0)}
+          versionReadOnly={
+            inCalling
+              ? CALLING_READ_ONLY
+              : isCurrent
+                ? null
+                : versionReadOnlyReason(version.version_number ?? 0)
+          }
           historic={historic}
         >
-          <MarkupKeys />
+          <MarkupKeys calling={{ active: inCalling, onToggle: () => setCalling(!inCalling) }} />
           <PaletteDocumentHostRegistration
             documentId={doc.id}
             versionId={version.id}
@@ -290,6 +355,8 @@ function DocumentPage() {
               printOpener.current = opener
               setPrinting(true)
             }}
+            calling={inCalling}
+            onToggleCalling={() => setCalling(!inCalling)}
           />
           <PresencePublisher
             showId={showId}
@@ -307,7 +374,7 @@ function DocumentPage() {
               })
             }
           />
-          {controls({ history: <UndoRedoButtons /> })}
+          {!inCalling && controls({ history: <UndoRedoButtons /> })}
           {printing && (
             <PrintDialog
               documentId={doc.id}
@@ -335,6 +402,8 @@ function DocumentPage() {
                           printOpener.current = el
                           setPrinting(true)
                         },
+                        // the phone's menu is the only way in: there is no bar button or ⇧C
+                        onCalling: () => setCalling(true),
                       },
                       close,
                       opener,
@@ -349,6 +418,15 @@ function DocumentPage() {
             isCurrent={isCurrent}
             currentId={currentId}
             onSwitchToCurrent={() => void navigate({ search: { review: true } })}
+            calling={
+              inCalling
+                ? {
+                    show: shows[0]?.title ?? '',
+                    document: `${doc.title ?? 'Document'}${version.version_number ? ` v${version.version_number}` : ''}`,
+                    onExit: () => setCalling(false),
+                  }
+                : null
+            }
           />
         </MarkupSessionProvider>
       )}
@@ -367,6 +445,13 @@ interface ScriptPanelProps {
   onSwitchToCurrent: () => void
 }
 
+/** Set while the script is in Calling mode: what its status line says, and how it ends. */
+interface CallingProps {
+  show: string
+  document: string
+  onExit: () => void
+}
+
 /** The viewer with the markup session's tools, status and context panel wired in. */
 function ScriptViewer({
   viewer,
@@ -378,21 +463,35 @@ function ScriptViewer({
   isCurrent,
   currentId,
   onSwitchToCurrent,
+  calling,
   ...props
 }: Omit<
   ComponentProps<typeof Viewer>,
-  'tools' | 'phoneTools' | 'status' | 'ref' | 'side' | 'phoneAction'
+  'tools' | 'phoneTools' | 'status' | 'ref' | 'side' | 'phoneAction' | 'readOnly' | 'calling'
 > &
-  ScriptPanelProps & { viewer: Ref<ViewerHandle> }) {
+  ScriptPanelProps & { viewer: Ref<ViewerHandle>; calling: CallingProps | null }) {
   const session = useMarkupSession()
   const selection = useSelection()
   const active = session.active
+  const stage = usePageTurn((direction) => session.viewer.current?.turnPage(direction))
   return (
     <>
       <SelectionAnnouncer />
       <Viewer
         ref={viewer}
         {...props}
+        readOnly={calling !== null}
+        calling={
+          calling
+            ? {
+                header: <CallingStatusLine show={calling.show} document={calling.document} />,
+                floating: (page) => (
+                  <CallingView page={page} pageCount={props.pages.length} onExit={calling.onExit} />
+                ),
+                stage,
+              }
+            : undefined
+        }
         tools={<ToolStrip />}
         phoneTools={<ToolStrip variant="inline" />}
         status={{
@@ -436,9 +535,9 @@ function FocusCue({ cueId, onDone }: { cueId: string | undefined; onDone: () => 
   return null
 }
 
-/** The markup keys, live while a version is open. */
-function MarkupKeys() {
-  useMarkupShortcuts()
+/** The markup keys, live while a version is open (and, in Calling mode, only its navigation keys). */
+function MarkupKeys({ calling }: { calling: CallingKeys }) {
+  useMarkupShortcuts(calling)
   return null
 }
 

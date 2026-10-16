@@ -1,5 +1,6 @@
 import type { DocHit } from '@binder/core'
 import {
+  type HTMLAttributes,
   type KeyboardEvent,
   type ReactNode,
   type Ref,
@@ -63,6 +64,22 @@ export interface ViewerPage {
   thumb_key: string | null
 }
 
+/** What Calling mode puts around the stage (see `ViewerProps.readOnly`). */
+export interface ViewerCalling {
+  /** The slim status line above the page. */
+  header: ReactNode
+  /** Floats over the foot of the stage; given the page in view (zero-based). */
+  floating: (page: number) => ReactNode
+  /** Pointer handlers for the stage: tap a side third or swipe to turn the page. */
+  stage?: HTMLAttributes<HTMLDivElement>
+}
+
+/** In Calling mode the page is this fraction of the stage's height wide, at most (and never wider than the stage). */
+const CALLING_PAGE_WIDTH = 0.9
+/** Room left under the last page so the floating strip never covers its foot (strip, gap and margin). */
+const CALLING_STRIP_CLEARANCE = 104
+const CALLING_STRIP_CLEARANCE_PHONE = 176
+
 export interface ViewerProps {
   /** The version being shown; its text is what search looks through. */
   versionId: string
@@ -95,6 +112,14 @@ export interface ViewerProps {
   side?: ReactNode
   /** Phone only: floats at the stage's bottom right, e.g. the Place cue button. */
   phoneAction?: ReactNode
+  /**
+   * Calling mode (DESIGN §9): the page and nothing to change. No thumbnails, tool strip, side
+   * panel, status bar or phone menu, no zoom keys, and the viewer covers the screen. Tags stay
+   * focusable; the caller makes the markup session read-only.
+   */
+  readOnly?: boolean
+  /** Calling mode's own chrome; read only together with `readOnly`. */
+  calling?: ViewerCalling
   ref?: Ref<ViewerHandle>
 }
 
@@ -107,6 +132,8 @@ export interface ViewerHandle {
   focusSearch(): void
   /** Scrolls to a page (zero-based). */
   goToPage(index: number): void
+  /** Turns the page: one forward (1) or back (-1) from the page in view; it stops at either end. */
+  turnPage(direction: 1 | -1): void
   /** Opens the Find card on `query` and goes to its first hit (the command palette's "In the script"). */
   searchFor(query: string): void
   /**
@@ -135,6 +162,8 @@ export function Viewer({
   status = { snap: false, activeLayer: null },
   side,
   phoneAction,
+  readOnly = false,
+  calling,
   ref,
 }: ViewerProps) {
   const breakpoint = useBreakpoint()
@@ -163,11 +192,13 @@ export function Viewer({
   const [findSeed, setFindSeed] = useState<{ text: string; n: number } | null>(null)
 
   const widest = useMemo(() => Math.max(...pages.map((p) => p.width)), [pages])
-  const gutter = phone
-    ? PHONE_PAGE_GUTTER
-    : breakpoint === 'tablet'
-      ? TABLET_PAGE_GUTTER
-      : PAGE_GUTTER
+  // Calling has no tool strip beside the page, so the gutters are a thumb's margin at every width.
+  const gutter =
+    phone || readOnly
+      ? PHONE_PAGE_GUTTER
+      : breakpoint === 'tablet'
+        ? TABLET_PAGE_GUTTER
+        : PAGE_GUTTER
   /** The zoom is the fit-width one (opening, Fit width), so a change of stage width re-fits it. */
   const fitted = useRef(true)
   const fit = useCallback(() => {
@@ -175,8 +206,12 @@ export function Viewer({
     // Desktop keeps room for a classic scrollbar. A tablet or phone has overlay ones (the mockups
     // fill the width to the gutters); a classic one on a narrow desktop window is measured.
     const room = breakpoint === 'desktop' ? SCROLLBAR_ROOM : scrollbarWidth()
-    return fitWidthZoom((stage?.clientWidth ?? 0) - fitAllowance(gutter, room), widest)
-  }, [widest, gutter, breakpoint])
+    const fitted = fitWidthZoom((stage?.clientWidth ?? 0) - fitAllowance(gutter, room), widest)
+    // Calling reads at a set size: a page about as wide as the stage is tall, so on a landscape
+    // tablet it does not stretch edge to edge. A portrait tablet and a phone fill the width.
+    if (!readOnly || !stage || stage.clientHeight === 0) return fitted
+    return Math.min(fitted, fitWidthZoom(stage.clientHeight * CALLING_PAGE_WIDTH, widest))
+  }, [widest, gutter, breakpoint, readOnly])
   /** A zoom the user chose: it stays when the stage changes width. */
   const zoomTo = useCallback((next: number | ((z: number | null) => number)) => {
     fitted.current = false
@@ -200,19 +235,49 @@ export function Viewer({
     if (fitted.current) setZoom(fit())
     if (typeof ResizeObserver === 'undefined') return
     let width = stage.clientWidth
+    let height = stage.clientHeight
     const observer = new ResizeObserver(() => {
-      if (stage.clientWidth === width) return
+      if (stage.clientWidth === width && stage.clientHeight === height) return
       width = stage.clientWidth
+      height = stage.clientHeight
       if (fitted.current) setZoom(fit())
     })
     observer.observe(stage)
     return () => observer.disconnect()
   }, [hasZoom, fit])
 
+  // Entering Calling takes the fitted size; leaving it puts back the zoom mode (fit width, or the
+  // zoom the user had chosen) the script was in before.
+  const beforeCalling = useRef<{ zoom: number | null; fitted: boolean } | null>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only entering or leaving Calling runs this
+  useLayoutEffect(() => {
+    if (readOnly) {
+      beforeCalling.current ??= { zoom, fitted: fitted.current }
+      fitted.current = true
+      if (zoom !== null) setZoom(fit())
+    } else if (beforeCalling.current) {
+      const before = beforeCalling.current
+      beforeCalling.current = null
+      fitted.current = before.fitted
+      setZoom(before.fitted || before.zoom === null ? fit() : before.zoom)
+    }
+  }, [readOnly])
+
+  // What opened Calling (a top bar button) is not drawn there: the page takes the keys, as soon as it is up.
+  const pageListUp = Boolean(pdf) && zoom !== null
+  useEffect(() => {
+    if (readOnly && pageListUp) {
+      area.current?.querySelector<HTMLElement>('.page-list')?.focus({ preventScroll: true })
+    }
+  }, [readOnly, pageListUp])
+
   useEffect(() => {
     const timer = setTimeout(() => onPageChange(current + 1), URL_SETTLE_MS)
     return () => clearTimeout(timer)
   }, [current, onPageChange])
+
+  const currentPage = useRef(firstPage)
+  currentPage.current = current
 
   const goTo = useCallback(
     (index: number) => {
@@ -240,6 +305,7 @@ export function Viewer({
         setFindOpen(true)
       },
       goToPage: (index) => goTo(index),
+      turnPage: (direction) => goTo(currentPage.current + direction),
       searchFor(query) {
         if (!searchInput.current) {
           findOpener.current = document.activeElement
@@ -322,6 +388,9 @@ export function Viewer({
   function onKeyDown(e: KeyboardEvent<HTMLElement>) {
     const action = viewerKeyAction(e)
     if (!action || zoom === null) return
+    // Calling reads at a set size, and ↑ ↓ scroll within a page taller than the screen.
+    if (readOnly && action !== 'nextPage' && action !== 'prevPage') return
+    if (readOnly && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return
     e.preventDefault()
     if (action === 'nextPage') goTo(current + 1)
     else if (action === 'prevPage') goTo(current - 1)
@@ -346,8 +415,16 @@ export function Viewer({
   )
 
   return (
-    <div className="viewer flex min-h-0 flex-1 flex-col">
-      {phone && phoneItems && (
+    <div
+      className={cn(
+        'viewer flex min-h-0 flex-1 flex-col',
+        // Calling covers the whole screen, the shell's rail and bars included.
+        readOnly &&
+          'calling-view fixed inset-0 z-40 bg-stage pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]',
+      )}
+    >
+      {readOnly && calling?.header}
+      {phone && phoneItems && !readOnly && (
         <PhoneBarMenu
           page={{ current, count: pages.length }}
           items={phoneItems}
@@ -379,20 +456,28 @@ export function Viewer({
         />
       )}
       <div className="viewer-body relative flex min-h-0 flex-1 max-md:flex-col">
-        {thumbnails && !phone && (
+        {thumbnails && !phone && !readOnly && (
           <ThumbnailRail pages={pages} current={current} onSelect={goTo} peersByPage={onPages} />
         )}
         {/* The stage: the dark the pages sit on. The tool strip floats in its left gutter. */}
         <div
           ref={area}
-          className={cn('viewer-pages relative flex min-h-0 min-w-0 flex-1 bg-stage')}
+          // Calling turns pages by a sideways swipe: only the vertical pan is left to the browser.
+          className={cn(
+            'viewer-pages relative flex min-h-0 min-w-0 flex-1 bg-stage',
+            readOnly && '[&_.page-list]:touch-pan-y',
+          )}
+          {...(readOnly ? calling?.stage : undefined)}
         >
-          {!phone && tools}
+          {!phone && !readOnly && tools}
           {findOpen && (
             <SearchPanel
               // At tablet width the context sheet (360 px) can be open over the stage's right edge:
               // the card sits left of it, never behind it.
-              className="absolute top-3 right-6 z-20 w-[min(20rem,calc(100%-2rem))] max-md:right-4 md:max-[1024px]:right-[calc(360px+1.5rem)]"
+              className={cn(
+                'absolute top-3 right-6 z-20 w-[min(20rem,calc(100%-2rem))] max-md:right-4',
+                !readOnly && 'md:max-[1024px]:right-[calc(360px+1.5rem)]',
+              )}
               inputRef={searchInput}
               seed={findSeed}
               search={documentSearch.search}
@@ -409,7 +494,7 @@ export function Viewer({
               onActivate={(index) => activateHit(hits, index)}
             />
           )}
-          {phone && phoneAction}
+          {phone && !readOnly && phoneAction}
           {pdfStatus === 'error' ? (
             <p role="alert" className="viewer-message p-4 text-t-out">
               {error}
@@ -426,14 +511,27 @@ export function Viewer({
               initialPage={openAt}
               onVisiblePage={setCurrent}
               onKeyDown={onKeyDown}
+              endClearance={
+                readOnly
+                  ? phone
+                    ? CALLING_STRIP_CLEARANCE_PHONE
+                    : CALLING_STRIP_CLEARANCE
+                  : undefined
+              }
             />
           ) : (
             <p className="viewer-message p-4 text-ink-2">Loading PDF…</p>
           )}
+          {readOnly && calling && (
+            // The strip floats over the foot of the page; only the strip itself takes the pointer.
+            <div className="pointer-events-none absolute inset-x-0 bottom-[22px] z-20 flex justify-center px-3 max-md:bottom-[max(30px,env(safe-area-inset-bottom))]">
+              {calling.floating(current)}
+            </div>
+          )}
         </div>
-        {side}
+        {!readOnly && side}
       </div>
-      {!phone && (
+      {!phone && !readOnly && (
         <StatusBar
           page={current + 1}
           pages={pages.length}

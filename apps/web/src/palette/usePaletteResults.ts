@@ -4,12 +4,14 @@ import { useQuery } from '@powersync/react'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import { modLabel } from '@/lib/modKey'
+import { recordJump } from '../calling/callingHistory'
 import { parseAnchor } from '../markup/rows'
 import { useDepartments } from '../markup/useDepartments'
 import { useLayers } from '../markup/useLayers'
 import { useDocumentSearch } from '../search/useDocumentSearch'
 import { type MatchableCue, type MatchableDepartment, matchCues, parseCueQuery } from './matchCues'
 import { paletteOpener, usePaletteHost } from './paletteState'
+import { useCanRenumber } from './useCanRenumber'
 
 export type PaletteIcon = 'cue' | 'page' | 'search' | 'print' | 'cues' | 'eye' | 'eye-off'
 
@@ -67,8 +69,8 @@ export interface PaletteInput {
   departments: readonly PaletteDepartment[]
   /** Department ids whose layer this user has hidden. */
   hiddenLayers: ReadonlySet<string>
-  /** The open document, or null outside one. */
-  document: { pageCount: number } | null
+  /** The open document, or null outside one. `calling`: it is in Calling mode (DESIGN §9). */
+  document: { pageCount: number; calling?: boolean } | null
   /** How many lines of the open document contain the query, once the search has answered. */
   scriptLines: number | null
   canRenumber: boolean
@@ -79,6 +81,7 @@ export interface PaletteEnv {
   goToPage(index: number): void
   searchScript(query: string): void
   print(): void
+  toggleCalling(): void
   renumber(): void
   setLayerHidden(departmentId: string, hidden: boolean): void
 }
@@ -215,6 +218,15 @@ export function buildPaletteResults(input: PaletteInput, env: PaletteEnv): Palet
 
   const actions: Result[] = []
   if (doc) {
+    const label = doc.calling ? 'Switch to markup mode' : 'Switch to calling mode'
+    actions.push({
+      id: 'action:calling',
+      label,
+      hint: '⇧C',
+      icon: 'page',
+      parts: [{ text: label }],
+      run: env.toggleCalling,
+    })
     actions.push({
       id: 'action:print',
       label: 'Print…',
@@ -281,10 +293,6 @@ export function usePaletteResults(
     'SELECT id, department_id, major, minor, label, anchor FROM cues WHERE show_id = ?',
     [showId],
   )
-  const { data: documentRows } = useQuery<{ n: number }>(
-    'SELECT COUNT(*) AS n FROM documents WHERE show_id = ?',
-    [showId],
-  )
 
   const cues = useMemo<PaletteCue[]>(
     () =>
@@ -349,8 +357,7 @@ export function usePaletteResults(
     }
     return ids
   }, [departments, layers.state.hidden])
-  const canRenumber =
-    (documentRows[0]?.n ?? 0) > 0 && layers.editable.some((l) => l.kind === 'department')
+  const canRenumber = useCanRenumber(showId)
 
   const store = layers.store
   const env: PaletteEnv = {
@@ -359,13 +366,29 @@ export function usePaletteResults(
       // A cue on a layer you have hidden would not be drawn, so there would be nothing to select.
       const key = layerKey({ kind: 'department', id: cue.departmentId })
       if (store.get().hidden.includes(key)) store.setHidden(key, false)
+      const department = departments.find((d) => d.id === cue.departmentId)
+      const number = formatCueNumber(cue.major, cue.minor, department?.numberFormat ?? 'decimal')
+      recordJump({
+        kind: 'cue',
+        cueId: cue.id,
+        label: `${department?.code ?? ''} ${number}`.trim(),
+      })
       void navigate({
         to: '/shows/$showId/docs/$docId',
         params: { showId, docId: cue.anchor.documentId },
-        search: { cue: cue.id, p: cue.anchor.pageIndex + 1 },
+        // A jump made while calling stays in Calling mode.
+        search: {
+          cue: cue.id,
+          p: cue.anchor.pageIndex + 1,
+          ...(host?.calling ? { mode: 'calling' as const } : {}),
+        },
       })
     },
-    goToPage: (index) => document?.goToPage(index),
+    goToPage: (index) => {
+      recordJump({ kind: 'page', index, label: `p.${index + 1}` })
+      document?.goToPage(index)
+    },
+    toggleCalling: () => document?.toggleCalling(),
     searchScript: (q) => document?.searchFor(q),
     print: () => document?.openPrint(paletteOpener()),
     renumber: () =>
@@ -384,7 +407,7 @@ export function usePaletteResults(
       cues,
       departments,
       hiddenLayers,
-      document: document ? { pageCount: document.pageCount } : null,
+      document: document ? { pageCount: document.pageCount, calling: document.calling } : null,
       scriptLines: lines && lines.query === text ? lines.count : null,
       canRenumber,
     },

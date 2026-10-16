@@ -43,6 +43,8 @@ export interface PageListProps {
   gutter?: number
   /** Zero-based page to open at. Read on mount only. */
   initialPage?: number
+  /** Room under the last page, in CSS pixels; a page's own top clearance by default. */
+  endClearance?: number
   /** Called with the zero-based page at the top of the view whenever it changes. */
   onVisiblePage: (index: number) => void
   onKeyDown?: KeyboardEventHandler<HTMLElement>
@@ -64,6 +66,7 @@ export function PageList({
   initialPage = 0,
   onVisiblePage,
   onKeyDown,
+  endClearance = SLOT_PADDING_TOP,
   ref,
 }: PageListProps) {
   const scroller = useRef<HTMLElement>(null)
@@ -83,7 +86,7 @@ export function PageList({
     getItemKey: (i) => pages[i].id,
     initialOffset: () => startOf(Math.min(initialPage, pages.length - 1), zoom),
     // the last page keeps the clearance the first one has above it
-    paddingEnd: SLOT_PADDING_TOP,
+    paddingEnd: endClearance,
     useFlushSync: false,
   })
 

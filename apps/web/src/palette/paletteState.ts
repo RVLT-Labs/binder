@@ -64,6 +64,10 @@ export interface PaletteDocumentHost {
   searchFor(query: string): void
   /** Opens the print dialog; focus goes back to `opener` when it closes. */
   openPrint(opener: HTMLElement | null): void
+  /** Whether the document is in Calling mode (DESIGN §9). */
+  calling: boolean
+  /** Switches the document to Calling mode, or back to markup. */
+  toggleCalling(): void
 }
 
 let host: PaletteDocumentHost | null = null

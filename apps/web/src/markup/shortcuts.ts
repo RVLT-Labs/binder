@@ -22,6 +22,8 @@ export type ShortcutAction =
   | { kind: 'deselect' }
   | { kind: 'undo' }
   | { kind: 'redo' }
+  | { kind: 'toggleCalling' }
+  | { kind: 'turnPage'; direction: 1 | -1 }
 
 export interface ShortcutKey {
   key: string
@@ -33,11 +35,27 @@ export interface ShortcutKey {
   editableTarget: boolean
 }
 
-/** Maps a key press to an action. In an editable target only Escape counts. */
-export function resolveShortcut(e: ShortcutKey): ShortcutAction | null {
+/**
+ * Maps a key press to an action. In an editable target only Escape counts. In Calling mode
+ * (`calling`) nothing can change, so only the navigation keys act: ←/→ turn the page, `g` opens
+ * the go-to keypad (as `jumpToPage`), ⇧C leaves, and Escape still deselects.
+ */
+export function resolveShortcut(
+  e: ShortcutKey,
+  { calling = false }: { calling?: boolean } = {},
+): ShortcutAction | null {
   if (e.key === 'Escape') return { kind: 'deselect' }
   if (e.editableTarget) return null
   const mod = e.metaKey || e.ctrlKey
+  // ⇧C switches between markup and Calling. It is not `c` (place a cue) with Shift held.
+  if (!mod && !e.altKey && e.shiftKey && e.key.toLowerCase() === 'c')
+    return { kind: 'toggleCalling' }
+  if (calling) {
+    if (mod || e.altKey) return null
+    if (e.key === 'ArrowRight') return { kind: 'turnPage', direction: 1 }
+    if (e.key === 'ArrowLeft') return { kind: 'turnPage', direction: -1 }
+    return e.key.toLowerCase() === 'g' ? { kind: 'jumpToPage' } : null
+  }
   if (mod && !e.altKey) {
     if (e.key.toLowerCase() === 'z') return e.shiftKey ? { kind: 'redo' } : { kind: 'undo' }
     return null

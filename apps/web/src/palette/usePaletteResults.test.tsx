@@ -44,6 +44,8 @@ beforeEach(() => {
     goToPage: vi.fn(),
     searchFor: h.openSearch,
     openPrint: vi.fn(),
+    calling: false,
+    toggleCalling: vi.fn(),
   })
 })
 afterEach(() => {

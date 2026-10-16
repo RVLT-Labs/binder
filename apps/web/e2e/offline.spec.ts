@@ -62,6 +62,27 @@ test('make available offline, go offline, reload, view and search', async ({ pag
   await expect(sheet.locator('svg rect.search-hit').first()).toBeVisible()
   await expect.poll(() => hasInk(sheet.locator('canvas')), { timeout: 15_000 }).toBe(true)
 
+  // Calling mode works from the same cache: the page, the strip and the keypad, offline, and the
+  // status line says so as a calm state rather than an error.
+  await page.getByRole('button', { name: 'Calling mode' }).click()
+  const strip = page.getByRole('region', { name: 'Calling', exact: true })
+  await expect(strip).toContainText(`p.${pageNumber} / ${PAGES}`)
+  await expect(page.getByRole('region', { name: 'Calling status' })).toContainText(
+    'offline, cached',
+  )
+  await expect(toolbar).toHaveCount(0)
+  await expect.poll(() => hasInk(sheet.locator('canvas')), { timeout: 15_000 }).toBe(true)
+  await page.keyboard.press('g')
+  const keypad = page.getByRole('dialog', { name: 'Go to' })
+  await keypad.getByRole('radio', { name: 'Page' }).click()
+  await keypad.getByRole('button', { name: '1', exact: true }).click()
+  await keypad.getByRole('button', { name: 'Go', exact: true }).click()
+  await expect(strip).toContainText(`p.1 / ${PAGES}`)
+  const first = page.locator('[data-page-index="0"] canvas')
+  await expect.poll(() => hasInk(first), { timeout: 15_000 }).toBe(true)
+  await page.getByRole('button', { name: 'Exit' }).click()
+  await expect(toolbar).toContainText(`1 / ${PAGES}`)
+
   // Still no presence socket, no presence UI, and no error shown for its absence.
   expect(sockets).toEqual([])
   await expect(page.getByRole('group', { name: /People on page/ })).toHaveCount(0)

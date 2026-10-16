@@ -142,7 +142,9 @@ test('uploading a revision re-anchors, the header counts items to review, accept
     await expect(reviewTab).toHaveText('Review')
     await expect(reviewTab.locator('span')).toHaveCount(0)
 
-    await owner.getByRole('button', { name: 'Upload revision' }).click()
+    // Upload revision lives in the top bar's "…" menu now.
+    await owner.getByRole('button', { name: 'Document options' }).click()
+    await owner.getByRole('menuitem', { name: 'Upload revision' }).click()
     const dialog = owner.getByRole('dialog', { name: 'Upload revision' })
     await dialog.getByLabel('PDF file').setInputFiles(FIXTURES.revisedShortCutPdf)
     await dialog.getByLabel('Version label').fill('V2 cuts')

@@ -1,7 +1,17 @@
 import { PanelLeft, PanelRight } from 'lucide-react'
-import type { ReactNode } from 'react'
-import { PrintIcon } from '@/components/icons'
+import { type ReactNode, useRef } from 'react'
+import { MoreIcon, PrintIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Kbd } from '@/components/ui/kbd'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { modLabel } from '@/lib/modKey'
+import { openPalette } from '../palette/paletteState'
 import { BinderAvatars } from '../presence/Avatars'
 import { TopBarActions, TopBarChip } from '../shell/TopBarSlots'
 import { useBreakpoint } from '../shell/useBreakpoint'
@@ -31,7 +41,15 @@ export interface DocumentControlsProps {
   onPrint: ((opener: HTMLElement) => void) | null
   /** Undo and redo, which are the markup session's: only a ready version has them. */
   history?: ReactNode
+  /** Switches to Calling mode (DESIGN §9); only a ready version has it. */
+  onCalling: (() => void) | null
+  /** The "…" menu's rows for a ready version: Go to page… (focuses the page box) and Renumber (null without rights). */
+  onGoToPage: (() => void) | null
+  onRenumber: (() => void) | null
 }
+
+/** Rows of the "…" menu: 32 px where there is a pointer. */
+const ITEM = 'min-h-8'
 
 /** The document's own actions as the phone's menu lists them, 44 px each. */
 export function documentMenuItems(
@@ -39,7 +57,7 @@ export function documentMenuItems(
   close: () => void,
   opener: () => HTMLElement | null,
 ) {
-  const { panel, onUploadRevision, onPrint } = props
+  const { panel, onUploadRevision, onPrint, onCalling } = props
   const row = 'w-full justify-start'
   return (
     <div className="flex flex-col gap-2">
@@ -102,33 +120,53 @@ export function documentMenuItems(
           Print
         </Button>
       )}
+      {onCalling && (
+        <Button
+          type="button"
+          variant="line"
+          className={row}
+          onClick={() => {
+            close()
+            onCalling()
+          }}
+        >
+          Calling mode
+        </Button>
+      )}
     </div>
   )
 }
 
 /**
  * What the script screen puts in the top bar (DESIGN 6.2): the version chip after the crumbs, then
- * at the right who else is here, undo and redo, Upload revision and Print, all the mockup's small
- * buttons (the review count is the context panel's Review tab now; a tablet gets a toggle for the
- * panel's sheet). At phone the bar is the mockup's: the title, the page position and
+ * at the right who else is here, undo and redo, Print, Calling mode and a ghost "…" menu (Upload
+ * revision, the command palette, Go to page, Renumber), all the mockup's small buttons (the review
+ * count is the context panel's Review tab now; a tablet gets a toggle for the panel's sheet). At phone the bar is the mockup's: the title, the page position and
  * one menu (`PhoneBarMenu`); while a version is not ready there is no viewer to add the page, so
  * the menu holds the document's actions alone. With a viewer, the viewer draws the menu itself.
  */
 export function DocumentControls(props: DocumentControlsProps & { viewerOwnsPhoneBar?: boolean }) {
-  const { version, panel, onUploadRevision, thumbnails, print, history, viewerOwnsPhoneBar } = props
+  const {
+    version,
+    panel,
+    onUploadRevision,
+    thumbnails,
+    print,
+    history,
+    viewerOwnsPhoneBar,
+    onCalling,
+    onGoToPage,
+    onRenumber,
+  } = props
   const breakpoint = useBreakpoint()
-
-  const upload = onUploadRevision && (
-    <Button
-      type="button"
-      variant="line"
-      size="sm"
-      className="shrink-0"
-      onClick={(e) => onUploadRevision(e.currentTarget)}
-    >
-      Upload revision
-    </Button>
-  )
+  /** The "…" button, which an action that opens a dialog hands focus back to. */
+  const moreTrigger = useRef<HTMLButtonElement>(null)
+  /**
+   * What a "…" row does once the menu has closed. A menu hands focus back to its button as it
+   * closes, so a row that moves focus (Go to page…) or opens an overlay that remembers where it
+   * came from (the palette) runs then, not on select.
+   */
+  const afterClose = useRef<(() => void) | null>(null)
 
   if (breakpoint === 'phone') {
     if (viewerOwnsPhoneBar) return null
@@ -167,8 +205,93 @@ export function DocumentControls(props: DocumentControlsProps & { viewerOwnsPhon
           </Button>
         )}
         {history}
-        {upload}
         {print}
+        {onCalling && (
+          <TooltipProvider delayDuration={500} skipDelayDuration={150}>
+            <Tooltip disableHoverableContent>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="line"
+                  size="sm"
+                  className="shrink-0"
+                  data-calling-toggle
+                  onClick={onCalling}
+                >
+                  Calling mode
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="flex items-center gap-2">
+                Calling mode
+                <Kbd>⇧C</Kbd>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              ref={moreTrigger}
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label="Document options"
+              className="hover:bg-elev hover:text-ink data-[state=open]:bg-card data-[state=open]:text-ink"
+            >
+              <MoreIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="min-w-60"
+            onCloseAutoFocus={(e) => {
+              const run = afterClose.current
+              if (!run) return
+              afterClose.current = null
+              e.preventDefault()
+              run()
+            }}
+          >
+            {onUploadRevision && (
+              <DropdownMenuItem
+                className={ITEM}
+                onSelect={() => {
+                  if (moreTrigger.current) onUploadRevision(moreTrigger.current)
+                }}
+              >
+                Upload revision
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              className={ITEM}
+              onSelect={() => {
+                afterClose.current = () => {
+                  moreTrigger.current?.focus()
+                  openPalette()
+                }
+              }}
+            >
+              Command palette…
+              <Kbd className="ml-auto">{modLabel('K')}</Kbd>
+            </DropdownMenuItem>
+            {onGoToPage && (
+              <DropdownMenuItem
+                className={ITEM}
+                onSelect={() => {
+                  afterClose.current = onGoToPage
+                }}
+              >
+                Go to page…
+                <Kbd className="ml-auto">g</Kbd>
+              </DropdownMenuItem>
+            )}
+            {onRenumber && (
+              <DropdownMenuItem className={ITEM} onSelect={onRenumber}>
+                Renumber from script order
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </TopBarActions>
     </>
   )

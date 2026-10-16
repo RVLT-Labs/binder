@@ -12,17 +12,23 @@ export function PaletteDocumentHostRegistration({
   versionId,
   pageCount,
   onPrint,
+  calling = false,
+  onToggleCalling,
 }: {
   documentId: string
   versionId: string
   pageCount: number
   /** Opens the page's print dialog; focus returns to `opener` when it closes. */
   onPrint: (opener: HTMLElement | null) => void
+  /** The document is in Calling mode: the palette's switch then offers the way back. */
+  calling?: boolean
+  /** Switches between markup and Calling mode. */
+  onToggleCalling?: () => void
 }) {
   const session = useMarkupSession()
   // The session changes with every edit; the registration stays put and reads what is current.
-  const latest = useRef({ session, onPrint })
-  latest.current = { session, onPrint }
+  const latest = useRef({ session, onPrint, onToggleCalling })
+  latest.current = { session, onPrint, onToggleCalling }
 
   useEffect(
     () =>
@@ -33,8 +39,10 @@ export function PaletteDocumentHostRegistration({
         goToPage: (index) => latest.current.session.viewer.current?.goToPage(index),
         searchFor: (query) => latest.current.session.viewer.current?.searchFor(query),
         openPrint: (opener) => latest.current.onPrint(opener),
+        calling,
+        toggleCalling: () => latest.current.onToggleCalling?.(),
       }),
-    [documentId, versionId, pageCount],
+    [documentId, versionId, pageCount, calling],
   )
 
   useEffect(() => {
