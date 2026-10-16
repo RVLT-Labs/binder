@@ -309,6 +309,8 @@ function fakeDeps(over: Partial<SignOutDeps>): SignOutDeps {
     signOut: vi.fn(async () => ({ error: null })),
     clearLocalData: vi.fn(async () => {}),
     clearOutbox: vi.fn(async () => {}),
+    clearOfflinePrefs: vi.fn(async () => {}),
+    stopOfflineRunner: vi.fn(async () => {}),
     clearCache: vi.fn(),
     toLogin: vi.fn(async () => {}),
     pendingUploads: vi.fn(async () => 0),
