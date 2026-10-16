@@ -157,7 +157,8 @@ describe('buildDocumentEntries', () => {
       kind: 'failed',
       code: 'low_resolution',
       pill: 'couldn’t read text',
-      reason: 'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan.',
+      reason:
+        'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan. Or remove this upload, then upload the file again as a new document with Text recognition set to Never, and mark it up by position.',
       detail: 'No text could be read from the document (found 0 text characters)',
       canRetryInPlace: false,
     })

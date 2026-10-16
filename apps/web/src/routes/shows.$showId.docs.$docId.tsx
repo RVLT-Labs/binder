@@ -16,6 +16,7 @@ import { blobUrl } from '../blobs/fetchBlob'
 import { CallingStatusLine, CallingView } from '../calling/CallingView'
 import { ModeAnnouncer } from '../calling/ModeAnnouncer'
 import { usePageTurn } from '../calling/usePageTurn'
+import { useWakeLock } from '../calling/useWakeLock'
 import { PrintButton, PrintDialog } from '../exports/PrintDialog'
 import { AnnotationHistory, CueHistory } from '../history/HistoryPanel'
 import { AnnotationEditor } from '../markup/AnnotationEditor'
@@ -32,7 +33,7 @@ import { UndoRedoButtons } from '../markup/UndoRedoButtons'
 import { type CallingKeys, useMarkupShortcuts } from '../markup/useMarkupShortcuts'
 import { useOnline } from '../offline/useOnline'
 import { PaletteDocumentHostRegistration } from '../palette/PaletteDocumentHost'
-import { useCanRenumber } from '../palette/useCanRenumber'
+import { useRenumber } from '../palette/useCanRenumber'
 import { ContextPanel, type PanelTab } from '../panel/ContextPanel'
 import { Note } from '../panel/fields'
 import { type PanelState, type PanelTabId, usePanelState } from '../panel/usePanelState'
@@ -52,6 +53,7 @@ import {
   type DocumentControlsProps,
   documentMenuItems,
 } from '../viewer/DocumentControls'
+import { VersionStatus } from '../viewer/VersionStatus'
 import { Viewer, type ViewerHandle } from '../viewer/Viewer'
 
 interface DocumentSearch {
@@ -85,10 +87,6 @@ export const Route = createFileRoute('/shows/$showId/docs/$docId')({
   }),
   component: DocumentPage,
 })
-
-function versionName(v: DocumentVersionRow): string {
-  return `Version ${v.version_number}${v.label ? ` · ${v.label}` : ''}`
-}
 
 function DocumentPage() {
   const { showId, docId } = Route.useParams()
@@ -136,7 +134,7 @@ function DocumentPage() {
     'SELECT title FROM shows WHERE id = ?',
     [showId],
   )
-  const canRenumber = useCanRenumber(showId)
+  const { can: canRenumber, search: renumberSearch } = useRenumber(showId)
   const doc = docs[0]
   const version =
     versions.find((x) => x.id === v) ??
@@ -159,6 +157,8 @@ function DocumentPage() {
     setShellInert(inCalling)
     return () => setShellInert(false)
   }, [inCalling])
+  // A long scene must not dim and lock the tablet while the caller is working from the page.
+  useWakeLock(inCalling)
   // A version that is not current is drawn where its rows were: from the server when online, else
   // from the device's rows that still point at it.
   const { anchors: remoteAnchors, loading: anchorsLoading } = useVersionAnchors(
@@ -293,7 +293,7 @@ function DocumentPage() {
                 void navigate({
                   to: '/shows/$showId/cues',
                   params: { showId },
-                  search: { renumber: true },
+                  search: renumberSearch,
                 })
             : null
         }
@@ -716,20 +716,5 @@ function ScriptPanel({
         return document.querySelector<HTMLElement>('button[aria-label="Document options"]')
       }}
     />
-  )
-}
-
-function VersionStatus({ version }: { version: DocumentVersionRow }) {
-  const name = versionName(version)
-  const text =
-    version.status === 'failed'
-      ? `${name} failed to process: ${version.error ?? 'unknown error'}`
-      : version.status === 'processing'
-        ? `${name} is processing…`
-        : `${name} is queued for processing.`
-  return (
-    <p role="status" className="viewer-message p-6 text-ink-2" data-status={version.status}>
-      {text}
-    </p>
   )
 }

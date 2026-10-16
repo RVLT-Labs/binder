@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vite
 import { searchableBlobKey } from '../src/blob/keys'
 import { AppError } from '../src/errors'
 import { markVersionFailed, processDocumentVersion } from '../src/processing/documentJob'
+import { processPage } from '../src/processing/pageJob'
 import type { ProcessingDeps } from '../src/processing/types'
 import {
   addDocumentVersion,
@@ -286,6 +287,49 @@ describe('cancelVersionProcessing', () => {
       expect(deps.jobs.enqueuedPages).toHaveLength(0)
     },
     60_000,
+  )
+})
+
+describe('a stale page job', () => {
+  test.skipIf(skip)(
+    'finishing after a cancel and a retry does not mark the version ready, and the new run completes',
+    async () => {
+      const { version } = await upload('stale page job')
+      const first = processingDeps()
+      await processDocumentVersion(first, version.id)
+      const stale = first.jobs.enqueuedPages[0] as string
+      expect(stale).toBeDefined()
+
+      // The page job is mid-render when the user cancels and then retries; the retry's document
+      // job has set the version processing but has not written any page rows yet.
+      const interleave = async () => {
+        await cancelVersionProcessing(db(), s.ownerActor, { versionId: version.id })
+        await retryVersion(db(), blobs(), new RecordingJobs(), s.ownerActor, {
+          versionId: version.id,
+        })
+        await setStatus(version.id, 'processing')
+        return null
+      }
+      vi.spyOn(blobs(), 'exists').mockImplementationOnce(async () => {
+        await interleave()
+        return false
+      })
+      vi.spyOn(blobs(), 'get').mockImplementationOnce(async () => interleave())
+      await processPage(first, stale)
+
+      const mid = await loadVersion(version.id)
+      expect(mid).toMatchObject({ status: 'processing', pageCount: null })
+      expect(await loadPages(version.id)).toHaveLength(0)
+
+      vi.restoreAllMocks()
+      const second = processingDeps()
+      await processVersion(second, version.id)
+      const done = await loadVersion(version.id)
+      expect(done?.status).toBe('ready')
+      expect(done?.pageCount).toBeGreaterThan(0)
+      expect(done?.searchableKey).not.toBeNull()
+    },
+    120_000,
   )
 })
 

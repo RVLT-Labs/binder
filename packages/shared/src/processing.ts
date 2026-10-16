@@ -37,6 +37,15 @@ export interface FailureDescription {
 
 type Copy = { title: string; message: (params: FailureParams) => string; retryable: boolean }
 
+/**
+ * The way through for a file with no readable text (it is a scan, handwriting or outlined type):
+ * Binder can still mark it up by position. A new version cannot change the document's text
+ * recognition, so the path is to remove the failed upload and upload the file again as a document
+ * with it off. Removing a document's only version removes the document.
+ */
+const MARK_BY_POSITION =
+  ' Or remove this upload, then upload the file again as a new document with Text recognition set to Never, and mark it up by position.'
+
 const COPY: Record<FailureCode, Copy> = {
   unreadable: {
     title: 'couldn’t read file',
@@ -52,15 +61,17 @@ const COPY: Record<FailureCode, Copy> = {
   no_text: {
     title: 'couldn’t read text',
     message: () =>
-      'No text could be read from any page, so there is nothing to search or anchor cues to. Check it is the script, or upload a clearer scan.',
+      'No text could be read from any page, so there is nothing to search or anchor cues to. Check it is the script, or upload a clearer scan.' +
+      MARK_BY_POSITION,
     retryable: false,
   },
   low_resolution: {
     title: 'couldn’t read text',
     message: ({ dpi }) =>
       typeof dpi === 'number' && Number.isFinite(dpi)
-        ? `Scanned at ${Math.round(dpi)} dpi, so there is no text to search or anchor to. Try a 300 dpi scan.`
-        : 'Scanned at a low resolution, so there is no text to search or anchor to. Try a 300 dpi scan.',
+        ? `Scanned at ${Math.round(dpi)} dpi, so there is no text to search or anchor to. Try a 300 dpi scan.${MARK_BY_POSITION}`
+        : 'Scanned at a low resolution, so there is no text to search or anchor to. Try a 300 dpi scan.' +
+          MARK_BY_POSITION,
     retryable: false,
   },
   timeout: {

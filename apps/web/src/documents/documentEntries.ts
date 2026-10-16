@@ -135,8 +135,8 @@ export function splitFailure(error: string | null): { reason: string; detail: st
 }
 
 /** The failed entry's words: from the code when there is one, else the legacy sentence split from the tool output. */
-function failureWords(
-  v: VersionSource,
+export function failureWords(
+  v: Pick<VersionSource, 'error' | 'failure_code' | 'failure_dpi'>,
 ): Pick<FailedEntry, 'code' | 'pill' | 'reason' | 'detail' | 'canRetryInPlace'> {
   const split = splitFailure(v.error)
   if (!v.failure_code) {

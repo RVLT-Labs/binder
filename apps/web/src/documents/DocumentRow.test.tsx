@@ -71,7 +71,8 @@ const failed = (over: Partial<FailedEntry>): FailedEntry => ({
 const lowResolution = failed({
   code: 'low_resolution',
   pill: 'couldn’t read text',
-  reason: 'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan.',
+  reason:
+    'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan. Or remove this upload, then upload the file again as a new document with Text recognition set to Never, and mark it up by position.',
   canRetryInPlace: false,
 })
 
@@ -144,7 +145,7 @@ test('failed low_resolution row shows the mockup copy with 72 dpi in mono', asyn
   expect(item.querySelector('.version-status')?.textContent).toBe('couldn’t read text')
   const copy = within(item).getByText(/Scanned at/)
   expect(copy.textContent).toBe(
-    'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan.',
+    'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan. Or remove this upload, then upload the file again as a new document with Text recognition set to Never, and mark it up by position.',
   )
   expect([...copy.querySelectorAll('.font-mono')].map((m) => m.textContent)).toEqual([
     '72 dpi',
