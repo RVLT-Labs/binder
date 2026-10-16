@@ -6,6 +6,11 @@ import {
   layerKey,
   type NumberFormat,
   newId,
+  normalisePageRange,
+  type PrintOptions,
+  parsePageRange,
+  scriptExportFilename,
+  validateExportFilename,
   type WordLayer,
 } from '@binder/shared'
 import { blobUrl, fetchBlob } from '../blobs/fetchBlob'
@@ -25,6 +30,18 @@ export interface PrintInput {
   versionId: string
   /** The layers to print: non-hidden departments, and the user's own personal layer. */
   layers: LayerRef[]
+  /** Which pages, which paper, and what to include; absent means every page as it is, everything on. */
+  options?: PrintOptions
+  /** The file name the user typed; absent means the default slug name. */
+  filename?: string
+}
+
+/** The options of an untouched print: all pages, left as they are, nothing left out. */
+export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
+  pages: 'all',
+  includeStandbyWarn: true,
+  includeAnnotations: true,
+  includeCueNotes: true,
 }
 
 export interface PrintResult {
@@ -154,8 +171,12 @@ export async function runPrintExport(
     'SELECT title FROM documents WHERE id = ? AND show_id = ?',
     [input.documentId, ctx.showId],
   )
-  const [version] = await db.getAll<{ version_number: number; searchable_key: string | null }>(
-    'SELECT version_number, searchable_key FROM document_versions WHERE id = ? AND document_id = ?',
+  const [version] = await db.getAll<{
+    version_number: number
+    searchable_key: string | null
+    page_count: number | null
+  }>(
+    'SELECT version_number, searchable_key, page_count FROM document_versions WHERE id = ? AND document_id = ?',
     [input.versionId, input.documentId],
   )
   if (!show || !document || !version) throw new Error('This document is not on this device yet.')
@@ -202,6 +223,25 @@ export async function runPrintExport(
     ),
   ])
 
+  // The range and the name are checked before any heavy work (the PDF, the word layers), so a bad one costs nothing.
+  const options = { ...DEFAULT_PRINT_OPTIONS, ...input.options }
+  const pageCount = version.page_count ?? pageRows.length
+  let keptPages: number[] | undefined
+  if (options.pages !== 'all') {
+    const range = parsePageRange(options.pages, pageCount)
+    if (!range.ok) throw new Error(range.message)
+    keptPages = range.indices
+    options.pages = normalisePageRange(options.pages) ?? options.pages
+  }
+  let typedName: string | undefined
+  if (input.filename !== undefined) {
+    const checked = validateExportFilename(input.filename)
+    if (!checked.ok) throw new Error(checked.reason)
+    typedName = checked.name
+  }
+  const printed = keptPages ? new Set(keptPages) : null
+  const onPrintedPage = (pageIndex: number) => printed === null || printed.has(pageIndex)
+
   const cues: Array<CueFields & { id: string }> = []
   for (const r of cueRows) {
     if (!r.department_id || !CUE_TYPES.includes(r.type ?? '')) continue
@@ -228,10 +268,11 @@ export async function runPrintExport(
   // Without them a highlight prints as its quote and a cue's trigger as a tick.
   const picked = new Set(layers.map(layerKey))
   const wordPages = new Set(
-    annotations
+    (options.includeAnnotations ? annotations : [])
       .filter(
         (a) =>
           a.type === 'highlight' &&
+          onPrintedPage(a.anchor.pageIndex) &&
           a.anchor.documentVersionId === input.versionId &&
           picked.has(layerKey({ kind: a.layerKind, id: a.layerId })),
       )
@@ -242,6 +283,8 @@ export async function runPrintExport(
     // tags keep out of.
     if (
       c.anchor?.documentVersionId === input.versionId &&
+      onPrintedPage(c.anchor.pageIndex) &&
+      (options.includeStandbyWarn || c.type === 'go') &&
       picked.has(layerKey({ kind: 'department', id: c.departmentId }))
     )
       wordPages.add(c.anchor.pageIndex)
@@ -280,17 +323,37 @@ export async function runPrintExport(
     })),
     settings: parseRecord(show.settings),
     wordLayers,
+    include: {
+      standbyWarn: options.includeStandbyWarn,
+      annotations: options.includeAnnotations,
+      cueNotes: options.includeCueNotes,
+    },
   })
   const createdAt = fx.now()
-  const bytes = await stampScript(pdf, items, {
-    showTitle: show.title,
-    documentLabel,
-    layerLabel,
-    binderVersion: null,
-    exportId: id,
-    date: createdAt,
-  })
-  const filename = exportFilename([show.title, documentLabel, layerLabel])
+  const bytes = await stampScript(
+    pdf,
+    items,
+    {
+      showTitle: show.title,
+      documentLabel,
+      layerLabel,
+      binderVersion: null,
+      exportId: id,
+      date: createdAt,
+    },
+    {
+      ...(keptPages ? { pages: keptPages } : {}),
+      ...(options.paper ? { paper: options.paper } : {}),
+    },
+  )
+  const filename =
+    typedName ??
+    scriptExportFilename({
+      show: show.title,
+      document: document.title,
+      versionNumber: version.version_number,
+      layerLabel,
+    })
 
   // The file is the user's the moment it exists, online or not.
   fx.download(filename, bytes)
@@ -305,6 +368,13 @@ export async function runPrintExport(
         filename,
         layerSelection: layers,
         createdAt: createdAt.toISOString(),
+        options: {
+          pages: options.pages,
+          ...(options.paper ? { paper: options.paper } : {}),
+          includeStandbyWarn: options.includeStandbyWarn,
+          includeAnnotations: options.includeAnnotations,
+          includeCueNotes: options.includeCueNotes,
+        },
       },
       bytes,
       contentType: 'application/pdf',

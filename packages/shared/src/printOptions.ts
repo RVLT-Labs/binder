@@ -112,6 +112,32 @@ export function validateExportFilename(raw: string): FilenameResult {
   return { ok: true, name: `${stem}.pdf` }
 }
 
+const EDGE_JUNK = /^[\s.]+|[\s.]+$/g
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are the point
+const UNSAFE_CHARS_GLOBAL = /[/\\:*?"<>|\u0000-\u001f\u007f]/g
+
+/**
+ * Turns any text into a script file name `validateExportFilename` accepts, changing as little as
+ * possible: forbidden characters become a hyphen, spaces and dots are stripped from both ends (also
+ * before the extension), a reserved Windows name gets `-export`, and the name is cut so it is at
+ * most 200 characters with `.pdf`. Used on names queued by older code, whose own rules were looser.
+ */
+export function sanitizeExportFilename(raw: string): string {
+  const room = MAX_FILENAME - '.pdf'.length
+  let stem = raw
+    .replace(UNSAFE_CHARS_GLOBAL, '-')
+    .replace(/\.pdf$/i, '')
+    .replace(EDGE_JUNK, '')
+  if (stem.length > room) stem = stem.slice(0, room).replace(EDGE_JUNK, '')
+  if (stem === '') stem = 'export'
+  const [first = '', ...rest] = stem.split('.')
+  if (RESERVED.test(first)) {
+    stem = [`${first}-export`, ...rest].join('.')
+    if (stem.length > room) stem = stem.slice(0, room).replace(EDGE_JUNK, '')
+  }
+  return `${stem}.pdf`
+}
+
 function slug(text: string): string {
   return text
     .normalize('NFKD')

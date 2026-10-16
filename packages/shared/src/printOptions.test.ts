@@ -3,6 +3,7 @@ import {
   normalisePageRange,
   parsePageRange,
   printOptionsSchema,
+  sanitizeExportFilename,
   scriptExportFilename,
   validateExportFilename,
 } from './printOptions'
@@ -155,5 +156,67 @@ describe('printOptionsSchema', () => {
     expect(printOptionsSchema.safeParse({ pages: '' }).success).toBe(false)
     expect(printOptionsSchema.safeParse({ paper: 'A3' }).success).toBe(false)
     expect(printOptionsSchema.safeParse({ includeCueNotes: 'yes' }).success).toBe(false)
+  })
+})
+
+describe('sanitizeExportFilename', () => {
+  const cases = [
+    'Pirates: A/B - Libretto v2 - LX + personal.pdf',
+    'a?b*c"d<e>f|g\\h.pdf',
+    '  .leading and trailing dots.. .pdf',
+    `${'x'.repeat(400)}.pdf`,
+    `${'word '.repeat(60)}.pdf`,
+    'CON.pdf',
+    'con',
+    'NUL.pdf.pdf',
+    'lpt1.txt.pdf',
+    '',
+    '   ',
+    '...',
+    '.pdf',
+    'tab\there\u0000.pdf',
+    'Hello.',
+    '日本語のスクリプト.PDF',
+  ]
+  test.each(cases)('always gives a name validateExportFilename accepts: %j', (raw) => {
+    const name = sanitizeExportFilename(raw)
+    const checked = validateExportFilename(name)
+    expect(checked).toEqual({ ok: true, name })
+    expect(name.endsWith('.pdf')).toBe(true)
+    expect(name.length).toBeLessThanOrEqual(200)
+  })
+
+  test('replaces forbidden characters with a hyphen and keeps the rest', () => {
+    expect(sanitizeExportFilename('Pirates: A/B - Libretto v2.pdf')).toBe(
+      'Pirates- A-B - Libretto v2.pdf',
+    )
+  })
+
+  test('trims spaces and dots at both ends, before the extension too', () => {
+    expect(sanitizeExportFilename('  ..Show - Doc v1 - LX . .pdf')).toBe('Show - Doc v1 - LX.pdf')
+    expect(sanitizeExportFilename('Show.')).toBe('Show.pdf')
+  })
+
+  test('a reserved Windows name gets a suffix, the extension stays', () => {
+    expect(sanitizeExportFilename('CON.pdf')).toBe('CON-export.pdf')
+    expect(sanitizeExportFilename('aux')).toBe('aux-export.pdf')
+  })
+
+  test('caps the length at 200 characters in all, keeping .pdf, and does not leave a dangling space', () => {
+    const name = sanitizeExportFilename(`${'ab '.repeat(100)}.pdf`)
+    expect(name.length).toBeLessThanOrEqual(200)
+    expect(name.endsWith('.pdf')).toBe(true)
+    expect(name.endsWith(' .pdf')).toBe(false)
+  })
+
+  test('a name that is nothing usable becomes "export.pdf"', () => {
+    expect(sanitizeExportFilename('')).toBe('export.pdf')
+    expect(sanitizeExportFilename(' ... ')).toBe('export.pdf')
+  })
+
+  test('a name that is already valid is unchanged', () => {
+    expect(sanitizeExportFilename('songs-for-a-new-world-libretto-v2-LX-SND-TM.pdf')).toBe(
+      'songs-for-a-new-world-libretto-v2-LX-SND-TM.pdf',
+    )
   })
 })
