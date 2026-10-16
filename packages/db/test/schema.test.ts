@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { newId } from '@binder/shared'
+import { sql } from 'drizzle-orm'
 import { beforeEach, expect, test } from 'vitest'
 import {
   documents,
@@ -98,4 +101,66 @@ test('pages and document_versions get audit columns by default', async () => {
     expect(row?.createdAt).toBeInstanceOf(Date)
     expect(row?.updatedAt).toBeInstanceOf(Date)
   }
+})
+
+test('the 0016 migration backfills failure codes from error', async () => {
+  const { db } = await getTestDb()
+  const orgId = newId()
+  const showId = newId()
+  const docId = newId()
+  await db.insert(organisations).values({ id: orgId, name: 'TTP' })
+  await db
+    .insert(shows)
+    .values({ id: showId, organisationId: orgId, title: 'Pirates', updatedBy: 'u1' })
+  await db
+    .insert(documents)
+    .values({ id: docId, showId, kind: 'libretto', title: 'Libretto', updatedBy: 'u1' })
+  const cases: Array<
+    [status: 'failed' | 'ready' | 'queued', error: string | null, code: string | null]
+  > = [
+    [
+      'failed',
+      'This PDF is password-protected. Remove the password and upload it again.',
+      'password_protected',
+    ],
+    ['failed', 'This file could not be read as a PDF. (pdfinfo exit 1)', 'unreadable'],
+    ['failed', 'Processing timed out after retries.', 'timeout'],
+    ['failed', 'Processing failed after retries: job timed out', 'timeout'],
+    ['failed', 'Could not queue processing', 'enqueue_failed'],
+    ['failed', 'Processing failed after retries: boom', 'unknown'],
+    ['failed', null, 'unknown'],
+    // Only failed rows are classified.
+    ['ready', 'ocrmypdf exit 1: something', null],
+    ['queued', null, null],
+  ]
+  const ids = cases.map(() => newId())
+  await db.insert(documentVersions).values(
+    cases.map(([status, error], i) => ({
+      id: ids[i],
+      showId,
+      documentId: docId,
+      versionNumber: i + 1,
+      originalKey: `k${i}`,
+      uploadedBy: 'u1',
+      status,
+      error,
+    })),
+  )
+
+  const sqlText = readFileSync(
+    join(import.meta.dirname, '../drizzle/0016_version_processing_controls.sql'),
+    'utf8',
+  )
+  const backfill = sqlText
+    .split('--> statement-breakpoint')
+    .find((s) => s.trim().startsWith('UPDATE'))
+  expect(backfill).toBeDefined()
+  await db.execute(sql.raw(backfill as string))
+
+  const rows = await db.select().from(documentVersions)
+  for (const [i, [, , code]] of cases.entries()) {
+    expect(rows.find((r) => r.id === ids[i])?.failureCode, `case ${i}`).toBe(code)
+  }
+  // The new columns exist and default to null.
+  expect(rows.every((r) => r.originalSizeBytes === null && r.failureDpi === null)).toBe(true)
 })
