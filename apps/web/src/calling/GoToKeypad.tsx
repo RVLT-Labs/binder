@@ -21,6 +21,8 @@ export interface KeypadDepartment extends MatchableDepartment {
 export type GoTarget = { kind: 'cue'; cue: KeypadCue } | { kind: 'page'; index: number }
 
 export interface RecentChip {
+  /** Unique among the chips: two jumps can read alike. */
+  key: string
   /** `LX 12`, `p.14`: the chip as it reads. */
   label: string
   target: GoTarget
@@ -184,6 +186,8 @@ export function GoToKeypad({
             // The readout is where focus starts, so typed digits and Enter land somewhere; Tab goes on to the keys.
             tabIndex={-1}
             aria-label={mode === 'cue' ? 'Cue number' : 'Page number'}
+            // the match line is the one live region: typing is announced once, as what it finds
+            aria-live="off"
             className="font-mono text-[40px] leading-none tabular-nums text-ink outline-none"
           >
             {text}
@@ -281,7 +285,7 @@ export function GoToKeypad({
             <div className="flex flex-wrap gap-2.5">
               {recent.map((chip) => (
                 <button
-                  key={chip.label}
+                  key={chip.key}
                   type="button"
                   className="inline-flex h-11 items-center rounded-full border-2 border-line-2 bg-paper-2 px-3.5 font-mono text-[15px] tabular-nums text-ink hover:border-ink-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red md:h-10"
                   onClick={() => go(chip.target)}

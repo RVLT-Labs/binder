@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type SignOutDeps, signOutAndClear } from '../auth/signOut'
 import { clearNotices, pushNotice } from '../components/noticeStore'
 import { type Account, AppShell, type Crumb } from './AppShell'
+import { setShellInert } from './shellInert'
 import { useBreakpoint } from './useBreakpoint'
 
 // The sync indicator reads PowerSync, which these tests do not run.
@@ -79,6 +80,41 @@ describe('useBreakpoint', () => {
   it('defaults to desktop when matchMedia is unavailable', () => {
     vi.stubGlobal('matchMedia', undefined)
     expect(renderHook(() => useBreakpoint()).result.current).toBe('desktop')
+  })
+})
+
+describe('AppShell while a screen covers it (Calling mode)', () => {
+  afterEach(() => setShellInert(false))
+
+  it('puts the rail and top bar out of reach, and leaves the content and notices alone', async () => {
+    setWidth(1280)
+    setShellInert(true)
+    await renderAt(
+      '/shows/s1/docs/d1',
+      <AppShell showId="s1" crumbs={crumbs} account={account()} fullBleed>
+        <button type="button">in the page</button>
+      </AppShell>,
+    )
+    const rail = screen.getByRole('navigation', { name: 'Binder' })
+    expect(rail.closest('[inert]')).not.toBeNull()
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' }).closest('[inert]')).not.toBeNull()
+    expect(screen.getByRole('banner').closest('[inert]')).not.toBeNull()
+    expect(screen.getByRole('main').closest('[inert]')).toBeNull()
+    expect(screen.getByRole('button', { name: 'in the page' }).closest('[inert]')).toBeNull()
+    act(() => setShellInert(false))
+    expect(rail.closest('[inert]')).toBeNull()
+  })
+
+  it('puts the phone tab bar out of reach too', async () => {
+    setWidth(390)
+    setShellInert(true)
+    await renderAt(
+      '/shows/s1/docs/d1',
+      <AppShell showId="s1" crumbs={crumbs} account={account()} fullBleed>
+        <p>viewer</p>
+      </AppShell>,
+    )
+    expect(screen.getByRole('navigation', { name: 'Show' }).closest('[inert]')).not.toBeNull()
   })
 })
 

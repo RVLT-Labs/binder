@@ -8,7 +8,7 @@ import { useMarkupSession } from '../markup/MarkupSession'
 import { useOnline } from '../offline/useOnline'
 import { useBreakpoint } from '../shell/useBreakpoint'
 import { CallingStrip, type StripNext } from './CallingStrip'
-import { recordJump, useRecentJumps } from './callingHistory'
+import { jumpKey, recordJump, useRecentJumps } from './callingHistory'
 import {
   type GoTarget,
   GoToKeypad,
@@ -98,7 +98,7 @@ export function CallingView({
 }) {
   const session = useMarkupSession()
   const open = useKeypadOpen()
-  const recent = useRecentJumps()
+  const recent = useRecentJumps(session.documentId)
   const goToButton = useRef<HTMLButtonElement>(null)
   const { departments, view, layers } = session
   // A keypad left open (Back out of Calling) must not greet the next visit.
@@ -162,24 +162,29 @@ export function CallingView({
     return `${d?.code ?? ''} ${formatCueNumber(c.major, c.minor, d?.numberFormat ?? 'decimal')}`.trim()
   }
   const chips: RecentChip[] = recent.flatMap((jump): RecentChip[] => {
+    const key = jumpKey(jump)
     if (jump.kind === 'page') {
       return jump.index < pageCount
-        ? [{ label: jump.label, target: { kind: 'page', index: jump.index } }]
+        ? [{ key, label: jump.label, target: { kind: 'page', index: jump.index } }]
         : []
     }
     const cue = cues.find((c) => c.id === jump.cueId)
-    return cue ? [{ label: jump.label, target: { kind: 'cue', cue } }] : []
+    return cue ? [{ key, label: jump.label, target: { kind: 'cue', cue } }] : []
   })
 
   function go(target: GoTarget) {
     closeKeypad()
     if (target.kind === 'page') {
-      recordJump({ kind: 'page', index: target.index, label: `p.${target.index + 1}` })
+      recordJump(session.documentId, {
+        kind: 'page',
+        index: target.index,
+        label: `p.${target.index + 1}`,
+      })
       session.viewer.current?.goToPage(target.index)
       restoreFocus(goToButton.current)
       return
     }
-    recordJump({ kind: 'cue', cueId: target.cue.id, label: codeOf(target.cue) })
+    recordJump(session.documentId, { kind: 'cue', cueId: target.cue.id, label: codeOf(target.cue) })
     const row = view.ordered.find((c) => c.id === target.cue.id)
     if (row) session.showCue(row)
   }

@@ -265,6 +265,15 @@ export function Viewer({
 
   // What opened Calling (a top bar button) is not drawn there: the page takes the keys, as soon as it is up.
   const pageListUp = Boolean(pdf) && zoom !== null
+  // Calling starts with no Find card open (it was a markup tool); the palette can still open one there.
+  useEffect(() => {
+    if (!readOnly) return
+    setFindOpen(false)
+    setFindSeed(null)
+    setHits([])
+    setActiveHit(null)
+  }, [readOnly])
+
   useEffect(() => {
     if (readOnly && pageListUp) {
       area.current?.querySelector<HTMLElement>('.page-list')?.focus({ preventScroll: true })

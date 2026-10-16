@@ -46,100 +46,137 @@ test('Calling mode: no tools, ← → turn pages, the keypad jumps to a cue, Exi
 }) => {
   await withUsers(browser, ['owner'], async ([a]) => {
     const { page } = a
-    const { words } = await pageText(page, 0)
-    const id = await placeProbe(page, lineOf(words, 2))
-    await page.keyboard.press('Escape')
-    const before = await versionCueIds(page)
+    const docUrl = page.url().split('?')[0]
+    let id = ''
+    try {
+      const { words } = await pageText(page, 0)
+      id = await placeProbe(page, lineOf(words, 2))
+      await page.keyboard.press('Escape')
+      const before = await versionCueIds(page)
 
-    // From the top bar. Markup's own controls go; the page and the strip stay.
-    await page.getByRole('button', { name: 'Calling mode' }).click()
-    await expect(page).toHaveURL(/[?&]mode=calling(&|$)/)
-    const strip = page.getByRole('region', { name: 'Calling', exact: true })
-    await expect(strip).toBeVisible()
-    await expect(page.getByRole('group', { name: 'Markup tools' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Cue tool' })).toHaveCount(0)
-    await expect(page.getByRole('toolbar', { name: 'Viewer' })).toHaveCount(0)
-    await expect(page.getByRole('navigation', { name: 'Thumbnails' })).toHaveCount(0)
-    await expect(page.getByRole('region', { name: 'Cue editor' })).toHaveCount(0)
-    await expect(page.locator('[data-page-index="0"]')).toBeVisible()
-    await expect(page.getByRole('region', { name: 'Calling status' })).toContainText('Calling')
-    await expect(strip).toContainText('p.1 / 3')
-    await expect(strip).toContainText(/Next LX\s*4322\s*Calling probe/)
+      // A Find card left open does not come along into Calling.
+      await page.getByRole('button', { name: 'Find in document' }).click()
+      await expect(page.getByRole('searchbox', { name: 'Search document' })).toBeVisible()
 
-    // The keys that edit do nothing: c over the page, Delete on the tag, a digit.
-    const surface = page.locator('[data-page-index="0"] .markup-surface')
-    await surface.hover({ position: { x: 200, y: 200 } })
-    await page.keyboard.press('c')
-    await page.keyboard.press('1')
-    await marker(page, id).focus()
-    await page.keyboard.press('Delete')
-    await page.waitForTimeout(400)
-    expect(await versionCueIds(page)).toEqual(before)
+      // From the top bar. Markup's own controls go; the page and the strip stay.
+      await page.getByRole('button', { name: 'Calling mode' }).click()
+      await expect(page).toHaveURL(/[?&]mode=calling(&|$)/)
+      const strip = page.getByRole('region', { name: 'Calling', exact: true })
+      await expect(strip).toBeVisible()
+      await expect(page.getByRole('searchbox', { name: 'Search document' })).toHaveCount(0)
+      await expect(
+        page.getByRole('status').filter({ hasText: 'Calling mode. Page 1 of 3' }),
+      ).toHaveCount(1)
+      await expect(page.getByRole('group', { name: 'Markup tools' })).toHaveCount(0)
 
-    // → turns the page; the strip and the address follow.
-    await page.keyboard.press('ArrowRight')
-    await expect(strip).toContainText('p.2 / 3')
-    await expect(page.locator('[data-page-index="1"]')).toBeInViewport()
-    await expect(page).toHaveURL(/[?&]p=2(&|$)/)
+      // The shell behind it is out of reach: Tab never lands on the rail or the top bar.
+      for (let i = 0; i < 14; i++) {
+        await page.keyboard.press('Tab')
+        const outside = await page.evaluate(() => {
+          const el = document.activeElement
+          return el !== null && el !== document.body && el.closest('.calling-view') === null
+        })
+        expect(outside).toBe(false)
+        const inShell = await page.evaluate(
+          () =>
+            document.activeElement?.closest('nav[aria-label="Binder"], header, [inert]') !== null,
+        )
+        expect(inShell).toBe(false)
+      }
+      await expect(page.locator('[inert]').first()).toBeAttached()
+      await page.locator('.calling-view .page-list').focus()
+      await expect(page.getByRole('button', { name: 'Cue tool' })).toHaveCount(0)
+      await expect(page.getByRole('toolbar', { name: 'Viewer' })).toHaveCount(0)
+      await expect(page.getByRole('navigation', { name: 'Thumbnails' })).toHaveCount(0)
+      await expect(page.getByRole('region', { name: 'Cue editor' })).toHaveCount(0)
+      await expect(page.locator('[data-page-index="0"]')).toBeVisible()
+      await expect(page.getByRole('region', { name: 'Calling status' })).toContainText('Calling')
+      await expect(strip).toContainText('p.1 / 3')
+      await expect(strip).toContainText(/Next LX\s*4322\s*Calling probe/)
 
-    // g opens the keypad, which builds the number, shows what it will land on, and goes there.
-    await page.keyboard.press('g')
-    const keypad = page.getByRole('dialog', { name: 'Go to' })
-    await expect(keypad).toBeVisible()
-    for (const key of ['4', '3', '2', '2'])
-      await keypad.getByRole('button', { name: key, exact: true }).click()
-    await expect(keypad.getByLabel('Cue number')).toHaveText('4322')
-    await expect(keypad).toContainText('LX 4322')
-    await expect(keypad).toContainText('Calling probe')
-    await keypad.getByRole('button', { name: 'Go', exact: true }).click()
-    await expect(keypad).toBeHidden()
-    await expect(strip).toContainText('p.1 / 3')
-    await expect(marker(page, id)).toHaveAttribute('data-selected', 'true')
-    await expect(marker(page, id)).toBeInViewport()
+      // The keys that edit do nothing: c over the page, Delete on the tag, a digit.
+      const surface = page.locator('[data-page-index="0"] .markup-surface')
+      await surface.hover({ position: { x: 200, y: 200 } })
+      await page.keyboard.press('c')
+      await page.keyboard.press('1')
+      await marker(page, id).focus()
+      await page.keyboard.press('Delete')
+      await page.waitForTimeout(400)
+      expect(await versionCueIds(page)).toEqual(before)
 
-    // Escape closes it and focus is back on Go to…; the jump is a Recent chip next time.
-    await page.getByRole('button', { name: 'Go to…' }).click()
-    await expect(keypad.getByRole('button', { name: 'LX 4322' })).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(keypad).toBeHidden()
-    await expect(page.getByRole('button', { name: 'Go to…' })).toBeFocused()
+      // → turns the page; the strip and the address follow.
+      await page.keyboard.press('ArrowRight')
+      await expect(strip).toContainText('p.2 / 3')
+      await expect(page.locator('[data-page-index="1"]')).toBeInViewport()
+      await expect(page).toHaveURL(/[?&]p=2(&|$)/)
 
-    // Exit: back to markup on the page it was left on.
-    await page.keyboard.press('ArrowRight')
-    await expect(strip).toContainText('p.2 / 3')
-    await page.getByRole('button', { name: 'Exit' }).click()
-    await expect(page).not.toHaveURL(/mode=calling/)
-    await expect(page.getByRole('toolbar', { name: 'Viewer' })).toContainText('2 / 3')
-    await expect(page.getByRole('group', { name: 'Markup tools' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Calling mode' })).toBeFocused()
+      // g opens the keypad, which builds the number, shows what it will land on, and goes there.
+      await page.keyboard.press('g')
+      const keypad = page.getByRole('dialog', { name: 'Go to' })
+      await expect(keypad).toBeVisible()
+      for (const key of ['4', '3', '2', '2'])
+        await keypad.getByRole('button', { name: key, exact: true }).click()
+      await expect(keypad.getByLabel('Cue number')).toHaveText('4322')
+      await expect(keypad).toContainText('LX 4322')
+      await expect(keypad).toContainText('Calling probe')
+      await keypad.getByRole('button', { name: 'Go', exact: true }).click()
+      await expect(keypad).toBeHidden()
+      await expect(strip).toContainText('p.1 / 3')
+      await expect(marker(page, id)).toHaveAttribute('data-selected', 'true')
+      await expect(marker(page, id)).toBeInViewport()
 
-    // ⇧C goes in and out as well.
-    await page.keyboard.press('Shift+C')
-    await expect(page).toHaveURL(/[?&]mode=calling(&|$)/)
-    await expect(strip).toContainText('p.2 / 3')
-    await page.keyboard.press('Shift+C')
-    await expect(strip).toHaveCount(0)
-    await expect(page.getByRole('toolbar', { name: 'Viewer' })).toContainText('2 / 3')
+      // Escape closes it and focus is back on Go to…; the jump is a Recent chip next time.
+      await page.getByRole('button', { name: 'Go to…' }).click()
+      await expect(keypad.getByRole('button', { name: 'LX 4322' })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(keypad).toBeHidden()
+      await expect(page.getByRole('button', { name: 'Go to…' })).toBeFocused()
 
-    // Remove the probe so the other specs' cue numbers stay theirs.
-    await page.getByRole('toolbar', { name: 'Viewer' }).getByLabel('Go to page').fill('1')
-    await page.getByRole('toolbar', { name: 'Viewer' }).getByLabel('Go to page').press('Enter')
-    await marker(page, id).click()
-    await expect(marker(page, id)).toHaveAttribute('data-selected', 'true')
-    await page.keyboard.press('Delete')
-    await expect.poll(async () => (await versionCueIds(page)).includes(id)).toBe(false)
-    // and wait for the removal to reach the server, so the next spec's users do not sync the probe back
-    await expect
-      .poll(
-        () =>
-          page.evaluate(
-            async () =>
-              (await window.__binder?.db.get<{ n: number }>('SELECT count(*) AS n FROM ps_crud'))
-                ?.n ?? -1,
-          ),
-        { timeout: 20_000 },
-      )
-      .toBe(0)
+      // Exit: back to markup on the page it was left on.
+      await page.keyboard.press('ArrowRight')
+      await expect(strip).toContainText('p.2 / 3')
+      await page.getByRole('button', { name: 'Exit' }).click()
+      await expect(page).not.toHaveURL(/mode=calling/)
+      await expect(page.getByRole('toolbar', { name: 'Viewer' })).toContainText('2 / 3')
+      await expect(page.getByRole('group', { name: 'Markup tools' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Calling mode' })).toBeFocused()
+
+      // ⇧C goes in and out as well.
+      await page.keyboard.press('Shift+C')
+      await expect(page).toHaveURL(/[?&]mode=calling(&|$)/)
+      await expect(strip).toContainText('p.2 / 3')
+      await page.keyboard.press('Shift+C')
+      await expect(strip).toHaveCount(0)
+      await expect(page.getByRole('toolbar', { name: 'Viewer' })).toContainText('2 / 3')
+    } finally {
+      // Always take the probe off the shared show, so the other specs' cue numbers stay theirs.
+      if (id) {
+        await page.goto(docUrl)
+        await expect(page.getByRole('toolbar', { name: 'Viewer' })).toContainText('/ 3', {
+          timeout: 30_000,
+        })
+        if ((await versionCueIds(page)).includes(id)) {
+          await marker(page, id).click()
+          await page.keyboard.press('Delete')
+          await expect.poll(async () => (await versionCueIds(page)).includes(id)).toBe(false)
+        }
+        // and wait for the removal to reach the server, so the next spec's users do not sync it back
+        await expect
+          .poll(
+            () =>
+              page.evaluate(
+                async () =>
+                  (
+                    await window.__binder?.db.get<{ n: number }>(
+                      'SELECT count(*) AS n FROM ps_crud',
+                    )
+                  )?.n ?? -1,
+              ),
+            { timeout: 20_000 },
+          )
+          .toBe(0)
+      }
+    }
   })
 })
 

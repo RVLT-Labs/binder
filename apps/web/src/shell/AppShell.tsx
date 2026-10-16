@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { CommandPalette } from '../palette/CommandPalette'
 import { activeNavKey } from './navItems'
 import { Rail } from './Rail'
+import { useShellInert } from './shellInert'
 import { TabBar } from './TabBar'
 import { TopBar } from './TopBar'
 import { TopBarSlotsContext } from './TopBarSlots'
@@ -45,6 +46,8 @@ export function AppShell({
   children: ReactNode
 }) {
   const breakpoint = useBreakpoint()
+  // While a screen covers the shell (Calling mode) its chrome is out of the tab order and the tree.
+  const inert = useShellInert()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const phone = breakpoint === 'phone'
   const tabBar = phone && showId !== undefined
@@ -74,26 +77,30 @@ export function AppShell({
     <TopBarSlotsContext value={slots}>
       <div className="flex h-dvh w-full bg-paper text-ink">
         {!phone && (
-          <Rail
-            showId={showId}
-            destinationsFor={showId ?? lastShowId}
-            iconsOnly={breakpoint === 'tablet'}
-            pathname={pathname}
-            account={account}
-          />
+          <div className="contents" inert={inert}>
+            <Rail
+              showId={showId}
+              destinationsFor={showId ?? lastShowId}
+              iconsOnly={breakpoint === 'tablet'}
+              pathname={pathname}
+              account={account}
+            />
+          </div>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar
-            crumbs={crumbs}
-            phone={phone}
-            showId={showId}
-            account={account}
-            actions={actions}
-            primary={primary}
-            slotRefs={slotRefs}
-            phoneTab={phoneTab}
-            phoneTitleSize={phoneTitleSize}
-          />
+          <div className="contents" inert={inert}>
+            <TopBar
+              crumbs={crumbs}
+              phone={phone}
+              showId={showId}
+              account={account}
+              actions={actions}
+              primary={primary}
+              slotRefs={slotRefs}
+              phoneTab={phoneTab}
+              phoneTitleSize={phoneTitleSize}
+            />
+          </div>
           <main
             data-full-bleed={fullBleed ? 'true' : undefined}
             className={cn(
@@ -105,7 +112,11 @@ export function AppShell({
           >
             {children}
           </main>
-          {tabBar && showId && <TabBar showId={showId} pathname={pathname} />}
+          {tabBar && showId && (
+            <div className="contents" inert={inert}>
+              <TabBar showId={showId} pathname={pathname} />
+            </div>
+          )}
         </div>
         {showId && <CommandPalette showId={showId} />}
         <Notices aboveTabBar={tabBar} />

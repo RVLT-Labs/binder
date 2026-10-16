@@ -6,8 +6,10 @@ const SWIPE_PX = 56
 const TAP_SLOP_PX = 10
 const TAP_MS = 500
 
-/** Elements a tap belongs to: the strip, a tag, a control. They never turn the page. */
-const OWN_TAP = 'button, a, input, dialog, [role="button"], [data-cue-id], [aria-label="Calling"]'
+/** Where no gesture turns the page: the keypad (a modal over the stage) and the strip. */
+const NO_GESTURE = 'dialog, [aria-label="Calling"]'
+/** What a tap belongs to: a control, a cue tag, an annotation. A tap there never turns the page. */
+const OWN_TAP = `${NO_GESTURE}, button, a, input, [role="button"], [data-cue-id], [data-annotation-id]`
 
 /**
  * Calling mode's page turns by hand (DESIGN §9): a tap on the stage's left third goes back, on its
@@ -28,6 +30,8 @@ export function usePageTurn(turn: (direction: 1 | -1) => void): HTMLAttributes<H
       const from = start.current
       start.current = null
       if (!from) return
+      // A drag that began on the keypad or the strip is theirs, however sideways it ended.
+      if (from.target instanceof Element && from.target.closest(NO_GESTURE)) return
       const dx = e.clientX - from.x
       const dy = e.clientY - from.y
       if (Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.6) {

@@ -13,21 +13,32 @@ const same = (a: Jump, b: Jump) =>
     ? b.kind === 'cue' && a.cueId === b.cueId
     : b.kind === 'page' && a.index === b.index
 
+/** A key that is unique among a document's chips, whatever their labels say. */
+export const jumpKey = (jump: Jump): string =>
+  jump.kind === 'cue' ? `cue:${jump.cueId}` : `page:${jump.index}`
+
+const NONE: readonly Jump[] = []
+
 /**
- * The last few distinct jumps of this tab's session, newest first. In memory only: a reload starts
- * with none, and nothing here is written to the device or the show.
+ * The last few distinct jumps of this tab's session, newest first, kept per document: a page or cue
+ * of one script means nothing on another. In memory only: a reload starts with none, and nothing
+ * here is written to the device or the show.
  */
-let recent: readonly Jump[] = []
+let recent = new Map<string, readonly Jump[]>()
 const listeners = new Set<() => void>()
 
-export function recordJump(jump: Jump): void {
-  recent = [jump, ...recent.filter((j) => !same(j, jump))].slice(0, RECENT_JUMPS)
+export function recordJump(documentId: string, jump: Jump): void {
+  const mine = recent.get(documentId) ?? NONE
+  recent = new Map(recent).set(
+    documentId,
+    [jump, ...mine.filter((j) => !same(j, jump))].slice(0, RECENT_JUMPS),
+  )
   for (const fn of [...listeners]) fn()
 }
 
-export const recentJumps = (): readonly Jump[] => recent
+export const recentJumps = (documentId: string): readonly Jump[] => recent.get(documentId) ?? NONE
 
-export function useRecentJumps(): readonly Jump[] {
+export function useRecentJumps(documentId: string): readonly Jump[] {
   return useSyncExternalStore(
     (fn) => {
       listeners.add(fn)
@@ -35,12 +46,12 @@ export function useRecentJumps(): readonly Jump[] {
         listeners.delete(fn)
       }
     },
-    () => recent,
+    () => recentJumps(documentId),
   )
 }
 
 /** For tests: forget every jump. */
 export function resetRecentJumps(): void {
-  recent = []
+  recent = new Map()
   for (const fn of [...listeners]) fn()
 }

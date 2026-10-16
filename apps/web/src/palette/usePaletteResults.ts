@@ -368,7 +368,7 @@ export function usePaletteResults(
       if (store.get().hidden.includes(key)) store.setHidden(key, false)
       const department = departments.find((d) => d.id === cue.departmentId)
       const number = formatCueNumber(cue.major, cue.minor, department?.numberFormat ?? 'decimal')
-      recordJump({
+      recordJump(cue.anchor.documentId, {
         kind: 'cue',
         cueId: cue.id,
         label: `${department?.code ?? ''} ${number}`.trim(),
@@ -385,7 +385,8 @@ export function usePaletteResults(
       })
     },
     goToPage: (index) => {
-      recordJump({ kind: 'page', index, label: `p.${index + 1}` })
+      if (document)
+        recordJump(document.documentId, { kind: 'page', index, label: `p.${index + 1}` })
       document?.goToPage(index)
     },
     toggleCalling: () => document?.toggleCalling(),

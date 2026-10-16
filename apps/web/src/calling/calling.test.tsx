@@ -8,6 +8,7 @@ import { CallingView } from './CallingView'
 import { RECENT_JUMPS, recentJumps, recordJump, resetRecentJumps } from './callingHistory'
 import { GoToKeypad, type KeypadCue, type KeypadDepartment } from './GoToKeypad'
 import { closeKeypad, isKeypadOpen } from './keypadState'
+import { ModeAnnouncer } from './ModeAnnouncer'
 import { nextCue } from './nextCue'
 import { usePageTurn } from './usePageTurn'
 
@@ -63,13 +64,21 @@ describe('nextCue', () => {
 describe('recent jumps', () => {
   beforeEach(resetRecentJumps)
   it('keeps the last three distinct jumps, newest first', () => {
-    recordJump({ kind: 'cue', cueId: 'a', label: 'LX 12' })
-    recordJump({ kind: 'page', index: 13, label: 'p.14' })
-    recordJump({ kind: 'cue', cueId: 'b', label: 'SND 2.45' })
-    recordJump({ kind: 'cue', cueId: 'a', label: 'LX 12' })
-    recordJump({ kind: 'cue', cueId: 'c', label: 'LX 13' })
-    expect(recentJumps().map((j) => j.label)).toEqual(['LX 13', 'LX 12', 'SND 2.45'])
-    expect(recentJumps()).toHaveLength(RECENT_JUMPS)
+    recordJump('d1', { kind: 'cue', cueId: 'a', label: 'LX 12' })
+    recordJump('d1', { kind: 'page', index: 13, label: 'p.14' })
+    recordJump('d1', { kind: 'cue', cueId: 'b', label: 'SND 2.45' })
+    recordJump('d1', { kind: 'cue', cueId: 'a', label: 'LX 12' })
+    recordJump('d1', { kind: 'cue', cueId: 'c', label: 'LX 13' })
+    expect(recentJumps('d1').map((j) => j.label)).toEqual(['LX 13', 'LX 12', 'SND 2.45'])
+    expect(recentJumps('d1')).toHaveLength(RECENT_JUMPS)
+  })
+
+  it('keeps each document its own: another script never shows these', () => {
+    recordJump('d1', { kind: 'cue', cueId: 'a', label: 'LX 12' })
+    recordJump('d2', { kind: 'page', index: 3, label: 'p.4' })
+    expect(recentJumps('d1').map((j) => j.label)).toEqual(['LX 12'])
+    expect(recentJumps('d2').map((j) => j.label)).toEqual(['p.4'])
+    expect(recentJumps('d3')).toEqual([])
   })
 })
 
@@ -233,13 +242,34 @@ describe('GoToKeypad', () => {
       keypad({
         onGo,
         recent: [
-          { label: 'LX 12', target: { kind: 'cue', cue: CUES[2] } },
-          { label: 'p.14', target: { kind: 'page', index: 13 } },
+          { key: 'a', label: 'LX 12', target: { kind: 'cue', cue: CUES[2] } },
+          { key: 'b', label: 'p.14', target: { kind: 'page', index: 13 } },
         ],
       }),
     )
     fireEvent.click(screen.getByRole('button', { name: 'p.14' }))
     expect(onGo).toHaveBeenCalledWith({ kind: 'page', index: 13 })
+  })
+
+  it('two chips that read alike are both drawn', () => {
+    render(
+      keypad({
+        recent: [
+          { key: 'cue:a', label: 'LX 12', target: { kind: 'cue', cue: CUES[2] } },
+          { key: 'cue:b', label: 'LX 12', target: { kind: 'cue', cue: CUES[0] } },
+        ],
+      }),
+    )
+    expect(screen.getAllByRole('button', { name: 'LX 12' })).toHaveLength(2)
+  })
+
+  it('typing is announced once: the match line is live, the readout is not', () => {
+    render(keypad())
+    expect(screen.getByLabelText('Cue number').getAttribute('aria-live')).toBe('off')
+    press('2')
+    const live = document.querySelectorAll('[aria-live="polite"]')
+    expect(live).toHaveLength(1)
+    expect(live[0].textContent).toContain('SND 2')
   })
 
   it('has no Recent heading when there is no history', () => {
@@ -273,6 +303,7 @@ const placeCue = vi.fn(async () => {})
 function setSession(active: { kind: 'department' | 'personal'; id: string }) {
   session.value = {
     showId: 's1',
+    documentId: 'd1',
     versionReadOnly: 'Calling mode is read-only.',
     annotationTarget: { disabled: 'Calling mode is read-only.' },
     departments: [
@@ -331,7 +362,7 @@ describe('CallingView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Go' }))
     expect(showCue).toHaveBeenCalledWith(expect.objectContaining({ id: 'snd220' }))
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(recentJumps().map((j) => j.label)).toEqual(['SND 2.20'])
+    expect(recentJumps('d1').map((j) => j.label)).toEqual(['SND 2.20'])
     // and it is there the next time
     rerender(<CallingView page={0} pageCount={43} onExit={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Go to…' }))
@@ -360,7 +391,7 @@ describe('CallingView', () => {
     press('1', '4')
     fireEvent.click(screen.getByRole('button', { name: 'Go' }))
     expect(viewer.goToPage).toHaveBeenCalledWith(13)
-    expect(recentJumps().map((j) => j.label)).toEqual(['p.14'])
+    expect(recentJumps('d1').map((j) => j.label)).toEqual(['p.14'])
   })
 })
 
@@ -493,6 +524,14 @@ describe('usePageTurn', () => {
       <div data-testid="stage" {...handlers}>
         <button type="button">control</button>
         <span data-cue-id="c1">tag</span>
+        <span data-annotation-id="a1">note</span>
+        <dialog open>
+          <button type="button">key</button>
+          <p>scrim</p>
+        </dialog>
+        <section aria-label="Calling">
+          <p>strip</p>
+        </section>
       </div>
     )
   }
@@ -538,6 +577,45 @@ describe('usePageTurn', () => {
     const el = stage()
     gesture(el, [100, 300], [100, 300], screen.getByRole('button', { name: 'control' }))
     gesture(el, [800, 300], [800, 300], screen.getByText('tag'))
+    gesture(el, [800, 300], [800, 300], screen.getByText('note'))
     expect(turn).not.toHaveBeenCalled()
+  })
+
+  it('a drag that starts on the keypad or the strip turns nothing, however sideways', () => {
+    const turn = vi.fn()
+    render(<Stage turn={turn} />)
+    const el = stage()
+    gesture(el, [700, 300], [200, 300], screen.getByRole('button', { name: 'key' }))
+    gesture(el, [700, 300], [200, 300], screen.getByText('scrim'))
+    gesture(el, [200, 300], [700, 300], screen.getByText('strip'))
+    expect(turn).not.toHaveBeenCalled()
+    // a swipe that starts on the page itself still does
+    gesture(el, [700, 300], [200, 300])
+    expect(turn).toHaveBeenCalledWith(1)
+  })
+})
+
+describe('ModeAnnouncer', () => {
+  afterEach(cleanup)
+  const said = () => screen.getByRole('status').textContent
+
+  it('says when Calling starts and ends, and each page turn while calling', () => {
+    const { rerender } = render(<ModeAnnouncer calling={false} page={0} pageCount={3} />)
+    expect(said()).toBe('')
+    // markup page changes are not announced here
+    rerender(<ModeAnnouncer calling={false} page={1} pageCount={3} />)
+    expect(said()).toBe('')
+    rerender(<ModeAnnouncer calling page={1} pageCount={3} />)
+    expect(said()).toBe('Calling mode. Page 2 of 3')
+    rerender(<ModeAnnouncer calling page={2} pageCount={3} />)
+    expect(said()).toBe('Page 3 of 3')
+    rerender(<ModeAnnouncer calling={false} page={2} pageCount={3} />)
+    expect(said()).toBe('Markup mode. Page 3 of 3')
+  })
+
+  it('is one polite region', () => {
+    render(<ModeAnnouncer calling page={0} pageCount={3} />)
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite')
   })
 })

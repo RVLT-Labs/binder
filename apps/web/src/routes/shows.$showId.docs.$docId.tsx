@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { blobUrl } from '../blobs/fetchBlob'
 import { CallingStatusLine, CallingView } from '../calling/CallingView'
+import { ModeAnnouncer } from '../calling/ModeAnnouncer'
 import { usePageTurn } from '../calling/usePageTurn'
 import { PrintButton, PrintDialog } from '../exports/PrintDialog'
 import { AnnotationHistory, CueHistory } from '../history/HistoryPanel'
@@ -22,6 +23,7 @@ import { LayerPanel } from '../markup/LayerPanel'
 import { PageMarkup } from '../markup/MarkupOverlay'
 import { MarkupSessionProvider, useMarkupSession } from '../markup/MarkupSession'
 import { PlaceCueButton } from '../markup/PlaceCueButton'
+import { endRelocate } from '../markup/relocate'
 import { SelectionAnnouncer } from '../markup/SelectionAnnouncer'
 import { clearSelection, useSelection } from '../markup/selection'
 import { ToolStrip } from '../markup/ToolStrip'
@@ -42,6 +44,7 @@ import { useCanUpload } from '../revisions/useCanUpload'
 import { useReviewCount } from '../revisions/useReviewCount'
 import { VersionSwitcher } from '../revisions/VersionSwitcher'
 import { versionReadOnlyReason } from '../revisions/versionView'
+import { setShellInert } from '../shell/shellInert'
 import { useBreakpoint } from '../shell/useBreakpoint'
 import {
   DocumentControls,
@@ -148,6 +151,13 @@ function DocumentPage() {
   const ready = version?.status === 'ready'
   /** The viewer draws (and so the context panel exists) once the version's text and pages are in. */
   const viewerReady = ready && Boolean(version?.searchable_key) && pages.length > 0
+  /** Only a ready version can be called: there is nothing to show before its pages are in. */
+  const inCalling = calling && viewerReady
+  // While Calling covers the screen the shell's rail and bars are out of reach (focus and readers).
+  useEffect(() => {
+    setShellInert(inCalling)
+    return () => setShellInert(false)
+  }, [inCalling])
   // A version that is not current is drawn where its rows were: from the server when online, else
   // from the device's rows that still point at it.
   const { anchors: remoteAnchors, loading: anchorsLoading } = useVersionAnchors(
@@ -221,6 +231,8 @@ function DocumentPage() {
     // The context panel and a selection belong to markup; neither comes back open.
     panel.onOpenChange(false)
     clearSelection()
+    // A relocation under way is a markup gesture; Calling does not carry it over.
+    endRelocate()
     // Back from Calling replaces its history entry, so Back goes on to where markup was.
     void navigate({
       search: (prev) => ({ ...prev, mode: on ? ('calling' as const) : undefined }),
@@ -228,8 +240,6 @@ function DocumentPage() {
       resetScroll: false,
     })
   }
-  /** Only a ready version can be called: there is nothing to show before its pages are in. */
-  const inCalling = calling && viewerReady
 
   const controlProps: DocumentControlsProps | null = version
     ? {
@@ -346,6 +356,11 @@ function DocumentPage() {
           }
           historic={historic}
         >
+          <ModeAnnouncer
+            calling={inCalling}
+            page={Math.min(viewPage, pages.length - 1)}
+            pageCount={pages.length}
+          />
           <MarkupKeys calling={{ active: inCalling, onToggle: () => setCalling(!inCalling) }} />
           <PaletteDocumentHostRegistration
             documentId={doc.id}
