@@ -103,6 +103,60 @@ test('the cue list docks it at 340 px (the cues mockup); the script keeps 300', 
   expect(panel.className).not.toContain('w-[300px]')
 })
 
+test('the compare screen docks it at 360 px', () => {
+  setWidth(1280)
+  render(
+    <ContextPanel
+      tabs={tabs()}
+      value="cue"
+      onValueChange={() => {}}
+      open={false}
+      onOpenChange={() => {}}
+      dockedWidth={360}
+    />,
+  )
+  const panel = screen.getByRole('complementary', { name: 'Context panel' })
+  expect(panel.className).toContain('w-[360px]')
+})
+
+test('a panel with one tab draws no tab row, and a footer under the scroll', () => {
+  setWidth(1280)
+  render(
+    <ContextPanel
+      tabs={[{ id: 'changes', label: 'Changes', content: <p>the list</p> }]}
+      value="changes"
+      onValueChange={() => {}}
+      open={false}
+      onOpenChange={() => {}}
+      label="Version changes"
+      footer={<button type="button">Next change</button>}
+    />,
+  )
+  const panel = screen.getByRole('complementary', { name: 'Version changes' })
+  expect(within(panel).queryByRole('tablist')).toBeNull()
+  expect(within(panel).getByText('the list')).toBeTruthy()
+  expect(within(panel).getByRole('button', { name: 'Next change' })).toBeTruthy()
+})
+
+test('on a phone a one-tab drawer still has its Done', () => {
+  setWidth(390)
+  const onOpenChange = vi.fn()
+  render(
+    <ContextPanel
+      tabs={[{ id: 'changes', label: 'Changes', content: <p>the list</p> }]}
+      value="changes"
+      onValueChange={() => {}}
+      open
+      onOpenChange={onOpenChange}
+      showDone
+    />,
+  )
+  const drawer = screen.getByRole('dialog', { name: 'Context panel' })
+  expect(within(drawer).queryByRole('tablist')).toBeNull()
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Done' }))
+  expect(onOpenChange).toHaveBeenCalledWith(false)
+})
+
 test('the Review pill is a 16 px blue pill and is left out at zero', () => {
   setWidth(1280)
   const { unmount } = render(<Harness count={4} />)
@@ -185,6 +239,83 @@ test('phone draws nothing until opened, then a dialog with the same tabs', () =>
   expect(dialog.className).toContain('rounded-t-[20px]')
   expect(dialog.className).toContain('border-t-2')
   expect(dialog.className).toContain('z-[60]')
+})
+
+test('the phone drawer is non-modal: the page behind stays in the accessibility tree and can take focus', () => {
+  setWidth(390)
+  render(
+    <>
+      <button type="button">LX 12</button>
+      <main aria-label="Cue list">page</main>
+      <ContextPanel
+        tabs={tabs()}
+        value="cue"
+        onValueChange={() => {}}
+        open
+        onOpenChange={() => {}}
+      />
+    </>,
+  )
+  expect(screen.getByRole('dialog', { name: 'Context panel' })).toBeTruthy()
+  // Nothing outside the drawer is aria-hidden (a modal dialog hides its siblings)
+  const tag = screen.getByRole('button', { name: 'LX 12' })
+  expect(screen.getByRole('main', { name: 'Cue list' })).toBeTruthy()
+  expect(tag.closest('[aria-hidden="true"]')).toBeNull()
+  expect(document.body.getAttribute('aria-hidden')).toBeNull()
+  // ...and focus is not trapped inside it
+  tag.focus()
+  expect(document.activeElement).toBe(tag)
+  fireEvent.focusIn(tag)
+  expect(document.activeElement).toBe(tag)
+})
+
+test('a press on the page behind the phone drawer does not close it', () => {
+  setWidth(390)
+  const onOpenChange = vi.fn()
+  render(
+    <>
+      <button type="button">page</button>
+      <ContextPanel
+        tabs={tabs()}
+        value="cue"
+        onValueChange={() => {}}
+        open
+        onOpenChange={onOpenChange}
+      />
+    </>,
+  )
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'page' }))
+  fireEvent.focusIn(screen.getByRole('button', { name: 'page' }))
+  expect(onOpenChange).not.toHaveBeenCalled()
+})
+
+test('dragging the phone drawer handle down past a quarter of its height closes it; a short drag does not', () => {
+  setWidth(390)
+  const onOpenChange = vi.fn()
+  render(
+    <ContextPanel
+      tabs={tabs()}
+      value="cue"
+      onValueChange={() => {}}
+      open
+      onOpenChange={onOpenChange}
+    />,
+  )
+  const drawer = screen.getByRole('dialog', { name: 'Context panel' })
+  vi.spyOn(drawer, 'getBoundingClientRect').mockReturnValue({ height: 400 } as DOMRect)
+  const handle = drawer.querySelector('[data-panel-handle]') as HTMLElement
+  expect(handle).toBeTruthy()
+  handle.setPointerCapture = () => {}
+  handle.releasePointerCapture = () => {}
+  const drag = (to: number) => {
+    fireEvent.pointerDown(handle, { pointerId: 1, clientY: 300, button: 0 })
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: to })
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: to })
+  }
+  drag(340)
+  expect(onOpenChange).not.toHaveBeenCalled()
+  drag(430)
+  expect(onOpenChange).toHaveBeenCalledWith(false)
 })
 
 test('opening the phone drawer does not move focus off the tag that opened it', () => {

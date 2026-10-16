@@ -82,3 +82,25 @@ export function useLayerLabeller(showId: string): (selection: string | null) => 
     return layerSelectionLabel(layers, labelled)
   }
 }
+
+/**
+ * How the exports list shows an export's layers: the footer's words, and for exactly one department
+ * (and nothing personal) that department, so its swatch can go before the code ("LX only").
+ */
+export function useLayerView(showId: string): (selection: string | null) => {
+  label: string
+  only: { code: string; colour: string | null } | null
+} {
+  const departments = useDepartments(showId)
+  const labelOf = useLayerLabeller(showId)
+  return (selection) => {
+    const layers = parseSelection(selection)
+    const label = labelOf(selection)
+    const picked = layers.filter((l) => l.kind === 'department')
+    const single =
+      picked.length === 1 && layers.length === 1 && departments.length > 1
+        ? departments.find((d) => d.id === picked[0].id)
+        : undefined
+    return { label, only: single ? { code: single.code ?? '', colour: single.colour } : null }
+  }
+}

@@ -11,6 +11,7 @@ export interface SummaryRow {
 type Verb =
   | 'placed'
   | 'added'
+  | 'uploaded'
   | 'moved'
   | 'renumbered'
   | 'relabelled'
@@ -21,6 +22,7 @@ type Verb =
 const VERB_ORDER: readonly Verb[] = [
   'placed',
   'added',
+  'uploaded',
   'moved',
   'renumbered',
   'relabelled',
@@ -66,13 +68,22 @@ function verbsOf(row: SummaryRow): Verb[] {
     }
     return verbs
   }
+  if (row.table === 'documents' || row.table === 'document_versions') {
+    if (row.op === 'insert') return ['uploaded']
+    return [row.op === 'delete' ? 'deleted' : 'updated']
+  }
   return [row.op === 'insert' ? 'added' : row.op === 'delete' ? 'deleted' : 'updated']
 }
 
-/** `cue` and `annotation` read naturally; any other table is its name, singularised. */
+/**
+ * `cue`, `annotation`, `document` and `revision` read naturally (a `document_versions` row is a
+ * revision to a person); any other table is its name, singularised.
+ */
 function singular(table: string): string {
   if (table === 'cues') return 'cue'
   if (table === 'annotations') return 'annotation'
+  if (table === 'documents') return 'document'
+  if (table === 'document_versions') return 'revision'
   return table.endsWith('ies') ? `${table.slice(0, -3)}y` : table.replace(/s$/, '')
 }
 
@@ -90,7 +101,17 @@ export function summariseBatch(rows: SummaryRow[]): string {
     string,
     { table: string; code: string | null; counts: Map<Verb, number> }
   >()
+  // A first version uploaded with its document is one upload: count the document, not the version.
+  const withDocument = rows.some((r) => r.table === 'documents' && r.op === 'insert')
   for (const row of rows) {
+    if (
+      withDocument &&
+      row.table === 'document_versions' &&
+      row.op === 'insert' &&
+      row.after?.versionNumber === 1
+    ) {
+      continue
+    }
     const key = `${row.table}\u0000${row.departmentCode ?? ''}`
     let group = groups.get(key)
     if (!group) {

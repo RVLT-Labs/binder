@@ -94,11 +94,53 @@ describe('summariseBatch', () => {
     expect(summariseBatch([row('departments', 'update'), row('departments', 'update')])).toBe(
       'updated 2 departments',
     )
-    expect(summariseBatch([row('documents', 'insert')])).toBe('added 1 document')
     expect(summariseBatch([row('shows', 'update')])).toBe('updated 1 show')
-    expect(summariseBatch([row('document_versions', 'insert'), row('shows', 'update')])).toBe(
-      'added 1 document_version; updated 1 show',
+  })
+
+  test('an upload reads as "uploaded", with the nouns document and revision', () => {
+    const doc = (op: SummaryRow['op']): SummaryRow => ({
+      table: 'documents',
+      op,
+      before: op === 'insert' ? null : { title: 'a' },
+      after: op === 'delete' ? null : { title: 'b' },
+      departmentCode: null,
+    })
+    const version = (n: number, op: SummaryRow['op'] = 'insert'): SummaryRow => ({
+      table: 'document_versions',
+      op,
+      before: op === 'insert' ? null : { label: 'a' },
+      after: op === 'delete' ? null : { versionNumber: n, label: 'b' },
+      departmentCode: null,
+    })
+    expect(summariseBatch([doc('insert')])).toBe('uploaded 1 document')
+    expect(summariseBatch([doc('insert'), doc('insert')])).toBe('uploaded 2 documents')
+    expect(summariseBatch([version(2)])).toBe('uploaded 1 revision')
+    expect(summariseBatch([version(2), version(3)])).toBe('uploaded 2 revisions')
+    expect(summariseBatch([doc('update')])).toBe('updated 1 document')
+    expect(summariseBatch([version(2, 'update')])).toBe('updated 1 revision')
+    expect(summariseBatch([version(2), { ...doc('update'), table: 'shows' }])).toBe(
+      'uploaded 1 revision; updated 1 show',
     )
+  })
+
+  test('uploads count a first version once with its document', () => {
+    const docInsert: SummaryRow = {
+      table: 'documents',
+      op: 'insert',
+      before: null,
+      after: { title: 'Libretto' },
+      departmentCode: null,
+    }
+    const v1: SummaryRow = {
+      table: 'document_versions',
+      op: 'insert',
+      before: null,
+      after: { versionNumber: 1 },
+      departmentCode: null,
+    }
+    expect(summariseBatch([docInsert, v1])).toBe('uploaded 1 document')
+    // A version 1 on its own (no document insert in the batch) is still an upload.
+    expect(summariseBatch([v1])).toBe('uploaded 1 revision')
   })
 
   test('an empty batch is an empty sentence', () => expect(summariseBatch([])).toBe(''))

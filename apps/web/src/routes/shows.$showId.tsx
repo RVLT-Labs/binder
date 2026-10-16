@@ -32,9 +32,12 @@ function ShowLayout() {
   useRememberShow(account.email, showId, Boolean(show))
   const crumbs = useShowCrumbs(showId, show?.title ?? undefined)
   const leaf = useMatches({ select: (matches) => matches.at(-1)?.routeId })
-  // The document and the cue list lay out and scroll their own panels, so they get the content area
-  // to themselves.
-  const fullBleed = leaf === '/shows/$showId/docs/$docId' || leaf === '/shows/$showId/cues'
+  // The document, its compare screen and the cue list lay out and scroll their own panels, so they
+  // get the content area to themselves.
+  const fullBleed =
+    leaf === '/shows/$showId/docs/$docId' ||
+    leaf === '/shows/$showId/docs/$docId/compare' ||
+    leaf === '/shows/$showId/cues'
   const phone = useBreakpoint() === 'phone'
 
   return (

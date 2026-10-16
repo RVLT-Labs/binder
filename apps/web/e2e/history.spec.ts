@@ -128,7 +128,8 @@ test("the activity feed shows A's batch summary and B's revert from row history 
       await uploaded(a.page)
       await expect.poll(() => cueLabel(b.page, id), SYNC).toBe('Fly in')
 
-      // The feed reads the newest batch as "<label> <summary>, <HH:mm>" in local time.
+      // The feed reads the newest batch as a sentence ("<label> <summary>") with its time, HH:mm in
+      // local time, in its own element.
       const feed = await a.context.newPage()
       await feed.goto(`/shows/${sharedShow.id}/activity`)
       await expect(feed.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible({
@@ -139,9 +140,10 @@ test("the activity feed shows A's batch summary and B's revert from row history 
         return (await res.json()) as { groups: Array<{ at: string; summary: string }> }
       }, sharedShow.id)
       expect(newest.groups[0]?.summary).toBe('relabelled 1 LX cue')
-      const sentence = `${users.owner.name} relabelled 1 LX cue, ${localClock(newest.groups[0].at)}`
+      const sentence = `${users.owner.name} relabelled 1 LX cue`
       const first = feed.locator('.activity-row').first()
-      await expect(first).toHaveText(`${sentence}Revert`)
+      await expect(first.locator('.activity-text')).toHaveText(sentence)
+      await expect(first.locator('time')).toHaveText(localClock(newest.groups[0].at))
       await expect(first.getByRole('button', { name: 'Revert' })).toBeEnabled()
 
       // The filters become the route's parameters.
@@ -151,8 +153,14 @@ test("the activity feed shows A's batch summary and B's revert from row history 
           r.url().includes(`layer=${encodeURIComponent(`department:${departments.LX}`)}`) &&
           r.url().includes('kind=human'),
       )
-      await feed.getByLabel('Layer').selectOption({ label: 'LX' })
-      await feed.getByLabel('Changes by').selectOption('human')
+      await feed
+        .getByRole('radiogroup', { name: 'Layer' })
+        .getByRole('radio', { name: 'LX' })
+        .click()
+      await feed
+        .getByRole('radiogroup', { name: 'Changes by' })
+        .getByRole('radio', { name: 'People', exact: true })
+        .click()
       await request
       await expect(feed.locator('.activity-row').first()).toContainText(sentence)
 
@@ -369,14 +377,20 @@ test('the activity feed loads older groups with nextBefore as its end scrolls in
     await page.goto(`/shows/${sharedShow.id}/activity`)
     const rows = page.locator('.activity-row')
     await expect(rows).toHaveCount(40, { timeout: 30_000 })
-    await expect(rows.first()).toContainText(`${users.owner.name} moved 1 LX cue, 09:`)
+    await expect(rows.first().locator('.activity-text')).toHaveText(
+      `${users.owner.name} moved 1 LX cue`,
+    )
+    await expect(rows.first().locator('time')).toHaveText(/^09:/)
     // The end of the list is far below the fold: nothing more has been asked for.
     expect(requested).toEqual([''])
 
     await page.locator('.activity-end').scrollIntoViewIfNeeded()
     await expect(rows).toHaveCount(42)
     expect(requested).toEqual(['', '500'])
-    await expect(rows.last()).toContainText(`${users.owner.name} moved 1 LX cue, 09:`)
+    await expect(rows.last().locator('.activity-text')).toHaveText(
+      `${users.owner.name} moved 1 LX cue`,
+    )
+    await expect(rows.last().locator('time')).toHaveText(/^09:/)
   } finally {
     await context.close()
   }

@@ -53,6 +53,76 @@ export function changeList(entries: readonly LineDiffEntry[]): Change[] {
   return out
 }
 
+export interface Hunk {
+  /** The changes in it, in order: lines changed one after another. */
+  changes: Change[]
+  removed: number
+  added: number
+  /** "p.9–10 — 16 lines cut": what and where, for the card's title. */
+  title: string
+  /** "v1 p.9–10": the page on each side it is on. */
+  meta: string
+  /** The zero-based pages to show on each side for its first line. */
+  oldPage: number
+  newPage: number
+  /** The first change's position in the diff's entries. */
+  firstIndex: number
+}
+
+const lines = (n: number) => `${n} ${n === 1 ? 'line' : 'lines'}`
+
+/** `p.9` or `p.9–10` from zero-based page numbers. */
+function pageRange(pages: number[]): string {
+  const lo = Math.min(...pages) + 1
+  const hi = Math.max(...pages) + 1
+  return lo === hi ? `p.${lo}` : `p.${lo}–${hi}`
+}
+
+/**
+ * The change list as the mockup draws it: changes that sit next to each other in the diff are one
+ * card ("p.9–10 — 16 lines cut", "p.12 — 2 lines added", "p.23 — 1 line reworded"), not a card per
+ * line.
+ */
+export function changeHunks(changes: readonly Change[]): Hunk[] {
+  const groups: Change[][] = []
+  for (const c of changes) {
+    const last = groups[groups.length - 1]
+    if (last && last[last.length - 1].index + 1 === c.index) last.push(c)
+    else groups.push([c])
+  }
+  return groups.map((group) => {
+    const cut = group.filter((c) => c.op === 'removed')
+    const added = group.filter((c) => c.op === 'added')
+    const oldPages = cut.map((c) => c.oldPage)
+    const newPages = added.map((c) => c.newPage)
+    let title: string
+    let meta: string
+    if (added.length === 0) {
+      title = `${pageRange(oldPages)} — ${lines(cut.length)} cut`
+      meta = `v1 ${pageRange(oldPages)}`
+    } else if (cut.length === 0) {
+      title = `${pageRange(newPages)} — ${lines(added.length)} added`
+      meta = `v2 ${pageRange(newPages)}`
+    } else {
+      title =
+        cut.length === added.length
+          ? `${pageRange(oldPages)} — ${lines(cut.length)} reworded`
+          : `${pageRange(oldPages)} — ${cut.length} cut, ${added.length} added`
+      meta = `v1 ${pageRange(oldPages)} → v2 ${pageRange(newPages)}`
+    }
+    return {
+      changes: group,
+      removed: cut.length,
+      added: added.length,
+      title,
+      meta,
+      oldPage: group[0].oldPage,
+      newPage: group[0].newPage,
+      firstIndex: group[0].index,
+    }
+  })
+}
+
 /** The rectangle covering a line's words, or null when the page has no such line. */
 export function lineBox(layer: WordLayer, lineIndex: number): Box | null {
   const indices = layer.lines[lineIndex]
@@ -91,6 +161,38 @@ export function tintedLines(
     else out.set(ref.pageIndex, [{ lineIndex: ref.lineIndex }])
   }
   return out
+}
+
+export interface TintBand extends Box {
+  /** How many lines run together in it (the "−6" in the margin). */
+  count: number
+}
+
+/** Runs of consecutive tinted lines on a page, each as the box covering them and how many there are. */
+export function tintBands(
+  layer: WordLayer,
+  lines: ReadonlyArray<{ lineIndex: number }>,
+): TintBand[] {
+  const sorted = [...lines].map((l) => l.lineIndex).sort((a, b) => a - b)
+  const bands: Array<TintBand & { last: number }> = []
+  for (const lineIndex of sorted) {
+    const box = lineBox(layer, lineIndex)
+    if (!box) continue
+    const band = bands[bands.length - 1]
+    if (band && band.last === lineIndex - 1) {
+      const left = Math.min(band.x, box.x)
+      const bottom = Math.min(band.y, box.y)
+      band.w = Math.max(band.x + band.w, box.x + box.w) - left
+      band.h = Math.max(band.y + band.h, box.y + box.h) - bottom
+      band.x = left
+      band.y = bottom
+      band.count += 1
+      band.last = lineIndex
+    } else {
+      bands.push({ ...box, count: 1, last: lineIndex })
+    }
+  }
+  return bands.map(({ last: _last, ...band }) => band)
 }
 
 /**
