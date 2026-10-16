@@ -27,7 +27,7 @@ Three rules are Binder's own and outrank everything below:
 
 ## 3. Typography
 
-Flow's stack, unchanged: Archivo 800 (display, `--disp`), Hanken Grotesk (UI, `--sans`), Geist Mono (`--mono`), Kalam (`--hand`, personality only). Binder self-hosts all four (no font CDN) so the installed app renders correctly offline.
+Flow's stack, unchanged: Archivo 800 (display, `--font-display`, the `font-display` utility), Hanken Grotesk (UI, `--font-sans`), Geist Mono (`--font-mono`), Kalam (`--font-hand`, personality only). Binder self-hosts all four (no font CDN) so the installed app renders correctly offline.
 
 Binder additions:
 
@@ -101,10 +101,10 @@ Calling mode is designed for the tablet first (iPad landscape and portrait), and
 
 ### 6.2 Desktop shell
 
-- **Rail** 56 px, `--paper-2`, right rule `--line`. Top: the Binder mark (28 px). Items 44 × 44, icon over an 10 px label. Module hues: Script blue, Cues amber, Docs teal, Activity purple, Exports green; the active item takes its hue's soft fill and colour with `--sh-card`. Foot: Shows, then the user's avatar.
-- **Top bar** 44 px, `--paper`, bottom rule `--line`: breadcrumbs (show / document, current item bold), version chip, then on the right sync state, presence avatars, secondary actions, and the primary button (red).
-- **Content** on `--paper`, 28–32 px padding, sections labelled with Flow's section-label (over-label plus rule).
-- **Script screen**: thumbnails column (92 px) · the page centred on a `#0E0C0A` stage with a floating tool strip at its left edge · the right panel (340 px, `--paper-2`, tabs Cue / Layers / History / Review). A 26 px status bar at the bottom: page n of N, snap state, active layer, the four shortcuts people forget (`c` `]` `g` `⌘K`).
+- **Rail** 56 px, `--paper-2`, right rule `--line`. Top: the Binder mark (28 px). Items 44 × 44, icon over an 11 px label (the mockup draws 10 px; the 11 px floor wins). Module hues: Script blue, Cues amber, Docs teal, Activity purple, Exports green; the active item takes its hue's soft fill and colour with `--sh-card`. Foot: Shows, then the user's avatar.
+- **Top bar** 44 px (plus the top safe-area inset), `--paper`, bottom rule `--line`: breadcrumbs (show / document, current item bold), version chip, then on the right sync state, presence avatars, secondary actions, and the primary button (red). The script's own bar is the markup mockup's: sync, presence, Undo, Redo, Print, Calling mode and a "…" menu that holds Upload revision, Command palette…, Go to page… and Renumber from script order.
+- **Content** on `--paper`, 28–32 px padding (left and right padding never less than the device's safe-area insets), sections labelled with Flow's section-label (over-label plus rule).
+- **Script screen**: thumbnails column (92 px, the thumbnails 62 px wide inside it) · the page centred on a `#0E0C0A` stage with a floating tool strip at its left edge · the right panel (340 px, `--paper-2`, tabs Cue / Layers / History / Review). A 26 px status bar at the bottom: page n of N, snap state (Snap lives here, not in the strip), active layer, the four shortcuts people forget (`c` `]` `g` `⌘K`). The tool strip's buttons are 34 px with a mouse and 44 px on any touch screen (`pointer: coarse`); on a short touch screen the strip scrolls rather than shrinks its buttons. A tool's own options (the cue type, the stamp) open in a small flyout beside the tool, clamped inside the viewport.
 
 ### 6.3 Tablet
 
@@ -117,7 +117,7 @@ Rail drops its labels (52 px). Thumbnails hide by default (toggle in the top bar
 - Top bar 56 px (back chevron, title, one action) so 44 px targets fit.
 - The page fills the width with the tags still in its margins. The tool strip becomes a single "Place cue" floating button, shown when nothing is selected. Selecting a cue opens the cue editor as a **bottom sheet** (20 px top radius, grab handle, covers the tab bar while open).
 - Tables become cards (one row, one card: big mono number, label, page and trigger, flag pill). Swipe left on an activity row reveals Revert.
-- Every target ≥ 44 px; nothing depends on hover; safe-area insets respected (Flow §15).
+- Every target ≥ 44 px; nothing depends on hover; safe-area insets respected (Flow §15): the bottom inset under the tab bar, the top inset above the top bar, and the left and right insets (a notch in landscape) around the whole shell, the notices, the sheets and Calling mode. The shared Checkbox's hit area is 40 px with a mouse and 44 px on a touch screen.
 
 ## 7. Navigation
 
@@ -127,7 +127,7 @@ Rail drops its labels (52 px). Thumbnails hide by default (toggle in the top bar
 
 ## 8. Components
 
-Binder uses the RVLT registry primitives (copied into `apps/web/src/components/ui`, shadcn convention): Button, Input, Textarea, Label, Select, Checkbox, Switch, Tabs, Dialog, Sheet, Drawer (vaul), Popover, DropdownMenu, Tooltip, Kbd, Badge, Skeleton, Avatar, toasts (sonner). Icons are lucide, 18 px in the rail, 16 px inline, stroke 1.8.
+Binder uses the RVLT registry primitives (copied into `apps/web/src/components/ui`, shadcn convention): Button, Input, Textarea, Label, Select, Checkbox, Switch, Segmented, Tabs, Dialog, Sheet, Drawer (vaul), Popover, DropdownMenu, Tooltip, Kbd, Badge, Skeleton, Avatar. Notices are Binder's own (`Notices`, `pushNotice`), not sonner. There is no global stylesheet: styling is the three token and base files, Tailwind utilities, and `styles/markup.css` for what Tailwind cannot reach (the page's SVG objects, search hits, the drag ghost, presence avatars). Icons are lucide, 18 px in the rail, 16 px inline, stroke 1.8.
 
 Binder-specific components (each has a mockup in the gallery):
 
@@ -141,13 +141,18 @@ Binder-specific components (each has a mockup in the gallery):
 | **CueTable / CueCard** | table at desktop and tablet, cards at phone; flags as pills with words (duplicate, approximate, unresolved); selected row has a red outline |
 | **ActivityRow** | avatar, sentence (who, via agent in purple, what), meta line, mono time, Revert (with count when >10 rows) |
 | **ReviewRow** | old and new thumbnails, quote and page change in words, Accept (red) / Move / Revert |
-| **DocumentRow** | thumbnail, title, version and page count, status pills, actions; processing rows show a progress bar and the four steps (Upload → Extract text → Build word layer → Re-anchor) |
-| **SyncState** | dot plus word: Synced (ok), Syncing… n (warn), Offline (muted), Conflict n (red) |
+| **DocumentRow** | thumbnail, title, version and page count, status pills, actions; processing rows show a progress bar and the four steps (Upload → Extract text → Build word layer → Re-anchor), derived from what the data knows; a failed row says the plain reason and keeps the tool's own output behind "Details"; a cancelled row is neutral, not red |
+| **SyncState** | dot plus word: Synced (ok), Syncing… n (warn), Offline (muted; with "· n pending" when changes wait), Conflict n (red, not built: see ConflictCard) |
 | **Presence** | stacked avatars; "In the binder now" list with document and page |
 | **CommandPalette** | 640 px, 20 px radius, groups as in §7, current result with the red edge and ↵ hint, footer of keys in mono |
 | **CallingStrip** | page ‹ n / N ›, next cue on the active department (swatch, code, mono number, label), Go to…, Exit |
 | **GoToKeypad** | Cue / Page segmented, 40 px mono readout, live match line, 3 × 4 keys ≥ 64 px, wide red Go, Recent chips |
-| **OfflineBanner, ConflictCard, Toast, EmptyState, Skeleton** | as in the gallery's States sheet; skeleton is a solid `--elev` pulse with no gradient (Flow) |
+| **OfflineBanner** | the States sheet's banner: `--elev`, 2 px `--line-2`, radius 12, a wifi-off icon in `--muted`, "Offline. Changes are saved on this device — N waiting to sync." with N in mono. A polite status, never an alert. Drawn once, under the top bar of every signed-in screen, while the browser is offline; Calling mode's overlay covers it, since "offline, cached" is already that mode's calm state |
+| **Notice (toast)** | an `--elev` card, 2 px `--line-2`, radius 12, the sticker shadow, bottom-right (above the tab bar on a phone); the action is a blue 600 link and × dismisses. A problem (a rejected write, an error) also has a 3 px red bar down its left edge; good news has none |
+| **EmptyState** | an `.empty` card (`--card`, 2 px `--line-2`, `--r`, `--sh-card`): an optional icon tile or label, a 15 px / 600 heading, one `--ink-2` line, then optionally the Kalam line (`--ink-2`, never red) and one outlined action. Kalam appears nowhere else in a list |
+| **Skeleton** | rows on the table's column widths (52 px · flexible · 44 px, 46 px high), solid `--elev` bars with a pulse and no gradient (Flow), under visually hidden "Loading…" text |
+| **Confirm** | a 20 px-radius card, an 18 px Archivo title, one `--ink-2` sentence saying what goes and what stays recoverable, the destructive button red and last, the safe button beside it: "Keep" where a person's own thing is at risk (removing a member or an upload), "Cancel" where it only asks whether to go on |
+| **ConflictCard** | designed (the States sheet) but not built: Binder has no conflict flow yet, since sync is last-write-wins with a rejection notice. Its sync word, "Conflict n", is likewise not drawn |
 
 Required states for every interactive element are Flow's §9.1 (rest, hover, focus-visible red ring, active press, disabled, loading).
 
@@ -197,5 +202,30 @@ Lockups: in the app header, the tile and "Binder" in Archivo 800 with a "by RVLT
 | 2026-10-16 | Mockups are the binding visual standard: their button shape, red usage, copy and layout win over the registry and over the one-red-per-view rule | Jayden: "make sure the designs are fully compliant with the mockups" |
 | 2026-10-16 | New department defaults retuned for ink on paper; red refused in the picker | Red is RVLT's alert colour and the M1 SM default was red |
 | 2026-10-16 | Inactive phone tab labels use `--muted`, not `--faint` | ~3:1 contrast is too low in a dark venue (an accessibility floor, kept under the mockup rule) |
-| 2026-10-16 | Rail labels 11 px (mockup 10 px) | the 11 px floor |
 | 2026-10-16 | Fonts self-hosted | the installed app must render correctly offline |
+| 2026-10-16 | Red-guard threshold is ΔE76 < 20, not < 10 (R1) | at 10 the guard passes `#D0021B`, the red that motivated it; 20 still allows coral |
+| 2026-10-16 | The display utility is Flow's `font-display`, not `font-disp` (R6); Flow's fixed cream tokens stay (R7) | Flow's component class names must resolve unchanged, and the copied button's `cream` variant uses them |
+| 2026-10-16 | Sign out asks only when uploads are still waiting, and the in-app confirm replaces `window.confirm` for that (R9) | clearing the local database loses queued changes; with nothing waiting there is nothing to ask |
+| 2026-10-16 | Links the shell replaces ("← Show", in-page Settings · Activity · Exports) are removed from pages (R10); the show index keeps its Settings link (R13) | the rail and crumbs are the navigation; Settings is not a rail item |
+| 2026-10-16 | Kbd is restyled onto Binder tokens (R11) | the registry's class names resolve to no token in any theme |
+| 2026-10-16 | Rail labels are 11 px, not the mockup's 10 px (R12); §6.2 corrected | the 11 px floor outranks the mockup |
+| 2026-10-16 | Document processing shows only what the data knows: queued, processing, ready or failed, and per-page status; the four steps are derived and the bar is ready pages over page count, with no invented size figure (R14) | a step line that claims more than the pipeline reports would be a guess |
+| 2026-10-16 | The empty-show action is "Start a show" and an unarchived show wears the green "Active" pill (R15) | "New show" would be a second control with the top bar's name; "live" is red's word and a show that is merely open is not live |
+| 2026-10-16 | A failed version shows a plain sentence with the tool's output behind "Details" (R16); a first upload's "Upload again" opens a new version of the same document (R17); a cancelled version is neutral, not red (R34) | plain voice; no duplicate or undeletable rows; cancelling is the person's own choice |
+| 2026-10-16 | Tool keys v h n r a s / are real (R18); ⌘P prints inside a document (R35); ⇧C toggles Calling mode (R41) | §10 specifies them and a hint for a dead key would lie |
+| 2026-10-16 | The stamp picker and cue type are inline flyouts beside their tool (R19) | a portalled popover dismisses on the placing click |
+| 2026-10-16 | Thumbnails are 62 px wide in a 92 px column and Snap lives in the status bar (R22); the script's top bar is the markup mockup's, with Upload revision inside "…" (R39) | that is the mockup's geometry |
+| 2026-10-16 | Mockup copy wins over an e2e-pinned name (the tests change in the same commit), and the only departures from a mockup are the floors, accessible names the tests cannot reasonably change, and data Binder lacks, each listed where it happens (R20, R21) | the binding-standard decision above, applied |
+| 2026-10-16 | The overview's right column follows the mockup at every width, with DOM order equal to visual order at each width (R21) | assistive reading order must match what is seen |
+| 2026-10-16 | Notes and stamps match the mockup on screen and in print (R23), and a right-side cue note aligns to the tag's outer end (R27) | screen and print stay identical, and the note stays inside the margin column |
+| 2026-10-16 | The phone context drawer is genuinely non-modal (R25) | the page behind stays in the accessibility tree and a pointer user can still tap it |
+| 2026-10-16 | Byte sizes drop a trailing ".0" ("12 MB") (R26) | the mockup's own figure |
+| 2026-10-16 | Where mockup copy states a permission Binder does not grant, accurate copy wins (R31) | settings must not misstate permissions (members: editors work in the departments they are given) |
+| 2026-10-16 | A new personal access token is shown once in full in the app; only screenshots and mockups mask it (R32) | the one chance to copy it; a real secret must never be in a capture |
+| 2026-10-16 | The print dialog has no "Clean copy" preset or "Footer layers" line (R33); the preview uses the paper's real proportions in the mockup's slot | the print mockup has neither; unticking layers still makes a clean copy |
+| 2026-10-16 | For a cue-shaped palette query ("lx 12") the In-the-script group searches the number part (R36) | as the palette mockup draws it |
+| 2026-10-16 | The keep-offline switch has a "paused" state line, and an empty shows list is never passed to the runner (R37, R38) | it states the runner's real status in words; a prune is irreversible |
+| 2026-10-16 | Calling mode makes the shell inert; the phone strip's Exit button, 44 px targets over the mockup's 40, token colours over its slightly darker values and a page capped at 0.9 × stage height are accepted (R41) | the touch floor and the tokens outrank the mockup's numbers |
+| 2026-10-16 | Offline is a muted banner and a notice, never an alert; the conflict card and "Conflict n" are designed but not built (task 15a) | Binder has no conflict flow; sync words stay Synced, Syncing… n, Offline |
+| 2026-10-16 | The shell honours all four safe-area insets, and touch screens (`pointer: coarse`) get 44 px hit areas on the tool strip and the Checkbox, with the strip scrolling instead of shrinking (task 15a) | a notched phone in landscape clipped the rail; iPad mini in landscape got 32 px buttons |
+| 2026-10-16 | `styles.css` is gone: tokens, base, Tailwind utilities and `markup.css` carry all styling (task 15a) | one source for colour, and no literal hex outside data |

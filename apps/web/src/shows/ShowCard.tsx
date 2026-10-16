@@ -181,7 +181,15 @@ export function ShowCard({
           </div>
           {/* The foot: the chip or the avatars on the left, the sentence and its time on the right.
               Its height is reserved (the avatars' 24 px) so nothing shifts when data arrives. */}
-          <div className="mt-auto flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+          <div
+            className={cn(
+              'show-card-foot mt-auto flex min-h-6 items-center justify-between gap-x-2 gap-y-1.5',
+              // With avatars the foot stays on one line, however long the sentence: the sentence
+              // (basis 0, truncating) gives way before the avatars wrap under it. Without avatars,
+              // or beside the "nothing placed yet" chip (which cannot shrink), it may wrap.
+              inNow.length > 0 && cueCount !== 0 ? 'flex-nowrap' : 'flex-wrap',
+            )}
+          >
             {cueCount === 0 && (
               <span className="inline-flex items-center whitespace-nowrap rounded-[var(--r)] border border-line-2 px-2.5 py-1.5 font-hand text-[15px] leading-snug text-red">
                 {documents.length > 0 ? 'script in, nothing placed yet' : 'nothing placed yet'}
@@ -191,7 +199,7 @@ export function ShowCard({
             {ago &&
               (lastChange ? (
                 <span
-                  className="ml-auto flex min-w-0 items-baseline gap-1 text-[12px] text-muted"
+                  className="ml-auto flex min-w-0 flex-1 basis-0 items-baseline justify-end gap-1 text-[12px] text-muted"
                   title={`${lastChange.label} ${lastChange.summary}`}
                 >
                   {/* The mockup sets the whole line in the body face, the time included. The tooltip

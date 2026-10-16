@@ -230,6 +230,9 @@ describe('form controls and chrome (mockup _head.html)', () => {
       expect(c).toContain(token)
     }
     expect(c).not.toContain('bg-red')
+    // 40 px hit area with a mouse; 44 px on a touch screen (carry from F2c).
+    expect(c).toContain('after:-inset-[14px]')
+    expect(c).toContain('pointer-coarse:after:-inset-4')
   })
 
   it('Switch: 52 x 32, green when on (never red)', () => {

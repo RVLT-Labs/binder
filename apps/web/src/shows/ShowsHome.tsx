@@ -2,6 +2,7 @@ import type { ShowLastChange, ShowPresence } from '@binder/shared'
 import type { MouseEvent } from 'react'
 import { SectionHeading } from '@/components/SectionHeading'
 import { Button } from '@/components/ui/button'
+import { RowsSkeleton } from '@/components/ui/skeleton'
 import type { ShowRow } from '../powersync/schema'
 import type { StackPerson } from '../presence/Avatars'
 import { ShowCard } from './ShowCard'
@@ -93,7 +94,7 @@ export function ShowsHome({
       </header>
 
       {loading ? (
-        <p className="text-muted">Loading…</p>
+        <RowsSkeleton />
       ) : (
         <div className="flex flex-col gap-[26px]">
           <section className="flex flex-col gap-3">

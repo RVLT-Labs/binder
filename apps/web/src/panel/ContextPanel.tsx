@@ -219,7 +219,7 @@ export function ContextPanel(props: ContextPanelProps) {
           className={cn(
             'context-panel fixed inset-x-0 bottom-0 z-[60] flex max-h-[72svh] flex-col bg-card outline-none',
             'rounded-t-[20px] border-t-2 border-line-2 shadow-[0_-6px_0_rgba(0,0,0,0.5)]',
-            'pb-[max(1rem,env(safe-area-inset-bottom))]',
+            'pr-[env(safe-area-inset-right)] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)]',
             'data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=open]:duration-200',
             'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=closed]:duration-150',
           )}

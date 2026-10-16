@@ -180,7 +180,7 @@ test('Remove confirms, then calls delete; declining deletes nothing', async () =
   expect(dialog.textContent).toContain(
     'Remove Blocking notes.pdf? The file and its record go. Nothing in the script uses it.',
   )
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Keep' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(del).not.toHaveBeenCalled()
 

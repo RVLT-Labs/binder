@@ -227,3 +227,22 @@ test('the foot holds its height so data arriving moves nothing', async () => {
   const foot = screen.getByRole('listitem').querySelector('.mt-auto')
   expect(foot?.className).toContain('min-h-6')
 })
+
+test('a long sentence gives way (basis 0, truncated) before the avatars wrap under it', async () => {
+  const sentence = `${'LX relabelled and renumbered a very long run of cues, '.repeat(4)}in Act Two`
+  await renderCard({ inNow: [JAYDEN, MIKAELA], lastChange: { ...CHANGE, sentence } })
+  const card = screen.getByRole('listitem')
+  const foot = card.querySelector('.show-card-foot')
+  expect(foot?.className).toContain('flex-nowrap')
+  expect(foot?.className).not.toContain('flex-wrap')
+  const line = within(card).getByTitle('Mikaela relabelled 3 LX cues')
+  for (const token of ['flex-1', 'basis-0', 'min-w-0']) expect(line.className).toContain(token)
+  expect(within(card).getByText(sentence).className).toContain('truncate')
+})
+
+test('with no avatars the foot may wrap, and so may the empty-show chip beside the sentence', async () => {
+  await renderCard({ lastChange: CHANGE })
+  expect(screen.getByRole('listitem').querySelector('.show-card-foot')?.className).toContain(
+    'flex-wrap',
+  )
+})

@@ -1,14 +1,13 @@
-import { useQuery, useStatus } from '@powersync/react'
+import { useStatus } from '@powersync/react'
 import { useOnline } from '../offline/useOnline'
+import { usePendingChanges } from './usePendingChanges'
 
 /** Connection state plus the number of local changes not yet uploaded. */
 export function SyncStatus() {
   const status = useStatus()
   // The sync stream notices a lost network only when it next fails; the browser knows at once.
   const online = useOnline()
-  // ps_crud is PowerSync's upload queue: one row per local change awaiting upload.
-  const { data } = useQuery<{ n: number }>('SELECT count(*) AS n FROM ps_crud')
-  const pending = data[0]?.n ?? 0
+  const pending = usePendingChanges()
   const state = !online
     ? 'Offline'
     : status.connected

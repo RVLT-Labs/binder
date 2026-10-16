@@ -8,6 +8,46 @@ function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>)
   )
 }
 
+/**
+ * Loading rows, the mockups' `.ov-skrow` states sheet: a card of rows with the table's column widths
+ * (52 px · flexible · 44 px), each a `--elev` bar with no gradient. `label` is the words a screen
+ * reader (and a test) gets in place of the picture.
+ */
+function RowsSkeleton({
+  rows = 3,
+  label = 'Loading…',
+  className,
+}: {
+  rows?: number
+  label?: string
+  className?: string
+}) {
+  return (
+    <div
+      aria-busy="true"
+      className={cn(
+        'overflow-hidden rounded-[var(--r)] border-2 border-line-2 bg-card shadow-[var(--sh-card)]',
+        className,
+      )}
+    >
+      <span className="sr-only">{label}</span>
+      {Array.from({ length: rows }).map((_, r) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder rows never reorder
+          key={r}
+          aria-hidden
+          className="grid h-[46px] grid-cols-[52px_minmax(0,1fr)_44px] items-center gap-4 border-t border-line px-4 first:border-t-0"
+        >
+          <Skeleton className="h-3 rounded-[6px]" />
+          {/* deterministic widths, as the mockup's 72 / 54 / 84 % */}
+          <Skeleton className="h-3 rounded-[6px]" style={{ width: `${[72, 54, 84][r % 3]}%` }} />
+          <Skeleton className="h-3 rounded-[6px]" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Table skeleton — matches DataTable structure. Deterministic widths (no
  * Math.random) to avoid SSR/CSR hydration mismatches. */
 function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
@@ -134,4 +174,12 @@ function ListPageSkeleton({ rows = 8 }: { rows?: number }) {
   )
 }
 
-export { CardSkeleton, DetailPageSkeleton, FormSkeleton, ListPageSkeleton, Skeleton, TableSkeleton }
+export {
+  CardSkeleton,
+  DetailPageSkeleton,
+  FormSkeleton,
+  ListPageSkeleton,
+  RowsSkeleton,
+  Skeleton,
+  TableSkeleton,
+}

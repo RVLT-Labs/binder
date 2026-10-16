@@ -1,5 +1,8 @@
 import { type DragEvent, useState } from 'react'
+import { EmptyState } from '@/components/EmptyState'
+import { DocsIcon } from '@/components/icons'
 import { pushNotice } from '@/components/noticeStore'
+import { RowsSkeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { DocumentRow } from './DocumentRow'
 import { useUpload } from './UploadProvider'
@@ -107,9 +110,11 @@ export function DocumentList({ showId, data }: { showId: string; data: Documents
   return (
     <div className="flex flex-col gap-3">
       {data.loading ? (
-        <p className="m-0 text-muted">Loading…</p>
+        <RowsSkeleton />
       ) : data.entries.length === 0 ? (
-        <p className="m-0 text-muted">No documents yet.</p>
+        <EmptyState icon={DocsIcon} heading="No documents yet.">
+          Upload a script or score PDF to start the binder.
+        </EmptyState>
       ) : (
         <DocumentRows showId={showId} data={data} />
       )}

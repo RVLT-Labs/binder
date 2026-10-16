@@ -34,7 +34,8 @@ function HomePage() {
   const orgName = useOrgName(account.email)
   const summaries = useShowSummaries()
   const pulse = useShowPulse()
-  const localActivity = useLocalLastActivity()
+  // The local scan is only the card's fallback for when the server's last change is missing.
+  const localActivity = useLocalLastActivity(pulse.lastChanges === undefined)
   const now = useNow()
   // The control that opened the dialog, so focus can go back to it.
   const [opener, setOpener] = useState<HTMLElement | null>(null)

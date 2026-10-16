@@ -4,6 +4,7 @@ import {
   Outlet,
   useRouterState,
 } from '@tanstack/react-router'
+import { RowsSkeleton } from '@/components/ui/skeleton'
 import { useSessionUser } from '../auth/session'
 import { KeepOfflineRunner } from '../offline/keepOffline/KeepOfflineRunner'
 import { PowerSyncProvider } from '../powersync/provider'
@@ -16,11 +17,19 @@ import { useAccount } from '../shell/useAccount'
 export const Route = createRootRouteWithContext<RouterContext>()({ component: RootLayout })
 
 function RootLayout() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  // The screens on show, not the address: the address changes first, and the screen being left is
+  // still drawn (and still reads the local database) until the sign-in screen replaces it. Dropping
+  // the provider on the address alone is what made the top bar's sync state throw at sign-out.
+  const onLogin = useRouterState({
+    select: (s) =>
+      s.matches.length > 0
+        ? s.matches.some((m) => m.routeId === '/login')
+        : s.location.pathname === '/login',
+  })
   const { data: user, isPending, error } = useSessionUser()
 
-  if (pathname === '/login') return <Outlet />
-  if (isPending) return <p className="p-4">Loading…</p>
+  if (onLogin) return <Outlet />
+  if (isPending) return <RowsSkeleton className="m-4" />
   if (error) return <p className="p-4">Could not reach Binder: {error.message}</p>
   if (!user) return <Navigate to="/login" />
 

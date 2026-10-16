@@ -566,9 +566,10 @@ test('Delete removes the selected annotation for both users; a locked layer refu
       )
       made.push(id)
       await expect(shape(b.page, id)).toBeVisible({ timeout: 10_000 })
-      await expect(a.page.locator('[role="status"].visually-hidden')).toContainText(
-        /^Selected LX ellipse, page 1$/,
-      )
+      // The mode announcer is a second visually hidden status (it is empty until Calling mode is entered).
+      await expect(
+        a.page.locator('[role="status"].visually-hidden').filter({ hasText: 'Selected' }),
+      ).toHaveText(/^Selected LX ellipse, page 1$/)
 
       // Locked: the tools are disabled with the reason, and Delete does nothing.
       await a.page.getByLabel('Lock LX').check()

@@ -3,6 +3,7 @@ import { useQuery } from '@powersync/react'
 import { Link } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { SectionHeading } from '@/components/SectionHeading'
+import { RowsSkeleton } from '@/components/ui/skeleton'
 import { cn, focusRing } from '@/lib/utils'
 import { duplicateStats } from '../cuelist/duplicates'
 import { DocumentRows } from '../documents/DocumentList'
@@ -119,7 +120,7 @@ export function ShowOverview({ showId }: { showId: string }) {
         <section aria-labelledby="scripts-heading" className="flex flex-col gap-2.5">
           <SectionHeading id="scripts-heading">Scripts</SectionHeading>
           {documents.loading ? (
-            <p className="m-0 text-muted">Loading…</p>
+            <RowsSkeleton />
           ) : documents.entries.length === 0 ? (
             <p className="m-0 text-[14px] text-muted">
               No documents yet. Upload a PDF to start the binder.

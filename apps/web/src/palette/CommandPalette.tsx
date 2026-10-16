@@ -141,7 +141,7 @@ function PaletteBody({ showId }: { showId: string }) {
         'm-0 mx-auto mt-[72px] w-[640px] max-w-[calc(100vw-32px)] overflow-hidden rounded-[20px] border-2 border-line-2 bg-card p-0 text-ink shadow-dialog backdrop:bg-scrim',
         'open:flex open:max-h-[calc(100dvh-144px)] open:flex-col',
         // phone: the whole screen
-        'max-md:mt-0 max-md:h-dvh max-md:w-screen max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:pt-[env(safe-area-inset-top)] max-md:shadow-none max-md:open:max-h-none',
+        'max-md:mt-0 max-md:h-dvh max-md:w-screen max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:pt-[env(safe-area-inset-top)] max-md:pr-[env(safe-area-inset-right)] max-md:pl-[env(safe-area-inset-left)] max-md:shadow-none max-md:open:max-h-none',
       )}
     >
       <Command

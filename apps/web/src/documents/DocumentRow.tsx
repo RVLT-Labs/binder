@@ -590,7 +590,7 @@ function FailedRow({
   compact,
 }: DocumentRowProps & { entry: FailedEntry }) {
   const actions = useVersionActions(showId, entry.versionId, entry.code ?? 'legacy')
-  const { confirm, dialog } = useConfirm('Remove upload', 'Remove')
+  const { confirm, dialog } = useConfirm('Remove upload', 'Remove', 'Keep')
   const noteId = useId()
   const row = useRef<HTMLLIElement>(null)
   const removed = useRef(false)

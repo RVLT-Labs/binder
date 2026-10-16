@@ -102,7 +102,7 @@ function MemberRow({
 }) {
   const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
-  const { confirm, dialog } = useConfirm(`Remove ${member.name}?`, 'Remove')
+  const { confirm, dialog } = useConfirm(`Remove ${member.name}?`, 'Remove', 'Keep')
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['members', showId] })
   const save = useMutation({
     mutationFn: (patch: { role?: Role; departments?: string[] }) =>

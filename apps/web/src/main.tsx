@@ -16,8 +16,6 @@ import '@fontsource/kalam/latin-400.css'
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/markup.css'
-// The pre-restyle stylesheet; it loses rules screen by screen and is deleted with the last of them.
-import './styles.css'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: false } },

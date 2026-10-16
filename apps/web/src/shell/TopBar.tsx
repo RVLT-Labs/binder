@@ -48,7 +48,7 @@ export function TopBar({
     return (
       <header
         className={cn(
-          'group/bar flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-paper pr-2.5',
+          'group/bar flex h-[calc(56px+env(safe-area-inset-top))] shrink-0 items-center gap-1.5 border-b border-line bg-paper pt-[env(safe-area-inset-top)] pr-2.5',
           phoneTab || !parent?.link ? 'pl-4' : 'pl-1',
         )}
       >
@@ -97,7 +97,7 @@ export function TopBar({
 
   const shown = crumbs.filter((c) => !c.phoneOnly)
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3.5 border-b border-line bg-paper px-3.5">
+    <header className="flex h-[calc(44px+env(safe-area-inset-top))] shrink-0 items-center gap-3.5 border-b border-line bg-paper px-3.5 pt-[env(safe-area-inset-top)]">
       <nav aria-label="Breadcrumb" className="min-w-0">
         <ol className="flex items-center gap-1.5 text-[13px]">
           {shown.map((crumb, i) => {

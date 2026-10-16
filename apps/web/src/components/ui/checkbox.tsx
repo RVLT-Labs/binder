@@ -12,8 +12,9 @@ const Checkbox = React.forwardRef<
     ref={ref}
     className={cn(
       // the mockups' `.dx-cb`: 16 px, radius 5, paper fill, ink when checked. The `after:` layer
-      // is the 44 px hit area.
-      "relative size-4 shrink-0 rounded-[5px] border-2 border-border bg-paper transition-[background-color,border-color] after:absolute after:-inset-[14px] after:content-['']",
+      // is the hit area: 40 px with a mouse (the box's 12 px inside its border, 14 px each side) and
+      // 44 px on a touch screen (a coarse pointer: 16 px each side).
+      "relative size-4 shrink-0 rounded-[5px] border-2 border-border bg-paper transition-[background-color,border-color] after:absolute after:-inset-[14px] pointer-coarse:after:-inset-4 after:content-['']",
       'data-[state=checked]:bg-ink data-[state=checked]:border-ink',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper',
       'disabled:cursor-not-allowed disabled:opacity-45',

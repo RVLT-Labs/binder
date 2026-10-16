@@ -429,7 +429,7 @@ export function Viewer({
         'viewer flex min-h-0 flex-1 flex-col',
         // Calling covers the whole screen, the shell's rail and bars included.
         readOnly &&
-          'calling-view fixed inset-0 z-40 bg-stage pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]',
+          'calling-view fixed inset-0 z-40 bg-stage pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]',
       )}
     >
       {readOnly && calling?.header}

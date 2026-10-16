@@ -207,9 +207,17 @@ test.describe('keep offline', () => {
       await first.click()
       await expect(first).toBeChecked()
 
+      // Signing out must not render a screen after its database provider has gone (a React error).
+      const rendering: string[] = []
+      page.on('console', (m) => {
+        if (m.type() === 'error' && /currentStatus|The above error occurred/.test(m.text()))
+          rendering.push(m.text())
+      })
       await page.getByRole('button', { name: 'Account menu' }).first().click()
       await page.getByRole('menuitem', { name: 'Sign out' }).click()
       await expect(page).toHaveURL(/\/login/, { timeout: 30_000 })
+      await page.waitForTimeout(500)
+      expect(rendering).toEqual([])
 
       const second = await signIn()
       await expect(second).toBeVisible({ timeout: 60_000 })

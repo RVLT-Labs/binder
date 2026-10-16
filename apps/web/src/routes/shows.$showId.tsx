@@ -1,5 +1,6 @@
 import { useQuery } from '@powersync/react'
 import { createFileRoute, Outlet, useMatches } from '@tanstack/react-router'
+import { RowsSkeleton } from '@/components/ui/skeleton'
 import { UploadDocumentButton, UploadProvider } from '../documents/UploadProvider'
 import type { ShowRow } from '../powersync/schema'
 import { BinderAvatars } from '../presence/Avatars'
@@ -56,7 +57,7 @@ function ShowLayout() {
             ) : undefined
           }
         >
-          {isLoading ? <p>Loading…</p> : !show ? <p>Show not found.</p> : <Outlet />}
+          {isLoading ? <RowsSkeleton /> : !show ? <p>Show not found.</p> : <Outlet />}
         </AppShell>
       </UploadProvider>
     </PresenceProvider>

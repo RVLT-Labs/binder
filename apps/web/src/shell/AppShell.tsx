@@ -1,6 +1,7 @@
 import { useRouterState } from '@tanstack/react-router'
 import { type ReactNode, useMemo, useState } from 'react'
 import { Notices } from '@/components/Notices'
+import { ShellOfflineBanner } from '@/components/OfflineBanner'
 import { cn } from '@/lib/utils'
 import { CommandPalette } from '../palette/CommandPalette'
 import { activeNavKey } from './navItems'
@@ -75,7 +76,9 @@ export function AppShell({
 
   return (
     <TopBarSlotsContext value={slots}>
-      <div className="flex h-dvh w-full bg-paper text-ink">
+      {/* viewport-fit=cover draws under a notch: in landscape the left and right insets keep the rail,
+            the content and the sheets clear of it (the top bar takes the top, the tab bar the bottom). */}
+      <div className="flex h-dvh w-full bg-paper pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-ink">
         {!phone && (
           <div className="contents" inert={inert}>
             <Rail
@@ -100,6 +103,10 @@ export function AppShell({
               phoneTab={phoneTab}
               phoneTitleSize={phoneTitleSize}
             />
+          </div>
+          {/* Offline is a state, not an error: a muted bar under the top bar, out of reach in Calling. */}
+          <div className="contents" inert={inert}>
+            <ShellOfflineBanner className="shrink-0 px-4 pt-3 md:px-8 md:pt-3.5" />
           </div>
           <main
             data-full-bleed={fullBleed ? 'true' : undefined}

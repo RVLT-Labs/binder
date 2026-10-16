@@ -18,3 +18,67 @@
   stroke: var(--red);
   stroke-width: 2;
 }
+
+/* Search hits on the page: a wash of the warning amber, and a stronger orange for the one looked at. */
+.search-hit {
+  fill: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.search-hit-active {
+  fill: color-mix(in srgb, var(--dept-stg) 50%, transparent);
+  stroke: var(--dept-stg);
+  stroke-width: 1;
+}
+
+/* The cue tag that follows the pointer while it is dragged: the page's own paper and the department's ink. */
+.cue-drag-ghost {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+  transform: translate(4px, -50%);
+  padding: 0 4px;
+  border: 1.5px dashed;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--page) 85%, transparent);
+  font:
+    600 12px Helvetica,
+    Arial,
+    sans-serif;
+}
+
+/* Presence (spec 3.9): avatars are the peer's colour, never a department's. */
+.presence-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 1.375rem;
+  height: 1.375rem;
+  padding: 0 0.2rem;
+  border: 2px solid var(--page);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--page-ink) 30%, transparent);
+}
+.presence-more {
+  background: var(--page);
+  color: var(--page-ink);
+}
+/* Avatars sit over a thumbnail or a page and never take the pointer from it. */
+.thumbnail-presence,
+.page-presence {
+  position: absolute;
+  display: flex;
+  gap: 2px;
+  pointer-events: none;
+}
+.thumbnail-presence {
+  top: 0.25rem;
+  right: 0.25rem;
+}
+.page-presence {
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+}

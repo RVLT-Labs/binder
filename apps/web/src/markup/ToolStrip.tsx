@@ -11,11 +11,12 @@ import { StampPicker } from './StampPicker'
 import { setStamp, setTool, useTool } from './tools'
 import { UndoRedoButtons } from './UndoRedoButtons'
 
-// The mockup's `.tool`: 34 x 34, radius 9, a 17 px icon in `--muted`, at the desktop. Below 1025 px
-// (the mockup's tablet strip, `.mb-tt`, and the phone's inline one) it is 44 x 44 with a 19 px icon.
+// The mockup's `.tool`: 34 x 34, radius 9, a 17 px icon in `--muted`, at the desktop with a mouse.
+// Below 1025 px (the mockup's tablet strip, `.mb-tt`, and the phone's inline one), and on any touch
+// screen however wide (a coarse pointer: an iPad Pro in landscape), it is 44 x 44 with a 19 px icon.
 // The active tool is a red fill with the sticker shadow.
 const BUTTON = cn(
-  'relative flex size-11 shrink-0 items-center justify-center rounded-[10px] text-muted min-[1025px]:size-[34px] min-[1025px]:rounded-[9px]',
+  'relative flex size-11 shrink-0 items-center justify-center rounded-[10px] text-muted pointer-fine:min-[1025px]:size-[34px] pointer-fine:min-[1025px]:rounded-[9px]',
   'transition-colors hover:bg-elev hover:text-ink active:translate-y-px',
   focusRing,
   'focus-visible:ring-offset-card',
@@ -79,7 +80,17 @@ function Flyout({ floating, children }: { floating: boolean; children: ReactNode
     if (!floating) return
     const measure = () => {
       const tool = self.current?.parentElement?.getBoundingClientRect()
-      if (tool) setAt({ top: tool.top + tool.height / 2, left: tool.right + 8 })
+      const box = self.current?.getBoundingClientRect()
+      if (!tool || !box) return
+      // Beside its tool, but never off the viewport: a strip scrolled on a short screen leaves the
+      // tool near an edge, and the flyout (centred on the tool) is kept 8 px inside it.
+      const half = box.height / 2
+      const top = Math.min(
+        Math.max(tool.top + tool.height / 2, half + 8),
+        Math.max(half + 8, window.innerHeight - half - 8),
+      )
+      const left = Math.max(8, Math.min(tool.right + 8, window.innerWidth - box.width - 8))
+      setAt((was) => (was && was.top === top && was.left === left ? was : { top, left }))
     }
     measure()
     window.addEventListener('resize', measure)
@@ -123,12 +134,13 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
     'disabled' in session.annotationTarget ? session.annotationTarget.disabled : null
   // One hint element serves both groups when the reason is the same (an archived show).
   const annotationHint = annotationDisabled === disabled ? hintId : annotationHintId
-  // On a short stage the strip's buttons shrink first (a 1280x640 window), then the strip scrolls.
-  // (Under 1025 px only: the desktop's 34 px buttons already fit.)
+  // On a short stage with a mouse the strip's buttons shrink first (a 1280x640 window), then the strip
+  // scrolls. (Under 1025 px only: the desktop's 34 px buttons already fit.) A touch screen never
+  // shrinks them below 44 px: the strip scrolls instead.
   const BUTTON_CLASS = floating
     ? cn(
         BUTTON,
-        'max-[1024px]:[@media(max-height:760px)]:size-9 max-[1024px]:[@media(max-height:640px)]:size-8',
+        'pointer-fine:max-[1024px]:[@media(max-height:760px)]:size-9 pointer-fine:max-[1024px]:[@media(max-height:640px)]:size-8',
       )
     : BUTTON
 

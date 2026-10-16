@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { Button } from '@/components/ui/button'
+import { RowsSkeleton } from '@/components/ui/skeleton'
 import { blobUrl } from '../blobs/fetchBlob'
 import { CallingStatusLine, CallingView } from '../calling/CallingView'
 import { ModeAnnouncer } from '../calling/ModeAnnouncer'
@@ -223,7 +224,7 @@ function DocumentPage() {
   )
 
   if (children.length > 0) return <Outlet />
-  if (isLoading) return <p className="p-6 text-ink-2">Loading…</p>
+  if (isLoading) return <RowsSkeleton className="m-6" />
   if (!doc) return <p className="p-6 text-ink-2">Document not found.</p>
 
   /** Into Calling mode or out of it: the page, its zoom mode and the pages' place stay as they are. */

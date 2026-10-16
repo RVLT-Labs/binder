@@ -1,8 +1,9 @@
 import { cueListRows } from '@binder/core'
-import { type CueFields, canEditLayer, layerKey } from '@binder/shared'
+import { type CueFields, canEditLayer, deptChrome, layerKey } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { EmptyState } from '@/components/EmptyState'
 import { MoreIcon, SearchIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -26,7 +27,7 @@ import { ARCHIVED_HINT } from '../markup/MarkupSession'
 import { type EditContext, fromCueRow, updateCue } from '../markup/mutations'
 import { useLayers } from '../markup/useLayers'
 import { ContextPanel, type PanelTab } from '../panel/ContextPanel'
-import { Note } from '../panel/fields'
+import { Note, Swatch } from '../panel/fields'
 import type { Database } from '../powersync/schema'
 import { TopBarActions, TopBarPhone } from '../shell/TopBarSlots'
 import { useBreakpoint } from '../shell/useBreakpoint'
@@ -291,7 +292,34 @@ function CueListPage() {
 
   const list =
     rows.length === 0 ? (
-      <p className="m-0 text-[13px] text-muted">No {current.code} cues yet.</p>
+      <EmptyState
+        label={
+          <span
+            className="inline-flex items-center gap-1.5 text-[13px] font-bold"
+            style={{ color: current.colour ? deptChrome(current.colour) : undefined }}
+          >
+            <Swatch colour={current.colour ? deptChrome(current.colour) : 'var(--faint)'} />
+            {current.code}
+            <span className="font-mono font-normal text-muted tabular-nums">0</span>
+          </span>
+        }
+        heading={`No ${(current.name || current.code || '').toLowerCase()} cues yet.`}
+        hand="the quiet before the pad comes in"
+        action={
+          // Cues are placed on the page: into the first document, or the documents when there is none.
+          <Button asChild variant="line">
+            {documents[0] ? (
+              <Link to="/shows/$showId/docs/$docId" params={{ showId, docId: documents[0].id }}>
+                Place the first cue
+              </Link>
+            ) : (
+              <Link to="/shows/$showId/docs" params={{ showId }}>
+                Place the first cue
+              </Link>
+            )}
+          </Button>
+        }
+      />
     ) : shownRows.length === 0 ? (
       <p className="m-0 text-[13px] text-muted">No cues match.</p>
     ) : phone ? (

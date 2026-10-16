@@ -6,11 +6,15 @@ import type { ConfirmFn } from './types'
 
 /**
  * An in-page yes/no question, in place of `window.confirm`. Render `dialog` somewhere in the tree
- * and `await confirm(message)`: it resolves true on the confirm button and false on Cancel or Escape.
+ * and `await confirm(message)`: it resolves true on the confirm button and false on the cancel
+ * button or Escape. The states sheet's destructive confirm calls the cancel button "Keep": pass
+ * `cancelLabel` where what the question puts at risk is something the person has (a member, an
+ * upload), and leave "Cancel" where it only asks whether to go on.
  */
 export function useConfirm(
   title: string,
   confirmLabel: string,
+  cancelLabel = 'Cancel',
 ): { confirm: ConfirmFn; dialog: ReactNode } {
   const ref = useRef<HTMLDialogElement>(null)
   const resolver = useRef<((ok: boolean) => void) | null>(null)
@@ -53,17 +57,20 @@ export function useConfirm(
       <DialogShell
         ref={ref}
         labelledBy={titleId}
-        className="max-w-[min(26rem,calc(100vw-32px))]"
+        className="max-w-[min(26rem,calc(100vw-32px))] p-5"
         onCancel={(e) => {
           e.preventDefault()
           settle(false)
         }}
       >
-        <DialogHeader id={titleId}>{title}</DialogHeader>
-        <p className="text-[14px] text-ink-2">{message}</p>
-        <DialogFooter>
+        {/* The states sheet's `.ov-h` and body: 18 px title, a 13.5 px ink-2 line two lines under it. */}
+        <DialogHeader id={titleId} className="mb-2 text-[18px] tracking-[-0.02em]">
+          {title}
+        </DialogHeader>
+        <p className="m-0 text-[13.5px] leading-[1.5] text-ink-2">{message}</p>
+        <DialogFooter className="mt-[18px]">
           <Button type="button" variant="line" onClick={() => settle(false)}>
-            Cancel
+            {cancelLabel}
           </Button>
           <Button type="button" onClick={() => settle(true)}>
             {confirmLabel}

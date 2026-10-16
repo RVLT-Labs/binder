@@ -55,9 +55,18 @@ const LAST_ACTIVITY_SQL = `
     UNION ALL SELECT show_id, updated_at FROM document_versions
   ) GROUP BY show_id`
 
-/** Per show id, when it last changed on this device (the card's "Updated ..." fallback; works offline). */
-export function useLocalLastActivity(): ReadonlyMap<string, string> {
-  const { data } = useQuery<{ show_id: string; at: string | null }>(LAST_ACTIVITY_SQL)
+/** What the query is while nothing needs it: no tables, so nothing is watched and no write re-runs it. */
+export const NO_ACTIVITY_SQL = 'SELECT NULL AS show_id, NULL AS at WHERE 0'
+
+/**
+ * Per show id, when it last changed on this device (the card's "Updated ..." fallback; works
+ * offline). The scan reads four tables and re-runs on every write to any of them, so it runs only
+ * while `needed`: that is, while the server's last-change answer is missing (offline, or not in yet).
+ */
+export function useLocalLastActivity(needed: boolean): ReadonlyMap<string, string> {
+  const { data } = useQuery<{ show_id: string; at: string | null }>(
+    needed ? LAST_ACTIVITY_SQL : NO_ACTIVITY_SQL,
+  )
   return useMemo(() => {
     const out = new Map<string, string>()
     for (const row of data) if (row.at) out.set(row.show_id, row.at)
