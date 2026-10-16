@@ -152,8 +152,11 @@ async function storeThenWrite<T>(
   }
 }
 
-/** The version row exists and is durable; a failed enqueue marks it failed so a retry can find it. */
-async function enqueueProcessing(
+/**
+ * The version row exists and is durable; a failed enqueue marks it failed so a retry can find it.
+ * Internal (not in the services barrel): `retryVersion` uses it too.
+ */
+export async function enqueueProcessing(
   db: Executor,
   jobs: JobQueue,
   version: DocumentVersion,

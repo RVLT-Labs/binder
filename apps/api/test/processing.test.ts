@@ -1071,6 +1071,23 @@ describe.skipIf(skip)('tool wrappers', () => {
     expect((await readFile(output)).equals(await readFile(FIXTURES.scanPdf))).toBe(true)
   })
 
+  test('a timed-out OCR run is described by what happened, not by its first stderr line', async () => {
+    const pidFile = join(work, `ocr-describe-${Math.random().toString(36).slice(2)}.pid`)
+    vi.stubEnv('PIDFILE', pidFile)
+    // Prints a banner before hanging, as ocrmypdf does while it starts up.
+    await standInOcrmypdf(`echo "Start processing 4 pages concurrently" >&2\n${SLEEPER}`)
+    const output = join(work, 'ocr-describe-out.pdf')
+    ocrOverride.timeoutMs = 600 // the module mock above applies it to every runOcrmypdf call
+    try {
+      const result = await runOcrmypdf(FIXTURES.scanPdf, output, { mode: 'auto' })
+      expect(result).toMatchObject({ ocrApplied: false, exitCode: null, timedOut: true })
+      expect(result.stderr).toContain('Start processing')
+      expect(describeOcrFailure(result)).toBe('ocrmypdf timed out after 0.6s')
+    } finally {
+      reap(readFileSyncSafe(pidFile) ? Number(readFileSyncSafe(pidFile)) : undefined)
+    }
+  }, 60_000)
+
   test('runTool aborts the whole process group on signal', async () => {
     const pidFile = join(work, 'group.pid')
     const controller = new AbortController()

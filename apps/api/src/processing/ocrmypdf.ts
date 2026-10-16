@@ -11,6 +11,8 @@ export interface OcrResult {
   stderr: string
   /** Set (true) only when OCRmyPDF ran past its timeout and was killed. */
   timedOut?: true
+  /** The timeout it ran past; set with `timedOut`. */
+  timeoutMs?: number
 }
 
 /**
@@ -29,6 +31,7 @@ export async function runOcrmypdf(
     await copyFile(input, output)
     return { ocrApplied: false, exitCode: null, stderr: '' }
   }
+  const timeoutMs = opts.timeoutMs ?? OCRMYPDF_TIMEOUT_MS
   try {
     const { stderr } = await runTool(
       'ocrmypdf',
@@ -45,7 +48,7 @@ export async function runOcrmypdf(
         input,
         output,
       ],
-      { timeoutMs: opts.timeoutMs ?? OCRMYPDF_TIMEOUT_MS, signal: opts.signal },
+      { timeoutMs, signal: opts.signal },
     )
     return { ocrApplied: true, exitCode: 0, stderr }
   } catch (err) {
@@ -55,13 +58,20 @@ export async function runOcrmypdf(
       ocrApplied: false,
       exitCode: err.exitCode,
       stderr: err.stderr,
-      ...(err.timedOut ? { timedOut: true as const } : {}),
+      ...(err.timedOut ? { timedOut: true as const, timeoutMs } : {}),
     }
   }
 }
 
-/** The one-line summary stored in the version's `error` when OCR fell back to a copy. */
+/**
+ * The one-line summary stored in the version's `error` when OCR fell back to a copy. A timeout is a
+ * constant sentence: the tool's own first stderr line (a start-up banner, say) would hide it.
+ */
 export function describeOcrFailure(result: OcrResult): string {
-  if (result.timedOut) return `ocrmypdf ${firstLine(result.stderr) || 'timed out'}`
+  if (result.timedOut) {
+    return result.timeoutMs === undefined
+      ? 'ocrmypdf timed out'
+      : `ocrmypdf timed out after ${result.timeoutMs / 1000}s`
+  }
   return `ocrmypdf exit ${result.exitCode ?? 'none'}: ${firstLine(result.stderr)}`
 }

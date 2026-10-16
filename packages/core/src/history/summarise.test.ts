@@ -143,6 +143,68 @@ describe('summariseBatch', () => {
     expect(summariseBatch([v1])).toBe('uploaded 1 revision')
   })
 
+  describe('processing controls', () => {
+    const cancel: SummaryRow = {
+      table: 'document_versions',
+      op: 'update',
+      before: { status: 'processing', failureCode: null },
+      after: { status: 'failed', failureCode: 'cancelled' },
+      departmentCode: null,
+    }
+    const retry: SummaryRow = {
+      table: 'document_versions',
+      op: 'update',
+      before: { status: 'failed', failureCode: 'timeout' },
+      after: { status: 'queued', failureCode: null },
+      departmentCode: null,
+    }
+    const removeVersion: SummaryRow = {
+      table: 'document_versions',
+      op: 'delete',
+      before: { versionNumber: 1, status: 'failed', failureCode: 'unreadable' },
+      after: null,
+      departmentCode: null,
+    }
+    const removeDocument: SummaryRow = {
+      table: 'documents',
+      op: 'delete',
+      before: { title: 'Libretto' },
+      after: null,
+      departmentCode: null,
+    }
+
+    test('cancelled, retried and removed read "1 upload"', () => {
+      expect(summariseBatch([cancel])).toBe('cancelled 1 upload')
+      expect(summariseBatch([retry])).toBe('retried 1 upload')
+      expect(summariseBatch([removeVersion])).toBe('removed 1 upload')
+      expect(summariseBatch([cancel, cancel])).toBe('cancelled 2 uploads')
+    })
+
+    test("removing an only version counts the document's own version once", () => {
+      expect(summariseBatch([removeVersion, removeDocument])).toBe('removed 1 upload')
+    })
+
+    test('other updates to a version are still "updated"', () => {
+      const relabelled: SummaryRow = {
+        ...cancel,
+        before: { label: 'a' },
+        after: { label: 'b' },
+      }
+      expect(summariseBatch([relabelled])).toBe('updated 1 revision')
+    })
+
+    test('the new verbs join other clauses without repeating the noun', () => {
+      const uploaded: SummaryRow = {
+        table: 'document_versions',
+        op: 'insert',
+        before: null,
+        after: { versionNumber: 2 },
+        departmentCode: null,
+      }
+      expect(summariseBatch([uploaded, cancel])).toBe('uploaded 1 revision and cancelled 1')
+    })
+  })
+
   test('an empty batch is an empty sentence', () => expect(summariseBatch([])).toBe(''))
 })
 
@@ -198,6 +260,39 @@ describe('cardSentence', () => {
     expect(cardSentence(mixed)).toBe('moved 2 LX cues; placed 1 SND cue')
     const withRevision = [upload('document_versions', 2), relabel('LX')]
     expect(cardSentence(withRevision)).toBe('uploaded 1 revision; relabelled 1 LX cue')
+  })
+
+  test('cancelled, retried and removed read "upload cancelled" and so on', () => {
+    const version = (
+      op: SummaryRow['op'],
+      before: Record<string, unknown> | null,
+      after: Record<string, unknown> | null,
+    ): SummaryRow => ({ table: 'document_versions', op, before, after, departmentCode: null })
+    const cancel = version(
+      'update',
+      { status: 'queued', failureCode: null },
+      { status: 'failed', failureCode: 'cancelled' },
+    )
+    const retry = version(
+      'update',
+      { status: 'failed', failureCode: 'unknown' },
+      { status: 'queued', failureCode: null },
+    )
+    const remove = version('delete', { versionNumber: 2, status: 'failed' }, null)
+    expect(cardSentence([cancel])).toBe('upload cancelled')
+    expect(cardSentence([cancel, cancel])).toBe('2 uploads cancelled')
+    expect(cardSentence([retry])).toBe('upload retried')
+    expect(cardSentence([remove])).toBe('upload removed')
+    const removeDocument: SummaryRow = {
+      table: 'documents',
+      op: 'delete',
+      before: { title: 'Libretto' },
+      after: null,
+      departmentCode: null,
+    }
+    expect(cardSentence([remove, removeDocument])).toBe('upload removed')
+    // Mixed verbs fall back to the feed sentence.
+    expect(cardSentence([cancel, retry])).toBe('cancelled 1 upload and retried 1')
   })
 
   test('an update to a document is not an upload and falls back', () => {
