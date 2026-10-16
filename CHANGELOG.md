@@ -8,6 +8,7 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 ## [Unreleased]
 
 ### Added
+- MIT `LICENSE` (the agent skill's header already said MIT), with `"license": "MIT"` in every `package.json`.
 - `CLAUDE.md` (notes for Claude sessions), this changelog, `docs/README.md` (a map of the docs), the UI
   restyle rulings record, and a README for the mockup sources.
 - `scripts/e2e-locked.sh`, exposed as `pnpm e2e`, `pnpm e2e:offline` and `pnpm e2e:all` at the repo root: runs

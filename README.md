@@ -62,3 +62,7 @@ An agent connects to `POST /mcp` with a personal access token (create one in the
 
 Production is Docker Compose on Coolify, built from `main`. See [`deploy/README.md`](deploy/README.md) for secrets,
 the first user, backups and the smoke tests.
+
+## License
+
+[MIT](LICENSE), copyright (c) 2026 Jayden Nawotka.
