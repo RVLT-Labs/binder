@@ -17,6 +17,7 @@ export interface NavItem {
   to:
     | '/shows/$showId'
     | '/shows/$showId/cues'
+    | '/shows/$showId/docs'
     | '/shows/$showId/activity'
     | '/shows/$showId/exports'
   params: { showId: string }
@@ -37,9 +38,14 @@ export function navItems(showId: string): NavItem[] {
       hue: 'amber',
       icon: SlidersHorizontal,
     },
-    // The Documents screen has no route of its own yet, so Docs opens the show's page, where the
-    // documents are listed.
-    { key: 'docs', label: 'Docs', to: '/shows/$showId', params, hue: 'teal', icon: NotepadText },
+    {
+      key: 'docs',
+      label: 'Docs',
+      to: '/shows/$showId/docs',
+      params,
+      hue: 'teal',
+      icon: NotepadText,
+    },
     {
       key: 'activity',
       label: 'Activity',

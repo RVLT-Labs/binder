@@ -6,6 +6,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { pushNotice } from '../components/noticeStore'
 import { CueListTable } from '../cuelist/CueListTable'
 import { CueSheetButtons } from '../cuelist/CueSheetButtons'
+import { duplicateStats } from '../cuelist/duplicates'
 import { RenumberDialog } from '../cuelist/RenumberDialog'
 import { ARCHIVED_HINT } from '../markup/MarkupSession'
 import { type EditContext, fromCueRow, updateCue } from '../markup/mutations'
@@ -15,12 +16,15 @@ import type { Database } from '../powersync/schema'
 interface CueListSearch {
   /** The department whose cues are listed; the first visible one by default. */
   department?: string
+  /** List only the cues that share a number with another (the overview's "Fix" link). */
+  duplicates?: boolean
 }
 
 export const Route = createFileRoute('/shows/$showId/cues')({
   validateSearch: (search: Record<string, unknown>): CueListSearch => ({
     department:
       typeof search.department === 'string' && search.department ? search.department : undefined,
+    duplicates: search.duplicates === true || search.duplicates === 'true' ? true : undefined,
   }),
   component: CueListPage,
 })
@@ -30,7 +34,7 @@ type DocumentInfo = { id: string; title: string; current_version_id: string | nu
 
 function CueListPage() {
   const { showId } = Route.useParams()
-  const { department } = Route.useSearch()
+  const { department, duplicates: onlyDuplicates } = Route.useSearch()
   const db = usePowerSync()
   const navigate = useNavigate()
   const { userId, scope, departments, state: layers } = useLayers(showId)
@@ -84,7 +88,11 @@ function CueListPage() {
       ),
     [cues, departments, documents],
   )
-  const duplicates = rows.filter((r) => r.flags.includes('duplicate')).length
+  // The same count the show overview's "Needs you" uses.
+  const duplicates = duplicateStats(cues.map((row) => ({ id: row.id, ...fromCueRow(row) }))).get(
+    departmentId,
+  )
+  const shownRows = onlyDuplicates ? rows.filter((r) => r.flags.includes('duplicate')) : rows
 
   async function edit(id: string, patch: Partial<CueFields>) {
     const now = editContext()
@@ -122,9 +130,24 @@ function CueListPage() {
         ))}
       </nav>
       {readOnly && <p className="muted">{readOnly}</p>}
-      {duplicates > 0 && (
+      {duplicates && (
         <p role="status" className="muted">
-          {duplicates} cues share a number with another {current.code} cue.
+          {current.code} has {duplicates.numbers} duplicate{' '}
+          {duplicates.numbers === 1 ? 'number' : 'numbers'}: {duplicates.cues} cues share a number
+          with another {current.code} cue.{' '}
+          {onlyDuplicates ? (
+            <Link to="/shows/$showId/cues" params={{ showId }} search={{ department: current.id }}>
+              Show all {current.code} cues
+            </Link>
+          ) : null}
+        </p>
+      )}
+      {onlyDuplicates && !duplicates && (
+        <p role="status" className="muted">
+          No duplicate numbers in {current.code}.{' '}
+          <Link to="/shows/$showId/cues" params={{ showId }} search={{ department: current.id }}>
+            Show all {current.code} cues
+          </Link>
         </p>
       )}
       <p>
@@ -145,7 +168,7 @@ function CueListPage() {
         <p>No {current.code} cues yet.</p>
       ) : (
         <CueListTable
-          rows={rows}
+          rows={shownRows}
           readOnly={readOnly}
           onEdit={(id, patch) => void edit(id, patch)}
           onOpen={(row) => {

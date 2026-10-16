@@ -63,9 +63,10 @@ test('after a cold offline reload, the switcher shows v1 from cached blobs with 
   await expect(page.getByRole('button', { name: 'Make available offline' })).toBeVisible({
     timeout: 30_000,
   })
-  await expect(page.getByRole('list', { name: 'Documents' })).toContainText('v2 ready', {
-    timeout: 30_000,
-  })
+  // The row's words say "v2 current" once v2 is ready and the cues have moved to it.
+  await expect(
+    page.getByRole('list', { name: 'Documents' }).locator('.version-status[data-status="ready"]'),
+  ).toContainText('v2 current', { timeout: 30_000 })
   await page.getByRole('button', { name: 'Make available offline' }).click()
   await expect(page.getByText('Available offline (14 files)')).toBeVisible({ timeout: 120_000 })
 

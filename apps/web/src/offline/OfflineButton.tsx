@@ -1,5 +1,7 @@
 import { usePowerSync } from '@powersync/react'
 import { useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { blobCacheChanged } from './cacheStatus'
 import { type PrefetchProgress, prefetchShow } from './prefetch'
 
 type State =
@@ -34,25 +36,29 @@ export function OfflineButton({ showId }: { showId: string }) {
       if (mounted.current) {
         setState({ phase: 'error', message: err instanceof Error ? err.message : String(err) })
       }
+    } finally {
+      // Whatever got stored (or not), the screens that say what is on this device look again.
+      blobCacheChanged()
     }
   }
 
   const running = state.phase === 'running'
   return (
-    <div className="offline">
-      <button type="button" onClick={start} disabled={running}>
+    <div className="offline flex flex-col items-start gap-3">
+      <Button type="button" variant="line" size="sm" onClick={start} disabled={running}>
         {state.phase === 'done' && state.failed === 0
           ? 'Refresh offline copy'
           : 'Make available offline'}
-      </button>
+      </Button>
       {running && (
         <progress
           aria-label="Offline download progress"
           value={state.progress.done}
           max={Math.max(state.progress.total, 1)}
+          className="h-2 w-full appearance-none overflow-hidden rounded-full [&::-moz-progress-bar]:bg-ink-2 [&::-webkit-progress-bar]:bg-paper-2 [&::-webkit-progress-value]:bg-ink-2"
         />
       )}
-      <span role="status" className="offline-status">
+      <span role="status" className="offline-status text-[13px] text-muted empty:-mt-3">
         {state.phase === 'running' && state.progress.total > 0
           ? `Saving ${state.progress.done} of ${state.progress.total}…`
           : state.phase === 'done'

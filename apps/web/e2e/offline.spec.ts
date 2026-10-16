@@ -33,7 +33,7 @@ test('make available offline, go offline, reload, view and search', async ({ pag
   await page.reload()
   const link = page.getByRole('list', { name: 'Documents' }).getByRole('link', { name: title })
   await expect(link).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByRole('region', { name: 'Who is in the binder' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'In the binder now' })).toHaveCount(0)
 
   // The document opens and its first page renders, from cached bytes.
   await link.click()

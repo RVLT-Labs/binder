@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
+import { installDialogPolyfill } from '../test/dialog'
 import { UploadDialog } from './UploadDialog'
 
 /** Records what the dialog sends and lets each test answer as the server. */
@@ -43,9 +44,7 @@ class FakeXhr {
 beforeEach(() => {
   vi.stubGlobal('XMLHttpRequest', FakeXhr)
   // jsdom does not implement modal dialogs.
-  HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
-    this.open = true
-  }
+  installDialogPolyfill()
 })
 
 const pdf = new File(['%PDF-1.7 ...'], 'Pirates Libretto.pdf', { type: 'application/pdf' })
@@ -151,4 +150,50 @@ test("a 413 from the API keeps the API's own message", async () => {
     FakeXhr.last.respond(413, { error: 'payload_too_large', message: 'The file is over 200 MB' }),
   )
   expect(screen.getByRole('alert').textContent).toBe('The file is over 200 MB')
+})
+
+test('closes through the dialog and hands focus back to the control that opened it', async () => {
+  const opener = document.createElement('button')
+  document.body.append(opener)
+  const onClose = vi.fn()
+  render(
+    <UploadDialog
+      showId="s1"
+      target={{ kind: 'document' }}
+      onClose={onClose}
+      returnFocusTo={opener}
+    />,
+  )
+  chooseFile()
+  fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
+  await act(async () => FakeXhr.last.respond(201, { document: {}, version: {} }))
+  expect(onClose).toHaveBeenCalledOnce()
+  expect(document.activeElement).toBe(opener)
+  opener.remove()
+})
+
+test('Cancel closes it and returns focus', () => {
+  const opener = document.createElement('button')
+  document.body.append(opener)
+  const onClose = vi.fn()
+  render(
+    <UploadDialog
+      showId="s1"
+      target={{ kind: 'document' }}
+      onClose={onClose}
+      returnFocusTo={opener}
+    />,
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(onClose).toHaveBeenCalledOnce()
+  expect(document.activeElement).toBe(opener)
+  opener.remove()
+})
+
+test('a dropped file arrives already chosen, with its title filled in', () => {
+  render(
+    <UploadDialog showId="s1" target={{ kind: 'document' }} onClose={() => {}} initialFile={pdf} />,
+  )
+  expect(screen.getByLabelText('Title')).toHaveProperty('value', 'Pirates Libretto')
+  expect(screen.getByRole('button', { name: 'Upload' })).toHaveProperty('disabled', false)
 })

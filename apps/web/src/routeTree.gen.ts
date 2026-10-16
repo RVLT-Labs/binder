@@ -19,6 +19,7 @@ import { Route as ShowsShowIdCuesRouteImport } from './routes/shows.$showId.cues
 import { Route as ShowsShowIdExportsRouteImport } from './routes/shows.$showId.exports'
 import { Route as ShowsShowIdMoreRouteImport } from './routes/shows.$showId.more'
 import { Route as ShowsShowIdSettingsRouteImport } from './routes/shows.$showId.settings'
+import { Route as ShowsShowIdDocsIndexRouteImport } from './routes/shows.$showId.docs.index'
 import { Route as ShowsShowIdDocsDocIdRouteImport } from './routes/shows.$showId.docs.$docId'
 import { Route as ShowsShowIdDocsDocIdCompareRouteImport } from './routes/shows.$showId.docs.$docId.compare'
 
@@ -72,6 +73,11 @@ const ShowsShowIdSettingsRoute = ShowsShowIdSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => ShowsShowIdRoute,
 } as any)
+const ShowsShowIdDocsIndexRoute = ShowsShowIdDocsIndexRouteImport.update({
+  id: '/docs/',
+  path: '/docs/',
+  getParentRoute: () => ShowsShowIdRoute,
+} as any)
 const ShowsShowIdDocsDocIdRoute = ShowsShowIdDocsDocIdRouteImport.update({
   id: '/docs/$docId',
   path: '/docs/$docId',
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
   '/shows/$showId/': typeof ShowsShowIdIndexRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRouteWithChildren
+  '/shows/$showId/docs/': typeof ShowsShowIdDocsIndexRoute
   '/shows/$showId/docs/$docId/compare': typeof ShowsShowIdDocsDocIdCompareRoute
 }
 export interface FileRoutesByTo {
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
   '/shows/$showId': typeof ShowsShowIdIndexRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRouteWithChildren
+  '/shows/$showId/docs': typeof ShowsShowIdDocsIndexRoute
   '/shows/$showId/docs/$docId/compare': typeof ShowsShowIdDocsDocIdCompareRoute
 }
 export interface FileRoutesById {
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/shows/$showId/settings': typeof ShowsShowIdSettingsRoute
   '/shows/$showId/': typeof ShowsShowIdIndexRoute
   '/shows/$showId/docs/$docId': typeof ShowsShowIdDocsDocIdRouteWithChildren
+  '/shows/$showId/docs/': typeof ShowsShowIdDocsIndexRoute
   '/shows/$showId/docs/$docId/compare': typeof ShowsShowIdDocsDocIdCompareRoute
 }
 export interface FileRouteTypes {
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
     | '/shows/$showId/settings'
     | '/shows/$showId/'
     | '/shows/$showId/docs/$docId'
+    | '/shows/$showId/docs/'
     | '/shows/$showId/docs/$docId/compare'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/shows/$showId/settings'
     | '/shows/$showId'
     | '/shows/$showId/docs/$docId'
+    | '/shows/$showId/docs'
     | '/shows/$showId/docs/$docId/compare'
   id:
     | '__root__'
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/shows/$showId/settings'
     | '/shows/$showId/'
     | '/shows/$showId/docs/$docId'
+    | '/shows/$showId/docs/'
     | '/shows/$showId/docs/$docId/compare'
   fileRoutesById: FileRoutesById
 }
@@ -249,6 +261,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShowsShowIdSettingsRouteImport
       parentRoute: typeof ShowsShowIdRoute
     }
+    '/shows/$showId/docs/': {
+      id: '/shows/$showId/docs/'
+      path: '/docs'
+      fullPath: '/shows/$showId/docs/'
+      preLoaderRoute: typeof ShowsShowIdDocsIndexRouteImport
+      parentRoute: typeof ShowsShowIdRoute
+    }
     '/shows/$showId/docs/$docId': {
       id: '/shows/$showId/docs/$docId'
       path: '/docs/$docId'
@@ -285,6 +304,7 @@ interface ShowsShowIdRouteChildren {
   ShowsShowIdSettingsRoute: typeof ShowsShowIdSettingsRoute
   ShowsShowIdIndexRoute: typeof ShowsShowIdIndexRoute
   ShowsShowIdDocsDocIdRoute: typeof ShowsShowIdDocsDocIdRouteWithChildren
+  ShowsShowIdDocsIndexRoute: typeof ShowsShowIdDocsIndexRoute
 }
 
 const ShowsShowIdRouteChildren: ShowsShowIdRouteChildren = {
@@ -295,6 +315,7 @@ const ShowsShowIdRouteChildren: ShowsShowIdRouteChildren = {
   ShowsShowIdSettingsRoute: ShowsShowIdSettingsRoute,
   ShowsShowIdIndexRoute: ShowsShowIdIndexRoute,
   ShowsShowIdDocsDocIdRoute: ShowsShowIdDocsDocIdRouteWithChildren,
+  ShowsShowIdDocsIndexRoute: ShowsShowIdDocsIndexRoute,
 }
 
 const ShowsShowIdRouteWithChildren = ShowsShowIdRoute._addFileChildren(

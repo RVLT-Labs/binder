@@ -325,7 +325,7 @@ test('the show page lists who is in the binder: in the show, then the document a
   await withBoth(
     browser,
     async (a, b) => {
-      const list = b.page.getByRole('region', { name: 'Who is in the binder' })
+      const list = b.page.getByRole('region', { name: 'In the binder now' })
       const entry = list.getByRole('listitem').filter({ hasText: users.owner.name })
       // The row starts with the avatar's initials, which are decorative; the sentence follows.
       const inShow = new RegExp(`${users.owner.name} — in the show$`)

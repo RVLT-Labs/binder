@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react'
+import { SectionHeading } from '@/components/SectionHeading'
 import { Button } from '@/components/ui/button'
 import type { ShowRow } from '../powersync/schema'
 import { ShowCard } from './ShowCard'
@@ -113,16 +114,6 @@ export function ShowsHome({
           )}
         </>
       )}
-    </div>
-  )
-}
-
-/** A section label with a rule running off to the right (the mockup's section divider). */
-function SectionHeading({ children }: { children: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <h2 className="text-[12px] font-bold text-muted">{children}</h2>
-      <span aria-hidden className="h-px flex-1 bg-line" />
     </div>
   )
 }

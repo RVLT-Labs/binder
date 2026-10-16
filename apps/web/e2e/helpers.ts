@@ -30,13 +30,17 @@ export async function uploadAndWaitReady(
   await dialog.getByRole('button', { name: 'Upload', exact: true }).click()
   await expect(dialog).toBeHidden({ timeout: 30_000 })
 
-  // The list follows the synced version row through processing to ready.
+  // The list follows the synced version row through processing to ready. A row carries its
+  // version's status on `.version-status[data-status]`; its words are for people (Processing, v1 current).
   const row = page
     .getByRole('list', { name: 'Documents' })
     .getByRole('listitem')
     .filter({ hasText: title })
-  await expect(row).toContainText(/queued|processing|ready/, { timeout: 20_000 })
-  await expect(row).toContainText('ready', { timeout: readyTimeout })
+  const status = row.locator('.version-status')
+  await expect(status).toHaveAttribute('data-status', /queued|processing|ready/, {
+    timeout: 20_000,
+  })
+  await expect(status).toHaveAttribute('data-status', 'ready', { timeout: readyTimeout })
   return row
 }
 

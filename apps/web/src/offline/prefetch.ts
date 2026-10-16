@@ -79,6 +79,26 @@ export function blobUrlsForShow({ versions, pages, documents = [] }: ShowBlobRow
   return [...urls]
 }
 
+/** The rows `blobUrlsForShow` needs, read from the local database. */
+export async function loadShowBlobRows(
+  db: ShowDb,
+  showId: string,
+): Promise<Required<ShowBlobRows>> {
+  const versions = await db.getAll<ShowBlobRows['versions'][number]>(
+    'SELECT id, document_id, version_number, status, searchable_key FROM document_versions WHERE show_id = ? ORDER BY document_id, version_number',
+    [showId],
+  )
+  const documents = await db.getAll<NonNullable<ShowBlobRows['documents']>[number]>(
+    'SELECT id, current_version_id FROM documents WHERE show_id = ? ORDER BY sort_order, created_at, id',
+    [showId],
+  )
+  const pages = await db.getAll<ShowBlobRows['pages'][number]>(
+    'SELECT document_version_id, thumb_key, words_key FROM pages WHERE show_id = ? ORDER BY document_version_id, "index"',
+    [showId],
+  )
+  return { versions, documents, pages }
+}
+
 /**
  * Stores a show's ready documents for offline use: asks the browser to keep the storage, then
  * downloads every blob into the cache fetchBlob reads. One blob failing never stops the rest; the
@@ -94,19 +114,7 @@ export async function prefetchShow(
     await navigator.storage?.persist?.()
   } catch {}
 
-  const versions = await db.getAll<ShowBlobRows['versions'][number]>(
-    'SELECT id, document_id, version_number, status, searchable_key FROM document_versions WHERE show_id = ? ORDER BY document_id, version_number',
-    [showId],
-  )
-  const documents = await db.getAll<NonNullable<ShowBlobRows['documents']>[number]>(
-    'SELECT id, current_version_id FROM documents WHERE show_id = ? ORDER BY sort_order, created_at, id',
-    [showId],
-  )
-  const pages = await db.getAll<ShowBlobRows['pages'][number]>(
-    'SELECT document_version_id, thumb_key, words_key FROM pages WHERE show_id = ? ORDER BY document_version_id, "index"',
-    [showId],
-  )
-  const urls = blobUrlsForShow({ versions, pages, documents })
+  const urls = blobUrlsForShow(await loadShowBlobRows(db, showId))
 
   const failed: string[] = []
   let done = 0

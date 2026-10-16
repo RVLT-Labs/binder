@@ -2,34 +2,7 @@
   word-break: break-all;
 }
 
-/* Documents */
-.documents-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.document-list {
-  list-style: none;
-  padding: 0;
-}
-.document-list li {
-  display: flex;
-  gap: 0.75rem;
-  align-items: baseline;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid #eee;
-}
-.document-kind {
-  color: #667085;
-  font-size: 0.875rem;
-}
-.version-status {
-  flex: 1;
-  font-size: 0.875rem;
-}
-.version-status[data-status="failed"] {
-  color: #b42318;
-}
+/* The revision upload dialog (restyled with the viewer, Task 8) */
 .upload-dialog form {
   display: grid;
   gap: 0.75rem;
@@ -234,17 +207,6 @@
   stroke-width: 1;
 }
 
-/* Offline */
-.offline {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-.offline-status {
-  font-size: 0.875rem;
-  color: #667085;
-}
 .settings-list {
   list-style: none;
   margin: 0 0 1rem;
@@ -416,8 +378,7 @@
 }
 
 /* Cue list */
-.cue-list-departments,
-.cue-list-links {
+.cue-list-departments {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
@@ -849,17 +810,4 @@
   top: 6px;
   right: 6px;
   z-index: 2;
-}
-.presence-list ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.presence-list li {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
 }

@@ -5,7 +5,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type SignOutDeps, signOutAndClear } from '../auth/signOut'
@@ -115,6 +115,27 @@ describe('AppShell rail', () => {
     expect(within(rail).getByRole('link', { name: 'Script' }).getAttribute('aria-current')).toBe(
       'page',
     )
+  })
+
+  it('points Docs at the Documents screen and marks it current there, in the rail and the tab bar', async () => {
+    for (const width of [1280, 390]) {
+      setWidth(width)
+      await renderAt(
+        '/shows/s1/docs',
+        <AppShell showId="s1" crumbs={crumbs} account={account()}>
+          <h1>Documents</h1>
+        </AppShell>,
+      )
+      const nav = screen.getByRole('navigation', { name: width === 390 ? 'Show' : 'Binder' })
+      const docs = within(nav).getByRole('link', { name: 'Docs' })
+      expect(docs.getAttribute('href')).toBe('/shows/s1/docs')
+      expect(docs.getAttribute('aria-current')).toBe('page')
+      // Script is no longer lit by a screen that is not the script.
+      expect(
+        within(nav).getByRole('link', { name: 'Script' }).getAttribute('aria-current'),
+      ).toBeNull()
+      cleanup()
+    }
   })
 
   it('shows icons only at tablet, with the labels kept as accessible names', async () => {

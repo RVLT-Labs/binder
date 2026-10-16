@@ -1,5 +1,6 @@
 import type { PresencePeer } from '@binder/shared'
 import { useQuery } from '@powersync/react'
+import type { ReactNode } from 'react'
 import type { DocumentRow } from '../powersync/schema'
 import { usePresencePeers } from './PresenceProvider'
 import { initials, readableTextOn, whoIsHere } from './peers'
@@ -91,21 +92,41 @@ export function BinderPresence({ showId }: { showId: string }) {
   const people = whoIsHere(peers)
   if (people.length === 0) return null
 
-  const where = (p: PresencePeer): string => {
+  const where = (p: PresencePeer): ReactNode => {
     if (!p.documentId) return 'in the show'
     const title = docs.find((d) => d.id === p.documentId)?.title ?? 'a document'
-    return p.pageIndex === null ? title : `${title}, page ${p.pageIndex + 1}`
+    return p.pageIndex === null ? (
+      title
+    ) : (
+      <>
+        {title}, page <span className="font-mono tabular-nums">{p.pageIndex + 1}</span>
+      </>
+    )
   }
 
   return (
-    <section className="presence-list" aria-labelledby="presence-list-title">
-      <h2 id="presence-list-title">Who is in the binder</h2>
-      <ul>
+    <section
+      aria-labelledby="presence-list-title"
+      className="rounded-[20px] border-2 border-line-2 bg-card p-4 shadow-card"
+    >
+      <h2 id="presence-list-title" className="mb-2 text-[12px] font-bold text-muted">
+        In the binder now
+      </h2>
+      <ul className="m-0 flex list-none flex-col gap-3 p-0">
         {people.map((p) => (
-          <li key={p.userId}>
-            <Avatar peer={p} label={p.name} decorative />{' '}
-            <span>
-              {p.name} — {where(p)}
+          <li key={p.userId} className="flex items-center gap-3">
+            {/* The person's own colour, from the data (spec 3.9): never a department's. */}
+            <span
+              aria-hidden
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
+              style={{ background: p.colour, color: readableTextOn(p.colour) }}
+            >
+              {initials(p.name)}
+            </span>
+            <span className="min-w-0 text-[14px] leading-tight">
+              <span className="font-semibold text-ink">{p.name}</span>
+              <span className="sr-only"> — </span>
+              <span className="block truncate text-[13px] text-muted">{where(p)}</span>
             </span>
           </li>
         ))}

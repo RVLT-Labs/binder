@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { realDb } from '../test/realDb'
-import { REVIEW_COUNT_SQL } from './useReviewCount'
+import { REVIEW_COUNT_SQL, REVIEW_COUNTS_SQL } from './useReviewCount'
 
 const anchor = (versionId: string, status: string, documentId = 'd1') =>
   JSON.stringify({ documentId, documentVersionId: versionId, pageIndex: 0, x: 1, y: 2, status })
@@ -62,4 +62,18 @@ test('counts nothing for a document with no current version, and falls as status
     await tx.execute("UPDATE documents SET current_version_id = NULL WHERE id = 'd1'")
   })
   expect((await db.getAll(REVIEW_COUNT_SQL, ['me', 'd1']))[0]?.n ?? 0).toBe(0)
+})
+
+test('counts the same items per document across a show, leaving out documents with no current version', async () => {
+  const { db } = await seed()
+  await db.writeTransaction(async (tx) => {
+    await tx.execute(
+      "INSERT INTO documents (id, show_id, current_version_id) VALUES ('d3', 's1', NULL)",
+    )
+    await tx.execute(
+      "INSERT INTO documents (id, show_id, current_version_id) VALUES ('d4', 's2', 'v4')",
+    )
+  })
+  const rows = await db.getAll(REVIEW_COUNTS_SQL, ['me', 's1'])
+  expect(rows.map((r) => [r.document_id, r.n])).toEqual([['d1', 4]])
 })
