@@ -12,7 +12,8 @@
       "!apps/web/e2e/.auth",
       "!apps/web/test-results",
       "!apps/web/playwright-report",
-      "!docs/superpowers/design"
+      "!docs/superpowers/design",
+      "!.worktrees"
     ]
   },
   "formatter": {
@@ -21,7 +22,9 @@
     "lineWidth": 100
   },
   "css": {
-    "parser": { "tailwindDirectives": true }
+    "parser": {
+      "tailwindDirectives": true
+    }
   },
   "javascript": {
     "formatter": {
