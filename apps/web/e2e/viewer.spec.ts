@@ -1,5 +1,6 @@
 import { FIXTURES } from '@binder/fixtures'
 import { expect, test } from '@playwright/test'
+import { FIT_ALLOWANCE } from '../src/viewer/controls'
 import { readRun, storageStateFor } from './env'
 import { hasInk, uploadAndWaitReady } from './helpers'
 
@@ -63,6 +64,22 @@ test('upload, process, and view the libretto', async ({ page }) => {
   const zoomBefore = await toolbar.getByLabel('Zoom level').textContent()
   await page.keyboard.press('+')
   await expect(toolbar.getByLabel('Zoom level')).not.toHaveText(zoomBefore ?? '')
+  await expect(toolbar).toContainText(`4 / ${PAGES}`)
+
+  // Fit width fills the stage minus the allowance, so pages never scroll sideways and the tool
+  // strip's lane stays clear of the page.
+  await toolbar.getByRole('button', { name: 'Fit width' }).click()
+  const sheet = page.locator('.page-sheet').first()
+  const stage = page.locator('.viewer-pages')
+  await expect
+    .poll(async () => {
+      const [sheetWidth, stageWidth] = await Promise.all([
+        sheet.evaluate((el) => el.getBoundingClientRect().width),
+        stage.evaluate((el) => el.clientWidth),
+      ])
+      return Math.abs(sheetWidth - (stageWidth - FIT_ALLOWANCE))
+    })
+    .toBeLessThanOrEqual(1)
   await expect(toolbar).toContainText(`4 / ${PAGES}`)
 
   // Scroll through the whole document: virtualisation keeps only a handful of canvases alive.

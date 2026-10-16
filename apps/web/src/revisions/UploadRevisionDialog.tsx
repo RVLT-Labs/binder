@@ -1,5 +1,10 @@
 import { useQuery } from '@powersync/react'
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { DialogFooter, DialogHeader, DialogShell } from '@/components/ui/dialog-shell'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { openModal, restoreFocus } from '@/lib/modalDialog'
 import { MAX_UPLOAD_BYTES, PROXY_LIMIT_MESSAGE, postWithProgress } from '../documents/UploadDialog'
 import { revisionPhase } from './revisionPhase'
 import { LEAVE_UPLOAD_QUESTION, useUploadGuard } from './useUploadGuard'
@@ -14,6 +19,8 @@ export interface UploadRevisionDialogProps {
   onClose: () => void
   /** Called once the new version is the document's current one: the review comes next. */
   onReanchored: (versionId: string) => void
+  /** The control that opened the dialog: focus goes back to it however the dialog closes. */
+  returnFocusTo?: HTMLElement | null
 }
 
 /**
@@ -27,8 +34,11 @@ export function UploadRevisionDialog({
   documentTitle,
   onClose,
   onReanchored,
+  returnFocusTo = null,
 }: UploadRevisionDialogProps) {
   const headingId = useId()
+  const ids = useId()
+  const focusBack = useRef(returnFocusTo)
   const dialog = useRef<HTMLDialogElement>(null)
   const request = useRef<{ abort: () => void } | null>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -48,8 +58,12 @@ export function UploadRevisionDialog({
   }
 
   useEffect(() => {
-    dialog.current?.showModal()
-    return () => request.current?.abort()
+    if (dialog.current) openModal(dialog.current)
+    return () => {
+      request.current?.abort()
+      // The dialog is gone by now (this runs as it unmounts), so its opener can take focus again.
+      restoreFocus(focusBack.current)
+    }
   }, [])
 
   function submit(e: FormEvent) {
@@ -90,10 +104,10 @@ export function UploadRevisionDialog({
   }
 
   return (
-    <dialog
+    <DialogShell
       ref={dialog}
+      labelledBy={headingId}
       className="upload-dialog"
-      aria-labelledby={headingId}
       onCancel={(e) => {
         // Escape while uploading asks first instead of dropping the file silently.
         if (uploading) {
@@ -103,7 +117,9 @@ export function UploadRevisionDialog({
       }}
       onClose={onClose}
     >
-      <h2 id={headingId}>Upload revision</h2>
+      <DialogHeader id={headingId} className="mb-4">
+        Upload revision
+      </DialogHeader>
       {versionId ? (
         <RevisionProgress
           showId={showId}
@@ -113,48 +129,59 @@ export function UploadRevisionDialog({
           onReanchored={onReanchored}
         />
       ) : (
-        <form onSubmit={submit}>
-          <p className="muted">
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <p className="m-0 text-[14px] text-muted">
             A new version of {documentTitle}. Cues and notes move with the text.
           </p>
-          <label>
-            PDF file
-            <input
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={`${ids}-file`}>PDF file</Label>
+            <Input
+              id={`${ids}-file`}
               type="file"
               accept="application/pdf,.pdf"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
-          </label>
-          <label>
-            Version label
-            <input
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={`${ids}-label`}>Version label</Label>
+            <Input
+              id={`${ids}-label`}
               required
               maxLength={200}
               placeholder="e.g. V5 18 Aug rehearsal cuts"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
             />
-          </label>
+          </div>
           {uploading && (
-            <progress aria-label="Upload progress" max={1} value={progress ?? 0}>
+            <progress
+              aria-label="Upload progress"
+              max={1}
+              value={progress ?? 0}
+              className="h-2 w-full appearance-none overflow-hidden rounded-full [&::-moz-progress-bar]:bg-ink [&::-webkit-progress-bar]:bg-paper-2 [&::-webkit-progress-value]:bg-ink"
+            >
               {Math.round((progress ?? 0) * 100)}%
             </progress>
           )}
-          {error && <p role="alert">{error}</p>}
-          <div className="dialog-actions">
-            <button type="button" onClick={requestClose}>
+          {error && (
+            <p role="alert" className="m-0 text-[14px] text-t-out">
+              {error}
+            </p>
+          )}
+          <DialogFooter className="mt-2">
+            <Button type="button" variant="line" onClick={requestClose}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={uploading || !file || label.trim() === '' || error === NO_VERSION_MESSAGE}
             >
               Upload
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
       )}
-    </dialog>
+    </DialogShell>
   )
 }
 
@@ -190,18 +217,32 @@ function RevisionProgress({
   }, [done, onReanchored, versionId])
 
   return (
-    <>
-      {state.phase === 'processing' && <p role="status">Processing the new version…</p>}
-      {state.phase === 'reanchoring' && <p role="status">Re-anchoring…</p>}
-      {state.phase === 'done' && <p role="status">Re-anchored.</p>}
-      {state.phase === 'failed' && (
-        <p role="alert">The new version failed to process: {state.error}</p>
+    <div className="flex flex-col gap-4">
+      {state.phase === 'processing' && (
+        <p role="status" className="m-0 text-[14px] text-ink-2">
+          Processing the new version…
+        </p>
       )}
-      <div className="dialog-actions">
-        <button type="button" onClick={onClose}>
+      {state.phase === 'reanchoring' && (
+        <p role="status" className="m-0 text-[14px] text-ink-2">
+          Re-anchoring…
+        </p>
+      )}
+      {state.phase === 'done' && (
+        <p role="status" className="m-0 text-[14px] text-ink-2">
+          Re-anchored.
+        </p>
+      )}
+      {state.phase === 'failed' && (
+        <p role="alert" className="m-0 text-[14px] text-t-out">
+          The new version failed to process: {state.error}
+        </p>
+      )}
+      <DialogFooter className="mt-2">
+        <Button type="button" variant="line" onClick={onClose}>
           {state.phase === 'failed' ? 'Close' : 'Close and keep working'}
-        </button>
-      </div>
-    </>
+        </Button>
+      </DialogFooter>
+    </div>
   )
 }

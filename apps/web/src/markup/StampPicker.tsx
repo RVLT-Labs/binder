@@ -5,6 +5,7 @@ export interface StampPickerProps {
   value: string | null
   onChange: (stamp: string) => void
   disabled?: boolean
+  className?: string
 }
 
 /** The stamp the stamp tool places: the chosen one when it is still in the set, else the first. */
@@ -13,12 +14,13 @@ export function chosenStamp(stamps: readonly string[], value: string | null): st
 }
 
 /** Chooses which of the show's stamps the stamp tool places. */
-export function StampPicker({ stamps, value, onChange, disabled }: StampPickerProps) {
+export function StampPicker({ stamps, value, onChange, disabled, className }: StampPickerProps) {
   return (
     <select
       aria-label="Stamp"
       value={chosenStamp(stamps, value) ?? ''}
       disabled={disabled}
+      className={className}
       onChange={(e) => onChange(e.target.value)}
     >
       {stamps.map((s) => (

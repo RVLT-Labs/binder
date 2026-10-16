@@ -57,6 +57,8 @@
   /* === the page (DESIGN 4.2): the PDF ground and its ink, the same in every theme === */
   --page: #ffffff;
   --page-ink: #1a1715;
+  /* The script screen's stage (DESIGN 6.2): the dark the page sits on, in every theme. */
+  --stage: #0e0c0a;
   /* === department defaults (DESIGN 4.3): ink on white paper. Stored per department;
      these seed new ones. Chrome uses the module hues (--amber, --blue ...) instead. === */
   --dept-lx: #c9811f;
@@ -203,6 +205,7 @@
   /* the page and department defaults → bg-page, text-page-ink, bg-dept-lx… */
   --color-page: var(--page);
   --color-page-ink: var(--page-ink);
+  --color-stage: var(--stage);
   --color-dept-lx: var(--dept-lx);
   --color-dept-snd: var(--dept-snd);
   --color-dept-tm: var(--dept-tm);

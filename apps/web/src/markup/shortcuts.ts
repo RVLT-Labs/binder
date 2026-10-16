@@ -1,4 +1,18 @@
+import type { Tool } from './tools'
+
+/** The keys that choose a tool (DESIGN 10). `c` is not here: it places a cue at the pointer. */
+export const TOOL_KEYS: Readonly<Record<string, Tool>> = {
+  v: 'select',
+  h: 'highlight',
+  n: 'note',
+  r: 'rect',
+  a: 'arrow',
+  s: 'stamp',
+}
+
 export type ShortcutAction =
+  | { kind: 'tool'; tool: Tool }
+  | { kind: 'focusSearch' }
   | { kind: 'nextCue' }
   | { kind: 'prevCue' }
   | { kind: 'placeCue' }
@@ -42,5 +56,8 @@ export function resolveShortcut(e: ShortcutKey): ShortcutAction | null {
   const lower = e.key.toLowerCase()
   if (lower === 'c') return { kind: 'placeCue' }
   if (lower === 'g') return { kind: 'jumpToPage' }
+  if (e.key === '/') return { kind: 'focusSearch' }
+  const tool = TOOL_KEYS[lower]
+  if (tool) return { kind: 'tool', tool }
   return null
 }

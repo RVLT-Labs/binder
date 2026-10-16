@@ -13,6 +13,7 @@ test('tokens.css defines the RVLT espresso chrome and the Binder page tokens', (
     '--red: #e0363d',
     '--page: #ffffff',
     '--page-ink: #1a1715',
+    '--stage: #0e0c0a',
   ]) {
     expect(tokens).toContain(decl)
   }
@@ -24,6 +25,7 @@ test('the @theme inline block maps the tokens to Tailwind utilities', () => {
     '--color-paper:',
     '--color-page:',
     '--color-page-ink:',
+    '--color-stage:',
     '--font-mono:',
     '--shadow-card:',
   ]) {

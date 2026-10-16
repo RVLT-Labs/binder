@@ -1,6 +1,15 @@
 import { useQuery } from '@powersync/react'
 import { createFileRoute, Outlet, useChildMatches, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type ComponentProps,
+  type ReactNode,
+  type Ref,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { blobUrl } from '../blobs/fetchBlob'
 import { PrintButton } from '../exports/PrintDialog'
 import { AnnotationHistory, CueHistory } from '../history/HistoryPanel'
@@ -9,9 +18,10 @@ import { CueEditor } from '../markup/CueEditor'
 import { LayerPanel } from '../markup/LayerPanel'
 import { PageMarkup } from '../markup/MarkupOverlay'
 import { MarkupSessionProvider, useMarkupSession } from '../markup/MarkupSession'
-import { MarkupTools } from '../markup/MarkupTools'
+import { MoreTools } from '../markup/MoreTools'
 import { SelectionAnnouncer } from '../markup/SelectionAnnouncer'
 import { useSelection } from '../markup/selection'
+import { ToolStrip } from '../markup/ToolStrip'
 import { useMarkupShortcuts } from '../markup/useMarkupShortcuts'
 import { useOnline } from '../offline/useOnline'
 import type { DocumentRow, DocumentVersionRow, PageRow } from '../powersync/schema'
@@ -23,6 +33,8 @@ import { useCanUpload } from '../revisions/useCanUpload'
 import { useReviewCount } from '../revisions/useReviewCount'
 import { VersionSwitcher } from '../revisions/VersionSwitcher'
 import { versionReadOnlyReason } from '../revisions/versionView'
+import { useBreakpoint } from '../shell/useBreakpoint'
+import { DocumentControls } from '../viewer/DocumentControls'
 import { Viewer, type ViewerHandle } from '../viewer/Viewer'
 
 interface DocumentSearch {
@@ -63,6 +75,12 @@ function DocumentPage() {
   const canUpload = useCanUpload(showId)
   const reviewCount = useReviewCount(docId)
   const [uploading, setUploading] = useState(false)
+  /** The control that opened Upload revision, so focus can go back to it. */
+  const uploadOpener = useRef<HTMLElement | null>(null)
+  const breakpoint = useBreakpoint()
+  /** The thumbnails column: always on desktop, off by default on a tablet (a top bar toggle), never on a phone. */
+  const [thumbsOpen, setThumbsOpen] = useState(false)
+  const thumbnails = breakpoint === 'desktop' || (breakpoint === 'tablet' && thumbsOpen)
   const navigate = useNavigate({ from: Route.fullPath })
   const viewer = useRef<ViewerHandle>(null)
   /** Zero-based page in view, as the viewer last settled on it: what presence tells the show. */
@@ -139,14 +157,13 @@ function DocumentPage() {
   )
 
   if (children.length > 0) return <Outlet />
-  if (isLoading) return <p>Loading…</p>
-  if (!doc) return <p>Document not found.</p>
+  if (isLoading) return <p className="p-6 text-ink-2">Loading…</p>
+  if (!doc) return <p className="p-6 text-ink-2">Document not found.</p>
 
-  return (
-    <div className="document-page">
-      <header className="document-header">
-        <h1>{doc.title}</h1>
-        {version && (
+  const controls = (print: ReactNode) =>
+    version && (
+      <DocumentControls
+        version={
           <VersionSwitcher
             showId={showId}
             docId={doc.id}
@@ -156,34 +173,44 @@ function DocumentPage() {
             localOnly={localOnly}
             onSelect={(id) => void navigate({ search: { v: id === currentId ? undefined : id } })}
           />
-        )}
-        {(reviewCount > 0 || review || versions.length > 1) && (
-          <button
-            type="button"
-            className="review-count"
-            aria-pressed={review === true}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, review: prev.review ? undefined : true }),
-                replace: true,
-                resetScroll: false,
-              })
-            }
-          >
-            {reviewCount} to review
-          </button>
-        )}
-        {canUpload && online && (
-          <button type="button" onClick={() => setUploading(true)}>
-            Upload revision
-          </button>
-        )}
-      </header>
+        }
+        review={
+          reviewCount > 0 || review || versions.length > 1
+            ? {
+                count: reviewCount,
+                open: review === true,
+                onToggle: () =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, review: prev.review ? undefined : true }),
+                    replace: true,
+                    resetScroll: false,
+                  }),
+              }
+            : null
+        }
+        onUploadRevision={
+          canUpload && online
+            ? (opener) => {
+                uploadOpener.current = opener
+                setUploading(true)
+              }
+            : null
+        }
+        thumbnails={{ open: thumbsOpen, onToggle: () => setThumbsOpen((open) => !open) }}
+        print={print}
+      />
+    )
+
+  return (
+    <div className="document-page flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* The title is in the breadcrumbs; the page keeps its heading for assistive technology. */}
+      <h1 className="sr-only">{doc.title}</h1>
       {uploading && (
         <UploadRevisionDialog
           showId={showId}
           documentId={doc.id}
           documentTitle={doc.title ?? 'document'}
+          returnFocusTo={uploadOpener.current}
           onClose={() => setUploading(false)}
           onReanchored={() => {
             setUploading(false)
@@ -192,11 +219,17 @@ function DocumentPage() {
         />
       )}
       {!version ? (
-        <p>This document has no versions.</p>
+        <p className="p-6 text-ink-2">This document has no versions.</p>
       ) : version.status !== 'ready' ? (
-        <VersionStatus version={version} />
+        <>
+          {controls(null)}
+          <VersionStatus version={version} />
+        </>
       ) : !version.searchable_key || pages.length === 0 ? (
-        <p className="viewer-message">Loading pages…</p>
+        <>
+          {controls(null)}
+          <p className="viewer-message p-6 text-ink-2">Loading pages…</p>
+        </>
       ) : (
         <MarkupSessionProvider
           key={version.id}
@@ -226,21 +259,16 @@ function DocumentPage() {
               })
             }
           />
-          <Viewer
-            ref={viewer}
+          {controls(<PrintButton />)}
+          <ScriptViewer
+            viewer={viewer}
             versionId={version.id}
             pdfUrl={blobUrl(version.searchable_key)}
             pages={viewerPages}
-            versionLabel={versionName(version)}
             initialPage={(p ?? 1) - 1}
             onPageChange={onPageChange}
             renderOverlay={renderOverlay}
-            tools={
-              <>
-                <MarkupTools />
-                <PrintButton />
-              </>
-            }
+            thumbnails={thumbnails}
             side={
               <MarkupSide
                 showId={showId}
@@ -263,6 +291,31 @@ function DocumentPage() {
         </MarkupSessionProvider>
       )}
     </div>
+  )
+}
+
+/** The viewer with the markup session's tools and status wired in. */
+function ScriptViewer({
+  viewer,
+  ...props
+}: Omit<ComponentProps<typeof Viewer>, 'tools' | 'bar' | 'status' | 'ref'> & {
+  viewer: Ref<ViewerHandle>
+}) {
+  const session = useMarkupSession()
+  const active = session.active
+  return (
+    <Viewer
+      ref={viewer}
+      {...props}
+      tools={<ToolStrip />}
+      bar={<MoreTools />}
+      status={{
+        snap: session.snap,
+        activeLayer: active
+          ? { name: session.layerName(active), colour: session.layerColour(active) }
+          : null,
+      }}
+    />
   )
 }
 
@@ -355,7 +408,7 @@ function VersionStatus({ version }: { version: DocumentVersionRow }) {
         ? `${name} is processing…`
         : `${name} is queued for processing.`
   return (
-    <p role="status" className="viewer-message" data-status={version.status}>
+    <p role="status" className="viewer-message p-6 text-ink-2" data-status={version.status}>
       {text}
     </p>
   )

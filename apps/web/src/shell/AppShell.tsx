@@ -1,10 +1,11 @@
 import { useRouterState } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import { Notices } from '@/components/Notices'
 import { cn } from '@/lib/utils'
 import { Rail } from './Rail'
 import { TabBar } from './TabBar'
 import { TopBar } from './TopBar'
+import { TopBarSlotsContext } from './TopBarSlots'
 import type { Account, Crumb } from './types'
 import { useBreakpoint } from './useBreakpoint'
 
@@ -42,40 +43,47 @@ export function AppShell({
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const phone = breakpoint === 'phone'
   const tabBar = phone && showId !== undefined
+  const [chip, setChip] = useState<HTMLElement | null>(null)
+  const [actionsEl, setActionsEl] = useState<HTMLElement | null>(null)
+  const slots = useMemo(() => ({ chip, actions: actionsEl }), [chip, actionsEl])
+  const slotRefs = useMemo(() => ({ chip: setChip, actions: setActionsEl }), [])
 
   return (
-    <div className="flex h-dvh w-full bg-paper text-ink">
-      {!phone && (
-        <Rail
-          showId={showId}
-          iconsOnly={breakpoint === 'tablet'}
-          pathname={pathname}
-          account={account}
-        />
-      )}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar
-          crumbs={crumbs}
-          phone={phone}
-          showId={showId}
-          account={account}
-          actions={actions}
-          primary={primary}
-        />
-        <main
-          data-full-bleed={fullBleed ? 'true' : undefined}
-          className={cn(
-            'min-h-0 flex-1',
-            fullBleed
-              ? 'flex flex-col overflow-hidden'
-              : 'overflow-y-auto px-4 py-5 md:px-8 md:py-7',
-          )}
-        >
-          {children}
-        </main>
-        {tabBar && showId && <TabBar showId={showId} pathname={pathname} />}
+    <TopBarSlotsContext value={slots}>
+      <div className="flex h-dvh w-full bg-paper text-ink">
+        {!phone && (
+          <Rail
+            showId={showId}
+            iconsOnly={breakpoint === 'tablet'}
+            pathname={pathname}
+            account={account}
+          />
+        )}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopBar
+            crumbs={crumbs}
+            phone={phone}
+            showId={showId}
+            account={account}
+            actions={actions}
+            primary={primary}
+            slotRefs={slotRefs}
+          />
+          <main
+            data-full-bleed={fullBleed ? 'true' : undefined}
+            className={cn(
+              'min-h-0 flex-1',
+              fullBleed
+                ? 'flex flex-col overflow-hidden'
+                : 'overflow-y-auto px-4 py-5 md:px-8 md:py-7',
+            )}
+          >
+            {children}
+          </main>
+          {tabBar && showId && <TabBar showId={showId} pathname={pathname} />}
+        </div>
+        <Notices aboveTabBar={tabBar} />
       </div>
-      <Notices aboveTabBar={tabBar} />
-    </div>
+    </TopBarSlotsContext>
   )
 }

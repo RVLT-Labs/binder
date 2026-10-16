@@ -53,7 +53,7 @@ export function PageCanvas({ pdf, pageIndex, zoom, width, height, children }: Pa
             const canvas = document.createElement('canvas')
             canvas.width = Math.floor(viewport.width)
             canvas.height = Math.floor(viewport.height)
-            canvas.className = 'page-canvas'
+            canvas.className = 'page-canvas absolute inset-0 size-full'
             canvas.setAttribute('role', 'img')
             canvas.setAttribute('aria-label', `Page ${pageIndex + 1}`)
             let task: RenderTask
@@ -108,14 +108,16 @@ export function PageCanvas({ pdf, pageIndex, zoom, width, height, children }: Pa
 
   return (
     <div
-      className="page-sheet"
+      // Positioned, explicitly sized, and nothing else: no border, padding or transform, so a
+      // pointer's offset from this box is its offset on the page.
+      className="page-sheet relative mx-auto bg-page shadow-[0_6px_24px_rgb(0_0_0/0.55)]"
       data-page-index={pageIndex}
       style={{ width: cssWidth, height: cssHeight }}
     >
       {/* Canvases are swapped in here outside React, so this element has no React children. */}
-      <div ref={host} className="page-canvas-host" />
+      <div ref={host} className="page-canvas-host absolute inset-0 size-full" />
       {error && (
-        <p className="page-error">
+        <p className="page-error absolute inset-x-0 bottom-0 m-0 p-2 text-t-out">
           Could not render page {pageIndex + 1}: {error}
         </p>
       )}

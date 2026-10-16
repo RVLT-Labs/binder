@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
-import { resolveShortcut } from './shortcuts'
+import { TOOL_DEFS } from './MarkupTools'
+import { resolveShortcut, TOOL_KEYS } from './shortcuts'
 
 const keyEvent = (key: string, o: Partial<Parameters<typeof resolveShortcut>[0]> = {}) => ({
   key,
@@ -55,4 +56,34 @@ test('in an input only Escape works', () => {
   expect(resolveShortcut(keyEvent('Escape', { editableTarget: true }))).toEqual({
     kind: 'deselect',
   })
+})
+
+test.each([
+  ['v', { kind: 'tool', tool: 'select' }],
+  ['h', { kind: 'tool', tool: 'highlight' }],
+  ['n', { kind: 'tool', tool: 'note' }],
+  ['r', { kind: 'tool', tool: 'rect' }],
+  ['a', { kind: 'tool', tool: 'arrow' }],
+  ['s', { kind: 'tool', tool: 'stamp' }],
+  ['H', { kind: 'tool', tool: 'highlight' }],
+  ['/', { kind: 'focusSearch' }],
+])('%s switches the tool or finds in the document', (key, action) => {
+  expect(resolveShortcut(keyEvent(key))).toEqual(action)
+})
+
+test('tool keys never fire in a text field or with a modifier', () => {
+  for (const key of ['v', 'h', 'n', 'r', 'a', 's', '/']) {
+    expect(resolveShortcut(keyEvent(key, { editableTarget: true }))).toBeNull()
+    expect(resolveShortcut(keyEvent(key, { altKey: true }))).toBeNull()
+  }
+  expect(resolveShortcut(keyEvent('s', { metaKey: true }))).toBeNull()
+})
+
+test('every key the tool strip shows is a key that works', () => {
+  for (const def of TOOL_DEFS) {
+    if (!def.key) continue
+    // `c` places a cue at the pointer; the other keys choose their tool.
+    if (def.key === 'c') expect(resolveShortcut(keyEvent('c'))).toEqual({ kind: 'placeCue' })
+    else expect(TOOL_KEYS[def.key]).toBe(def.tool)
+  }
 })

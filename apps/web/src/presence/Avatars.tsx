@@ -1,6 +1,7 @@
 import type { PresencePeer } from '@binder/shared'
 import { useQuery } from '@powersync/react'
 import type { ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 import type { DocumentRow } from '../powersync/schema'
 import { usePresencePeers } from './PresenceProvider'
 import { initials, readableTextOn, whoIsHere } from './peers'
@@ -132,5 +133,47 @@ export function BinderPresence({ showId }: { showId: string }) {
         ))}
       </ul>
     </section>
+  )
+}
+
+/**
+ * Who is in the binder, in the top bar: a stack of up to three people (then "+n"), each once, in
+ * their own colour. Draws nothing when nobody else is here. Never animated, never a toast.
+ */
+export function BinderAvatars() {
+  const { peers } = usePresencePeers()
+  const people = whoIsHere(peers)
+  if (people.length === 0) return null
+  const shown = people.slice(0, 3)
+  const more = people.length - shown.length
+  const chip =
+    'flex size-7 items-center justify-center rounded-full border-2 border-paper text-[11px] font-bold'
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a <fieldset> is a form control group; this labels inline avatars
+    <span role="group" aria-label="In the binder now" className="flex items-center -space-x-1.5">
+      {shown.map((peer) => (
+        <span
+          key={peer.userId}
+          role="img"
+          aria-label={`${peer.name} is in the binder`}
+          title={peer.name}
+          data-user-id={peer.userId}
+          className={chip}
+          // The person's own colour, from the data: never a department's.
+          style={{ background: peer.colour, color: readableTextOn(peer.colour) }}
+        >
+          {initials(peer.name)}
+        </span>
+      ))}
+      {more > 0 && (
+        <span
+          role="img"
+          aria-label={`${more} more in the binder`}
+          className={cn(chip, 'bg-elev text-ink')}
+        >
+          +{more}
+        </span>
+      )}
+    </span>
   )
 }

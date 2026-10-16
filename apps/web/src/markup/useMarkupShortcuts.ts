@@ -5,7 +5,7 @@ import { stepCue } from './markupView'
 import { endRelocate, isRelocating } from './relocate'
 import { clearSelection, useSelection } from './selection'
 import { resolveShortcut } from './shortcuts'
-import { useTool } from './tools'
+import { setTool, useTool } from './tools'
 
 /** Inputs that take no typing: a shortcut pressed while one has focus still counts. */
 const NON_TEXT_INPUTS = new Set([
@@ -32,7 +32,8 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 
 /**
  * The viewer's markup keys while a document is open: `]` and `[` walk the shown cues, `c` places
- * a cue at the pointer, `g` jumps to a page, `1`-`9` pick the active layer, Delete removes the
+ * a cue at the pointer, `g` jumps to a page, `/` finds in the document, `v` `h` `n` `r` `a` `s`
+ * choose a tool, `1`-`9` pick the active layer, Delete removes the
  * selected cue or annotation, Escape deselects, Mod+Z and Mod+Shift+Z undo and redo
  * the user's own edits (never while a text field has focus, where the browser's own undo applies).
  */
@@ -80,6 +81,16 @@ export function useMarkupShortcuts(): void {
         case 'jumpToPage':
           session.viewer.current?.focusPageInput()
           break
+        case 'focusSearch':
+          session.viewer.current?.focusSearch()
+          break
+        case 'tool': {
+          // A tool that cannot place anything (read-only, no layer) is not switched to.
+          const blocked = action.tool === 'select' ? false : 'disabled' in session.annotationTarget
+          if (blocked) return
+          setTool(action.tool)
+          break
+        }
         case 'activeLayer': {
           const layer = session.editable[action.index]
           if (!layer) return

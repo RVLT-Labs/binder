@@ -1,5 +1,5 @@
 import type { DocHit } from '@binder/core'
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { type KeyboardEvent, type Ref, useEffect, useRef, useState } from 'react'
 
 /** How long typing rests before a search runs; Enter searches at once. */
 const TYPE_DELAY_MS = 200
@@ -20,6 +20,8 @@ export interface SearchPanelProps {
   onResults: (hits: DocHit[], jump: boolean) => void
   /** Go to hit `index`. */
   onActivate: (index: number) => void
+  /** The search box, so the `/` key and the strip's find button can focus it. */
+  inputRef?: Ref<HTMLInputElement>
 }
 
 /**
@@ -34,6 +36,7 @@ export function SearchPanel({
   active,
   onResults,
   onActivate,
+  inputRef,
 }: SearchPanelProps) {
   const [query, setQuery] = useState('')
   const [pending, setPending] = useState(false)
@@ -102,6 +105,7 @@ export function SearchPanel({
   return (
     <aside className="search-panel" aria-label="Search">
       <input
+        ref={inputRef}
         type="search"
         aria-label="Search document"
         placeholder="Search this document"

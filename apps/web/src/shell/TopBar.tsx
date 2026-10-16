@@ -18,6 +18,7 @@ export function TopBar({
   account,
   actions,
   primary,
+  slotRefs,
 }: {
   crumbs: Crumb[]
   phone: boolean
@@ -25,6 +26,8 @@ export function TopBar({
   account: Account
   actions?: ReactNode
   primary?: ReactNode
+  /** Where a screen's own top bar controls are drawn (see TopBarSlots). Not at phone. */
+  slotRefs?: { chip: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void }
 }) {
   if (phone) {
     const title = crumbs.at(-1)
@@ -99,8 +102,10 @@ export function TopBar({
           })}
         </ol>
       </nav>
+      <div ref={slotRefs?.chip} className="contents" />
       <div className="ml-auto flex items-center gap-3">
         <SyncStatus />
+        <div ref={slotRefs?.actions} className="contents" />
         {actions}
         {primary}
       </div>

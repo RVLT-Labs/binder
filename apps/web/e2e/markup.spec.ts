@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { Anchor } from '@binder/shared'
 import { expect, type Page, test } from '@playwright/test'
 import { NO_DEPARTMENT_HINT } from '../src/markup/activeDepartment'
@@ -337,6 +338,59 @@ test('a viewer sees the cue tool disabled with the hint', async ({ browser }) =>
     await v.page.keyboard.press('c')
     await v.page.waitForTimeout(1_000)
     expect(await versionCueIds(v.page)).toEqual(before)
+  })
+})
+
+test('opening ?cue= scrolls to the cue and leaves its tag inside the viewport, clear of the tool strip', async ({
+  browser,
+}) => {
+  const { sharedShow, departments, libretto: doc } = readRun()
+  await withUsers(browser, ['owner'], async ([a]) => {
+    const id = randomUUID()
+    try {
+      // On page 3, below the fold of a page 1 start.
+      await a.page.evaluate(
+        async (c) => {
+          const now = new Date().toISOString()
+          const anchor = JSON.stringify({
+            documentId: c.documentId,
+            documentVersionId: c.versionId,
+            pageIndex: 2,
+            x: 200,
+            y: 300,
+            status: 'ok',
+          })
+          await window.__binder?.db.execute(
+            `INSERT INTO cues (id, show_id, department_id, major, minor, label, anchor, type, notes,
+                               colour, payload, created_at, updated_at, updated_by)
+             VALUES (?, ?, ?, 78, 0, 'Focus', ?, 'go', '', NULL, '{}', ?, ?, NULL)`,
+            [c.id, c.showId, c.departmentId, anchor, now, now],
+          )
+        },
+        {
+          id,
+          showId: sharedShow.id,
+          departmentId: departments.LX,
+          documentId: doc.documentId,
+          versionId: doc.versionId,
+        },
+      )
+      await a.page.goto(`/shows/${sharedShow.id}/docs/${doc.documentId}?cue=${id}`)
+      await expect(marker(a.page, id)).toHaveAttribute('data-selected', 'true', {
+        timeout: 30_000,
+      })
+      const tag = marker(a.page, id).locator('rect.cue-tag-body')
+      await expect(tag).toBeInViewport({ ratio: 1 })
+      // The floating strip sits in its own lane at the stage's left edge: it never covers a tag.
+      const strip = await a.page.getByRole('group', { name: 'Markup tools' }).boundingBox()
+      const box = await tag.boundingBox()
+      if (!strip || !box) throw new Error('strip or tag not on screen')
+      expect(box.x).toBeGreaterThanOrEqual(strip.x + strip.width)
+    } finally {
+      await a.page.evaluate(async (cueId) => {
+        await window.__binder?.db.execute('DELETE FROM cues WHERE id = ?', [cueId])
+      }, id)
+    }
   })
 })
 

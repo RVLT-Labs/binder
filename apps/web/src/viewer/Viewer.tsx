@@ -11,20 +11,29 @@ import {
   useRef,
   useState,
 } from 'react'
+import { cn } from '@/lib/utils'
 import { usePresencePeers } from '../presence/PresenceProvider'
 import { peersByPage } from '../presence/peers'
 import { SearchPanel } from '../search/SearchPanel'
 import { useDocumentSearch } from '../search/useDocumentSearch'
-import { fitWidthZoom, viewerKeyAction, zoomIn, zoomOut } from './controls'
+import { useBreakpoint } from '../shell/useBreakpoint'
+import {
+  fitAllowance,
+  fitWidthZoom,
+  PAGE_GUTTER,
+  PHONE_PAGE_GUTTER,
+  viewerKeyAction,
+  zoomIn,
+  zoomOut,
+} from './controls'
 import { PageList, type PageListHandle } from './PageList'
 import { PageOverlay } from './PageOverlay'
 import { SearchHighlights } from './SearchHighlights'
+import { StatusBar, type StatusBarProps } from './StatusBar'
 import { ThumbnailRail } from './ThumbnailRail'
 import { usePdfDocument } from './usePdfDocument'
 import { ViewerToolbar } from './ViewerToolbar'
 
-/** Page list padding plus room for a classic scrollbar, so fit width never scrolls sideways. */
-const FIT_ALLOWANCE = 48
 /** How long the view rests on a page before the URL follows it. */
 const URL_SETTLE_MS = 250
 
@@ -41,15 +50,20 @@ export interface ViewerProps {
   /** The version's searchable PDF. */
   pdfUrl: string
   pages: readonly ViewerPage[]
-  versionLabel: string
   /** Zero-based page to open at. */
   initialPage: number
   /** Called with the one-based page in view once scrolling settles. */
   onPageChange: (pageNumber: number) => void
   /** Drawn in each mounted page's overlay (displayed space), above search highlights. */
   renderOverlay?: (pageIndex: number, zoom: number) => ReactNode
-  /** Extra toolbar controls, e.g. the markup tools. */
+  /** Drawn on the stage, floating over its left edge: the markup tool strip. Not drawn at phone. */
   tools?: ReactNode
+  /** Phone only: the controls the top bar carries at wider sizes, above the page. */
+  bar?: ReactNode
+  /** The column of page thumbnails. */
+  thumbnails?: boolean
+  /** What the status bar says beside the page number. */
+  status?: Pick<StatusBarProps, 'snap' | 'activeLayer'>
   /** A panel beside the pages, e.g. layers and the cue editor. */
   side?: ReactNode
   ref?: Ref<ViewerHandle>
@@ -60,22 +74,31 @@ export interface ViewerHandle {
   scrollToPoint(pageIndex: number, y: number): void
   /** Focuses the toolbar's page input. */
   focusPageInput(): void
+  /** Focuses the search box. */
+  focusSearch(): void
 }
 
-/** Toolbar, thumbnail rail, and the virtualised page list for one ready document version. */
+/**
+ * The script screen below the top bar: thumbnails, the stage with the virtualised page list and the
+ * floating tool strip, the side panels, and the status bar with the page and zoom controls (above
+ * the page at phone width) for one ready document version.
+ */
 export function Viewer({
   versionId,
   pdfUrl,
   pages,
-  versionLabel,
   initialPage,
   onPageChange,
   renderOverlay,
   tools,
+  bar,
+  thumbnails = true,
+  status = { snap: false, activeLayer: null },
   side,
   ref,
 }: ViewerProps) {
-  const { pdf, status, error } = usePdfDocument(pdfUrl)
+  const phone = useBreakpoint() === 'phone'
+  const { pdf, status: pdfStatus, error } = usePdfDocument(pdfUrl)
   const firstPage = Math.min(Math.max(0, initialPage), pages.length - 1)
   const [current, setCurrent] = useState(firstPage)
   /** Where the page list opens once the PDF has loaded; jumps before then land here. */
@@ -89,11 +112,13 @@ export function Viewer({
   const area = useRef<HTMLDivElement>(null)
   const list = useRef<PageListHandle>(null)
   const pageInput = useRef<HTMLInputElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
 
   const widest = useMemo(() => Math.max(...pages.map((p) => p.width)), [pages])
+  const gutter = phone ? PHONE_PAGE_GUTTER : PAGE_GUTTER
   const fit = useCallback(
-    () => fitWidthZoom((area.current?.clientWidth ?? 0) - FIT_ALLOWANCE, widest),
-    [widest],
+    () => fitWidthZoom((area.current?.clientWidth ?? 0) - fitAllowance(gutter), widest),
+    [widest, gutter],
   )
   // Open at fit width, measured before the first paint so pages never render at a throwaway zoom.
   useLayoutEffect(() => {
@@ -125,6 +150,7 @@ export function Viewer({
         else goTo(pageIndex)
       },
       focusPageInput: () => pageInput.current?.focus(),
+      focusSearch: () => searchInput.current?.focus(),
     }),
     [pages, zoom, goTo],
   )
@@ -187,26 +213,40 @@ export function Viewer({
     else setZoom(fit())
   }
 
+  const controls = (
+    <ViewerToolbar
+      zoom={zoom ?? 1}
+      onZoomIn={() => setZoom((z) => zoomIn(z ?? 1))}
+      onZoomOut={() => setZoom((z) => zoomOut(z ?? 1))}
+      onFitWidth={() => setZoom(fit())}
+      pageNumber={current + 1}
+      pageCount={pages.length}
+      onGoToPage={(n) => goTo(n - 1)}
+      pageInputRef={pageInput}
+      size={phone ? 'touch' : 'compact'}
+    />
+  )
+
   return (
-    <div className="viewer">
-      <ViewerToolbar
-        zoom={zoom ?? 1}
-        onZoomIn={() => setZoom((z) => zoomIn(z ?? 1))}
-        onZoomOut={() => setZoom((z) => zoomOut(z ?? 1))}
-        onFitWidth={() => setZoom(fit())}
-        pageNumber={current + 1}
-        pageCount={pages.length}
-        onGoToPage={(n) => goTo(n - 1)}
-        versionLabel={versionLabel}
-        pageInputRef={pageInput}
-      >
-        {tools}
-      </ViewerToolbar>
-      <div className="viewer-body">
-        <ThumbnailRail pages={pages} current={current} onSelect={goTo} peersByPage={onPages} />
-        <div ref={area} className="viewer-pages">
-          {status === 'error' ? (
-            <p role="alert" className="viewer-message">
+    <div className="viewer flex min-h-0 flex-1 flex-col">
+      {phone && (
+        <div className="viewer-bar flex shrink-0 items-center gap-1 border-b border-line bg-paper-2 px-2 py-1">
+          {bar}
+          {controls}
+        </div>
+      )}
+      <div className="viewer-body flex min-h-0 flex-1 max-md:flex-col">
+        {thumbnails && !phone && (
+          <ThumbnailRail pages={pages} current={current} onSelect={goTo} peersByPage={onPages} />
+        )}
+        {/* The stage: the dark the pages sit on. The tool strip floats in its left gutter. */}
+        <div
+          ref={area}
+          className={cn('viewer-pages relative flex min-h-0 min-w-0 flex-1 bg-stage')}
+        >
+          {!phone && tools}
+          {pdfStatus === 'error' ? (
+            <p role="alert" className="viewer-message p-4 text-t-out">
               {error}
             </p>
           ) : pdf && zoom !== null ? (
@@ -215,6 +255,7 @@ export function Viewer({
               pdf={pdf}
               pages={pages}
               zoom={zoom}
+              gutter={gutter}
               overlay={overlay}
               peersByPage={onPages}
               initialPage={openAt}
@@ -222,24 +263,38 @@ export function Viewer({
               onKeyDown={onKeyDown}
             />
           ) : (
-            <p className="viewer-message">Loading PDF…</p>
+            <p className="viewer-message p-4 text-ink-2">Loading PDF…</p>
           )}
         </div>
-        {side && <aside className="markup-panel">{side}</aside>}
-        <SearchPanel
-          search={documentSearch.search}
-          loading={documentSearch.loading}
-          unavailable={documentSearch.unavailable}
-          hits={hits}
-          active={activeHit}
-          onResults={(found, jump) => {
-            setHits(found)
-            setActiveHit(null)
-            if (jump && found.length > 0) activateHit(found, 0)
-          }}
-          onActivate={(index) => activateHit(hits, index)}
-        />
+        {/* One column beside the page at tablet width; plain siblings elsewhere. */}
+        <div className="viewer-side contents md:max-[1024px]:flex md:max-[1024px]:w-72 md:max-[1024px]:shrink-0 md:max-[1024px]:flex-col md:max-[1024px]:overflow-hidden md:max-[1024px]:border-l md:max-[1024px]:border-line">
+          {side && <aside className="markup-panel">{side}</aside>}
+          <SearchPanel
+            inputRef={searchInput}
+            search={documentSearch.search}
+            loading={documentSearch.loading}
+            unavailable={documentSearch.unavailable}
+            hits={hits}
+            active={activeHit}
+            onResults={(found, jump) => {
+              setHits(found)
+              setActiveHit(null)
+              if (jump && found.length > 0) activateHit(found, 0)
+            }}
+            onActivate={(index) => activateHit(hits, index)}
+          />
+        </div>
       </div>
+      {!phone && (
+        <StatusBar
+          page={current + 1}
+          pages={pages.length}
+          snap={status.snap}
+          activeLayer={status.activeLayer}
+        >
+          {controls}
+        </StatusBar>
+      )}
     </div>
   )
 }

@@ -11,12 +11,13 @@ import {
   useRef,
 } from 'react'
 import { AvatarGroup } from '../presence/Avatars'
+import { PAGE_GUTTER } from './controls'
 import { PageCanvas } from './PageCanvas'
 import type { PDFDocumentProxy } from './pdfjs'
 
 /** Vertical space around each page, in CSS pixels. Part of every item's size. */
 const GAP = 16
-/** The page slot's top padding (styles.css `.page-slot`): where the page box starts in its item. */
+/** The page slot's top padding (set inline on `.page-slot`): where the page box starts in its item. */
 const SLOT_PADDING_TOP = 8
 
 export interface ListPage {
@@ -40,6 +41,8 @@ export interface PageListProps {
   overlay?: (pageIndex: number) => ReactNode
   /** Who is on each page (zero-based) of this version: avatars at the page's top right. */
   peersByPage?: ReadonlyMap<number, readonly PresencePeer[]>
+  /** Each side of the page column, in CSS pixels (see PAGE_GUTTER); fit width must allow for it. */
+  gutter?: number
   /** Zero-based page to open at. Read on mount only. */
   initialPage?: number
   /** Called with the zero-based page at the top of the view whenever it changes. */
@@ -59,6 +62,7 @@ export function PageList({
   zoom,
   overlay,
   peersByPage,
+  gutter = PAGE_GUTTER,
   initialPage = 0,
   onVisiblePage,
   onKeyDown,
@@ -127,20 +131,30 @@ export function PageList({
   return (
     <section
       ref={scroller}
-      className="page-list"
+      className="page-list flex-1 overflow-auto outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-red"
       aria-label="Pages"
       // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region takes focus for keyboard paging
       tabIndex={0}
       onKeyDown={onKeyDown}
     >
-      <div className="page-list-inner" style={{ height: virtualizer.getTotalSize() }}>
+      <div
+        className="page-list-inner relative w-full"
+        style={{ height: virtualizer.getTotalSize() }}
+      >
         {items.map((item) => {
           const page = pages[item.index]
           return (
             <div
               key={item.key}
-              className="page-slot"
-              style={{ transform: `translateY(${item.start}px)`, height: item.size }}
+              // The padding is the one source for the virtualiser's sizing (SLOT_PADDING_TOP) and
+              // for fit width (the gutter, via fitAllowance).
+              className="page-slot absolute top-0 left-0 box-border w-max min-w-full"
+              style={{
+                transform: `translateY(${item.start}px)`,
+                height: item.size,
+                paddingTop: SLOT_PADDING_TOP,
+                paddingInline: gutter,
+              }}
             >
               <PageCanvas
                 pdf={pdf}

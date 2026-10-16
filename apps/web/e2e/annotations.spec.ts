@@ -457,8 +457,8 @@ test('a stamp from the show stamp set lands where clicked', async ({ browser }) 
     try {
       await a.page.getByLabel('Active layer LX').check()
       await pick(a.page, 'Stamp')
-      const toolbar = a.page.getByRole('toolbar', { name: 'Viewer' })
-      const picker = toolbar.getByLabel('Stamp', { exact: true })
+      const strip = a.page.getByRole('group', { name: 'Markup tools' })
+      const picker = strip.getByLabel('Stamp', { exact: true })
       await expect(picker.locator('option')).toHaveText([
         'Enter',
         'Exit',
@@ -508,7 +508,7 @@ test('an owner edit to the stamp set reaches another member’s stamp picker', a
     const toolbarStamps = async (page: Page) => {
       await pick(page, 'Stamp')
       return page
-        .getByRole('toolbar', { name: 'Viewer' })
+        .getByRole('group', { name: 'Markup tools' })
         .getByLabel('Stamp', { exact: true })
         .locator('option')
     }
