@@ -1,10 +1,11 @@
 import { createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { documents, documentVersions, pages } from '@binder/db'
-import { type FailureCode, newId } from '@binder/shared'
+import { type FailureCode, newId, type OcrMode } from '@binder/shared'
 import { and, eq, gte, inArray, sql } from 'drizzle-orm'
 import { searchableBlobKey } from '../blob/keys'
 import { defaultSnapToText } from '../services/documents'
+import { ProcessingCancelled, watchForCancel } from './cancel'
 import { firstLine, ToolError } from './exec'
 import { describeOcrFailure, runOcrmypdf } from './ocrmypdf'
 import { SYSTEM } from './pageJob'
@@ -52,6 +53,16 @@ export async function processDocumentVersion(
   deps: ProcessingDeps,
   versionId: string,
 ): Promise<void> {
+  try {
+    await runDocumentJob(deps, versionId)
+  } catch (err) {
+    // The version was cancelled while OCR ran. Nothing was written, so the job just ends, and
+    // pg-boss completes it instead of retrying.
+    if (!(err instanceof ProcessingCancelled)) throw err
+  }
+}
+
+async function runDocumentJob(deps: ProcessingDeps, versionId: string): Promise<void> {
   const { db, blobs, jobs } = deps
   const [row] = await db
     .select({
@@ -92,7 +103,7 @@ export async function processDocumentVersion(
     const images = ocrMode === 'auto' ? await imageStats(original).catch(() => null) : null
     const imagePages = images?.pages ?? null
     const mode = ocrMode === 'never' || imagePages?.size === 0 ? 'never' : 'auto'
-    const ocr = await runOcrmypdf(original, searchable, { mode })
+    const ocr = await runOcr(db, versionId, original, searchable, mode)
     if (mode === 'auto' && !ocr.ocrApplied) {
       errors.push(describeOcrFailure(ocr))
       console.warn(`OCR fell back to a copy for version ${versionId}:\n${ocr.stderr}`)
@@ -114,6 +125,17 @@ export async function processDocumentVersion(
     // position, and an OCR-off document was asked not to be read, so they are exempt (decision 3).
     if (textAnchored && ocrMode === 'auto') {
       const chars = await countTextChars(searchable)
+      if (mode === 'auto' && !ocr.ocrApplied && chars < MIN_TEXT_CHARS) {
+        // OCR was meant to run and did not (it failed or timed out), so the missing text says
+        // nothing about the file. A retry may well succeed, so this is a retryable failure (R29).
+        await markVersionFailed(
+          db,
+          versionId,
+          `OCR did not run, so no text could be read (${errors.join('; ')})`,
+          ocr.timedOut ? 'timeout' : 'unknown',
+        )
+        return []
+      }
       if (chars < MIN_TEXT_CHARS) {
         const ppi = images?.medianPpi ?? null
         const lowResolution = ppi !== null && ppi < LOW_RESOLUTION_PPI
@@ -190,6 +212,30 @@ export async function processDocumentVersion(
 
   // The last page job marks the version ready.
   if (pageIds.length > 0) await jobs.enqueuePageProcess(pageIds)
+}
+
+/**
+ * Runs OCR while watching for a cancel. When the version stops being `processing` the watcher
+ * aborts OCRmyPDF (its whole process group) and this throws ProcessingCancelled, which ends the
+ * job without writing anything.
+ */
+async function runOcr(
+  db: ProcessingDeps['db'],
+  versionId: string,
+  input: string,
+  output: string,
+  mode: OcrMode,
+) {
+  const controller = new AbortController()
+  const stopWatching = watchForCancel(db, versionId, controller)
+  try {
+    return await runOcrmypdf(input, output, { mode, signal: controller.signal })
+  } catch (err) {
+    if (err instanceof ToolError && err.aborted) throw new ProcessingCancelled(versionId)
+    throw err
+  } finally {
+    stopWatching()
+  }
 }
 
 /**

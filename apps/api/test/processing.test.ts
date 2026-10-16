@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { createReadStream, readdirSync } from 'node:fs'
+import { createReadStream, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -12,7 +12,9 @@ import { asc, eq, sql } from 'drizzle-orm'
 import { PgBoss } from 'pg-boss'
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
 import { searchableBlobKey } from '../src/blob/keys'
+import { watchForCancel } from '../src/processing/cancel'
 import { processDocumentVersion } from '../src/processing/documentJob'
+import { KILL_GRACE_MS, runTool, ToolError } from '../src/processing/exec'
 import { describeOcrFailure, OCRMYPDF_TIMEOUT_MS, runOcrmypdf } from '../src/processing/ocrmypdf'
 import { processPage } from '../src/processing/pageJob'
 import {
@@ -49,6 +51,17 @@ import { findMissingTools, skipWithoutTools } from './tools'
 
 const run = promisify(execFile)
 
+// Lets a test give the document job's OCRmyPDF run a short timeout instead of its 30 minutes.
+const ocrOverride = vi.hoisted(() => ({ timeoutMs: undefined as number | undefined }))
+vi.mock('../src/processing/ocrmypdf', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/processing/ocrmypdf')>()
+  return {
+    ...actual,
+    runOcrmypdf: (input: string, output: string, opts: Parameters<typeof actual.runOcrmypdf>[2]) =>
+      actual.runOcrmypdf(input, output, { ...opts, timeoutMs: ocrOverride.timeoutMs }),
+  }
+})
+
 const TOOLS: Array<[string, string[]]> = [
   ['ocrmypdf', ['--version']],
   ['pdfinfo', ['-v']],
@@ -75,6 +88,7 @@ beforeAll(async () => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+  ocrOverride.timeoutMs = undefined
 })
 afterAll(async () => {
   if (sharedTmp === undefined) delete process.env.TMPDIR
@@ -183,6 +197,55 @@ const tokens = (text: string) =>
 function jaccard(a: Set<string>, b: Set<string>): number {
   const inter = [...a].filter((t) => b.has(t)).length
   return inter / (a.size + b.size - inter)
+}
+
+/** Puts a stand-in `ocrmypdf` with this shell body first on PATH; returns its directory. */
+async function standInOcrmypdf(body: string): Promise<string> {
+  const bin = join(work, `stand-in-${Math.random().toString(36).slice(2)}`)
+  await mkdir(bin, { recursive: true })
+  await writeFile(join(bin, 'ocrmypdf'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  vi.stubEnv('PATH', `${bin}:${process.env.PATH}`)
+  return bin
+}
+
+const SLEEPER = 'sleep 300 &\necho $! > "$PIDFILE"\nwait'
+
+const isAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function until(check: () => boolean, ms: number): Promise<boolean> {
+  for (const start = Date.now(); Date.now() - start < ms; await sleep(25)) if (check()) return true
+  return check()
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** The pid a stand-in wrote to `file`, once it has. */
+async function pidFrom(file: string): Promise<number> {
+  if (!(await until(() => existsSync(file) && (readFileSyncSafe(file) ?? '') !== '', 20_000)))
+    throw new Error('the stand-in never started')
+  return Number(readFileSyncSafe(file))
+}
+function readFileSyncSafe(file: string): string | null {
+  try {
+    return readFileSync(file, 'utf8').trim()
+  } catch {
+    return null
+  }
+}
+
+/** Kills a process a test left behind, so a failing assertion cannot leak a sleeper. */
+function reap(pid: number | undefined) {
+  if (pid === undefined) return
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {}
 }
 
 const jobTempDirs = () =>
@@ -757,6 +820,138 @@ describe.skipIf(skip)('processing detection and guards', () => {
   }, 60_000)
 })
 
+describe.skipIf(skip)('processing controls', () => {
+  test('watchForCancel aborts when the status leaves processing, or the row is gone', async () => {
+    const { version } = await upload(await textOnlyPdf())
+    await s.deps.db
+      .update(documentVersions)
+      .set({ status: 'processing' })
+      .where(eq(documentVersions.id, version.id))
+
+    const watching = new AbortController()
+    const stop = watchForCancel(s.deps.db, version.id, watching, 25)
+    await sleep(120)
+    expect(watching.signal.aborted).toBe(false)
+    await cancelDirectly(version.id)
+    expect(await until(() => watching.signal.aborted, 3000)).toBe(true)
+    stop()
+
+    const missing = new AbortController()
+    const stopMissing = watchForCancel(s.deps.db, newId(), missing, 25)
+    expect(await until(() => missing.signal.aborted, 3000)).toBe(true)
+    stopMissing()
+
+    // A stopped watch never aborts.
+    const stopped = new AbortController()
+    watchForCancel(s.deps.db, version.id, stopped, 25)()
+    await sleep(120)
+    expect(stopped.signal.aborted).toBe(false)
+  }, 60_000)
+
+  test('cancel during OCR kills ocrmypdf within about 3 s and writes nothing', async () => {
+    const pidFile = join(work, `ocr-${Math.random().toString(36).slice(2)}.pid`)
+    vi.stubEnv('PIDFILE', pidFile)
+    await standInOcrmypdf(SLEEPER)
+    const { version } = await upload(FIXTURES.scanPdf)
+    const deps = processingDeps()
+    const before = jobTempDirs().length
+    let sleeper: number | undefined
+    try {
+      const job = processDocumentVersion(deps, version.id)
+      sleeper = await pidFrom(pidFile)
+      expect(isAlive(sleeper)).toBe(true)
+
+      const cancelledAt = Date.now()
+      await cancelDirectly(version.id)
+      await job
+      expect(Date.now() - cancelledAt).toBeLessThan(4000)
+      expect(await until(() => !isAlive(sleeper as number), 2000)).toBe(true)
+    } finally {
+      reap(sleeper)
+    }
+    const after = await load(version.id)
+    expect(after.version).toMatchObject({
+      status: 'failed',
+      failureCode: 'cancelled',
+      searchableKey: null,
+    })
+    expect(after.pages).toHaveLength(0)
+    expect(deps.jobs.enqueuedPages).toHaveLength(0)
+    expect(
+      await s.deps.blobs.exists(searchableBlobKey(version.showId, version.documentId, version.id)),
+    ).toBe(false)
+    expect(jobTempDirs()).toHaveLength(before)
+  }, 60_000)
+
+  test('OCR that did not run on a text-anchored scan with no text fails unknown, not no_text', async () => {
+    await standInOcrmypdf('echo "boom" >&2\nexit 15')
+    const scan = join(work, 'ocr-broken-blank.pdf')
+    writeBlankScanPdf(scan, 72)
+    const { version } = await upload(scan)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const done = await processAll(version.id)
+    expect(done.version).toMatchObject({
+      status: 'failed',
+      failureCode: 'unknown',
+      failureDpi: null,
+      searchableKey: null,
+    })
+    expect(done.version.error).toMatch(/^OCR did not run, so no text could be read/)
+    expect(done.version.error).toMatch(/ocrmypdf exit 15: boom/)
+    expect(done.pages).toHaveLength(0)
+  }, 120_000)
+
+  test('OCR that timed out on a text-anchored scan with no text fails timeout', async () => {
+    const pidFile = join(work, `ocr-timeout-${Math.random().toString(36).slice(2)}.pid`)
+    vi.stubEnv('PIDFILE', pidFile)
+    await standInOcrmypdf(SLEEPER)
+    ocrOverride.timeoutMs = 600
+    const scan = join(work, 'ocr-timeout-blank.pdf')
+    writeBlankScanPdf(scan, 300)
+    const { version } = await upload(scan)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const done = await processAll(version.id)
+      expect(done.version).toMatchObject({ status: 'failed', failureCode: 'timeout' })
+      expect(done.version.error).toMatch(/^OCR did not run/)
+      expect(done.version.error).toMatch(/timed out after 0\.6s/)
+    } finally {
+      reap(readFileSyncSafe(pidFile) ? Number(readFileSyncSafe(pidFile)) : undefined)
+    }
+  }, 120_000)
+
+  test.each(['queued', 'ready'] as const)(
+    'the searchable blob survives when the final transaction finds the version %s',
+    async (status) => {
+      const { version } = await upload(await textOnlyPdf())
+      const key = searchableBlobKey(version.showId, version.documentId, version.id)
+      const put = s.deps.blobs.put.bind(s.deps.blobs)
+      // A retry requeued the version (or finished it) right after this run wrote the searchable PDF.
+      vi.spyOn(s.deps.blobs, 'put').mockImplementation(async (k, body, type) => {
+        const result = await put(k, body, type)
+        if (k === key)
+          await s.deps.db
+            .update(documentVersions)
+            .set({ status })
+            .where(eq(documentVersions.id, version.id))
+        return result
+      })
+      const deps = processingDeps()
+      await processDocumentVersion(deps, version.id)
+      vi.restoreAllMocks()
+
+      // The blob belongs to whoever owns the version now, so it stays; this run wrote nothing else.
+      expect(await s.deps.blobs.exists(key)).toBe(true)
+      const after = await load(version.id)
+      expect(after.version.status).toBe(status)
+      expect(after.version.searchableKey).toBeNull()
+      expect(after.pages).toHaveLength(0)
+      expect(deps.jobs.enqueuedPages).toHaveLength(0)
+    },
+    60_000,
+  )
+})
+
 describe.skipIf(skip)('enqueue failure', () => {
   test('an enqueue failure gives enqueue_failed', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -875,6 +1070,119 @@ describe.skipIf(skip)('tool wrappers', () => {
     }
     expect((await readFile(output)).equals(await readFile(FIXTURES.scanPdf))).toBe(true)
   })
+
+  test('runTool aborts the whole process group on signal', async () => {
+    const pidFile = join(work, 'group.pid')
+    const controller = new AbortController()
+    let grandchild: number | undefined
+    try {
+      const running = runTool('sh', ['-c', 'sleep 300 & echo $! > "$1"; wait', 'sh', pidFile], {
+        timeoutMs: 60_000,
+        signal: controller.signal,
+      })
+      const failure = running.catch((e: unknown) => e)
+      grandchild = await pidFrom(pidFile)
+      expect(isAlive(grandchild)).toBe(true)
+      controller.abort()
+      const err = await failure
+      expect(err).toBeInstanceOf(ToolError)
+      expect(err).toMatchObject({ aborted: true, timedOut: false, exitCode: null })
+      // The sleep is not the shell's direct child's problem: the group kill reached it too.
+      expect(await until(() => !isAlive(grandchild as number), 3000)).toBe(true)
+    } finally {
+      reap(grandchild)
+    }
+  }, 30_000)
+
+  test('runTool escalates to SIGKILL for a tool that ignores SIGTERM', async () => {
+    const pidFile = join(work, 'stubborn.pid')
+    const controller = new AbortController()
+    let grandchild: number | undefined
+    try {
+      const failure = runTool(
+        'sh',
+        ['-c', 'trap "" TERM; sleep 300 & echo $! > "$1"; wait', 'sh', pidFile],
+        { timeoutMs: 60_000, signal: controller.signal },
+      ).catch((e: unknown) => e)
+      grandchild = await pidFrom(pidFile)
+      const started = Date.now()
+      controller.abort()
+      expect(await failure).toMatchObject({ aborted: true })
+      const took = Date.now() - started
+      expect(took).toBeGreaterThanOrEqual(KILL_GRACE_MS - 200)
+      expect(took).toBeLessThan(KILL_GRACE_MS + 3000)
+      expect(await until(() => !isAlive(grandchild as number), 3000)).toBe(true)
+    } finally {
+      reap(grandchild)
+    }
+  }, 30_000)
+
+  test('runTool kills the group on timeout and flags it', async () => {
+    const pidFile = join(work, 'timeout.pid')
+    let grandchild: number | undefined
+    try {
+      const err = await runTool('sh', ['-c', 'sleep 300 & echo $! > "$1"; wait', 'sh', pidFile], {
+        timeoutMs: 400,
+      }).catch((e: unknown) => e)
+      grandchild = Number(readFileSyncSafe(pidFile))
+      expect(err).toBeInstanceOf(ToolError)
+      expect(err).toMatchObject({ timedOut: true, aborted: false, exitCode: null })
+      expect((err as ToolError).message).toMatch(/^sh timed out after 0\.4s/)
+      expect(await until(() => !isAlive(grandchild as number), 3000)).toBe(true)
+    } finally {
+      reap(grandchild)
+    }
+  }, 30_000)
+
+  test('runTool with an already aborted signal never starts the tool', async () => {
+    const marker = join(work, 'never-started')
+    const err = await runTool('sh', ['-c', 'touch "$1"', 'sh', marker], {
+      timeoutMs: 10_000,
+      signal: AbortSignal.abort(),
+    }).catch((e: unknown) => e)
+    expect(err).toMatchObject({ aborted: true })
+    expect(existsSync(marker)).toBe(false)
+  })
+
+  test('runTool still reports output, exit codes and a failure to start', async () => {
+    expect(await runTool('sh', ['-c', 'echo out; echo err >&2'], { timeoutMs: 10_000 })).toEqual({
+      stdout: 'out\n',
+      stderr: 'err\n',
+    })
+    const failed = await runTool('sh', ['-c', 'echo nope >&2; exit 3'], {
+      timeoutMs: 10_000,
+    }).catch((e: unknown) => e)
+    expect(failed).toMatchObject({ exitCode: 3, stderr: 'nope\n', aborted: false, timedOut: false })
+    expect((failed as ToolError).message).toBe('sh exited 3: nope')
+    const missing = await runTool('binder-no-such-tool', [], { timeoutMs: 10_000 }).catch(
+      (e: unknown) => e,
+    )
+    expect(missing).toMatchObject({ exitCode: null, aborted: false })
+    expect((missing as ToolError).stderr).toMatch(/ENOENT/)
+  })
+
+  test('runOcrmypdf rethrows an aborted run instead of copying', async () => {
+    const pidFile = join(work, 'ocr-abort.pid')
+    vi.stubEnv('PIDFILE', pidFile)
+    await standInOcrmypdf(SLEEPER)
+    const output = join(work, 'ocr-abort-out.pdf')
+    const controller = new AbortController()
+    let sleeper: number | undefined
+    try {
+      const failure = runOcrmypdf(FIXTURES.scanPdf, output, {
+        mode: 'auto',
+        signal: controller.signal,
+      }).catch((e: unknown) => e)
+      sleeper = await pidFrom(pidFile)
+      controller.abort()
+      const err = await failure
+      expect(err).toBeInstanceOf(ToolError)
+      expect(err).toMatchObject({ aborted: true })
+      expect(existsSync(output)).toBe(false)
+    } finally {
+      reap(sleeper)
+    }
+  }, 30_000)
 
   test("runOcrmypdf in mode 'never' copies without running OCR", async () => {
     const output = join(work, 'never.pdf')
