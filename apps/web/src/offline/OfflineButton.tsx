@@ -103,14 +103,3 @@ export function OfflineStatus({ copy, className }: { copy: OfflineCopy; classNam
     </div>
   )
 }
-
-/** The button with its status under it, for a screen that keeps both together (More). */
-export function OfflineButton({ showId }: { showId: string }) {
-  const copy = useOfflineCopy(showId)
-  return (
-    <div className="offline flex flex-col items-start gap-3">
-      <OfflineAction copy={copy} />
-      <OfflineStatus copy={copy} className="w-full" />
-    </div>
-  )
-}

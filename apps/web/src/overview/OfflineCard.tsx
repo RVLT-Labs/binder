@@ -1,6 +1,7 @@
 import { useId } from 'react'
 import { WifiOffIcon } from '@/components/icons'
 import { cn } from '@/lib/utils'
+import { KeepOfflineSwitch } from '../offline/keepOffline/KeepOfflineSwitch'
 import { type OfflineCopy, OfflineStatus } from '../offline/OfflineButton'
 import type { OfflineSummary } from '../offline/useOfflineSummary'
 
@@ -74,15 +75,18 @@ function OfflineNote({ summary }: { summary: OfflineSummary }) {
 }
 
 /**
- * The overview's Offline card: how much is on this device, and how a save is going. The button
- * that saves the rest is in the top bar (desktop and tablet) and on More (phone), as in the
- * mockups, so the card only talks. At phone width it is the mockup's quiet note instead.
+ * The overview's Offline card: how much is on this device, how a save is going, and (desktop and
+ * tablet, which have no More tab) the keep-offline switch. The one-off button that saves the rest
+ * is in the top bar, as in the mockup. At phone width the card is the mockup's quiet note, and the
+ * switch is on More.
  */
 export function OfflineCard({
+  showId,
   summary,
   copy,
   names,
 }: {
+  showId: string
   summary: OfflineSummary | null
   copy: OfflineCopy
   names?: readonly string[]
@@ -112,6 +116,11 @@ export function OfflineCard({
             </p>
           </>
         )}
+        <KeepOfflineSwitch
+          showId={showId}
+          label="Keep available offline"
+          className="mt-3 border-t border-line pt-2.5 max-md:hidden"
+        />
         <OfflineStatus copy={copy} className="mt-2" />
       </div>
     </section>

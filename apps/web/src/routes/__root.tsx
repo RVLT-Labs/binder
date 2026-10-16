@@ -5,6 +5,7 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { useSessionUser } from '../auth/session'
+import { KeepOfflineRunner } from '../offline/keepOffline/KeepOfflineRunner'
 import { PowerSyncProvider } from '../powersync/provider'
 import type { RouterContext } from '../router'
 import { AppShell } from '../shell/AppShell'
@@ -25,6 +26,8 @@ function RootLayout() {
 
   return (
     <PowerSyncProvider userId={user.id}>
+      {/* App-wide, so keep-offline goes on while the user is on the home page or another show. */}
+      <KeepOfflineRunner userId={user.id} />
       <SignedIn />
     </PowerSyncProvider>
   )

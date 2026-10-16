@@ -6,7 +6,6 @@ import { SectionHeading } from '@/components/SectionHeading'
 import { cn, focusRing } from '@/lib/utils'
 import { duplicateStats } from '../cuelist/duplicates'
 import { DocumentRows } from '../documents/DocumentList'
-import type { DocumentEntry } from '../documents/documentEntries'
 import { useDocumentEntries } from '../documents/useDocumentEntries'
 import { useDepartments } from '../markup/useDepartments'
 import { useMembership } from '../markup/useMembership'
@@ -16,6 +15,7 @@ import type { ShowRow } from '../powersync/schema'
 import { BinderPresence } from '../presence/Avatars'
 import { TopBarActions } from '../shell/TopBarSlots'
 import { DepartmentCards } from './DepartmentCards'
+import { documentNames } from './documentNames'
 import { NeedsYou } from './NeedsYou'
 import { OfflineCard } from './OfflineCard'
 import { RecentActivity } from './RecentActivity'
@@ -27,20 +27,6 @@ const CUE_NUMBERS_SQL = 'SELECT id, department_id, major, minor FROM cues WHERE 
 
 // The mockup's footer links: 12 px, muted, no underline.
 const FOOTER_LINK = cn('rounded-sm text-[12px] text-muted hover:text-ink', focusRing)
-
-/** "Libretto v1, v2": a document and the versions of it that are ready. */
-function documentNames(entries: readonly DocumentEntry[]): string[] {
-  return entries.flatMap((e) =>
-    e.kind === 'ready'
-      ? [
-          `${e.title} ${[e.kept?.number, e.version.number]
-            .filter((n) => n !== undefined)
-            .map((n) => `v${n}`)
-            .join(', ')}`,
-        ]
-      : [],
-  )
-}
 
 /**
  * The show's page (DESIGN §6): what needs a decision, the scripts, the cue lists by department and
@@ -169,6 +155,7 @@ export function ShowOverview({ showId }: { showId: string }) {
         <BinderPresence showId={showId} />
         <NeedsYou {...needs} variant="aside" className="max-md:hidden" />
         <OfflineCard
+          showId={showId}
           summary={offlineSummary}
           copy={offlineCopy}
           names={
