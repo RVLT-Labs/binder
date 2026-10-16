@@ -183,7 +183,7 @@ async function exportFrom(
   await choose(dialog)
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    dialog.getByRole('button', { name: 'Export PDF' }).click(),
+    dialog.getByRole('button', { name: 'Download PDF' }).click(),
   ])
   await expect(dialog).toBeHidden()
   return download
@@ -290,7 +290,7 @@ test('an export made offline downloads at once and its record appears after reco
 
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      dialog.getByRole('button', { name: 'Export PDF' }).click(),
+      dialog.getByRole('button', { name: 'Download PDF' }).click(),
     ])
     await expect(dialog).toBeHidden()
     const filename = download.suggestedFilename()

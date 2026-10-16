@@ -4,8 +4,13 @@ import { cn } from '@/lib/utils'
 import { blobUrl } from '../blobs/fetchBlob'
 import { AvatarGroup } from '../presence/Avatars'
 
-/** Thumbnails are rendered 160 px wide; shown at 96 (DESIGN 6.2), still sharp on 2x screens. */
-export const THUMB_WIDTH = 96
+/**
+ * Thumbnails are rendered 160 px wide; shown at 62 (the mockup's `.thumb`: 62 x 82 in a 92 px
+ * column), still sharp on 2x screens. The column is THUMB_COLUMN wide; CSS below says the same.
+ */
+export const THUMB_WIDTH = 62
+/** The column the thumbnails sit in (`.thumbs`: 92 px). */
+export const THUMB_COLUMN = 92
 
 export interface RailPage {
   id: string
@@ -35,25 +40,28 @@ export function ThumbnailRail({ pages, current, onSelect, peersByPage }: Thumbna
   return (
     <nav
       ref={rail}
-      className="thumbnail-rail flex shrink-0 flex-col gap-3 overflow-y-auto border-r border-line bg-paper-2 px-2 py-3"
+      className="thumbnail-rail flex w-[92px] shrink-0 flex-col items-center gap-3.5 overflow-y-auto border-r border-line bg-paper-2 pt-2.5 pb-6"
       aria-label="Thumbnails"
     >
       {pages.map((page, i) => {
         const label = `Page ${i + 1}`
         const height = Math.round((THUMB_WIDTH * page.height) / page.width)
         return (
-          <div key={page.id} className="thumbnail-slot relative flex flex-col items-center">
+          <div
+            key={page.id}
+            className="thumbnail-slot relative flex shrink-0 flex-col items-center"
+          >
             <button
               type="button"
               className={cn(
-                'thumbnail group grid cursor-pointer justify-items-center gap-1 rounded-[4px] bg-transparent',
+                'thumbnail group relative grid cursor-pointer justify-items-center rounded-[3px] bg-transparent',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper-2',
               )}
               aria-current={i === current ? 'page' : undefined}
               onClick={() => onSelect(i)}
             >
-              {/* The current page's frame is red: active state, DESIGN 4.1. */}
-              <span className="block rounded-[3px] bg-page ring-2 ring-line-2 group-aria-[current=page]:ring-red">
+              {/* The current page's frame is a 2 px red outline, offset 2: active state, DESIGN 4.1. */}
+              <span className="block rounded-[3px] bg-page shadow-[0_1px_0_rgba(0,0,0,0.6)] group-aria-[current=page]:outline-2 group-aria-[current=page]:outline-offset-2 group-aria-[current=page]:outline-red">
                 {page.thumb_key ? (
                   <img
                     src={blobUrl(page.thumb_key)}
@@ -71,14 +79,14 @@ export function ThumbnailRail({ pages, current, onSelect, peersByPage }: Thumbna
                 )}
               </span>
               <span
-                className="thumbnail-number font-mono text-[11px] tabular-nums text-muted group-aria-[current=page]:text-ink"
+                className="thumbnail-number absolute inset-x-0 -bottom-[15px] text-center font-mono text-[11px] leading-none tabular-nums text-muted group-aria-[current=page]:text-ink"
                 aria-hidden="true"
               >
                 {i + 1}
               </span>
             </button>
             <AvatarGroup
-              className="thumbnail-presence"
+              className="thumbnail-presence !-top-1.5 !-right-1.5"
               peers={peersByPage?.get(i) ?? []}
               pageIndex={i}
             />

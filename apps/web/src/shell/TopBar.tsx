@@ -22,17 +22,31 @@ export function TopBar({
   primary,
   slotRefs,
   phoneTab,
+  phoneTitleSize,
+  phoneBare,
 }: {
   crumbs: Crumb[]
   phone: boolean
   /** The phone title size of a tab-level screen; absent on a drill-in. */
   phoneTab?: 20 | 22
+  /** A smaller phone title for a drill-in whose title is a long name (the show's own page: 16). */
+  phoneTitleSize?: 16
+  /**
+   * The screen draws the phone bar's right-hand side itself (into the `phone` slot): no sync
+   * state, no primary, no avatar. The script screen's mockup bar is the back chevron, the
+   * title, the page position and one menu.
+   */
+  phoneBare?: boolean
   showId?: string
   account: Account
   actions?: ReactNode
   primary?: ReactNode
   /** Where a screen's own top bar controls are drawn (see TopBarSlots). Not at phone. */
-  slotRefs?: { chip: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void }
+  slotRefs?: {
+    chip: (el: HTMLElement | null) => void
+    actions: (el: HTMLElement | null) => void
+    phone: (el: HTMLElement | null) => void
+  }
 }) {
   if (phone) {
     const title = crumbs.at(-1)
@@ -61,14 +75,26 @@ export function TopBar({
         <span
           className={cn(
             'min-w-0 flex-1 truncate font-display font-extrabold leading-[1.1] tracking-[-.02em] text-ink',
-            phoneTab === 22 ? 'text-[22px]' : phoneTab === 20 ? 'text-[20px]' : 'text-[19px]',
+            phoneTab === 22
+              ? 'text-[22px]'
+              : phoneTab === 20
+                ? 'text-[20px]'
+                : phoneTitleSize === 16
+                  ? 'text-[16px]'
+                  : 'text-[19px]',
           )}
         >
-          {title?.label}
+          {title?.phoneLabel ?? title?.label}
         </span>
-        <SyncStatus />
-        {primary}
-        <AccountMenu account={account} showId={showId} side="bottom" />
+        {phoneBare ? (
+          <div ref={slotRefs?.phone} className="contents" />
+        ) : (
+          <>
+            <SyncStatus />
+            {primary}
+            <AccountMenu account={account} showId={showId} side="bottom" />
+          </>
+        )}
       </header>
     )
   }
@@ -119,8 +145,9 @@ export function TopBar({
       <div ref={slotRefs?.chip} className="contents" />
       <div className="ml-auto flex items-center gap-3">
         <SyncStatus />
-        <div ref={slotRefs?.actions} className="contents" />
         {actions}
+        {/* A screen's own controls (see TopBarSlots) sit after the shell's, before the primary. */}
+        <div ref={slotRefs?.actions} className="contents" />
         {primary}
       </div>
     </header>

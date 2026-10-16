@@ -44,7 +44,7 @@ test('after a cold offline reload, print downloads at once and the record is mad
   await dialog.getByRole('button', { name: 'Calling script: all layers' }).click()
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    dialog.getByRole('button', { name: 'Export PDF' }).click(),
+    dialog.getByRole('button', { name: 'Download PDF' }).click(),
   ])
   const saved = join(testInfo.outputDir, 'offline-print.pdf')
   await download.saveAs(saved)

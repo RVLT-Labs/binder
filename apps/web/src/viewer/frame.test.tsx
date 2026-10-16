@@ -3,9 +3,10 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import type { MarkupSession } from '../markup/MarkupSession'
 import { ToolStrip } from '../markup/ToolStrip'
 import { setTool } from '../markup/tools'
+import { UndoRedoButtons } from '../markup/UndoRedoButtons'
 import { FIT_ALLOWANCE, PAGE_GUTTER } from './controls'
 import { StatusBar } from './StatusBar'
-import { THUMB_WIDTH } from './ThumbnailRail'
+import { THUMB_COLUMN, THUMB_WIDTH } from './ThumbnailRail'
 
 const h = vi.hoisted(() => ({ session: {} as Record<string, unknown> }))
 vi.mock('../markup/MarkupSession', () => ({ useMarkupSession: () => h.session }))
@@ -70,10 +71,24 @@ test('tools are aria-pressed buttons: choosing one presses it and releases the l
   expect(select.getAttribute('aria-pressed')).toBe('true')
 })
 
-test('undo, redo and the snap toggle keep their names', () => {
-  render(<ToolStrip />)
+test('the desktop strip has no undo or redo (they are in the top bar); the inline strip keeps them', () => {
+  const { unmount } = render(<ToolStrip />)
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Redo' })).toBeNull()
+  unmount()
+  render(<ToolStrip variant="inline" />)
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Redo' })).toBeTruthy()
+})
+
+test('the top bar undo and redo keep their names and follow the undo stack', () => {
+  render(<UndoRedoButtons />)
   expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', false)
   expect(screen.getByRole('button', { name: 'Redo' })).toHaveProperty('disabled', true)
+})
+
+test('the snap toggle keeps its name', () => {
+  render(<ToolStrip />)
   const snap = screen.getByLabelText('Snap to text') as HTMLInputElement
   expect(snap.checked).toBe(true)
   fireEvent.click(snap)
@@ -117,8 +132,51 @@ test('the status bar says off when snapping is off', () => {
   )
 })
 
-test('thumbnails are 96 px wide and fit width leaves the tool strip clear of the page', () => {
-  expect(THUMB_WIDTH).toBe(96)
-  // Both sides of the page list keep the strip's lane, plus room for a classic scrollbar.
+test('thumbnails are the mockup 62 px in a 92 px column and fit width leaves the tool strip clear of the page', () => {
+  expect(THUMB_WIDTH).toBe(62)
+  expect(THUMB_COLUMN).toBe(92)
+  // Both sides of the page list keep the strip's lane (12 px in, 60 wide at the tablet's 44 px
+  // buttons), plus room for a classic scrollbar.
+  expect(PAGE_GUTTER).toBeGreaterThanOrEqual(12 + 60)
   expect(FIT_ALLOWANCE).toBeGreaterThanOrEqual(2 * PAGE_GUTTER)
+})
+
+test('the strip is the mockup tool set in its order, with ellipse and line after the box, one rule before Find', () => {
+  render(<ToolStrip />)
+  const names = within(screen.getByRole('group', { name: 'Markup tools' }))
+    .getAllByRole('button')
+    .map((b) => b.getAttribute('aria-label'))
+  expect(names).toEqual([
+    'Select',
+    'Cue tool',
+    'Highlight tool',
+    'Note tool',
+    'Rect tool',
+    'Ellipse tool',
+    'Line tool',
+    'Arrow tool',
+    'Stamp tool',
+    'Find in document',
+  ])
+})
+
+test('the strip and its buttons carry the mockup sizes: 34 px buttons on a card with radius 12', () => {
+  render(<ToolStrip />)
+  const strip = screen.getByRole('group', { name: 'Markup tools' })
+  expect(strip.className).toContain('bg-card')
+  expect(strip.className).toContain('rounded-[12px]')
+  expect(strip.className).toContain('left-3')
+  expect(strip.className).toContain('top-[18px]')
+  expect(screen.getByRole('button', { name: 'Select' }).className).toContain(
+    'min-[1025px]:size-[34px]',
+  )
+})
+
+test('the status bar is 26 px with 11.5 px type, the layer name in its own colour, "on" in mono', () => {
+  render(<StatusBar page={1} pages={43} snap activeLayer={{ name: 'LX', colour: '#C9811F' }} />)
+  const bar = screen.getByRole('region', { name: 'Script status' })
+  expect(bar.className).toContain('h-[26px]')
+  expect(bar.className).toContain('text-[11.5px]')
+  expect(within(bar).getByText('on').className).toContain('font-mono')
+  expect(within(bar).getByText('LX').style.color).not.toBe('')
 })

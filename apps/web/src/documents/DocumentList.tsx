@@ -19,14 +19,22 @@ export function DocumentRows({
   compact?: boolean
 }) {
   const { canUpload, openUpload } = useUpload()
-  const { entries, thumbs, cachedVersions, reviewCounts } = data
+  const { thumbs, cachedVersions, reviewCounts } = data
+  // The overview's Scripts card lists the scripts that are ready; what is still processing or
+  // could not be read is on the Documents screen (and a failure is in Needs you).
+  const entries = compact ? data.entries.filter((e) => e.kind === 'ready') : data.entries
+  // A version being processed shows its document's current page, quieted.
+  const readyThumb = (docId: string) => {
+    const ready = data.entries.find((e) => e.kind === 'ready' && e.docId === docId)
+    return ready?.kind === 'ready' ? thumbs.get(ready.version.id) : null
+  }
   return (
     <ul
       aria-label="Documents"
       className={cn(
         'm-0 list-none p-0',
         compact
-          ? 'divide-y divide-line overflow-hidden rounded-[20px] border-2 border-line-2 bg-card shadow-card'
+          ? 'divide-y divide-line overflow-hidden rounded-[var(--r)] border-2 border-line-2 bg-card shadow-card'
           : 'flex flex-col gap-3',
       )}
     >
@@ -37,7 +45,13 @@ export function DocumentRows({
             key={entry.key}
             showId={showId}
             entry={entry}
-            thumbKey={versionId ? thumbs.get(versionId) : null}
+            thumbKey={
+              versionId
+                ? thumbs.get(versionId)
+                : entry.kind === 'processing'
+                  ? readyThumb(entry.docId)
+                  : null
+            }
             cached={versionId ? cachedVersions.has(versionId) : false}
             reviewCount={entry.kind === 'ready' ? (reviewCounts.get(entry.docId) ?? 0) : 0}
             canUpload={canUpload}
@@ -100,12 +114,15 @@ export function DocumentList({ showId, data }: { showId: string; data: Documents
           onDragLeave={() => setOver(false)}
           onDrop={drop}
           className={cn(
-            'rounded-[20px] border-2 border-dashed px-4 py-6 text-center text-[14px] text-muted',
+            // `.ghost-card.dx-drop`: dashed, 56 px, 13 px. A phone has nothing to drag from.
+            'flex h-14 items-center justify-center gap-2.5 rounded-[var(--r)] border-2 border-dashed text-[13px] text-muted max-md:hidden',
             over ? 'border-ink bg-paper-2 text-ink' : 'border-line-2',
           )}
         >
-          Drop a PDF here, or use <span className="font-semibold text-ink-2">Upload document</span>{' '}
-          above.
+          <span>
+            Drop a PDF here, or use{' '}
+            <span className="font-semibold text-ink-2">Upload document</span>
+          </span>
         </div>
       )}
     </div>

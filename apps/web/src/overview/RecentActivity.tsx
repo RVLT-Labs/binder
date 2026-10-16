@@ -1,10 +1,9 @@
 import type { ActivityGroup } from '@binder/shared'
-import { Link } from '@tanstack/react-router'
 import { useId } from 'react'
 import { SectionHeading } from '@/components/SectionHeading'
 import { PersonAvatar } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn, focusRing } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useActivity } from '../history/api'
 import { NeedsConnection } from '../history/NeedsConnection'
 import { formatClock } from '../history/time'
@@ -23,9 +22,10 @@ function split(label: string): { who: string; via: string | null } {
 export function ActivityLine({ group }: { group: ActivityGroup }) {
   const { who, via } = split(group.label)
   return (
-    <li className="flex items-center gap-3 py-3 text-[14px]">
-      <PersonAvatar name={who} className="size-8" />
-      <span className="min-w-0 flex-1 text-ink-2">
+    // the mockup's `.feed-row`: 28 px avatar, the sentence, the time; 10 px gaps and padding
+    <li className="flex items-center gap-2.5 py-2.5 text-[13px]">
+      <PersonAvatar name={who} className="size-7" />
+      <span className="min-w-0 flex-1 text-ink">
         <span className="font-semibold text-ink">{who}</span>
         {via && (
           <>
@@ -35,7 +35,10 @@ export function ActivityLine({ group }: { group: ActivityGroup }) {
         )}{' '}
         {group.summary}
       </span>
-      <time dateTime={group.at} className="shrink-0 font-mono text-[13px] tabular-nums text-faint">
+      <time
+        dateTime={group.at}
+        className="shrink-0 font-mono text-[11.5px] tabular-nums text-faint"
+      >
         {formatClock(group.at)}
       </time>
     </li>
@@ -70,23 +73,11 @@ export function RecentActivity({ showId, className }: { showId: string; classNam
       ) : groups.length === 0 ? (
         <p className="m-0 py-3 text-[13px] text-muted">Nothing has changed yet.</p>
       ) : (
-        <>
-          <ul className="m-0 list-none divide-y divide-line p-0">
-            {groups.map((g) => (
-              <ActivityLine key={g.toSeq} group={g} />
-            ))}
-          </ul>
-          <Link
-            to="/shows/$showId/activity"
-            params={{ showId }}
-            className={cn(
-              'self-start rounded-sm py-2 text-[13px] font-semibold text-ink-2 underline underline-offset-4',
-              focusRing,
-            )}
-          >
-            All activity
-          </Link>
-        </>
+        <ul className="m-0 mt-2.5 list-none divide-y divide-line p-0">
+          {groups.map((g) => (
+            <ActivityLine key={g.toSeq} group={g} />
+          ))}
+        </ul>
       )}
     </section>
   )

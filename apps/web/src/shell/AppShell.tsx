@@ -49,8 +49,12 @@ export function AppShell({
   const tabBar = phone && showId !== undefined
   const [chip, setChip] = useState<HTMLElement | null>(null)
   const [actionsEl, setActionsEl] = useState<HTMLElement | null>(null)
-  const slots = useMemo(() => ({ chip, actions: actionsEl }), [chip, actionsEl])
-  const slotRefs = useMemo(() => ({ chip: setChip, actions: setActionsEl }), [])
+  const [phoneEl, setPhoneEl] = useState<HTMLElement | null>(null)
+  const slots = useMemo(
+    () => ({ chip, actions: actionsEl, phone: phoneEl }),
+    [chip, actionsEl, phoneEl],
+  )
+  const slotRefs = useMemo(() => ({ chip: setChip, actions: setActionsEl, phone: setPhoneEl }), [])
 
   // Phone: which screens are tab-level (no back button, a bigger title) and how big the title is.
   const navKey = showId ? activeNavKey(pathname) : null
@@ -60,6 +64,10 @@ export function AppShell({
       : navKey === 'cues' || navKey === 'docs' || navKey === 'activity' || navKey === 'more'
         ? 22
         : undefined
+
+  // The show's own page names the show, which can be long: the mockup sets that title at 16 px.
+  const phoneTitleSize =
+    showId && pathname.replace(/\/$/, '') === `/shows/${showId}` ? (16 as const) : undefined
 
   return (
     <TopBarSlotsContext value={slots}>
@@ -83,6 +91,9 @@ export function AppShell({
             primary={primary}
             slotRefs={slotRefs}
             phoneTab={phoneTab}
+            phoneTitleSize={phoneTitleSize}
+            // a full-bleed screen (the script) brings its own phone controls
+            phoneBare={fullBleed}
           />
           <main
             data-full-bleed={fullBleed ? 'true' : undefined}

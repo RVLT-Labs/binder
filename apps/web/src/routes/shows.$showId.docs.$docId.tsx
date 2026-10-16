@@ -11,17 +11,17 @@ import {
   useState,
 } from 'react'
 import { blobUrl } from '../blobs/fetchBlob'
-import { PrintButton } from '../exports/PrintDialog'
+import { PrintButton, PrintDialog } from '../exports/PrintDialog'
 import { AnnotationHistory, CueHistory } from '../history/HistoryPanel'
 import { AnnotationEditor } from '../markup/AnnotationEditor'
 import { CueEditor } from '../markup/CueEditor'
 import { LayerPanel } from '../markup/LayerPanel'
 import { PageMarkup } from '../markup/MarkupOverlay'
 import { MarkupSessionProvider, useMarkupSession } from '../markup/MarkupSession'
-import { MoreTools } from '../markup/MoreTools'
 import { SelectionAnnouncer } from '../markup/SelectionAnnouncer'
 import { useSelection } from '../markup/selection'
 import { ToolStrip } from '../markup/ToolStrip'
+import { UndoRedoButtons } from '../markup/UndoRedoButtons'
 import { useMarkupShortcuts } from '../markup/useMarkupShortcuts'
 import { useOnline } from '../offline/useOnline'
 import type { DocumentRow, DocumentVersionRow, PageRow } from '../powersync/schema'
@@ -34,7 +34,11 @@ import { useReviewCount } from '../revisions/useReviewCount'
 import { VersionSwitcher } from '../revisions/VersionSwitcher'
 import { versionReadOnlyReason } from '../revisions/versionView'
 import { useBreakpoint } from '../shell/useBreakpoint'
-import { DocumentControls } from '../viewer/DocumentControls'
+import {
+  DocumentControls,
+  type DocumentControlsProps,
+  documentMenuItems,
+} from '../viewer/DocumentControls'
 import { Viewer, type ViewerHandle } from '../viewer/Viewer'
 
 interface DocumentSearch {
@@ -75,6 +79,9 @@ function DocumentPage() {
   const canUpload = useCanUpload(showId)
   const reviewCount = useReviewCount(docId)
   const [uploading, setUploading] = useState(false)
+  // Print from the phone's menu: the page holds the dialog, so the menu can close behind it.
+  const [printing, setPrinting] = useState(false)
+  const printOpener = useRef<HTMLElement | null>(null)
   /** The control that opened Upload revision, so focus can go back to it. */
   const uploadOpener = useRef<HTMLElement | null>(null)
   const breakpoint = useBreakpoint()
@@ -160,10 +167,9 @@ function DocumentPage() {
   if (isLoading) return <p className="p-6 text-ink-2">Loading…</p>
   if (!doc) return <p className="p-6 text-ink-2">Document not found.</p>
 
-  const controls = (print: ReactNode) =>
-    version && (
-      <DocumentControls
-        version={
+  const controlProps: DocumentControlsProps | null = version
+    ? {
+        version: (display) => (
           <VersionSwitcher
             showId={showId}
             docId={doc.id}
@@ -171,10 +177,11 @@ function DocumentPage() {
             currentId={currentId}
             selectedId={version.id}
             localOnly={localOnly}
+            display={display}
             onSelect={(id) => void navigate({ search: { v: id === currentId ? undefined : id } })}
           />
-        }
-        review={
+        ),
+        review:
           reviewCount > 0 || review || versions.length > 1
             ? {
                 count: reviewCount,
@@ -186,18 +193,35 @@ function DocumentPage() {
                     resetScroll: false,
                   }),
               }
-            : null
-        }
-        onUploadRevision={
+            : null,
+        onUploadRevision:
           canUpload && online
             ? (opener) => {
                 uploadOpener.current = opener
                 setUploading(true)
               }
+            : null,
+        thumbnails: { open: thumbsOpen, onToggle: () => setThumbsOpen((open) => !open) },
+        print: null,
+        onPrint: null,
+      }
+    : null
+  /** The top bar's controls; a ready version adds Print, undo and redo, and (phone) draws its own menu. */
+  const controls = (ready?: { history: ReactNode }) =>
+    controlProps && (
+      <DocumentControls
+        {...controlProps}
+        print={ready ? <PrintButton /> : null}
+        onPrint={
+          ready
+            ? (opener) => {
+                printOpener.current = opener
+                setPrinting(true)
+              }
             : null
         }
-        thumbnails={{ open: thumbsOpen, onToggle: () => setThumbsOpen((open) => !open) }}
-        print={print}
+        history={ready?.history}
+        viewerOwnsPhoneBar={Boolean(ready)}
       />
     )
 
@@ -222,12 +246,12 @@ function DocumentPage() {
         <p className="p-6 text-ink-2">This document has no versions.</p>
       ) : version.status !== 'ready' ? (
         <>
-          {controls(null)}
+          {controls()}
           <VersionStatus version={version} />
         </>
       ) : !version.searchable_key || pages.length === 0 ? (
         <>
-          {controls(null)}
+          {controls()}
           <p className="viewer-message p-6 text-ink-2">Loading pages…</p>
         </>
       ) : (
@@ -259,7 +283,15 @@ function DocumentPage() {
               })
             }
           />
-          {controls(<PrintButton />)}
+          {controls({ history: <UndoRedoButtons /> })}
+          {printing && (
+            <PrintDialog
+              documentId={doc.id}
+              versionId={version.id}
+              returnFocusTo={printOpener.current}
+              onClose={() => setPrinting(false)}
+            />
+          )}
           <ScriptViewer
             viewer={viewer}
             versionId={version.id}
@@ -269,6 +301,22 @@ function DocumentPage() {
             onPageChange={onPageChange}
             renderOverlay={renderOverlay}
             thumbnails={thumbnails}
+            phoneItems={
+              controlProps
+                ? (close, opener) =>
+                    documentMenuItems(
+                      {
+                        ...controlProps,
+                        onPrint: (el) => {
+                          printOpener.current = el
+                          setPrinting(true)
+                        },
+                      },
+                      close,
+                      opener,
+                    )
+                : undefined
+            }
             side={
               <MarkupSide
                 showId={showId}
@@ -298,7 +346,7 @@ function DocumentPage() {
 function ScriptViewer({
   viewer,
   ...props
-}: Omit<ComponentProps<typeof Viewer>, 'tools' | 'bar' | 'status' | 'ref'> & {
+}: Omit<ComponentProps<typeof Viewer>, 'tools' | 'phoneTools' | 'status' | 'ref'> & {
   viewer: Ref<ViewerHandle>
 }) {
   const session = useMarkupSession()
@@ -308,7 +356,7 @@ function ScriptViewer({
       ref={viewer}
       {...props}
       tools={<ToolStrip />}
-      bar={<MoreTools />}
+      phoneTools={<ToolStrip variant="inline" />}
       status={{
         snap: session.snap,
         activeLayer: active

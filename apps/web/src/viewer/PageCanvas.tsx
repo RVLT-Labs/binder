@@ -110,7 +110,7 @@ export function PageCanvas({ pdf, pageIndex, zoom, width, height, children }: Pa
     <div
       // Positioned, explicitly sized, and nothing else: no border, padding or transform, so a
       // pointer's offset from this box is its offset on the page.
-      className="page-sheet relative mx-auto bg-page shadow-[0_6px_24px_rgb(0_0_0/0.55)]"
+      className="page-sheet relative mx-auto bg-page shadow-[0_1px_0_rgba(0,0,0,0.6),0_12px_28px_rgba(0,0,0,0.45)]"
       data-page-index={pageIndex}
       style={{ width: cssWidth, height: cssHeight }}
     >

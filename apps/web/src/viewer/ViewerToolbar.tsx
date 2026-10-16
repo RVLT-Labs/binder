@@ -22,7 +22,7 @@ export interface ViewerToolbarProps {
 
 const control = (size: 'compact' | 'touch') =>
   cn(
-    'inline-flex items-center justify-center rounded-[6px] font-sans text-[12px] font-semibold text-ink-2',
+    'inline-flex items-center justify-center rounded-[6px] font-sans text-[11.5px] font-semibold text-ink-2',
     'hover:bg-elev hover:text-ink disabled:cursor-not-allowed disabled:opacity-45',
     focusRing,
     'focus-visible:ring-offset-paper-2',
@@ -59,7 +59,7 @@ export function ViewerToolbar({
   return (
     <div className={cn('flex items-center gap-1', className)} role="toolbar" aria-label="Viewer">
       <output
-        className="page-position px-1 font-mono text-[12px] tabular-nums text-ink-2"
+        className="page-position px-1 font-mono text-[11.5px] tabular-nums text-ink-2"
         aria-label="Page position"
         aria-live="off"
       >
@@ -76,7 +76,7 @@ export function ViewerToolbar({
           value={target}
           onChange={(e) => setTarget(e.target.value)}
           className={cn(
-            'w-14 rounded-[6px] border border-line-2 bg-card px-2 font-mono text-[12px] tabular-nums text-ink placeholder:font-sans placeholder:text-faint',
+            'w-14 rounded-[6px] border border-line-2 bg-card px-2 font-mono text-[11.5px] tabular-nums text-ink placeholder:font-sans placeholder:text-faint',
             focusRing,
             'focus-visible:ring-offset-paper-2',
             // 16 px on a phone: a smaller field makes iOS zoom the page when it takes focus.
@@ -84,7 +84,7 @@ export function ViewerToolbar({
           )}
         />
       </form>
-      <span aria-hidden className="mx-1 h-4 w-px bg-line-2 max-md:hidden" />
+      <span aria-hidden className="mx-1 h-[18px] w-px bg-line max-md:hidden" />
       <button
         type="button"
         onClick={onZoomOut}
@@ -95,7 +95,7 @@ export function ViewerToolbar({
         <Minus className="size-3.5" strokeWidth={2} aria-hidden />
       </button>
       <output
-        className="zoom-level min-w-10 text-center font-mono text-[12px] tabular-nums text-ink-2"
+        className="zoom-level min-w-10 text-center font-mono text-[11.5px] tabular-nums text-ink-2"
         aria-label="Zoom level"
         aria-live="off"
       >

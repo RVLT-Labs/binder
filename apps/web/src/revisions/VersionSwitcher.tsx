@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDownIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { cn, focusRing } from '@/lib/utils'
 import type { DocumentVersionRow } from '../powersync/schema'
@@ -36,6 +36,11 @@ export function compareTarget(
 /**
  * Picks the version on screen. Any version can be looked at; one that is not the document's current
  * version is read-only, and the switcher says so. The Compare link opens the two versions side by side.
+ *
+ * `chip` (the top bar) is the mockup's `pill rep` "v2": a 20 px warm-grey pill that shows only the
+ * version number. It is still the platform's `<select>`: laid transparently over the pill, so the
+ * picker lists every version in full ("v2 · ready (current)") and e2e selects by option, while what
+ * is drawn is the short form. `field` (the phone's menu) is the select drawn as a field.
  */
 export function VersionSwitcher({
   showId,
@@ -45,40 +50,67 @@ export function VersionSwitcher({
   selectedId,
   localOnly,
   onSelect,
-}: VersionSwitcherProps) {
+  display = 'chip',
+}: VersionSwitcherProps & { display?: 'chip' | 'field' }) {
   const selected = versions.find((v) => v.id === selectedId)
   const isCurrent = !currentId || selectedId === currentId
   const compare = compareTarget(versions, currentId, selectedId)
+  const chip = display === 'chip'
+  const options = versions.map((x) => (
+    <option key={x.id} value={x.id}>
+      v{x.version_number} · {x.status}
+      {x.label ? ` · ${x.label}` : ''}
+      {x.id === currentId ? ' (current)' : ''}
+    </option>
+  ))
   return (
     <div className="version-switcher flex min-w-0 items-center gap-2">
-      {/* A native select dressed as the version chip: the platform picker, and option text to select by. */}
-      <div className="relative min-w-0">
-        <select
-          aria-label="Version"
-          value={selectedId}
-          onChange={(e) => onSelect(e.target.value)}
+      {chip ? (
+        <div
           className={cn(
-            'h-11 max-w-full appearance-none truncate rounded-full border-2 border-line-2 bg-card pr-8 pl-3.5 font-mono text-[12px] text-ink md:h-8',
-            focusRing,
+            'relative inline-flex h-5 shrink-0 items-center rounded-full bg-rep-soft px-2 text-[11px] leading-none font-semibold text-rep',
+            'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-red has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper',
           )}
         >
-          {versions.map((x) => (
-            <option key={x.id} value={x.id}>
-              v{x.version_number} · {x.status}
-              {x.label ? ` · ${x.label}` : ''}
-              {x.id === currentId ? ' (current)' : ''}
-            </option>
-          ))}
-        </select>
-        <ChevronDown
-          aria-hidden
-          className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted"
-        />
-      </div>
+          <span aria-hidden className="flex items-center gap-1">
+            v{selected?.version_number ?? '?'}
+            {/* only a document with another version has anything to switch to */}
+            {versions.length > 1 && <ChevronDownIcon className="size-2.5" strokeWidth={2.4} />}
+          </span>
+          <select
+            aria-label="Version"
+            value={selectedId}
+            onChange={(e) => onSelect(e.target.value)}
+            // laid over the pill, with a 44 px tall hit area, and drawn by the pill under it
+            className="absolute inset-x-0 top-1/2 h-11 w-full -translate-y-1/2 cursor-pointer appearance-none opacity-0 focus-visible:outline-none"
+          >
+            {options}
+          </select>
+        </div>
+      ) : (
+        // A native select dressed as a field: the platform picker, and option text to select by.
+        <div className="relative min-w-0 flex-1">
+          <select
+            aria-label="Version"
+            value={selectedId}
+            onChange={(e) => onSelect(e.target.value)}
+            className={cn(
+              'h-11 w-full max-w-full appearance-none truncate rounded-[12px] border-2 border-border bg-card pr-9 pl-3 font-mono text-[14px] text-ink',
+              focusRing,
+            )}
+          >
+            {options}
+          </select>
+          <ChevronDownIcon
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted"
+          />
+        </div>
+      )}
       {selected && !isCurrent && (
         <>
           <span
-            className="version-readonly min-w-0 truncate rounded-full bg-warn-soft px-2.5 py-0.5 text-[12px] font-semibold text-warn"
+            className="version-readonly inline-flex h-5 min-w-0 items-center truncate rounded-full bg-warn-soft px-2 text-[11px] font-semibold text-warn"
             role="status"
           >
             {versionReadOnlyReason(selected.version_number ?? 0)}
@@ -101,7 +133,7 @@ export function VersionSwitcher({
           params={{ showId, docId }}
           search={compare}
           className={cn(
-            'flex h-11 items-center rounded-full px-2 text-[13px] font-semibold text-ink-2 hover:text-ink md:h-8',
+            'flex h-11 items-center rounded-full px-2 text-[12px] font-semibold text-ink-2 hover:text-ink md:h-8',
             focusRing,
           )}
         >

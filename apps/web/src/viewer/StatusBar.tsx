@@ -23,7 +23,7 @@ const KEYS: Array<[key: string, does: string]> = [
 ]
 
 /**
- * The 28 px strip under the script screen: where you are, what snapping and the active layer will
+ * The 26 px strip under the script screen: where you are, what snapping and the active layer will
  * do to the next mark, and the page and zoom controls. Desktop and tablet only.
  */
 export function StatusBar({ page, pages, snap, activeLayer, children, className }: StatusBarProps) {
@@ -31,24 +31,24 @@ export function StatusBar({ page, pages, snap, activeLayer, children, className 
     <section
       aria-label="Script status"
       className={cn(
-        'flex h-7 shrink-0 items-center gap-3 border-t border-line bg-paper-2 px-3 text-[12px] text-muted',
+        'flex h-[26px] shrink-0 items-center gap-4 border-t border-line bg-paper-2 px-3 text-[11.5px] text-muted',
         className,
       )}
     >
       <span className="whitespace-nowrap">
-        Page <span className="font-mono tabular-nums text-ink">{page}</span> of{' '}
-        <span className="font-mono tabular-nums text-ink">{pages}</span>
+        Page <span className="font-mono tabular-nums text-ink-2">{page}</span> of{' '}
+        <span className="font-mono tabular-nums text-ink-2">{pages}</span>
       </span>
-      <span aria-hidden className="h-3.5 w-px bg-line-2" />
+      <span aria-hidden className="h-[18px] w-px bg-line" />
       <span className="whitespace-nowrap">
         Snap to text{' '}
-        <span className={cn('font-semibold', snap ? 'text-ok' : 'text-muted')}>
+        <span className={cn('font-mono', snap ? 'text-ok' : 'text-muted')}>
           {snap ? 'on' : 'off'}
         </span>
       </span>
       {activeLayer && (
         <>
-          <span aria-hidden className="h-3.5 w-px bg-line-2" />
+          <span aria-hidden className="h-[18px] w-px bg-line" />
           <span className="flex items-center gap-1.5 whitespace-nowrap">
             Active layer
             {/* The department's own colour, from the data. */}
@@ -57,14 +57,16 @@ export function StatusBar({ page, pages, snap, activeLayer, children, className 
               className="size-2.5 rounded-[3px]"
               style={{ background: activeLayer.colour }}
             />
-            <span className="font-semibold text-ink">{activeLayer.name}</span>
+            <span className="font-semibold" style={{ color: activeLayer.colour }}>
+              {activeLayer.name}
+            </span>
           </span>
         </>
       )}
       <span className="ml-auto flex items-center gap-3">
         {children}
         <span className="hidden items-center gap-3 min-[1025px]:flex">
-          <span aria-hidden className="h-3.5 w-px bg-line-2" />
+          <span aria-hidden className="h-[18px] w-px bg-line" />
           {KEYS.map(([key, does]) => (
             <span key={key} className="flex items-center gap-1.5 whitespace-nowrap">
               <Kbd>{key}</Kbd>

@@ -3,10 +3,10 @@ export const MAX_ZOOM = 4
 
 /**
  * Each side of the page list on the stage, in CSS pixels. The floating tool strip lives in the
- * left one (12 px in, 44 wide), so no page or cue tag ever sits under it; the right one mirrors it
- * so the page stays centred.
+ * left one (12 px in; 50 wide at the desktop's 34 px buttons, 60 at the tablet's 44 px ones), so no
+ * page or cue tag ever sits under it; the right one mirrors it so the page stays centred.
  */
-export const PAGE_GUTTER = 64
+export const PAGE_GUTTER = 72
 /** At phone width there is no strip beside the page, so the gutters shrink to a thumb's margin. */
 export const PHONE_PAGE_GUTTER = 12
 /** Room for a classic scrollbar, so fit width never scrolls sideways. */

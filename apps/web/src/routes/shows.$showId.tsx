@@ -7,11 +7,16 @@ import { PresenceProvider } from '../presence/PresenceProvider'
 import { AppShell } from '../shell/AppShell'
 import { useRememberShow } from '../shell/lastShow'
 import { useAccount } from '../shell/useAccount'
+import { useBreakpoint } from '../shell/useBreakpoint'
 import { useShowCrumbs } from '../shell/useShowCrumbs'
 
 export const Route = createFileRoute('/shows/$showId')({ component: ShowLayout })
 
-/** The screens whose top bar carries the show's one red action, "Upload document". */
+/**
+ * The screens whose top bar carries the show's one red action, "Upload document". The phone's
+ * overview has none (its mockup draws no button, so the long show name keeps its room); uploading
+ * is on the Documents tab.
+ */
 const UPLOAD_SCREENS: readonly string[] = ['/shows/$showId/', '/shows/$showId/docs/']
 
 /**
@@ -29,6 +34,7 @@ function ShowLayout() {
   const leaf = useMatches({ select: (matches) => matches.at(-1)?.routeId })
   // The document lays out and scrolls its own panels, so it gets the content area to itself.
   const fullBleed = leaf === '/shows/$showId/docs/$docId'
+  const phone = useBreakpoint() === 'phone'
 
   return (
     <PresenceProvider showId={showId}>
@@ -40,7 +46,11 @@ function ShowLayout() {
           fullBleed={fullBleed}
           // The show's own page draws who is in the binder between the sync state and the buttons.
           actions={leaf === '/shows/$showId/' ? <BinderAvatars /> : undefined}
-          primary={leaf && UPLOAD_SCREENS.includes(leaf) ? <UploadDocumentButton /> : undefined}
+          primary={
+            leaf && UPLOAD_SCREENS.includes(leaf) && !(phone && leaf === '/shows/$showId/') ? (
+              <UploadDocumentButton />
+            ) : undefined
+          }
         >
           {isLoading ? <p>Loading…</p> : !show ? <p>Show not found.</p> : <Outlet />}
         </AppShell>

@@ -1,5 +1,5 @@
 import { useQuery } from '@powersync/react'
-import { useMatches, useParams } from '@tanstack/react-router'
+import { useMatches, useParams, useSearch } from '@tanstack/react-router'
 import type { Crumb } from './types'
 
 const LEAF_LABELS: Record<string, string> = {
@@ -18,11 +18,16 @@ const LEAF_LABELS: Record<string, string> = {
 export function useShowCrumbs(showId: string, showTitle: string | undefined): Crumb[] {
   const leaf = useMatches({ select: (matches) => matches.at(-1)?.routeId })
   const { docId } = useParams({ strict: false })
-  const { data: docs } = useQuery<{ title: string | null }>(
-    'SELECT title FROM documents WHERE id = ?',
-    [docId ?? ''],
+  // The version on screen: the one the URL names, else the document's current one.
+  const shown = useSearch({ strict: false, select: (s) => (s as { v?: string }).v }) ?? null
+  const { data: docs } = useQuery<{ title: string | null; version_number: number | null }>(
+    `SELECT d.title AS title, v.version_number AS version_number FROM documents d
+     LEFT JOIN document_versions v ON v.id = COALESCE(?, d.current_version_id)
+     WHERE d.id = ?`,
+    [shown, docId ?? ''],
   )
   const docTitle = docs[0]?.title ?? 'Document'
+  const versionNumber = docs[0]?.version_number ?? null
 
   // The phone's back button says "Shows". Desktop and tablet draw it only on the show's own page
   // (the mockup's "Shows / Songs for a New World"); elsewhere the rail's Shows item is the way back.
@@ -45,7 +50,16 @@ export function useShowCrumbs(showId: string, showTitle: string | undefined): Cr
   })
 
   if (leaf === '/shows/$showId/' || leaf === '/shows/$showId') return [shows(true), show(true)]
-  if (leaf === '/shows/$showId/docs/$docId') return [shows(false), show(false), { label: docTitle }]
+  if (leaf === '/shows/$showId/docs/$docId')
+    return [
+      shows(false),
+      show(false),
+      {
+        label: docTitle,
+        // the phone's title is the mockup's "Libretto v2"; the trail has the version as a chip
+        phoneLabel: versionNumber === null ? docTitle : `${docTitle} v${versionNumber}`,
+      },
+    ]
   if (leaf === '/shows/$showId/docs/$docId/compare' && docId) {
     return [
       shows(false),

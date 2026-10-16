@@ -28,6 +28,7 @@ import {
 } from './controls'
 import { PageList, type PageListHandle } from './PageList'
 import { PageOverlay } from './PageOverlay'
+import { PhoneBarMenu, type PhoneBarMenuProps } from './PhoneBarMenu'
 import { SearchHighlights } from './SearchHighlights'
 import { StatusBar, type StatusBarProps } from './StatusBar'
 import { ThumbnailRail } from './ThumbnailRail'
@@ -58,8 +59,13 @@ export interface ViewerProps {
   renderOverlay?: (pageIndex: number, zoom: number) => ReactNode
   /** Drawn on the stage, floating over its left edge: the markup tool strip. Not drawn at phone. */
   tools?: ReactNode
-  /** Phone only: the controls the top bar carries at wider sizes, above the page. */
-  bar?: ReactNode
+  /**
+   * Phone only: the document's actions for the top bar's "..." menu (see PhoneBarMenu), which the
+   * viewer draws together with the page position and its own controls.
+   */
+  phoneItems?: PhoneBarMenuProps['items']
+  /** Phone only: the markup tools, listed in that menu (the strip drawn inline). */
+  phoneTools?: ReactNode
   /** The column of page thumbnails. */
   thumbnails?: boolean
   /** What the status bar says beside the page number. */
@@ -80,8 +86,8 @@ export interface ViewerHandle {
 
 /**
  * The script screen below the top bar: thumbnails, the stage with the virtualised page list and the
- * floating tool strip, the side panels, and the status bar with the page and zoom controls (above
- * the page at phone width) for one ready document version.
+ * floating tool strip, the side panels, and the status bar with the page and zoom controls (in the
+ * top bar's menu at phone width) for one ready document version.
  */
 export function Viewer({
   versionId,
@@ -91,7 +97,8 @@ export function Viewer({
   onPageChange,
   renderOverlay,
   tools,
-  bar,
+  phoneItems,
+  phoneTools,
   thumbnails = true,
   status = { snap: false, activeLayer: null },
   side,
@@ -224,16 +231,29 @@ export function Viewer({
       onGoToPage={(n) => goTo(n - 1)}
       pageInputRef={pageInput}
       size={phone ? 'touch' : 'compact'}
+      className="flex-wrap"
     />
   )
 
   return (
     <div className="viewer flex min-h-0 flex-1 flex-col">
-      {phone && (
-        <div className="viewer-bar flex shrink-0 items-center gap-1 border-b border-line bg-paper-2 px-2 py-1">
-          {bar}
-          {controls}
-        </div>
+      {phone && phoneItems && (
+        <PhoneBarMenu
+          page={{ current, count: pages.length }}
+          items={phoneItems}
+          viewer={
+            <div className="flex flex-col gap-1">
+              <span className="t-over">View</span>
+              {controls}
+              {phoneTools && (
+                <>
+                  <span className="t-over mt-2">Markup tools</span>
+                  {phoneTools}
+                </>
+              )}
+            </div>
+          }
+        />
       )}
       <div className="viewer-body flex min-h-0 flex-1 max-md:flex-col">
         {thumbnails && !phone && (

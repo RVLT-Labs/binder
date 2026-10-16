@@ -1,6 +1,7 @@
 import type { CueType } from '@binder/shared'
-import { Magnet, Redo2, Search, Undo2 } from 'lucide-react'
+import { Magnet } from 'lucide-react'
 import { type ReactNode, useId, useLayoutEffect, useRef, useState } from 'react'
+import { RedoIcon, SearchIcon, UndoIcon } from '@/components/icons'
 import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, focusRing } from '@/lib/utils'
@@ -10,15 +11,20 @@ import { TOOL_DEFS } from './MarkupTools'
 import { StampPicker } from './StampPicker'
 import { setStamp, setTool, useTool } from './tools'
 
+// The mockup's `.tool`: 34 x 34, radius 9, a 17 px icon in `--muted`, at the desktop. Below 1025 px
+// (the mockup's tablet strip, `.mb-tt`, and the phone's inline one) it is 44 x 44 with a 19 px icon.
+// The active tool is a red fill with the sticker shadow.
 const BUTTON = cn(
-  'relative flex size-11 shrink-0 items-center justify-center rounded-[10px] text-ink-2',
+  'relative flex size-11 shrink-0 items-center justify-center rounded-[10px] text-muted min-[1025px]:size-[34px] min-[1025px]:rounded-[9px]',
   'transition-colors hover:bg-elev hover:text-ink active:translate-y-px',
   focusRing,
-  'focus-visible:ring-offset-paper-2',
-  'disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-ink-2',
+  'focus-visible:ring-offset-card',
+  'disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-muted',
   // The active tool is red (DESIGN 8): live state, never decoration.
-  'aria-pressed:bg-red aria-pressed:text-primary-foreground aria-pressed:hover:bg-red aria-pressed:hover:text-primary-foreground',
+  'aria-pressed:bg-red aria-pressed:text-primary-foreground aria-pressed:shadow-stk aria-pressed:hover:bg-red aria-pressed:hover:text-primary-foreground',
 )
+/** The glyph: 19 px, and 17 px in the desktop's 34 px button. */
+const GLYPH = 'size-[19px] min-[1025px]:size-[17px]'
 const FIELD = cn(
   'h-9 rounded-[8px] border-2 border-line-2 bg-card px-2.5 font-sans text-[13px] text-ink',
   focusRing,
@@ -31,7 +37,7 @@ function KeyHint({ children }: { children: string }) {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute right-1 bottom-0.5 font-mono text-[11px] leading-none text-current opacity-60"
+      className="pointer-events-none absolute right-0.5 bottom-px font-mono text-[11px] leading-none text-current opacity-70 min-[1025px]:right-[2px]"
     >
       {children}
     </span>
@@ -118,8 +124,12 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
   const annotationHint = annotationDisabled === disabled ? hintId : annotationHintId
   const readOnly = session.versionReadOnly
   // On a short stage the strip's buttons shrink first (a 1280x640 window), then the strip scrolls.
+  // (Under 1025 px only: the desktop's 34 px buttons already fit.)
   const BUTTON_CLASS = floating
-    ? cn(BUTTON, '[@media(max-height:760px)]:size-9 [@media(max-height:640px)]:size-8')
+    ? cn(
+        BUTTON,
+        'max-[1024px]:[@media(max-height:760px)]:size-9 max-[1024px]:[@media(max-height:640px)]:size-8',
+      )
     : BUTTON
 
   function toolButton(def: (typeof TOOL_DEFS)[number]) {
@@ -137,7 +147,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
         className={BUTTON_CLASS}
         onClick={() => setTool(t === 'select' || tool === t ? 'select' : t)}
       >
-        <Icon className="size-[18px]" strokeWidth={1.8} aria-hidden />
+        <Icon className={GLYPH} strokeWidth={1.8} />
         {key && <KeyHint>{key}</KeyHint>}
       </button>
     )
@@ -175,9 +185,13 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
     )
   }
 
+  // `.tool-sep`: a 1 px rule with 2 px above and below and 4 px either side.
   const divider = (
     <hr
-      className={cn('shrink-0 border-0 bg-line-2', floating ? 'my-1 h-px w-6' : 'mx-1 h-6 w-px')}
+      className={cn(
+        'shrink-0 border-0 bg-line',
+        floating ? 'mx-1 my-0.5 h-px self-stretch' : 'mx-1 h-6 w-px',
+      )}
     />
   )
 
@@ -186,16 +200,14 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
       <fieldset
         aria-label="Markup tools"
         className={cn(
-          'markup-tools m-0 flex min-w-0 items-center gap-0.5 rounded-[14px] border-2 border-line-2 bg-paper-2 p-0.5 shadow-card',
+          // `.tools`: the card fill, a 2 px outline, radius 12, padding 6, gap 4, at 12 / 18 on the stage
+          'markup-tools m-0 flex min-w-0 items-center gap-1 rounded-[12px] border-2 border-line-2 bg-card p-1.5 shadow-card',
           floating
-            ? 'absolute top-3 left-2 z-10 max-h-[calc(100%-1.5rem)] flex-col overflow-y-auto [scrollbar-width:none]'
+            ? 'absolute top-[18px] left-3 z-10 max-h-[calc(100%-2.25rem)] flex-col overflow-y-auto [scrollbar-width:none]'
             : 'flex-wrap',
         )}
       >
-        {toolButton(TOOL_DEFS[0])}
-        {toolButton(TOOL_DEFS[1])}
-        {divider}
-        {TOOL_DEFS.slice(2).map(toolButton)}
+        {TOOL_DEFS.map(toolButton)}
         {divider}
         <Tip floating={floating} label="Find in document" keyHint="/">
           <button
@@ -205,40 +217,47 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
             className={BUTTON_CLASS}
             onClick={() => session.viewer.current?.focusSearch()}
           >
-            <Search className="size-[18px]" strokeWidth={1.8} aria-hidden />
+            <SearchIcon className={GLYPH} strokeWidth={1.8} />
             <KeyHint>/</KeyHint>
           </button>
         </Tip>
+        {/* Undo and redo are in the top bar (the mockup's); the phone's inline strip, which has no
+            top bar room, keeps them. */}
+        {!floating && (
+          <>
+            {divider}
+            <Tip floating={floating} label="Undo" keyHint="⌘Z">
+              <button
+                type="button"
+                aria-label="Undo"
+                className={BUTTON_CLASS}
+                disabled={!undo.canUndo || readOnly !== null}
+                title={readOnly ?? undefined}
+                onClick={() => void undo.undo()}
+              >
+                <UndoIcon className={GLYPH} strokeWidth={1.8} />
+              </button>
+            </Tip>
+            <Tip floating={floating} label="Redo" keyHint="⇧⌘Z">
+              <button
+                type="button"
+                aria-label="Redo"
+                className={BUTTON_CLASS}
+                disabled={!undo.canRedo || readOnly !== null}
+                title={readOnly ?? undefined}
+                onClick={() => void undo.redo()}
+              >
+                <RedoIcon className={GLYPH} strokeWidth={1.8} />
+              </button>
+            </Tip>
+          </>
+        )}
         {divider}
-        <Tip floating={floating} label="Undo" keyHint="⌘Z">
-          <button
-            type="button"
-            aria-label="Undo"
-            className={BUTTON_CLASS}
-            disabled={!undo.canUndo || readOnly !== null}
-            title={readOnly ?? undefined}
-            onClick={() => void undo.undo()}
-          >
-            <Undo2 className="size-[18px]" strokeWidth={1.8} aria-hidden />
-          </button>
-        </Tip>
-        <Tip floating={floating} label="Redo" keyHint="⇧⌘Z">
-          <button
-            type="button"
-            aria-label="Redo"
-            className={BUTTON_CLASS}
-            disabled={!undo.canRedo || readOnly !== null}
-            title={readOnly ?? undefined}
-            onClick={() => void undo.redo()}
-          >
-            <Redo2 className="size-[18px]" strokeWidth={1.8} aria-hidden />
-          </button>
-        </Tip>
         <Tip floating={floating} label="Snap to text">
           <label
             className={cn(
               BUTTON_CLASS,
-              'cursor-pointer has-[:checked]:bg-card has-[:checked]:text-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-red has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper-2',
+              'cursor-pointer has-[:checked]:bg-elev has-[:checked]:text-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-red has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-card',
             )}
           >
             <input
@@ -247,7 +266,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
               checked={session.snap}
               onChange={(e) => session.setSnap(e.target.checked)}
             />
-            <Magnet className="size-[18px]" strokeWidth={1.8} aria-hidden />
+            <Magnet className={GLYPH} strokeWidth={1.8} aria-hidden />
             <span className="sr-only">Snap to text</span>
           </label>
         </Tip>

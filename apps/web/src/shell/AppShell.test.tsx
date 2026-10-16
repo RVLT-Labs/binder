@@ -453,6 +453,41 @@ describe('AppShell phone top bar', () => {
     expect(back.textContent).toBe('Shows')
     expect(
       screen.getByText('Songs for a New World', { selector: 'span.font-display' }).className,
-    ).toContain('text-[19px]')
+    ).toContain('text-[16px]') // the show's own page: m-show sets the long show name at 16 px
+    cleanup()
+
+    await renderAt(
+      '/shows/s1/settings',
+      <AppShell
+        showId="s1"
+        crumbs={[{ label: 'More', link: { to: '/' }, backLabel: true }, { label: 'Settings' }]}
+        account={account()}
+      >
+        <h1>Settings</h1>
+      </AppShell>,
+    )
+    expect(screen.getByText('Settings', { selector: 'span.font-display' }).className).toContain(
+      'text-[19px]',
+    )
+  })
+
+  it('a full-bleed screen (the script) draws its own phone controls: no sync state, no avatar', async () => {
+    setWidth(390)
+    await renderAt(
+      '/shows/s1/docs/d1',
+      <AppShell
+        showId="s1"
+        fullBleed
+        crumbs={[
+          { label: 'Shows', link: { to: '/' } },
+          { label: 'Libretto', phoneLabel: 'Libretto v2' },
+        ]}
+        account={account()}
+      >
+        <h1>Script</h1>
+      </AppShell>,
+    )
+    expect(screen.getByText('Libretto v2', { selector: 'span.font-display' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /account|menu/i })).toBeNull()
   })
 })

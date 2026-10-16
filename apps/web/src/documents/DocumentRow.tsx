@@ -1,7 +1,14 @@
 import { Link } from '@tanstack/react-router'
-import { Check, ChevronRight, Circle, Loader2 } from 'lucide-react'
+import { useRef } from 'react'
+import { CheckIcon, ChevronRightIcon, MoreIcon } from '@/components/icons'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn, focusRing } from '@/lib/utils'
 import { blobUrl } from '../blobs/fetchBlob'
 import type {
@@ -31,7 +38,12 @@ export interface DocumentRowProps {
 }
 
 const mono = 'font-mono tabular-nums'
+// On the Documents screen the buttons sit on the row's card, and the mockup fills them with
+// `--elev` there (`.dx-row .btn`); in the overview's shared card, and on the phone, they keep the
+// card fill.
 const ACTION = cn(buttonVariants({ variant: 'line', size: 'sm' }), focusRing)
+const ROW_ACTION = cn(ACTION, 'md:bg-elev')
+const PRIMARY_ACTION = cn(buttonVariants({ variant: 'primary', size: 'sm' }), focusRing)
 
 /**
  * One document on the Documents screen and the overview's Scripts card (DESIGN §8): a thumbnail,
@@ -48,22 +60,42 @@ export function DocumentRow(props: DocumentRowProps) {
   return <FailedRow {...props} entry={entry} />
 }
 
-function shell(compact: boolean | undefined, failed = false) {
-  return compact
-    ? 'relative px-4 py-3.5'
-    : cn(
-        'relative rounded-[20px] border-2 bg-card p-4 shadow-card',
-        failed ? 'border-t-out' : 'border-line-2',
-      )
+/** The mockup's `.card` row (radius 14, padding 14 16; 16 for a processing or failed one). */
+function shell(compact: boolean | undefined, tone: 'ready' | 'busy' | 'failed' = 'ready') {
+  if (compact) return 'relative px-4 py-3.5 max-md:min-h-14 max-md:py-2 max-md:pr-2 max-md:pl-3.5'
+  return cn(
+    'relative rounded-[var(--r)] border-2 bg-card shadow-card',
+    tone === 'ready' ? 'p-3.5 md:px-4' : 'p-3.5 md:p-4',
+    // `.dx-failed`: the red at 38 % over the outline colour, an alert so it is plain
+    tone === 'failed'
+      ? 'border-[color-mix(in_srgb,var(--red)_38%,var(--line-2))]'
+      : 'border-line-2',
+  )
 }
 
-function Thumb({ thumbKey, dashed }: { thumbKey?: string | null; dashed?: boolean }) {
+/** The mockup's page thumbnail: 44 x 58, radius 3, a 1 px drop line. Hidden at phone. */
+function Thumb({
+  thumbKey,
+  dashed,
+  dim,
+}: {
+  thumbKey?: string | null
+  dashed?: boolean
+  /** A processing version's document: its current page, quieted (`opacity .45`). */
+  dim?: boolean
+}) {
   return (
     <span
       aria-hidden
       className={cn(
-        'flex h-14 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[3px]',
-        dashed ? 'border-2 border-dashed border-line-2' : thumbKey ? 'bg-page' : 'bg-paper-2',
+        'flex h-[58px] w-11 shrink-0 items-center justify-center overflow-hidden rounded-[3px] max-md:hidden',
+        dashed
+          ? 'border-2 border-dashed border-line-2 bg-paper-2'
+          : cn(
+              'shadow-[0_1px_0_rgba(0,0,0,0.6)]',
+              thumbKey ? 'bg-page' : 'bg-paper-2',
+              dim && 'opacity-45',
+            ),
       )}
     >
       {thumbKey && !dashed && (
@@ -72,20 +104,24 @@ function Thumb({ thumbKey, dashed }: { thumbKey?: string | null; dashed?: boolea
           alt=""
           loading="lazy"
           className="size-full object-cover"
-          width={40}
-          height={56}
+          width={44}
+          height={58}
         />
       )}
     </span>
   )
 }
 
+/** "43 pages" with the number in mono (the mockup's `m()`); version numbers stay in sans. */
 const pages = (n: number | null) =>
   n === null ? null : (
     <>
       <span className={mono}>{n}</span> {n === 1 ? 'page' : 'pages'}
     </>
   )
+
+/** The title: Hanken 15 px / 600. */
+const NAME = 'm-0 min-w-0 font-sans text-[15px] font-semibold leading-tight text-ink'
 
 function ReadyRow({
   showId,
@@ -98,185 +134,295 @@ function ReadyRow({
   compact,
 }: DocumentRowProps & { entry: ReadyEntry }) {
   const { version } = entry
+  const reviewLink = (className?: string) => (
+    <Link
+      to="/shows/$showId/docs/$docId"
+      params={{ showId, docId: entry.docId }}
+      search={{ review: true }}
+      // 44 px to touch on the phone without growing the row: the extra height is negative margin
+      className={cn(
+        'relative z-10 flex min-h-11 items-center max-md:-my-[13px] md:min-h-0',
+        focusRing,
+        className,
+      )}
+    >
+      <Badge status="info" size="sm">
+        <span>
+          <span className={mono}>{reviewCount}</span> to review
+        </span>
+      </Badge>
+    </Link>
+  )
+  const compare = entry.compare && (
+    <Link
+      to="/shows/$showId/docs/$docId/compare"
+      params={{ showId, docId: entry.docId }}
+      className={cn(ROW_ACTION, 'relative z-10', !compact && 'max-md:hidden')}
+    >
+      Compare v{entry.compare.from} → v{entry.compare.to}
+    </Link>
+  )
+  const uploadNew = canUpload && !compact && (
+    <Button
+      type="button"
+      variant="line"
+      size="sm"
+      className="relative z-10 md:bg-elev max-md:hidden"
+      onClick={(e) =>
+        onUpload(
+          {
+            kind: 'version',
+            documentId: entry.docId,
+            documentTitle: entry.title || 'document',
+          },
+          e.currentTarget,
+        )
+      }
+    >
+      Upload new version
+    </Button>
+  )
   return (
     <li className={shell(compact)}>
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-        <div className="flex min-w-0 flex-1 items-start gap-4">
+      <div
+        className={cn(
+          'flex md:items-center md:gap-4',
+          compact ? 'items-center gap-2' : 'flex-col gap-3 md:flex-row',
+        )}
+      >
+        <div className={cn('flex min-w-0 flex-1 items-center', compact ? 'gap-3.5' : 'gap-4')}>
           <Thumb thumbKey={thumbKey} />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-              <h3 className="m-0 min-w-0 font-display text-[17px] font-extrabold leading-tight text-ink">
+          <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 max-md:justify-between">
+              <h3 className={NAME}>
                 <Link
                   to="/shows/$showId/docs/$docId"
                   params={{ showId, docId: entry.docId }}
-                  className="[overflow-wrap:anywhere] after:absolute after:inset-0 after:rounded-[18px] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-red"
+                  className="[overflow-wrap:anywhere] after:absolute after:inset-0 after:rounded-[12px] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-red"
                 >
                   {entry.title}
                 </Link>
               </h3>
-              {reviewCount > 0 && (
-                <Link
-                  to="/shows/$showId/docs/$docId"
-                  params={{ showId, docId: entry.docId }}
-                  search={{ review: true }}
-                  className={cn('relative z-10 flex min-h-11 items-center md:min-h-0', focusRing)}
-                >
-                  <Badge status="info">
-                    <span>
-                      <span className={mono}>{reviewCount}</span> to review
+              {/* On the overview a review count belongs to the meta line, but the phone's row has
+                  it beside the name; the Documents screen has it beside the name everywhere. */}
+              {(reviewCount > 0 || cached) && (
+                <span className="flex items-center gap-1.5 md:gap-2.5">
+                  {reviewCount > 0 && reviewLink(compact ? 'md:hidden' : undefined)}
+                  {cached && !compact && (
+                    <span className="inline-flex h-5 items-center gap-[5px] rounded-full border border-line-2 pr-2 pl-1.5 text-[11px] leading-none font-medium text-muted md:h-[18px]">
+                      <CheckIcon className="size-[11px]" strokeWidth={2.4} />
+                      <span className="max-md:hidden">cached on this device</span>
+                      <span className="md:hidden">cached</span>
                     </span>
-                  </Badge>
-                </Link>
-              )}
-              {cached && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-line-2 px-2.5 py-1 text-[11px] leading-none text-muted">
-                  <Check className="size-3" strokeWidth={2} aria-hidden />
-                  cached on this device
+                  )}
                 </span>
               )}
             </div>
-            <p className="m-0 mt-1 text-[13px] text-muted">
+            <p className="m-0 flex flex-wrap items-center gap-x-1 text-[12px] text-muted">
               <span className="version-status" data-status="ready">
-                <span className={mono}>v{version.number}</span> current
+                v{version.number} current
                 {version.pageCount !== null && <> · {pages(version.pageCount)}</>}
-                {version.searchable && ' · searchable'}
+                {version.searchable && (
+                  <span className={cn(compact && 'max-md:hidden')}> · searchable</span>
+                )}
               </span>
+              {compact && reviewCount > 0 && (
+                <>
+                  <span aria-hidden className="max-md:hidden">
+                    ·
+                  </span>
+                  {reviewLink('max-md:hidden')}
+                </>
+              )}
             </p>
-            {entry.kept && (
-              <p className="m-0 text-[13px] text-faint">
-                <span className={mono}>v{entry.kept.number}</span> kept
+            {entry.kept && !compact && (
+              <p className="m-0 text-[12px] text-faint">
+                v{entry.kept.number} kept
                 {entry.kept.pageCount !== null && <> · {pages(entry.kept.pageCount)}</>}
               </p>
             )}
           </div>
         </div>
-        <div className={cn('flex flex-wrap items-center gap-2', compact && 'max-md:hidden')}>
-          <Link
-            to="/shows/$showId/docs/$docId"
-            params={{ showId, docId: entry.docId }}
-            className={cn(ACTION, 'relative z-10')}
-          >
-            Open
-          </Link>
-          <Link
-            to="/shows/$showId/cues"
-            params={{ showId }}
-            className={cn(ACTION, 'relative z-10')}
-          >
-            Cue lists
-          </Link>
-          {entry.compare && (
-            <Link
-              to="/shows/$showId/docs/$docId/compare"
-              params={{ showId, docId: entry.docId }}
-              className={cn(ACTION, 'relative z-10')}
-            >
-              Compare <span className={mono}>v{entry.compare.from}</span> →{' '}
-              <span className={mono}>v{entry.compare.to}</span>
-            </Link>
-          )}
-          {canUpload && !compact && (
-            <Button
-              type="button"
-              variant="line"
-              size="sm"
-              className="relative z-10"
-              onClick={(e) =>
-                onUpload(
-                  {
-                    kind: 'version',
-                    documentId: entry.docId,
-                    documentTitle: entry.title || 'document',
-                  },
-                  e.currentTarget,
-                )
-              }
-            >
-              New version
-            </Button>
+        <div className={cn('flex items-center gap-2', compact && 'max-md:hidden')}>
+          {compact ? (
+            <>
+              <CueLists showId={showId} className="relative z-10" />
+              {compare}
+              <Link
+                to="/shows/$showId/docs/$docId"
+                params={{ showId, docId: entry.docId }}
+                // The mockup's "Open" on a script row is the red one (a ruling, R20).
+                className={cn(PRIMARY_ACTION, 'relative z-10')}
+              >
+                Open
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/shows/$showId/docs/$docId"
+                params={{ showId, docId: entry.docId }}
+                className={cn(ROW_ACTION, 'relative z-10 max-md:flex-1')}
+              >
+                Open
+              </Link>
+              <CueLists showId={showId} className="relative z-10 max-md:flex-1" />
+              {compare}
+              {uploadNew}
+              {(entry.compare || canUpload) && (
+                <PhoneMore
+                  showId={showId}
+                  entry={entry}
+                  canUpload={canUpload}
+                  onUpload={onUpload}
+                />
+              )}
+            </>
           )}
         </div>
         {compact && (
-          <ChevronRight
-            className="absolute top-1/2 right-4 size-5 -translate-y-1/2 text-muted md:hidden"
-            aria-hidden
-          />
+          <ChevronRightIcon className="size-5 shrink-0 text-faint md:hidden" aria-hidden />
         )}
       </div>
     </li>
   )
 }
 
+function CueLists({ showId, className }: { showId: string; className?: string }) {
+  return (
+    <Link to="/shows/$showId/cues" params={{ showId }} className={cn(ROW_ACTION, className)}>
+      Cue lists
+    </Link>
+  )
+}
+
+/**
+ * The phone's "..." (the mockup's 44 px button): what the card's row of two buttons has no room
+ * for, Compare and Upload new version. Wider screens have those buttons themselves.
+ */
+function PhoneMore({
+  showId,
+  entry,
+  canUpload,
+  onUpload,
+}: {
+  showId: string
+  entry: ReadyEntry
+  canUpload: boolean
+  onUpload: DocumentRowProps['onUpload']
+}) {
+  const trigger = useRef<HTMLButtonElement>(null)
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          ref={trigger}
+          type="button"
+          variant="line"
+          size="sm"
+          aria-label="More actions"
+          className="relative z-10 shrink-0 max-md:w-11 max-md:px-0 md:hidden"
+        >
+          <MoreIcon className="!size-5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44">
+        {entry.compare && (
+          <DropdownMenuItem asChild className="min-h-11">
+            <Link to="/shows/$showId/docs/$docId/compare" params={{ showId, docId: entry.docId }}>
+              Compare v{entry.compare.from} → v{entry.compare.to}
+            </Link>
+          </DropdownMenuItem>
+        )}
+        {canUpload && (
+          <DropdownMenuItem
+            className="min-h-11"
+            onSelect={() =>
+              onUpload(
+                {
+                  kind: 'version',
+                  documentId: entry.docId,
+                  documentTitle: entry.title || 'document',
+                },
+                // the menu closes and focus returns to its trigger; the dialog hands it back there
+                trigger.current ?? document.body,
+              )
+            }
+          >
+            Upload new version
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 /** What a processing or failed row is called: the document, and its version number for a new one. */
 function Name({ title, versionNumber }: { title: string; versionNumber: number | null }) {
   return (
-    <h3 className="m-0 min-w-0 font-display text-[17px] font-extrabold leading-tight text-ink [overflow-wrap:anywhere]">
+    <h3 className={cn(NAME, '[overflow-wrap:anywhere]')}>
       {title}
-      {versionNumber !== null && (
-        <>
-          {' '}
-          <span className={mono}>v{versionNumber}</span>
-        </>
-      )}
+      {versionNumber !== null && <> v{versionNumber}</>}
     </h3>
   )
 }
 
-function ProcessingRow({ entry, compact }: DocumentRowProps & { entry: ProcessingEntry }) {
+function ProcessingRow({
+  entry,
+  thumbKey,
+  compact,
+}: DocumentRowProps & { entry: ProcessingEntry }) {
   const { progress } = entry
   const known = progress !== null && progress.total > 0
   const pct = known ? Math.min(100, Math.round((progress.ready / progress.total) * 100)) : null
   const queued = entry.status === 'queued'
   const reanchoring = entry.status === 'reanchoring'
   return (
-    <li className={shell(compact)}>
+    <li className={shell(compact, 'busy')}>
       <div className="flex items-start gap-4">
-        <Thumb dashed />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Thumb thumbKey={thumbKey} dashed={!thumbKey} dim />
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <Name title={entry.title} versionNumber={entry.versionNumber} />
-            <Badge status="neutral">
+            <Badge status="neutral" size="sm">
               <span className="version-status" data-status={entry.status}>
                 {queued ? 'Queued' : reanchoring ? 'Re-anchoring' : 'Processing'}
               </span>
             </Badge>
           </div>
-          <div className="mt-2 flex items-baseline justify-between gap-3 text-[13px] text-muted">
-            <span>
-              {queued
-                ? 'Uploaded, waiting to start'
-                : reanchoring
-                  ? 'Text is ready, now moving cues across'
-                  : 'Uploaded, now extracting text'}
-            </span>
-            {known && (
-              <span className={cn(mono, 'shrink-0')}>
-                {progress.ready} of {progress.total} pages
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-baseline justify-between gap-3 text-[12.5px] text-muted">
+              <span>
+                {queued
+                  ? 'Uploaded, waiting to start'
+                  : reanchoring
+                    ? 'Text is ready, now moving cues across'
+                    : 'Uploaded, now extracting text'}
               </span>
-            )}
-          </div>
-          <div
-            role="progressbar"
-            aria-label={`Processing ${entry.title}`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={pct ?? undefined}
-            aria-valuetext={
-              known ? `${progress.ready} of ${progress.total} pages` : 'Extracting text'
-            }
-            className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-paper-2"
-          >
+              {pct !== null && <span className={cn(mono, 'shrink-0 text-ink-2')}>{pct} %</span>}
+            </div>
             <div
-              className={cn('h-full rounded-full bg-ink-2', pct === null && 'animate-pulse')}
-              style={{ width: `${pct ?? 100}%` }}
-            />
+              role="progressbar"
+              aria-label={`Processing ${entry.title}`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={pct ?? undefined}
+              aria-valuetext={
+                known ? `${progress.ready} of ${progress.total} pages` : 'Extracting text'
+              }
+              className="h-2 w-full overflow-hidden rounded-full border border-line-2 bg-paper"
+            >
+              <div
+                className={cn('h-full rounded-full bg-ink-2', pct === null && 'animate-pulse')}
+                style={{ width: `${pct ?? 100}%` }}
+              />
+            </div>
           </div>
           {!compact && <Steps steps={entry.steps} />}
           {!compact && entry.versionNumber !== null && entry.currentNumber !== null && (
-            <p className="m-0 mt-3 text-[13px] text-muted">
-              You can keep working on <span className={mono}>v{entry.currentNumber}</span>. Cues
-              move to <span className={mono}>v{entry.versionNumber}</span> when it is ready, and
-              anything uncertain goes to review.
+            <p className="m-0 text-[12px] leading-[1.45] text-muted">
+              You can keep working on v{entry.currentNumber}. Cues move to v{entry.versionNumber}{' '}
+              when it is ready, and anything uncertain goes to review.
             </p>
           )}
         </div>
@@ -289,15 +435,16 @@ function Steps({ steps }: { steps: VersionStep[] }) {
   return (
     <ol
       aria-label="Processing steps"
-      className="m-0 mt-3 flex list-none flex-wrap items-center gap-x-2 gap-y-1.5 p-0 text-[13px]"
+      className="m-0 flex list-none flex-wrap items-center gap-x-3.5 gap-y-2 p-0 text-[12.5px] md:gap-0"
     >
       {steps.map((step, i) => (
         <li
           key={step.key}
           aria-current={step.state === 'current' ? 'step' : undefined}
           className={cn(
-            'flex items-center gap-2',
-            step.state === 'current' ? 'font-bold text-ink' : 'text-ink-2',
+            'flex items-center gap-1.5 whitespace-nowrap md:gap-[7px]',
+            step.state === 'current' && 'font-semibold text-ink',
+            step.state === 'done' && 'text-ink-2',
             step.state === 'pending' && 'text-faint',
           )}
         >
@@ -313,7 +460,8 @@ function Steps({ steps }: { steps: VersionStep[] }) {
             </span>
           </span>
           {i < steps.length - 1 && (
-            <span aria-hidden className="ml-1 hidden h-px w-5 bg-line-2 sm:block" />
+            // `.dx-join`: 28 px rule with 10 px either side (the phone wraps instead)
+            <span aria-hidden className="mx-2.5 hidden h-px w-7 shrink-0 bg-line-2 md:block" />
           )}
         </li>
       ))}
@@ -321,13 +469,27 @@ function Steps({ steps }: { steps: VersionStep[] }) {
   )
 }
 
+/** The mockup's `.dx-tick` (a done step) and `.dx-ring` (the rest; the current one has an ink arc). */
 function StepIcon({ state }: { state: VersionStep['state'] }) {
-  const cls = 'size-4 shrink-0'
-  if (state === 'done')
-    return <Check className={cn(cls, 'text-ink-2')} strokeWidth={2.2} aria-hidden />
-  if (state === 'current')
-    return <Loader2 className={cn(cls, 'animate-spin')} strokeWidth={2.2} aria-hidden />
-  return <Circle className={cls} strokeWidth={1.8} aria-hidden />
+  if (state === 'done') {
+    return (
+      <span
+        aria-hidden
+        className="grid size-4 shrink-0 place-items-center rounded-full border-2 border-line-2 bg-elev text-ink-2"
+      >
+        <CheckIcon className="size-[9px]" strokeWidth={3} />
+      </span>
+    )
+  }
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'size-4 shrink-0 rounded-full border-2 border-line-2',
+        state === 'current' && 'border-t-ink border-r-ink',
+      )}
+    />
+  )
 }
 
 function FailedRow({
@@ -345,21 +507,21 @@ function FailedRow({
     documentTitle: entry.title || 'document',
   }
   return (
-    <li className={shell(compact, true)}>
+    <li className={shell(compact, 'failed')}>
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-        <div className="flex min-w-0 flex-1 items-start gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
           <Thumb dashed />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
               <Name title={entry.title} versionNumber={entry.versionNumber} />
-              <Badge status="overbooked">
+              <Badge status="overbooked" size="sm">
                 <span aria-hidden className="size-1.5 rounded-full bg-current" />
                 <span className="version-status" data-status="failed">
                   Couldn’t be processed
                 </span>
               </Badge>
             </div>
-            <p className="m-0 mt-1 text-[13px] text-ink-2 [overflow-wrap:anywhere]">
+            <p className="m-0 max-w-[640px] text-[12px] text-muted [overflow-wrap:anywhere]">
               {entry.reason}
             </p>
             {entry.detail && (
@@ -385,6 +547,7 @@ function FailedRow({
               type="button"
               variant="line"
               size="sm"
+              className="md:bg-elev"
               onClick={(e) => onUpload(target, e.currentTarget)}
             >
               Upload again

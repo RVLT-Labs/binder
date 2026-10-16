@@ -5,6 +5,8 @@ export type ConfirmFn = (message: string) => Promise<boolean>
 
 export interface Crumb {
   label: string
+  /** The phone's title when it says more than the trail does ("Libretto v2"). */
+  phoneLabel?: string
   /** Where the crumb goes. Leave it off for the current page. */
   link?: LinkOptions
   /** Only the phone draws it (as the back button); the rail's Shows item is that link elsewhere. */

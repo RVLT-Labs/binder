@@ -1,13 +1,14 @@
 import { layerSelectionLabel } from '@binder/core'
 import { type LayerRef, layerKey } from '@binder/shared'
-import { usePowerSync } from '@powersync/react'
-import { Printer } from 'lucide-react'
+import { usePowerSync, useQuery } from '@powersync/react'
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { PrintIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { DialogFooter, DialogHeader, DialogShell } from '@/components/ui/dialog-shell'
+import { DialogFooter, DialogShell } from '@/components/ui/dialog-shell'
 import { Label } from '@/components/ui/label'
 import { closeModal, openModal, restoreFocus } from '@/lib/modalDialog'
+import { cn, focusRing } from '@/lib/utils'
 import { pushNotice } from '../components/noticeStore'
 import { useMarkupSession } from '../markup/MarkupSession'
 import { useOnline } from '../offline/useOnline'
@@ -33,6 +34,25 @@ export function selectionSummary(
 ): string {
   return layerSelectionLabel([...selection], departments)
 }
+
+/** `.dx-cb-row`: 28 px rows (44 on a phone) with a 10 px gap. */
+const ROW = 'flex min-h-11 items-center gap-2.5 md:min-h-0 md:h-7'
+/** `.dx-link`: a blue 12.5 px / 600 text link. */
+const PRESET = 'rounded-sm text-[12.5px] font-semibold text-blue max-md:min-h-11 max-md:px-1'
+
+const INFO_SQL = `
+  SELECT d.title AS doc_title, v.version_number AS version_number, s.title AS show_title
+  FROM document_versions v
+  JOIN documents d ON d.id = v.document_id
+  JOIN shows s ON s.id = d.show_id
+  WHERE v.id = ?`
+const CUE_COUNTS_SQL = `
+  SELECT department_id AS id, count(*) AS n FROM cues
+  WHERE show_id = ? AND json_extract(anchor, '$.documentVersionId') = ? GROUP BY department_id`
+const PERSONAL_COUNT_SQL = `
+  SELECT count(*) AS n FROM annotations
+  WHERE show_id = ? AND layer_kind = 'personal' AND layer_id = ?
+    AND json_extract(anchor, '$.documentVersionId') = ?`
 
 export interface PrintDialogProps {
   documentId: string
@@ -70,6 +90,33 @@ export function PrintDialog({
   const [picked, setPicked] = useState<ReadonlySet<string>>(
     () => new Set(callingScript(departments).map(layerKey)),
   )
+  const { data: infoRows } = useQuery<{
+    doc_title: string | null
+    version_number: number | null
+    show_title: string | null
+  }>(INFO_SQL, [versionId])
+  const infoRow = infoRows[0]
+  const info = infoRow
+    ? {
+        docTitle: infoRow.doc_title,
+        versionNumber: infoRow.version_number,
+        showTitle: infoRow.show_title,
+      }
+    : null
+  // What each layer holds on this version: local rows, no fetch.
+  const { data: cueRows } = useQuery<{ id: string; n: number }>(CUE_COUNTS_SQL, [
+    session.showId,
+    versionId,
+  ])
+  const { data: personalRows } = useQuery<{ n: number }>(PERSONAL_COUNT_SQL, [
+    session.showId,
+    session.userId ?? '',
+    versionId,
+  ])
+  const counts = {
+    dept: new Map(cueRows.map((r) => [r.id, Number(r.n)])),
+    personal: Number(personalRows[0]?.n ?? 0),
+  }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -123,115 +170,136 @@ export function PrintDialog({
     }
   }
 
+  const title = info?.docTitle
+    ? `Print ${info.docTitle} v${info.versionNumber ?? ''}`.trim()
+    : 'Print'
+  const pageCount = session.pages.length
   return (
     <DialogShell
       ref={dialog}
       labelledBy={headingId}
-      className="print-dialog max-w-[min(34rem,calc(100vw-32px))]"
+      className="print-dialog max-w-[min(34rem,calc(100vw-32px))] px-[26px] pt-[22px] pb-[18px]"
       onClose={() => {
         restoreFocus(returnFocusTo)
         onClose()
       }}
     >
       <form onSubmit={submit} className="flex flex-col gap-4">
-        <DialogHeader id={headingId} className="mb-0">
-          Print
-        </DialogHeader>
-        <p className="m-0 text-[14px] text-muted">
-          Marks the script with the layers you choose. Page size and the searchable text stay as
-          they are, and every page gets a footer.
-        </p>
-        <fieldset
-          aria-label="Presets"
-          className="print-presets m-0 flex flex-wrap gap-2 border-0 p-0"
-        >
-          <Button
-            type="button"
-            variant="line"
-            size="sm"
-            onClick={() => setPicked(new Set(callingScript(departments).map(layerKey)))}
-          >
-            Calling script: all layers
-          </Button>
-          <Button type="button" variant="line" size="sm" onClick={() => setPicked(new Set())}>
-            Clean copy
-          </Button>
-        </fieldset>
-        <fieldset className="print-layers m-0 grid grid-cols-1 gap-x-6 border-0 p-0 sm:grid-cols-2">
-          <legend className="col-span-full mb-1 p-0 text-[11px] font-bold tracking-[0.08em] text-muted uppercase">
-            Layers
-          </legend>
-          {departments.map((d) => {
-            const layer: LayerRef = { kind: 'department', id: d.id }
-            const id = `${ids}-${d.id}`
-            return (
-              <div key={d.id} className="flex min-h-11 items-center gap-3 md:min-h-9">
-                <Checkbox
-                  id={id}
-                  checked={picked.has(layerKey(layer))}
-                  onCheckedChange={(on) => toggle(layer, on === true)}
-                />
-                <Label
-                  htmlFor={id}
-                  className="flex flex-1 cursor-pointer items-center gap-2 text-[14px] text-ink"
-                >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            {info?.showTitle && <p className="t-over m-0 truncate">{info.showTitle}</p>}
+            <h2 id={headingId} className="t-title m-0 [overflow-wrap:anywhere]">
+              {title}
+            </h2>
+          </div>
+          {pageCount > 0 && (
+            <span className="shrink-0 pt-4 text-[12px] text-muted">
+              <span className="font-mono tabular-nums">{pageCount}</span>{' '}
+              {pageCount === 1 ? 'page' : 'pages'}
+            </span>
+          )}
+        </div>
+        <fieldset className="print-layers m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+          <legend className="sr-only">Layers</legend>
+          <div className="flex items-center justify-between text-[11px] font-semibold text-muted">
+            <span aria-hidden>Layers</span>
+            {/* `.dx-link`: the presets are two blue text links at the right of the header */}
+            <fieldset aria-label="Presets" className="print-presets m-0 flex gap-3 border-0 p-0">
+              <button
+                type="button"
+                aria-label="Calling script: all layers"
+                className={cn(PRESET, focusRing)}
+                onClick={() => setPicked(new Set(callingScript(departments).map(layerKey)))}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={cn(PRESET, focusRing)}
+                onClick={() => setPicked(new Set())}
+              >
+                Clean copy
+              </button>
+            </fieldset>
+          </div>
+          <div>
+            {departments.map((d) => {
+              const layer: LayerRef = { kind: 'department', id: d.id }
+              const id = `${ids}-${d.id}`
+              return (
+                <div key={d.id} className={ROW}>
+                  <Checkbox
+                    id={id}
+                    checked={picked.has(layerKey(layer))}
+                    onCheckedChange={(on) => toggle(layer, on === true)}
+                  />
                   {/* The department's own colour, from the data. */}
                   <span
                     aria-hidden
-                    className="size-3 rounded-[3px] bg-faint"
+                    className="size-2.5 shrink-0 rounded-[3px] bg-faint"
                     style={d.colour ? { background: d.colour } : undefined}
                   />
-                  {d.code}
+                  <Label htmlFor={id} className="flex-1 cursor-pointer text-[13px] text-ink">
+                    {d.code}
+                  </Label>
+                  <span className="font-mono text-[12px] tabular-nums text-muted">
+                    {counts.dept.get(d.id) ?? 0}
+                  </span>
+                </div>
+              )
+            })}
+            {personal && (
+              <div className={ROW}>
+                <Checkbox
+                  id={`${ids}-personal`}
+                  checked={includesPersonal}
+                  onCheckedChange={(on) => toggle(personal, on === true)}
+                />
+                <span aria-hidden className="size-2.5 shrink-0 rounded-[3px] bg-dept-personal" />
+                <Label htmlFor={`${ids}-personal`} className="cursor-pointer text-[13px] text-ink">
+                  Personal<span className="sr-only"> layer</span>
                 </Label>
+                <span aria-hidden className="text-[12px] text-faint">
+                  only you
+                </span>
+                <span className="ml-auto font-mono text-[12px] tabular-nums text-muted">
+                  {counts.personal}
+                </span>
               </div>
-            )
-          })}
-          {personal && (
-            <div className="col-span-full flex min-h-11 items-center gap-3 md:min-h-9">
-              <Checkbox
-                id={`${ids}-personal`}
-                checked={includesPersonal}
-                onCheckedChange={(on) => toggle(personal, on === true)}
-              />
-              <Label
-                htmlFor={`${ids}-personal`}
-                className="flex cursor-pointer items-center gap-2 text-[14px] text-ink"
-              >
-                <span aria-hidden className="size-3 rounded-[3px] bg-dept-personal" />
-                Personal layer
-              </Label>
-              <span className="text-[12px] text-muted">only you</span>
-            </div>
-          )}
+            )}
+          </div>
         </fieldset>
         {includesPersonal && (
-          <p role="status" className="m-0 text-[14px] text-muted">
+          <p role="status" className="m-0 text-[12px] text-muted">
             Only you will see this export.
           </p>
         )}
-        <p className="m-0 text-[14px] text-muted">
+        <p className="m-0 text-[12px] text-muted">
           Footer layers: {selectionSummary(selection, departments)}
         </p>
         {!online && (
-          <p className="m-0 text-[14px] text-muted">
+          <p className="m-0 text-[12px] text-muted">
             You are offline. The file downloads now and is recorded when you reconnect.
           </p>
         )}
         {error && (
-          <p role="alert" className="field-error m-0 text-[14px] text-t-out">
+          <p role="alert" className="field-error m-0 text-[12px] text-t-out">
             {error}
           </p>
         )}
-        <DialogFooter divided className="mt-2">
+        <DialogFooter divided className="mt-0 items-center">
+          <span className="text-[12px] text-muted max-md:order-last max-md:text-center md:mr-auto">
+            Saved to Exports. Works offline.
+          </span>
           <Button
             type="button"
-            variant="line"
+            variant="ghost"
             onClick={() => closeModal(dialog.current, returnFocusTo)}
           >
             Cancel
           </Button>
           <Button type="submit" disabled={busy || !session.userId}>
-            {busy ? 'Preparing…' : 'Export PDF'}
+            {busy ? 'Preparing…' : 'Download PDF'}
           </Button>
         </DialogFooter>
       </form>
@@ -251,10 +319,10 @@ export function PrintButton() {
         type="button"
         variant="line"
         size="sm"
-        className="shrink-0 max-md:size-11 max-md:px-0 md:h-8 md:px-3.5 md:text-[13px]"
+        className="shrink-0 max-md:size-11 max-md:px-0"
         onClick={() => setOpen(true)}
       >
-        <Printer aria-hidden className="!size-4" strokeWidth={1.8} />
+        <PrintIcon aria-hidden />
         <span className="max-md:sr-only">Print</span>
       </Button>
       {open && (

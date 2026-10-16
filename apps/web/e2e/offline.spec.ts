@@ -14,7 +14,8 @@ test('make available offline, go offline, reload, view and search', async ({ pag
   const title = `Offline scan ${Date.now()}`
   await uploadAndWaitReady(page, sharedShow.id, FIXTURES.scanPdf, title, 120_000)
 
-  // Store the show's documents on this device.
+  // Store the show's documents on this device (the button is in the show page's top bar).
+  await page.goto(`/shows/${sharedShow.id}`)
   await page.getByRole('button', { name: 'Make available offline' }).click()
   await expect(page.getByText(/Available offline \(\d+ files\)/)).toBeVisible({ timeout: 120_000 })
 

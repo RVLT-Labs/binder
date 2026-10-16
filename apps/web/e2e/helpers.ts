@@ -12,7 +12,7 @@ export const hasInk = (canvas: Locator) =>
 
 /**
  * Uploads a PDF to the show through the dialog, as an owner or editor, and returns the document's
- * row in the list once processing finishes (`readyTimeout` ms).
+ * row in the Documents screen's list once processing finishes (`readyTimeout` ms).
  */
 export async function uploadAndWaitReady(
   page: Page,
@@ -29,6 +29,10 @@ export async function uploadAndWaitReady(
   await dialog.getByLabel('Title').fill(title)
   await dialog.getByRole('button', { name: 'Upload', exact: true }).click()
   await expect(dialog).toBeHidden({ timeout: 30_000 })
+
+  // The show's page lists only scripts that are ready (the mockup's Scripts card); a version still
+  // being processed is a row on the Documents screen, so follow it there.
+  await railLink(page, 'Docs').click()
 
   // The list follows the synced version row through processing to ready. A row carries its
   // version's status on `.version-status[data-status]`; its words are for people (Processing, v1 current).

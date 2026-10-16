@@ -108,26 +108,38 @@ export function BinderPresence({ showId }: { showId: string }) {
   return (
     <section
       aria-labelledby="presence-list-title"
-      className="rounded-[20px] border-2 border-line-2 bg-card p-4 shadow-card"
+      // Desktop and tablet: the aside card (`.card`, padding 14 16). Phone: a section label above
+      // a 2 x n grid of small cards (`.mb-who`), so the card chrome moves onto the rows there.
+      className="md:rounded-[var(--r)] md:border-2 md:border-line-2 md:bg-card md:px-4 md:py-3.5 md:shadow-card"
     >
-      <h2 id="presence-list-title" className="mb-2 text-[12px] font-bold text-muted">
-        In the binder now
-      </h2>
-      <ul className="m-0 flex list-none flex-col gap-3 p-0">
+      <div className="mb-2 flex items-center gap-3 max-md:mb-2.5">
+        <h2 id="presence-list-title" className="t-over">
+          In the binder now
+        </h2>
+        <span aria-hidden className="h-px flex-1 bg-line md:hidden" />
+      </div>
+      <ul className="m-0 grid list-none grid-cols-2 gap-2.5 p-0 md:flex md:flex-col md:gap-2">
         {people.map((p) => (
-          <li key={p.userId} className="flex items-center gap-3">
+          <li
+            key={p.userId}
+            className={cn(
+              'flex min-w-0 items-center gap-2.5 max-md:min-h-14 max-md:rounded-[var(--r)] max-md:border-2 max-md:border-line-2 max-md:bg-card max-md:px-3 max-md:py-2 max-md:shadow-card',
+              // a person who has not opened a document is dimmed (the mockup's "in the show" row)
+              !p.documentId && 'opacity-60',
+            )}
+          >
             {/* The person's own colour, from the data (spec 3.9): never a department's. */}
             <span
               aria-hidden
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
+              className="flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold max-md:size-8"
               style={{ background: p.colour, color: readableTextOn(p.colour) }}
             >
               {initials(p.name)}
             </span>
-            <span className="min-w-0 text-[14px] leading-tight">
+            <span className="min-w-0 text-[13.5px] leading-tight max-md:text-[14px]">
               <span className="font-semibold text-ink">{p.name}</span>
               <span className="sr-only"> — </span>
-              <span className="block truncate text-[13px] text-muted">{where(p)}</span>
+              <span className="block truncate text-[12px] text-muted">{where(p)}</span>
             </span>
           </li>
         ))}
