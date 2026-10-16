@@ -134,6 +134,19 @@ describe('fetchPdf', () => {
 })
 
 describe('uploadDocumentFromUrl', () => {
+  test('uploadDocumentFromUrl records the size', async () => {
+    const s = await setupShow()
+    const { version } = await uploadDocumentFromUrl(
+      s.deps.db,
+      s.deps.blobs,
+      s.jobs,
+      s.ownerActor,
+      { showId: s.show.id, url: `${base}/script.pdf`, kind: 'libretto' },
+      allowAll,
+    )
+    expect(version.originalSizeBytes).toBe(pdf.length)
+  })
+
   test('creates a document from a fetched PDF', async () => {
     const s = await setupShow()
     const { document, version } = await uploadDocumentFromUrl(

@@ -170,9 +170,9 @@ describe('POST /api/shows/:showId/exports', () => {
         exists: (k) => s.deps.blobs.exists(k),
         delete: (k) => s.deps.blobs.delete(k),
         async put(key, body, contentType) {
-          await s.deps.blobs.put(key, body, contentType)
+          const result = await s.deps.blobs.put(key, body, contentType)
           stored.push(key)
-          if (raced) return
+          if (raced) return result
           raced = true
           await s.deps.blobs.put(winnerKey, pdfBytes(), 'application/pdf')
           await s.deps.db.insert(exportRecords).values({
@@ -185,6 +185,7 @@ describe('POST /api/shows/:showId/exports', () => {
             createdBy: winnerUser,
             updatedBy: winnerUser,
           })
+          return result
         },
       }
       return { store, stored, winnerKey }

@@ -134,17 +134,17 @@ function assertDeclaredSize(declaredSize: number | undefined): void {
   if (declaredSize !== undefined && declaredSize > MAX_UPLOAD_BYTES) throw payloadTooLarge()
 }
 
-/** Store the PDF, run `writeRows` in a transaction, and remove the blob again if that fails. */
+/** Store the PDF, run `writeRows` (given the stored byte size) in a transaction, and remove the blob again if that fails. */
 async function storeThenWrite<T>(
   db: Executor,
   blobs: BlobStore,
   key: string,
   file: Readable,
-  writeRows: (tx: Executor) => Promise<T>,
+  writeRows: (tx: Executor, size: number) => Promise<T>,
 ): Promise<T> {
-  await blobs.put(key, file, 'application/pdf')
+  const { size } = await blobs.put(key, file, 'application/pdf')
   try {
-    return await db.transaction(writeRows)
+    return await db.transaction((tx) => writeRows(tx, size))
   } catch (err) {
     await blobs.delete(key).catch(() => {})
     throw err
@@ -198,7 +198,7 @@ export async function createDocument(
   const versionId = newId()
   const key = originalBlobKey(input.showId, documentId, versionId)
 
-  const created = await storeThenWrite(db, blobs, key, input.file, async (tx) => {
+  const created = await storeThenWrite(db, blobs, key, input.file, async (tx, size) => {
     await assertShowAcceptsUploads(tx, actor, input.showId)
     const [document] = await tx
       .insert(documents)
@@ -222,6 +222,7 @@ export async function createDocument(
         documentId,
         versionNumber: 1,
         originalKey: key,
+        originalSizeBytes: size,
         uploadedBy: actor.userId,
         updatedBy: actor.userId,
       })
@@ -300,7 +301,7 @@ export async function addDocumentVersion(
   const versionId = newId()
   const key = originalBlobKey(document.showId, document.id, versionId)
 
-  const version = await storeThenWrite(db, blobs, key, input.file, async (tx) => {
+  const version = await storeThenWrite(db, blobs, key, input.file, async (tx, size) => {
     await assertShowAcceptsUploads(tx, actor, document.showId)
     // Serialise concurrent uploads to this document so max + 1 cannot collide.
     const locked = await tx
@@ -322,6 +323,7 @@ export async function addDocumentVersion(
         versionNumber: Number(next),
         label: input.label,
         originalKey: key,
+        originalSizeBytes: size,
         uploadedBy: actor.userId,
         updatedBy: actor.userId,
       })
