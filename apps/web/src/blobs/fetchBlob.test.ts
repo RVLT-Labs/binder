@@ -1,5 +1,12 @@
-import { beforeEach, expect, test, vi } from 'vitest'
-import { blobUrl, clearBlobCache, fetchBlob } from './fetchBlob'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
+import {
+  blobUrl,
+  cachedBlobPaths,
+  clearBlobCache,
+  deleteCachedBlobs,
+  fetchBlob,
+  putBlobResponse,
+} from './fetchBlob'
 
 const URL_ = '/blobs/shows/s/documents/d/versions/v/searchable.pdf'
 
@@ -91,3 +98,47 @@ test('clearBlobCache deletes the cache and tolerates a missing Cache API', async
 
 test('blobUrl encodes each key segment', () =>
   expect(blobUrl('shows/a b/pages/0/thumb.png')).toBe('/blobs/shows/a%20b/pages/0/thumb.png'))
+
+describe('cache listing for keep-offline', () => {
+  function listedCache(urls: string[]) {
+    const live = new Set(urls)
+    return {
+      keys: vi.fn(async () => [...live].map((u) => new Request(`http://localhost${u}`))),
+      delete: vi.fn(async (req: Request) => live.delete(new URL(req.url).pathname)),
+      put: vi.fn(async () => {}),
+      live,
+    }
+  }
+  const stub = (cache: ReturnType<typeof listedCache>) =>
+    vi.stubGlobal('caches', { open: vi.fn(async () => cache), delete: vi.fn() })
+
+  test('cachedBlobPaths lists stored paths from one keys() call', async () => {
+    const cache = listedCache(['/blobs/shows/a/documents/d/x.pdf', '/blobs/shows/b/exports/e.pdf'])
+    stub(cache)
+    expect(await cachedBlobPaths()).toEqual(
+      new Set(['/blobs/shows/a/documents/d/x.pdf', '/blobs/shows/b/exports/e.pdf']),
+    )
+    expect(cache.keys).toHaveBeenCalledOnce()
+  })
+
+  test("deleteCachedBlobs removes one show's documents and leaves exports and other shows", async () => {
+    const cache = listedCache([
+      '/blobs/shows/a/documents/d/x.pdf',
+      '/blobs/shows/a/exports/e.pdf',
+      '/blobs/shows/b/documents/d/y.pdf',
+    ])
+    stub(cache)
+    expect(await deleteCachedBlobs('/blobs/shows/a/documents/')).toBe(1)
+    expect([...cache.live]).toEqual([
+      '/blobs/shows/a/exports/e.pdf',
+      '/blobs/shows/b/documents/d/y.pdf',
+    ])
+  })
+
+  test('without a Cache API they are empty and harmless', async () => {
+    vi.stubGlobal('caches', undefined)
+    expect(await cachedBlobPaths()).toEqual(new Set())
+    expect(await deleteCachedBlobs('/blobs/shows/a/documents/')).toBe(0)
+    await expect(putBlobResponse('/blobs/x', new Response('x'))).rejects.toThrow('cannot store')
+  })
+})

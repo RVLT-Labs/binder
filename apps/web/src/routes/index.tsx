@@ -9,8 +9,10 @@ import { useAccount } from '../shell/useAccount'
 import { firstName, greeting } from '../shows/greeting'
 import { NewShowDialog } from '../shows/NewShowDialog'
 import { ShowsHome } from '../shows/ShowsHome'
+import { useNow } from '../shows/useNow'
 import { useOrgName } from '../shows/useOrgName'
-import { useShowSummaries } from '../shows/useShowSummaries'
+import { useShowPulse } from '../shows/useShowPulse'
+import { useLocalLastActivity, useShowSummaries } from '../shows/useShowSummaries'
 
 export const Route = createFileRoute('/')({ component: HomePage })
 
@@ -31,6 +33,9 @@ function HomePage() {
   const lastShowId = useLastShowId(account.email)
   const orgName = useOrgName(account.email)
   const summaries = useShowSummaries()
+  const pulse = useShowPulse()
+  const localActivity = useLocalLastActivity()
+  const now = useNow()
   // The control that opened the dialog, so focus can go back to it.
   const [opener, setOpener] = useState<HTMLElement | null>(null)
 
@@ -51,7 +56,10 @@ function HomePage() {
         cueCounts={cueCounts}
         orgName={orgName}
         summaries={summaries}
-        greeting={greeting(new Date(), firstName(account.name, account.email))}
+        pulse={pulse}
+        localActivity={localActivity}
+        now={now}
+        greeting={greeting(now, firstName(account.name, account.email))}
         onNewShow={setOpener}
         // Local write first; PowerSync queues it and uploads when online.
         onRename={async (showId, title) => {

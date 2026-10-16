@@ -40,6 +40,21 @@ export interface PresencePeer extends PresenceState {
   colour: string
 }
 
+/**
+ * One person in a show as the shows home draws them (`GET /api/me/shows/presence`): name and colour
+ * for the avatar, and their department scope as codes (`[]` for every department) for its tooltip.
+ */
+export interface ShowPresencePerson {
+  userId: string
+  name: string
+  colour: string
+  departments: string[]
+}
+
+export interface ShowPresence {
+  people: ShowPresencePerson[]
+}
+
 export type ClientMessage = { type: 'state'; state: PresenceState }
 
 export type ServerMessage =

@@ -7,7 +7,14 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { pageImageBlobKey } from '../src/blob/keys'
 import { TOOL_NAMES } from '../src/mcp/registry'
 import { jpegSize } from '../src/processing/jpeg'
-import { createDocument, createShow, createToken, listOrganisations } from '../src/services'
+import {
+  createCue,
+  createDocument,
+  createShow,
+  createToken,
+  listDepartments,
+  listOrganisations,
+} from '../src/services'
 import { type Json, setupShow } from './documentHelpers'
 import { RecordingJobs } from './helpers'
 import { callTool, connectMcp } from './mcpHelpers'
@@ -145,6 +152,39 @@ describe.each(['legacy', 'auto'] as const)('%s protocol era', (era) => {
       const other = await call(scoped, 'get_show', { showId: showB.id })
       expect(other.isError).toBe(true)
       expect(errorText(other)).toMatch(/forbidden/)
+    })
+
+    test('list_shows includes lastChange and inNow', async () => {
+      const [dept] = await listDepartments(s.deps.db, s.ownerActor, { showId: s.show.id })
+      await createCue(s.deps.db, s.ownerActor, {
+        showId: s.show.id,
+        departmentId: dept.id,
+        label: 'pulse',
+      })
+      const connId = `mcp-${era}`
+      s.deps.presence.join(s.show.id, {
+        id: connId,
+        userId: s.editor.id,
+        name: 'Ed',
+        send: () => {},
+        close: () => {},
+      })
+      try {
+        const client = await connect(allToken, era)
+        const listed = await call(client, 'list_shows', {})
+        const mine = listed.structuredContent.active.find((x: Json) => x.id === s.show.id)
+        expect(mine.inNow).toEqual([{ userId: s.editor.id, name: 'Ed', departments: [] }])
+        expect(mine.lastChange).toMatchObject({
+          userId: s.owner.id,
+          sentence: expect.stringMatching(/cue$/),
+          at: expect.any(String),
+        })
+        const quiet = listed.structuredContent.active.find((x: Json) => x.id === showB.id)
+        expect(quiet.inNow).toEqual([])
+        expect(quiet.lastChange === null || typeof quiet.lastChange === 'object').toBe(true)
+      } finally {
+        s.deps.presence.leave(s.show.id, connId)
+      }
     })
 
     test('invalid arguments come back as a tool error', async () => {

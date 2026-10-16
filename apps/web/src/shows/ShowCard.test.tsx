@@ -150,3 +150,80 @@ test('an archived card is the dimmed dashed card that says exports still work', 
   expect(card.className).toContain('bg-card')
   expect(within(card).getByText('exports still work')).toBeTruthy()
 })
+
+const MIKAELA = { userId: 'u2', name: 'Mikaela', colour: '#5b8def', detail: 'LX' }
+const JAYDEN = { userId: 'u1', name: 'Jayden', colour: '#f0a93a' }
+const CHANGE = {
+  at: '2026-10-16T11:48:00Z',
+  label: 'Mikaela',
+  summary: 'relabelled 3 LX cues',
+  sentence: 'LX relabelled 3 cues',
+}
+
+test('shows avatars and the sentence with relative time', async () => {
+  await renderCard({ inNow: [JAYDEN, MIKAELA], lastChange: CHANGE })
+  const card = screen.getByRole('listitem')
+  const group = within(card).getByRole('group', { name: 'In the show now' })
+  // the viewer's own avatar is drawn like anyone's; the tooltip names the department scope
+  expect(within(group).getByRole('img', { name: 'Jayden' })).toBeTruthy()
+  expect(within(group).getByRole('img', { name: 'Mikaela, LX' }).getAttribute('title')).toBe(
+    'Mikaela, LX',
+  )
+  expect(card.textContent).toContain('LX relabelled 3 cues')
+  expect(card.textContent).toContain('12 min ago')
+  expect(card.textContent).not.toContain('Updated')
+  // the tooltip and the accessible name say who did it
+  expect(within(card).getByTitle('Mikaela relabelled 3 LX cues')).toBeTruthy()
+  expect(
+    within(card).getByText(/Mikaela relabelled 3 LX cues/, { selector: '.sr-only' }),
+  ).toBeTruthy()
+  // the title link's name is still the title alone
+  expect(screen.getByRole('link', { name: 'Songs for a New World' })).toBeTruthy()
+})
+
+test('more than three people collapse into +n', async () => {
+  const many = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ ...JAYDEN, userId: id, name: `P ${id}` }))
+  await renderCard({ inNow: many, lastChange: CHANGE })
+  const group = screen.getByRole('group', { name: 'In the show now' })
+  expect(within(group).getAllByRole('img')).toHaveLength(4)
+  expect(within(group).getByRole('img', { name: '2 more in the show' }).textContent).toBe('+2')
+})
+
+test('offline falls back to Updated from local rows and shows no avatars', async () => {
+  // offline the page passes neither presence nor a last change
+  await renderCard({
+    show: show({ updated_at: '2026-10-15T09:00:00Z' }),
+    localActivityAt: '2026-10-16T11:30:00Z',
+  })
+  const card = screen.getByRole('listitem')
+  expect(within(card).queryByRole('group', { name: 'In the show now' })).toBeNull()
+  expect(card.textContent).toContain('Updated')
+  // the newest local row, not the show row's own older update
+  expect(card.textContent).toContain('30 min ago')
+})
+
+test('a show without a last change also falls back to Updated', async () => {
+  await renderCard({ inNow: [MIKAELA], lastChange: null })
+  const card = screen.getByRole('listitem')
+  expect(card.textContent).toContain('Updated')
+  expect(card.textContent).toContain('12 min ago')
+  expect(within(card).getByRole('group', { name: 'In the show now' })).toBeTruthy()
+})
+
+test('archived card has neither', async () => {
+  await renderCard({
+    show: show({ status: 'archived' }),
+    inNow: [MIKAELA],
+    lastChange: CHANGE,
+  })
+  const card = screen.getByRole('listitem')
+  expect(within(card).queryByRole('group', { name: 'In the show now' })).toBeNull()
+  expect(card.textContent).not.toContain('relabelled')
+  expect(card.textContent).not.toContain('Updated')
+})
+
+test('the foot holds its height so data arriving moves nothing', async () => {
+  await renderCard({})
+  const foot = screen.getByRole('listitem').querySelector('.mt-auto')
+  expect(foot?.className).toContain('min-h-6')
+})

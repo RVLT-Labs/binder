@@ -6,12 +6,14 @@ import { useSessionUser } from '@/auth/session'
 import { signOutAndClear } from '@/auth/signOut'
 import { clearNotices } from '@/components/noticeStore'
 import { clearOutbox } from '@/exports/outbox'
+import { stopKeepOffline } from '@/offline/keepOffline/active'
+import { clearOfflinePrefs } from '@/offline/keepOffline/store'
 import { clearLocalData } from '@/powersync/provider'
 import type { Account } from './types'
 
 /**
  * The signed-in person and what signing out takes: the session, the local database, the export
- * outbox and the caches, and the question when uploads are still waiting (`signOutAndClear`).
+ * outbox, keep-offline (stopped first, then its preferences) and the caches, and the question when uploads are still waiting (`signOutAndClear`).
  * Call it inside the PowerSync provider.
  */
 export function useAccount(): Account {
@@ -29,6 +31,10 @@ export function useAccount(): Account {
         clearOutbox: async () => {
           if (userId) await clearOutbox(userId)
         },
+        clearOfflinePrefs: async () => {
+          if (userId) await clearOfflinePrefs(userId)
+        },
+        stopOfflineRunner: stopKeepOffline,
         clearLocalData,
         clearCache: () => {
           clearNotices()

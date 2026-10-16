@@ -76,7 +76,7 @@ quoting problems. For a local API on plain http, add `"--allow-http"` after the 
 |---|---|---|
 | `list_organisations` | read-only | Your organisations (paginated). |
 | `create_organisation` | write | New organisation with you as owner. Unscoped tokens only. |
-| `list_shows` | read-only | Shows this token reaches, active and archived, with your role (paginated). |
+| `list_shows` | read-only | Shows this token reaches, active and archived, with your role (paginated). Each active show also carries `inNow` (the people who have it open right now: name, departments) and `lastChange` (the newest change: who, a one-line sentence, when; `null` for none), so an agent can avoid a bulk edit while a human is in the show. |
 | `get_show` | read-only | One show with your role and its member count. |
 | `create_show` | write | New show, in `organisationId` or your first organisation. Unscoped tokens only. |
 | `update_show` | write, idempotent | Title, status, settings. Owners. |

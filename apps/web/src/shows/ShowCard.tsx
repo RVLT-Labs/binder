@@ -1,3 +1,4 @@
+import type { ShowLastChange } from '@binder/shared'
 import { Link } from '@tanstack/react-router'
 import { Pencil } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
@@ -6,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, focusRing } from '@/lib/utils'
 import type { ShowRow } from '../powersync/schema'
+import { AvatarStack, type StackPerson } from '../presence/Avatars'
 import { timeAgo } from './timeAgo'
 
 export interface ShowCardProps {
@@ -16,6 +18,12 @@ export interface ShowCardProps {
   documents?: { title: string; version: number }[]
   /** Items waiting for review across the show's documents; the blue "N to review" flag when above 0. */
   toReview?: number
+  /** Who has the show open right now (the card draws their avatars). Left off offline and while loading. */
+  inNow?: readonly StackPerson[]
+  /** The newest change in the show; `null` or left off falls back to the local "Updated ..." line. */
+  lastChange?: Pick<ShowLastChange, 'at' | 'label' | 'summary' | 'sentence'> | null
+  /** When the show last changed on this device (local rows), for the fallback; never older than `show.updated_at`. */
+  localActivityAt?: string
   /** What "ago" is measured from. */
   now?: Date
   /** Called with the trimmed new title, only when it is not empty and differs from the old one. */
@@ -31,14 +39,18 @@ const CARD = 'relative rounded-[20px] border-2 p-3.5 md:p-4'
  * show with nothing placed yet says so in a red Kalam chip. An archived show is a dashed card at
  * 75 % that says read-only; on a phone it is one compact row. It is a list item; put it in a `ul`.
  *
- * The show has no opening date or phase, and presence is per show over a socket, so the card
- * carries neither: the pill is Active or Archived.
+ * The foot says who has the show open (their avatars) and the newest change with its time; offline,
+ * or before the first answer, it says "Updated ..." from the local rows and draws no avatars. An
+ * archived card has neither. The show has no opening date or phase, so the pill is Active or Archived.
  */
 export function ShowCard({
   show,
   cueCount,
   documents = [],
   toReview = 0,
+  inNow = [],
+  lastChange,
+  localActivityAt,
   now = new Date(),
   onRename,
 }: ShowCardProps) {
@@ -79,7 +91,13 @@ export function ShowCard({
     )
   }
 
-  const ago = timeAgo(show.updated_at, now)
+  // The server's sentence when there is one; otherwise the local rows' newest update, which is
+  // all an offline or still-loading card knows.
+  const localAt = [show.updated_at, localActivityAt]
+    .filter((t): t is string => !!t && !Number.isNaN(Date.parse(t)))
+    .sort((a, b) => Date.parse(a) - Date.parse(b))
+    .at(-1)
+  const ago = timeAgo(lastChange ? lastChange.at : localAt, now)
   return (
     <li
       className={cn(
@@ -161,20 +179,41 @@ export function ShowCard({
               </Badge>
             )}
           </div>
-          <div className="mt-auto flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+          {/* The foot: the chip or the avatars on the left, the sentence and its time on the right.
+              Its height is reserved (the avatars' 24 px) so nothing shifts when data arrives. */}
+          <div className="mt-auto flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
             {cueCount === 0 && (
               <span className="inline-flex items-center whitespace-nowrap rounded-[var(--r)] border border-line-2 px-2.5 py-1.5 font-hand text-[15px] leading-snug text-red">
                 {documents.length > 0 ? 'script in, nothing placed yet' : 'nothing placed yet'}
               </span>
             )}
-            {ago && (
-              <span className="ml-auto whitespace-nowrap text-[12px] text-muted">
-                Updated{' '}
-                <time dateTime={show.updated_at ?? undefined} className="font-mono tabular-nums">
-                  {ago}
-                </time>
-              </span>
-            )}
+            <AvatarStack people={inNow} />
+            {ago &&
+              (lastChange ? (
+                <span
+                  className="ml-auto flex min-w-0 items-baseline gap-1 text-[12px] text-muted"
+                  title={`${lastChange.label} ${lastChange.summary}`}
+                >
+                  {/* The mockup sets the whole line in the body face, the time included. The tooltip
+                      names who; a screen reader hears the same, not the short form. */}
+                  <span className="sr-only">
+                    {lastChange.label} {lastChange.summary},{' '}
+                  </span>
+                  <span aria-hidden className="truncate">
+                    {lastChange.sentence}
+                  </span>
+                  <span aria-hidden className="shrink-0">
+                    ·
+                  </span>
+                  <time dateTime={lastChange.at} className="shrink-0 whitespace-nowrap">
+                    {ago}
+                  </time>
+                </span>
+              ) : (
+                <span className="ml-auto whitespace-nowrap text-[12px] text-muted">
+                  Updated <time dateTime={localAt}>{ago}</time>
+                </span>
+              ))}
           </div>
         </>
       )}

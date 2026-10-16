@@ -1,7 +1,8 @@
 import { cardSentence } from '@binder/core'
-import { changeLog, type Db, departments } from '@binder/db'
-import type { Actor, ShowLastChange } from '@binder/shared'
+import { changeLog, type Db, departments, showMemberships } from '@binder/db'
+import { type Actor, presenceColour, type ShowLastChange, type ShowPresence } from '@binder/shared'
 import { inArray, sql } from 'drizzle-orm'
+import type { PresenceHub } from '../presence/hub'
 import {
   type DepartmentCodes,
   fetchRows,
@@ -112,4 +113,66 @@ export async function latestChangePerShow(
     }
   }
   return out
+}
+
+/**
+ * Any member. Who is in each of the caller's non-archived shows right now (inside the token's show
+ * scope, as `listShows`): only shows with at least one person appear, each person once however many
+ * tabs they hold, the caller's own other devices included. Per person: id, display name, their
+ * stable colour, and their department scope as codes (`[]` for every department). No email, no
+ * document or page.
+ *
+ * The hub is in this process's memory, so this is exact for the single API container of spec 3.7 and
+ * would split across several, the same limit as presence inside a show.
+ */
+export async function presenceSummary(
+  db: Db,
+  hub: PresenceHub,
+  actor: Actor,
+): Promise<{ shows: Record<string, ShowPresence> }> {
+  const { active } = await listShows(db, actor)
+  const occupied = new Map<string, { userId: string; name: string }[]>()
+  for (const { id } of active) {
+    const people = hub.occupants(id)
+    if (people.length > 0) occupied.set(id, people)
+  }
+  const out: Record<string, ShowPresence> = {}
+  if (occupied.size === 0) return { shows: out }
+  const showIds = [...occupied.keys()]
+
+  const codes = new Map(
+    (
+      await db
+        .select({ id: departments.id, code: departments.code })
+        .from(departments)
+        .where(inArray(departments.showId, showIds))
+    ).map((d) => [d.id, d.code]),
+  )
+  const scopes = new Map<string, string[]>()
+  const members = await db
+    .select({
+      showId: showMemberships.showId,
+      userId: showMemberships.userId,
+      departments: showMemberships.departments,
+    })
+    .from(showMemberships)
+    .where(inArray(showMemberships.showId, showIds))
+  for (const m of members) {
+    const all = m.departments.includes('*')
+    scopes.set(
+      `${m.showId}:${m.userId}`,
+      all ? [] : m.departments.flatMap((id) => codes.get(id) ?? []),
+    )
+  }
+  for (const [showId, people] of occupied) {
+    out[showId] = {
+      people: people.map((p) => ({
+        userId: p.userId,
+        name: p.name,
+        colour: presenceColour(p.userId),
+        departments: scopes.get(`${showId}:${p.userId}`) ?? [],
+      })),
+    }
+  }
+  return { shows: out }
 }

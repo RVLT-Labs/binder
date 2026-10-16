@@ -73,6 +73,35 @@ export async function storeBlob(url: string): Promise<'cached' | 'fetched'> {
   return 'fetched'
 }
 
+/** The path (`/blobs/...`) of every blob stored on this device, from one `cache.keys()` call. */
+export async function cachedBlobPaths(): Promise<Set<string>> {
+  const cache = await openCache()
+  if (!cache) return new Set()
+  const paths = new Set<string>()
+  for (const req of await cache.keys()) paths.add(new URL(req.url, 'http://localhost').pathname)
+  return paths
+}
+
+/** Stores a response under `url` in the blob cache; throws when it cannot (no Cache API, full disk). */
+export async function putBlobResponse(url: string, res: Response): Promise<void> {
+  const cache = await openCache()
+  if (!cache) throw new Error('this browser cannot store files for offline use')
+  await cache.put(url, res)
+}
+
+/** Deletes every cached blob whose path starts with `pathPrefix` (e.g. one show's documents). */
+export async function deleteCachedBlobs(pathPrefix: string): Promise<number> {
+  const cache = await openCache()
+  if (!cache) return 0
+  let deleted = 0
+  for (const req of await cache.keys()) {
+    if (new URL(req.url, 'http://localhost').pathname.startsWith(pathPrefix)) {
+      if (await cache.delete(req)) deleted++
+    }
+  }
+  return deleted
+}
+
 /** Removes every cached blob, so the next user of this browser cannot read the last user's files. */
 export async function clearBlobCache(): Promise<void> {
   try {

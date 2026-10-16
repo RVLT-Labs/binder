@@ -9,6 +9,8 @@ function deps(signOut: () => Promise<{ error: { message?: string } | null }>) {
     signOut: vi.fn(signOut),
     clearLocalData: vi.fn(async () => {}),
     clearOutbox: vi.fn(async () => {}),
+    clearOfflinePrefs: vi.fn(async () => {}),
+    stopOfflineRunner: vi.fn(async () => {}),
     clearCache: vi.fn(),
     toLogin: vi.fn(async () => {}),
     pendingUploads: vi.fn(async () => 0),
@@ -28,11 +30,54 @@ test('signs out on the server, then clears local data and goes to login', async 
   )
 })
 
+test('sign-out clears offline preferences and stops the runner before clearing the cache', async () => {
+  const d = deps(async () => ({ error: null }))
+  await signOutAndClear(d)
+  expect(d.clearOfflinePrefs).toHaveBeenCalledOnce()
+  expect(d.stopOfflineRunner).toHaveBeenCalledOnce()
+  // clearLocalData empties the blob cache, so the runner must be stopped (and settled) first.
+  expect(d.stopOfflineRunner.mock.invocationCallOrder[0]).toBeLessThan(
+    d.clearLocalData.mock.invocationCallOrder[0],
+  )
+  expect(d.stopOfflineRunner.mock.invocationCallOrder[0]).toBeLessThan(
+    d.clearOfflinePrefs.mock.invocationCallOrder[0],
+  )
+  expect(d.clearOfflinePrefs.mock.invocationCallOrder[0]).toBeLessThan(
+    d.clearLocalData.mock.invocationCallOrder[0],
+  )
+})
+
+test('the runner is awaited: clearLocalData waits for it to settle', async () => {
+  const d = deps(async () => ({ error: null }))
+  let settled = false
+  d.stopOfflineRunner.mockImplementation(async () => {
+    await new Promise((r) => setTimeout(r, 10))
+    settled = true
+  })
+  d.clearLocalData.mockImplementation(async () => {
+    expect(settled).toBe(true)
+  })
+  await signOutAndClear(d)
+  expect(d.clearLocalData).toHaveBeenCalledOnce()
+})
+
+test('a failing runner stop or preference clear does not stop the sign-out', async () => {
+  const d = deps(async () => ({ error: null }))
+  d.stopOfflineRunner.mockRejectedValue(new Error('x'))
+  d.clearOfflinePrefs.mockRejectedValue(new Error('IndexedDB is blocked'))
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  await signOutAndClear(d)
+  expect(d.clearLocalData).toHaveBeenCalledOnce()
+  expect(d.toLogin).toHaveBeenCalledOnce()
+})
+
 test('keeps local data and the session when the server refuses sign-out', async () => {
   const d = deps(async () => ({ error: { message: 'Internal error' } }))
   await signOutAndClear(d)
   expect(d.clearLocalData).not.toHaveBeenCalled()
   expect(d.clearOutbox).not.toHaveBeenCalled()
+  expect(d.stopOfflineRunner).not.toHaveBeenCalled()
+  expect(d.clearOfflinePrefs).not.toHaveBeenCalled()
   expect(d.clearCache).not.toHaveBeenCalled()
   expect(d.toLogin).not.toHaveBeenCalled()
   expect(getNotices()).toEqual([

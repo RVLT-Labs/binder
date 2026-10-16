@@ -148,45 +148,75 @@ export function BinderPresence({ showId }: { showId: string }) {
   )
 }
 
+/** One person in an `AvatarStack`. `detail` (a department scope, say) joins the name in the tooltip. */
+export interface StackPerson {
+  userId: string
+  name: string
+  colour: string
+  detail?: string
+}
+
 /**
- * Who is in the binder, in the top bar: a stack of up to three people (then "+n"), each once, in
- * their own colour. Draws nothing when nobody else is here. Never animated, never a toast.
+ * A stack of up to three people (then "+n"), the mockup's `.presence .avatar`: 24 px, a 2 px paper
+ * ring, overlapping 6 px. Shared by the top bar and the show cards. Each person's own colour comes
+ * from the data: never a department's. Never animated, never a toast.
  */
-export function BinderAvatars() {
-  const { peers } = usePresencePeers()
-  const people = whoIsHere(peers)
+export function AvatarStack({
+  people,
+  label = 'In the show now',
+  personLabel,
+  moreLabel = (n) => `${n} more in the show`,
+}: {
+  people: readonly StackPerson[]
+  /** The group's accessible name. */
+  label?: string
+  /** A person's accessible name; defaults to their tooltip ("Mikaela, LX"). */
+  personLabel?: (p: StackPerson) => string
+  moreLabel?: (n: number) => string
+}) {
   if (people.length === 0) return null
-  const shown = people.slice(0, 3)
+  const shown = people.slice(0, MAX_SHOWN)
   const more = people.length - shown.length
   const chip =
-    // the mockup's `.presence .avatar`: 24 px, a 2 px paper ring, overlapping 6 px
     'flex size-6 items-center justify-center rounded-full border-2 border-paper text-[11px] font-bold'
   return (
     // biome-ignore lint/a11y/useSemanticElements: a <fieldset> is a form control group; this labels inline avatars
-    <span role="group" aria-label="In the binder now" className="flex items-center -space-x-1.5">
-      {shown.map((peer) => (
-        <span
-          key={peer.userId}
-          role="img"
-          aria-label={`${peer.name} is in the binder`}
-          title={peer.name}
-          data-user-id={peer.userId}
-          className={chip}
-          // The person's own colour, from the data: never a department's.
-          style={{ background: peer.colour, color: readableTextOn(peer.colour) }}
-        >
-          {initials(peer.name)}
-        </span>
-      ))}
+    <span role="group" aria-label={label} className="flex items-center -space-x-1.5">
+      {shown.map((p) => {
+        const tip = p.detail ? `${p.name}, ${p.detail}` : p.name
+        return (
+          <span
+            key={p.userId}
+            role="img"
+            aria-label={personLabel ? personLabel(p) : tip}
+            title={tip}
+            data-user-id={p.userId}
+            className={chip}
+            style={{ background: p.colour, color: readableTextOn(p.colour) }}
+          >
+            {initials(p.name)}
+          </span>
+        )
+      })}
       {more > 0 && (
-        <span
-          role="img"
-          aria-label={`${more} more in the binder`}
-          className={cn(chip, 'bg-elev text-ink')}
-        >
+        <span role="img" aria-label={moreLabel(more)} className={cn(chip, 'bg-elev text-ink')}>
           +{more}
         </span>
       )}
     </span>
+  )
+}
+
+/** Who is in the binder, in the top bar. Draws nothing when nobody else is here. */
+export function BinderAvatars() {
+  const { peers } = usePresencePeers()
+  const people = whoIsHere(peers)
+  return (
+    <AvatarStack
+      people={people}
+      label="In the binder now"
+      personLabel={(p) => `${p.name} is in the binder`}
+      moreLabel={(n) => `${n} more in the binder`}
+    />
   )
 }
