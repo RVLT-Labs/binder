@@ -359,8 +359,8 @@ Decided: cue notes print under the tag (decision 1). Not built: the written opti
 |---|---|---|---|
 | `unreadable` | `readPages`: pdfinfo error or parse error, not a password | couldn’t read file | This file isn’t a PDF Binder can open. It may be damaged. Export the script as a PDF again and upload that. |
 | `password_protected` | pdfinfo stderr says password | password protected | This PDF needs a password to open. Remove the password and upload it again. |
-| `no_text` | new check, below | couldn’t read text | No text could be read from any page, so there is nothing to search or anchor cues to. Check it is the script, or upload a clearer scan. |
-| `low_resolution` | `no_text` plus median scan ppi under 150 | couldn’t read text | Scanned at {dpi} dpi, so there is no text to search or anchor to. Try a 300 dpi scan. (the mockup's words) |
+| `no_text` | new check, below | couldn’t read text | No text could be read from any page, so there is nothing to search or anchor cues to. Check it is the script, or upload a clearer scan. Or remove this upload, then upload the file again as a new document with Text recognition set to Never, and mark it up by position. (R44) |
+| `low_resolution` | `no_text` plus median scan ppi under 150 | couldn’t read text | Scanned at {dpi} dpi, so there is no text to search or anchor to. Try a 300 dpi scan. Or remove this upload, then upload the file again as a new document with Text recognition set to Never, and mark it up by position. (the mockup's words, plus R44) |
 | `timeout` | dead letter with "timed out", or a job-expiry message | couldn’t finish | This file took too long to process. Try again; if it keeps happening, split the PDF or upload a smaller scan. |
 | `cancelled` | the cancel service | cancelled | Cancelled. The file is still here if you want to try again. |
 | `enqueue_failed` | `enqueueProcessing` catch | didn’t start | Binder couldn’t start processing this file. Try again. |
