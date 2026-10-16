@@ -42,7 +42,7 @@ claude mcp add --transport http binder https://<api-host>/mcp \
 ```
 
 For a local API, use `http://localhost:3000/mcp`. Then ask, for example, "list my Binder shows
-and read page 1 of the libretto".
+and read page 1 of the libretto". The agent skill in [`skills/binder/SKILL.md`](../skills/binder/SKILL.md) tells an agent how to use the tools well (placing cues, revisions, exports, history, safety).
 
 ### Claude Desktop (via mcp-remote)
 
@@ -160,6 +160,8 @@ curl -F kind=libretto -F title=Script -F file=@script.pdf \
   export of another member is `not_found`.
 - `binder://guides/{slug}`: the working guides in `docs/guides/` (listed): `jayden-style`,
   `mic-and-dca-practice`, `tmix-format`.
+- `binder://skill/{slug}`: the agent skill in `skills/binder/` (listed): `index` is `SKILL.md`, the rest are
+  its `references/` files. Relative links between them are rewritten to `binder://skill/…`.
 
 ## Attribution
 

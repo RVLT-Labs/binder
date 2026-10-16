@@ -13,7 +13,8 @@
       "!apps/web/test-results",
       "!apps/web/playwright-report",
       "!docs/superpowers/design",
-      "!.worktrees"
+      "!.worktrees",
+      "!.claude/worktrees"
     ]
   },
   "formatter": {

@@ -7,6 +7,7 @@ import { type McpDeps, mcpContext } from './context'
 import { registerExportResources } from './resources/exports'
 import { registerGuideResources } from './resources/guides'
 import { registerPageResources } from './resources/pages'
+import { registerSkillResources } from './resources/skill'
 import { registerAnnotationTools } from './tools/annotations'
 import { registerCueTools } from './tools/cues'
 import { registerDepartmentTools } from './tools/departments'
@@ -35,6 +36,7 @@ const INSTRUCTIONS = [
   "export_marked_script prints a document with chosen layers to a PDF (read it as a binder://shows/{showId}/exports/{exportId} resource); export_cue_list makes a department's cue sheet as a PDF, XLSX or CSV; list_exports lists a show's exports.",
   'House rules for cue style, mic and DCA practice and the .tmix format are the binder://guides',
   'resources; read them before marking up a script.',
+  'The agent skill for using Binder (placing cues, revisions, exports, safety) is the binder://skill/index resource; read it before marking up a script.',
 ].join(' ')
 
 /** One McpServer per HTTP request (stateless), acting as the token's user. */
@@ -59,6 +61,7 @@ export function createMcpServerFactory(deps: McpDeps): McpServerFactory {
     registerPageResources(server, mcp)
     registerExportResources(server, mcp)
     registerGuideResources(server)
+    registerSkillResources(server)
     return server
   }
 }

@@ -1,4 +1,6 @@
-import { createReadStream } from 'node:fs'
+import { createReadStream, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { changeLog } from '@binder/db'
 import { FIXTURES } from '@binder/fixtures'
 import type { Client } from '@modelcontextprotocol/client'
@@ -335,6 +337,41 @@ describe.each(['legacy', 'auto'] as const)('%s protocol era', (era) => {
       expect(content.text.startsWith('---')).toBe(false)
 
       await expect(client.readResource({ uri: 'binder://guides/nope' })).rejects.toThrow()
+    })
+
+    test('skill resource serves the agent skill with links rewritten to resources', async () => {
+      const client = await connect(allToken, era)
+      const { resources } = await client.listResources()
+      const uris = resources.filter((r) => r.uri.startsWith('binder://skill/')).map((r) => r.uri)
+      const referencesDir = join(
+        dirname(fileURLToPath(import.meta.url)),
+        '..',
+        '..',
+        '..',
+        'skills',
+        'binder',
+        'references',
+      )
+      const expected = readdirSync(referencesDir)
+        .filter((f) => f.endsWith('.md'))
+        .map((f) => `binder://skill/${f.slice(0, -'.md'.length)}`)
+      expect(expected.length).toBeGreaterThan(5)
+      expect(uris.sort()).toEqual(['binder://skill/index', ...expected].sort())
+
+      const index = (await client.readResource({ uri: 'binder://skill/index' })).contents[0] as Json
+      expect(index.mimeType).toBe('text/markdown')
+      expect(index.text).toContain('name: binder')
+
+      const placing = (await client.readResource({ uri: 'binder://skill/placing-cues' }))
+        .contents[0] as Json
+      expect(placing.text).toContain('binder://skill/tools')
+      const outsideFences = String(placing.text)
+        .split(/^```.*$/m)
+        .filter((_, i) => i % 2 === 0)
+      for (const part of outsideFences) expect(part).not.toMatch(/\.md[)#]/)
+
+      await expect(client.readResource({ uri: 'binder://skill/nope' })).rejects.toThrow()
+      await expect(client.readResource({ uri: 'binder://skill/..%2FSKILL' })).rejects.toThrow()
     })
   })
 })

@@ -13,5 +13,7 @@ export default defineConfig({
     await cp('../../packages/db/drizzle', 'dist/drizzle', { recursive: true })
     // The MCP guides resource reads these next to the bundle (src/mcp/resources/guides.ts).
     await cp('../../docs/guides', 'dist/guides', { recursive: true })
+    // The MCP skill resource serves the agent skill from next to the bundle (src/mcp/resources/skill.ts).
+    await cp('../../skills/binder', 'dist/skill', { recursive: true })
   },
 })
