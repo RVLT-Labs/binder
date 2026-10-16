@@ -7,8 +7,9 @@ import { eq } from 'drizzle-orm'
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
 import { versionFromLines } from '../../../packages/core/test/textLayers'
 import { AppError } from '../src/errors'
-import { REANCHOR_AGENT } from '../src/processing/reanchorJob'
+import { REANCHOR_AGENT, reanchorVersion } from '../src/processing/reanchorJob'
 import {
+  addDocumentVersion,
   compareDocumentVersions,
   createDocument,
   createShow,
@@ -16,14 +17,15 @@ import {
   listOrganisations,
   listReanchorReview,
   listVersionAnchors,
+  placeCueAtText,
   resolveReanchorItem,
   updateShow,
 } from '../src/services'
 import { logChange } from '../src/services/changeLog'
 import { applyCrudBatch } from '../src/sync/apply'
 import { asJson, type Json } from './documentHelpers'
-import { APP_ORIGIN } from './helpers'
-import { missingTools } from './processingHelpers'
+import { APP_ORIGIN, RecordingJobs } from './helpers'
+import { missingTools, processVersion } from './processingHelpers'
 import { buildRevisedFixture, type RevisedFixture } from './revisionsHelpers'
 import { skipWithoutTools } from './tools'
 
@@ -780,4 +782,78 @@ describe.skipIf(skip)('archived shows', () => {
       await updateShow(db(), actors().owner, { showId: F.s.show.id, patch: { status: 'prep' } })
     }
   })
+})
+
+describe.skipIf(skip)('a cue on one copy of a line the script repeats', () => {
+  const quote = 'Pour, O pour the pirate sherry'
+
+  test('the revision cuts the second copy: that cue is flagged for review on the surviving copy, the first-copy cue stays ok', async () => {
+    const deps = () => ({ db: db(), blobs: blobs(), jobs: new RecordingJobs() })
+    const { document, version: v1 } = await createDocument(
+      db(),
+      blobs(),
+      F.s.jobs,
+      actors().owner,
+      {
+        showId: F.s.show.id,
+        kind: 'libretto',
+        title: 'Pirates, short',
+        file: createReadStream(FIXTURES.librettoShortPdf),
+      },
+    )
+    await processVersion(deps(), v1.id)
+
+    const place = async (occurrence: number) => {
+      const res = await placeCueAtText(db(), blobs(), actors().owner, {
+        showId: F.s.show.id,
+        department: 'SND',
+        documentId: document.id,
+        quote,
+        occurrence,
+      })
+      if (res.status !== 'placed') throw new Error(`occurrence ${occurrence} was ${res.status}`)
+      return res.cue
+    }
+    const first = await place(1)
+    const second = await place(2)
+    // The two copies sit on different pages, and the revision cuts only the second.
+    expect(first.anchor?.pageIndex).toBe(0)
+    expect(second.anchor?.pageIndex).toBe(1)
+
+    const v2 = await addDocumentVersion(db(), blobs(), F.s.jobs, actors().owner, {
+      documentId: document.id,
+      label: 'cut',
+      file: createReadStream(FIXTURES.revisedShortCutPdf),
+    })
+    await processVersion(deps(), v2.id)
+    await reanchorVersion(deps(), v2.id)
+
+    // The cue on the surviving copy was not disturbed.
+    expect(await cueAnchor(first.id)).toMatchObject({
+      documentVersionId: v2.id,
+      status: 'ok',
+      pageIndex: 0,
+    })
+    // The cue on the cut copy is no longer ok: it waits on the surviving copy, as a suggestion.
+    const moved = await cueAnchor(second.id)
+    expect(moved).toMatchObject({
+      documentVersionId: v2.id,
+      status: 'approximate',
+      pageIndex: 0,
+      x: expect.any(Number),
+    })
+    expect(moved.text?.wordStart).toBeGreaterThanOrEqual(0)
+    expect(moved.text?.quote).toBe(second.anchor?.text?.quote)
+
+    const { pending, currentVersionId } = await listReanchorReview(db(), actors().owner, {
+      documentId: document.id,
+    })
+    expect(currentVersionId).toBe(v2.id)
+    expect(idsOf(pending)).toEqual([second.id])
+    expect(find(pending, second.id)).toMatchObject({
+      table: 'cues',
+      anchor: { status: 'approximate', pageIndex: 0 },
+      previous: second.anchor,
+    })
+  }, 120_000)
 })

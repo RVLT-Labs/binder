@@ -3,11 +3,15 @@ import {
   anchorAtMatch,
   buildWordStream,
   findQuote,
+  normaliseForMatch,
   type QuoteMatch,
   type StreamWord,
 } from './quote'
 import { lineCentreY } from './snap'
 import type { VersionText } from './types'
+
+/** Words either side of a match compared to tell one copy of a repeated quote from another. */
+const CONTEXT_WORDS = 8
 
 const SEVERITY: Record<AnchorStatus, number> = { ok: 0, approximate: 1, unresolved: 2 }
 
@@ -132,12 +136,85 @@ function positional(a: Anchor, from: VersionText, to: VersionText): Anchor {
   return out
 }
 
-function reanchorWith(a: Anchor, from: VersionText, target: Target): Anchor {
+/** The old version's word stream, built on first use; empty when it cannot be built. */
+function lazyStream(version: VersionText): () => StreamWord[] {
+  let stream: StreamWord[] | undefined
+  return () => {
+    if (!stream) {
+      try {
+        stream = buildWordStream(version.layers)
+      } catch {
+        stream = []
+      }
+    }
+    return stream
+  }
+}
+
+/** The normalised words nearest the match on each side, nearest first. */
+function contextOf(stream: StreamWord[], m: QuoteMatch): { before: string[]; after: string[] } {
+  const side = (start: number, step: 1 | -1): string[] => {
+    const out: string[] = []
+    for (let i = start; i >= 0 && i < stream.length && out.length < CONTEXT_WORDS; i += step) {
+      const norm = normaliseForMatch((stream[i] as StreamWord).t)
+      if (norm !== '') out.push(norm)
+    }
+    return out
+  }
+  return { before: side(m.start - 1, -1), after: side(m.end + 1, 1) }
+}
+
+/** How many words, nearest first, the two lists share before they first differ. */
+function commonRun(x: string[], y: string[]): number {
+  let n = 0
+  while (n < x.length && n < y.length && x[n] === y[n]) n++
+  return n
+}
+
+/**
+ * Whether `survivor`, the one exact match left in the new text, is the copy of the quote that `a` was
+ * on. A quote that was unique in the old text has nothing to tell apart. Otherwise the anchor sat on one
+ * of several copies, and the survivor counts as that copy only when its surrounding words match it
+ * better than they match every other old copy; a tie, or no shared words, cannot be told and is false.
+ */
+function survivorIsAnchored(
+  a: Anchor,
+  survivor: QuoteMatch,
+  from: VersionText,
+  fromStream: StreamWord[],
+  target: Target,
+): boolean {
+  const copies = findQuote(fromStream, (a.text as NonNullable<Anchor['text']>).quote, 'exact')
+  if (copies.length < 2) return true
+  let anchored = copies.findIndex((c) => {
+    const w = fromStream[c.start] as StreamWord
+    return w.pageIndex === a.pageIndex && w.wordIndex === a.text?.wordStart
+  })
+  if (anchored < 0) {
+    anchored = copies.indexOf(closest(copies, a, from, { to: from, stream: fromStream }))
+  }
+  const now = contextOf(target.stream, survivor)
+  const scores = copies.map((c) => {
+    const then = contextOf(fromStream, c)
+    return commonRun(then.before, now.before) + commonRun(then.after, now.after)
+  })
+  const best = Math.max(...scores)
+  return best > 0 && scores[anchored] === best && scores.filter((s) => s === best).length === 1
+}
+
+function reanchorWith(
+  a: Anchor,
+  from: VersionText,
+  fromStream: () => StreamWord[],
+  target: Target,
+): Anchor {
   if (a.text?.quote) {
     for (const mode of ['exact', 'normalised'] as const) {
       const ms = findQuote(target.stream, a.text.quote, mode)
       if (ms.length === 1) {
-        return place(a, ms[0] as QuoteMatch, mode === 'exact' ? 'ok' : 'approximate', from, target)
+        const m = ms[0] as QuoteMatch
+        const sure = mode === 'exact' && survivorIsAnchored(a, m, from, fromStream(), target)
+        return place(a, m, sure ? 'ok' : 'approximate', from, target)
       }
       if (ms.length > 1) {
         return place(a, closest(ms, a, from, target), 'approximate', from, target)
@@ -148,9 +225,14 @@ function reanchorWith(a: Anchor, from: VersionText, target: Target): Anchor {
 }
 
 /** One anchor, never throwing: a failure while matching falls back to the positional result. */
-function reanchorSafely(a: Anchor, from: VersionText, target: Target): Anchor {
+function reanchorSafely(
+  a: Anchor,
+  from: VersionText,
+  fromStream: () => StreamWord[],
+  target: Target,
+): Anchor {
   try {
-    return reanchorWith(a, from, target)
+    return reanchorWith(a, from, fromStream, target)
   } catch {
     try {
       return { ...positional(a, from, target.to), status: 'unresolved' }
@@ -178,14 +260,17 @@ function targetOf(to: VersionText): Target {
 /**
  * Moves one anchor from version `from` to version `to` (spec 5.4): its quote is found in the new
  * text (exact: ok; normalised or several matches: approximate), otherwise it falls back to its page
- * position and is approximate (same page count) or unresolved. Never throws.
+ * position and is approximate (same page count) or unresolved. A quote that appeared several times
+ * in `from` and has one exact match left is ok only when that match is the copy the anchor was on.
+ * Never throws.
  */
 export function reanchor(anchor: Anchor, from: VersionText, to: VersionText): Anchor {
-  return reanchorSafely(anchor, from, targetOf(to))
+  return reanchorSafely(anchor, from, lazyStream(from), targetOf(to))
 }
 
 /** `reanchor` for many anchors, building the target word stream once. Same length and order out as in. */
 export function reanchorAll(anchors: Anchor[], from: VersionText, to: VersionText): Anchor[] {
   const target = targetOf(to)
-  return anchors.map((a) => reanchorSafely(a, from, target))
+  const fromStream = lazyStream(from)
+  return anchors.map((a) => reanchorSafely(a, from, fromStream, target))
 }
