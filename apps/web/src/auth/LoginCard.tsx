@@ -8,26 +8,30 @@ import { LoginForm, type LoginFormProps } from './LoginForm'
  */
 export function LoginCard(props: LoginFormProps) {
   return (
-    <div className="w-full max-w-[368px]">
-      <div className="rounded-[20px] border-2 border-line-2 bg-card p-6 shadow-card md:p-[30px]">
-        <div className="flex items-center gap-3">
-          <BinderMark className="size-10 shrink-0" />
-          <h1
-            aria-label="Sign in to Binder"
-            className="font-display text-[28px] font-extrabold leading-none text-ink"
-          >
-            Binder
-          </h1>
-          <span className="rounded-full border border-line-2 px-2.5 py-1 text-[11px] leading-none text-muted">
-            by RVLT
-          </span>
+    // The mockup's sign-in (`screens2_access.py` .ac-login, `screens2_mobile.py` .mb-lcard): a 400 px
+    // card, 32/32/28 padding and an 18 px rhythm (28/24/24 and 22 on a phone).
+    <div className="w-full max-w-[400px]">
+      <div className="flex flex-col gap-[22px] rounded-[20px] border-2 border-line-2 bg-card p-[28px_24px_24px] shadow-card md:gap-[18px] md:p-[32px_32px_28px]">
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center gap-3">
+            <BinderMark className="size-11 shrink-0 drop-shadow-[0_3px_0_var(--red-700)]" />
+            <h1
+              aria-label="Sign in to Binder"
+              className="font-display text-[30px] font-extrabold leading-none tracking-[-.03em] text-ink"
+            >
+              Binder
+            </h1>
+            <span className="inline-flex h-5 items-center rounded-full border border-line-2 px-[9px] text-[11px] font-semibold text-muted">
+              by RVLT
+            </span>
+          </div>
+          <p className="-mt-0.5 font-hand text-[16px] leading-[1.2] text-muted md:-mt-1.5">
+            the book is where you left it
+          </p>
         </div>
-        <p className="mt-1 mb-6 font-hand text-[17px] leading-snug text-ink-2">
-          the book is where you left it
-        </p>
         <LoginForm {...props} />
       </div>
-      <p className="mt-4 text-center text-[12px] text-muted">
+      <p className="mt-[18px] px-3 text-center text-[12px] leading-[1.5] text-muted md:px-0">
         Stays signed in on this device, so the book opens offline.
       </p>
     </div>

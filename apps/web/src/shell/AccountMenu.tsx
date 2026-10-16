@@ -48,7 +48,8 @@ export function AccountMenu({
               className,
             )}
           >
-            <PersonAvatar name={who} className="size-8" />
+            {/* 32 px on a phone, the mockup's 26 px from 768 up; the button around it stays 44 px. */}
+            <PersonAvatar name={who} className="size-8 md:size-[26px]" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent side={side} align="end" className="min-w-56">

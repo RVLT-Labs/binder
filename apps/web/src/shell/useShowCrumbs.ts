@@ -24,21 +24,39 @@ export function useShowCrumbs(showId: string, showTitle: string | undefined): Cr
   )
   const docTitle = docs[0]?.title ?? 'Document'
 
-  const shows: Crumb = { label: 'Shows', link: { to: '/' }, phoneOnly: true }
+  // The phone's back button says "Shows". Desktop and tablet draw it only on the show's own page
+  // (the mockup's "Shows / Songs for a New World"); elsewhere the rail's Shows item is the way back.
+  const shows = (visible: boolean): Crumb => ({
+    label: 'Shows',
+    link: { to: '/' },
+    phoneOnly: !visible,
+    backLabel: true,
+  })
+  // Exports and Settings are reached from More on the phone, so that is where back goes.
+  const more: Crumb = {
+    label: 'More',
+    link: { to: '/shows/$showId/more', params: { showId } },
+    phoneOnly: true,
+    backLabel: true,
+  }
   const show = (current: boolean): Crumb => ({
     label: showTitle ?? 'Show',
     link: current ? undefined : { to: '/shows/$showId', params: { showId } },
   })
 
-  if (leaf === '/shows/$showId/' || leaf === '/shows/$showId') return [shows, show(true)]
-  if (leaf === '/shows/$showId/docs/$docId') return [shows, show(false), { label: docTitle }]
+  if (leaf === '/shows/$showId/' || leaf === '/shows/$showId') return [shows(true), show(true)]
+  if (leaf === '/shows/$showId/docs/$docId') return [shows(false), show(false), { label: docTitle }]
   if (leaf === '/shows/$showId/docs/$docId/compare' && docId) {
     return [
-      shows,
+      shows(false),
       show(false),
       { label: docTitle, link: { to: '/shows/$showId/docs/$docId', params: { showId, docId } } },
       { label: 'Compare' },
     ]
   }
-  return [shows, show(false), { label: (leaf && LEAF_LABELS[leaf]) || 'Show' }]
+  const label = (leaf && LEAF_LABELS[leaf]) || 'Show'
+  const viaMore = leaf === '/shows/$showId/exports' || leaf === '/shows/$showId/settings'
+  return viaMore
+    ? [shows(false), show(false), more, { label }]
+    : [shows(false), show(false), { label }]
 }

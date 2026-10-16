@@ -57,7 +57,6 @@ export function UploadDocumentButton() {
   return (
     <Button
       type="button"
-      size="sm"
       className="max-md:mx-2"
       // The phone's top bar has room for one short word; the name stays the full one.
       aria-label="Upload document"

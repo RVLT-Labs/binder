@@ -2,6 +2,7 @@ import { useQuery } from '@powersync/react'
 import { createFileRoute, Outlet, useMatches } from '@tanstack/react-router'
 import { UploadDocumentButton, UploadProvider } from '../documents/UploadProvider'
 import type { ShowRow } from '../powersync/schema'
+import { BinderAvatars } from '../presence/Avatars'
 import { PresenceProvider } from '../presence/PresenceProvider'
 import { AppShell } from '../shell/AppShell'
 import { useAccount } from '../shell/useAccount'
@@ -35,6 +36,8 @@ function ShowLayout() {
           crumbs={crumbs}
           account={account}
           fullBleed={fullBleed}
+          // The show's own page draws who is in the binder between the sync state and the buttons.
+          actions={leaf === '/shows/$showId/' ? <BinderAvatars /> : undefined}
           primary={leaf && UPLOAD_SCREENS.includes(leaf) ? <UploadDocumentButton /> : undefined}
         >
           {isLoading ? <p>Loading…</p> : !show ? <p>Show not found.</p> : <Outlet />}

@@ -22,7 +22,7 @@ The prompt corner is where the stage manager sits with the book, the cue lights 
 Three rules are Binder's own and outrank everything below:
 
 1. **The page is paper.** A script page always renders as the PDF's own white (`--page`), in both themes, and is the brightest thing on screen. Chrome never competes with it: no bright panels beside the page, and controls stay muted until hovered or focused.
-2. **Department colour is the only colour on the page.** Markup is drawn in department colours tuned to read as ink on white. Chrome around the page stays monochrome espresso plus RVLT red for the one primary action. Presence uses a person's colour, never a department's.
+2. **Department colour is the only colour on the page.** Markup is drawn in department colours tuned to read as ink on white. Chrome around the page stays monochrome espresso plus RVLT red where the mockups put it (primary buttons, the live state, the active tab and tool, the selected cue). Presence uses a person's colour, never a department's.
 3. **Two modes, one layout.** *Markup* is the full shell. *Calling* strips it to the page, the page number and a floating strip; nothing in Calling is editable. Both draw the page identically, so what you mark is what you call and what you print.
 
 ## 3. Typography
@@ -42,7 +42,7 @@ Binder additions:
 
 Flow's espresso tokens verbatim (`--paper #141210`, `--paper-2 #1A1613`, `--card #211C17`, `--elev #2A241D`, `--ink #F5EFE2`, `--ink-2`, `--muted`, `--faint`, `--line`, `--line-2`, `--red #E0363D`, `--red-700`, status `--ok`/`--warn`, module hues, `--sh-card`, `--sh-hover`, `--sh-stk`, `--lit`). Dark is the default because Binder's working condition is the dark (tech table, FOH, a bio box). Flow's light "Paper" theme is the opt-in for daytime prep and print-adjacent review; it changes chrome only, never the page.
 
-Red is the single primary action per view, live/active state ("Calling", the active phone tab, the selected cue), and alerts. **Red is never a department colour** and never decoration.
+Red is a primary action (a view can have several, as the mockups draw them: the top bar's, and each script row's Open), live/active state ("Calling", the active phone tab, the selected cue), and alerts. **Red is never a department colour** and never decoration.
 
 ### 4.2 The page
 
@@ -104,7 +104,7 @@ Calling mode is designed for the tablet first (iPad landscape and portrait), and
 - **Rail** 56 px, `--paper-2`, right rule `--line`. Top: the Binder mark (28 px). Items 44 × 44, icon over an 10 px label. Module hues: Script blue, Cues amber, Docs teal, Activity purple, Exports green; the active item takes its hue's soft fill and colour with `--sh-card`. Foot: Shows, then the user's avatar.
 - **Top bar** 44 px, `--paper`, bottom rule `--line`: breadcrumbs (show / document, current item bold), version chip, then on the right sync state, presence avatars, secondary actions, and the one red primary.
 - **Content** on `--paper`, 28–32 px padding, sections labelled with Flow's section-label (over-label plus rule).
-- **Script screen**: thumbnails column (96 px) · the page centred on a `#0E0C0A` stage with a floating tool strip at its left edge · the right panel (340 px, `--paper-2`, tabs Cue / Layers / History / Review). A 28 px status bar at the bottom: page n of N, snap state, active layer, the four shortcuts people forget (`c` `]` `g` `⌘K`).
+- **Script screen**: thumbnails column (92 px) · the page centred on a `#0E0C0A` stage with a floating tool strip at its left edge · the right panel (340 px, `--paper-2`, tabs Cue / Layers / History / Review). A 26 px status bar at the bottom: page n of N, snap state, active layer, the four shortcuts people forget (`c` `]` `g` `⌘K`).
 
 ### 6.3 Tablet
 

@@ -40,7 +40,8 @@ const Avatar = React.forwardRef<
   <AvatarPrimitive.Root
     ref={ref}
     className={cn(
-      'relative flex size-9 shrink-0 select-none overflow-hidden rounded-full border-2 border-card',
+      // no ring on a solo avatar; stacked presence adds `border-2 border-paper -ml-1.5` itself
+      'relative flex size-9 shrink-0 select-none overflow-hidden rounded-full',
       className,
     )}
     {...props}
@@ -67,7 +68,7 @@ const AvatarFallback = React.forwardRef<
   <AvatarPrimitive.Fallback
     ref={ref}
     className={cn(
-      'flex size-full items-center justify-center font-sans text-[12px] font-bold',
+      'flex size-full items-center justify-center font-sans text-[11px] font-bold',
       className,
     )}
     {...props}

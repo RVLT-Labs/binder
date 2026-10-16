@@ -1,4 +1,4 @@
-import { Ellipsis } from 'lucide-react'
+import { MoreIcon } from '@/components/icons'
 import { cn, focusRing } from '@/lib/utils'
 import { NavLink } from './NavLink'
 import { activeNavKey, navItems } from './navItems'
@@ -12,7 +12,7 @@ export function TabBar({ showId, pathname }: { showId: string; pathname: string 
   const tabs = navItems(showId).filter((i) => i.key !== 'exports')
   const tab = (active: boolean) =>
     cn(
-      'flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-semibold leading-none',
+      'flex min-h-11 flex-1 flex-col items-center justify-center gap-[3px] text-[11px] font-semibold leading-none',
       active ? 'text-red' : 'text-muted',
       focusRing,
     )
@@ -31,7 +31,7 @@ export function TabBar({ showId, pathname }: { showId: string; pathname: string 
             active={active}
             className={tab(active)}
           >
-            <Icon className="size-[22px]" strokeWidth={1.8} aria-hidden />
+            <Icon className="size-[22px]" aria-hidden />
             <span>{item.label}</span>
           </NavLink>
         )
@@ -41,7 +41,7 @@ export function TabBar({ showId, pathname }: { showId: string; pathname: string 
         active={current === 'more'}
         className={tab(current === 'more')}
       >
-        <Ellipsis className="size-[22px]" strokeWidth={1.8} aria-hidden />
+        <MoreIcon className="size-[22px]" aria-hidden />
         <span>More</span>
       </NavLink>
     </nav>

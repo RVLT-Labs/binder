@@ -12,23 +12,36 @@ export interface ShowCardProps {
   show: Pick<ShowRow, 'id' | 'title' | 'status' | 'updated_at'>
   /** Cues in the show, once counted. Left off until then. */
   cueCount?: number
+  /** The show's documents with their current version number, in order ("Libretto v3"). */
+  documents?: { title: string; version: number }[]
+  /** Items waiting for review across the show's documents; the blue "N to review" flag when above 0. */
+  toReview?: number
   /** What "ago" is measured from. */
   now?: Date
   /** Called with the trimmed new title, only when it is not empty and differs from the old one. */
   onRename: (title: string) => void | Promise<void>
 }
 
-const CARD = 'relative rounded-[20px] border-2 p-5'
+// The mockup's `.show-card`: radius 20, padding 16, gap 10, at least 168 px high (phone: 14, 8, none).
+const CARD = 'relative rounded-[20px] border-2 p-3.5 md:p-4'
 
 /**
- * One show on the shows home (DESIGN §8): a status pill with a word, the title as the card's link,
- * what is in it and when it last changed. An archived show is a dashed, muted card that says
- * read-only. It is a list item; put it in a `ul`.
+ * One show on the shows home (DESIGN §8, mockup `.show-card`): a status pill with a word, the title
+ * as the card's link, its documents and cue count, a "to review" flag, and when it last changed. A
+ * show with nothing placed yet says so in a red Kalam chip. An archived show is a dashed card at
+ * 75 % that says read-only; on a phone it is one compact row. It is a list item; put it in a `ul`.
  *
  * The show has no opening date or phase, and presence is per show over a socket, so the card
  * carries neither: the pill is Active or Archived.
  */
-export function ShowCard({ show, cueCount, now = new Date(), onRename }: ShowCardProps) {
+export function ShowCard({
+  show,
+  cueCount,
+  documents = [],
+  toReview = 0,
+  now = new Date(),
+  onRename,
+}: ShowCardProps) {
   const archived = show.status === 'archived'
   const title = show.title ?? ''
   const [editing, setEditing] = useState(false)
@@ -71,13 +84,19 @@ export function ShowCard({ show, cueCount, now = new Date(), onRename }: ShowCar
     <li
       className={cn(
         CARD,
-        'flex flex-col gap-3 transition-[transform,box-shadow] has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-red has-[a:focus-visible]:ring-offset-2 has-[a:focus-visible]:ring-offset-paper',
+        'flex transition-[transform,box-shadow] has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-red has-[a:focus-visible]:ring-offset-2 has-[a:focus-visible]:ring-offset-paper',
         archived
-          ? 'border-dashed border-line-2 bg-transparent'
-          : 'border-line-2 bg-card shadow-card hover:-translate-y-1 hover:shadow-hover',
+          ? // A compact row on a phone: the name left, the pill and the rename button right.
+            'max-md:flex-row max-md:flex-wrap max-md:items-center max-md:justify-between max-md:gap-x-2 max-md:p-[12px_14px] md:flex-col md:gap-2.5 border-dashed border-line-2 bg-card opacity-75'
+          : 'flex-col gap-2 border-line-2 bg-card shadow-card hover:-translate-y-1 hover:shadow-hover md:min-h-[168px] md:gap-2.5',
       )}
     >
-      <div className="-my-2.5 flex items-center justify-between gap-2">
+      <div
+        className={cn(
+          '-my-2.5 flex items-center justify-between gap-2',
+          archived && 'max-md:order-2 max-md:-my-2',
+        )}
+      >
         <Badge status={archived ? 'neutral' : 'ok'}>
           {!archived && <span aria-hidden className="size-1.5 rounded-full bg-current" />}
           {archived ? 'Archived' : 'Active'}
@@ -100,8 +119,10 @@ export function ShowCard({ show, cueCount, now = new Date(), onRename }: ShowCar
 
       <h3
         className={cn(
-          'font-display text-[20px] font-extrabold leading-tight',
-          archived ? 'text-ink-2' : 'text-ink',
+          'font-display font-extrabold leading-[1.15] tracking-[-.02em] text-ink',
+          archived
+            ? 'text-[16px] max-md:order-1 max-md:min-w-0 max-md:flex-1'
+            : 'text-[18px] md:text-[19px]',
         )}
       >
         <Link
@@ -114,26 +135,49 @@ export function ShowCard({ show, cueCount, now = new Date(), onRename }: ShowCar
         </Link>
       </h3>
 
-      <div className="mt-auto flex flex-col gap-1 text-[13px] text-muted">
-        {archived ? (
+      {archived ? (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12.5px] text-muted max-md:hidden">
           <span>read-only</span>
-        ) : cueCount === undefined ? null : cueCount === 0 ? (
-          <span className="font-hand text-[16px] leading-snug text-ink-2">nothing placed yet</span>
-        ) : (
-          <span>
-            <span className="font-mono tabular-nums text-ink-2">{cueCount}</span>{' '}
-            {cueCount === 1 ? 'cue' : 'cues'}
-          </span>
-        )}
-        {ago && (
-          <span>
-            Updated{' '}
-            <time dateTime={show.updated_at ?? undefined} className="font-mono tabular-nums">
-              {ago}
-            </time>
-          </span>
-        )}
-      </div>
+          <span>exports still work</span>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
+            {documents.map((doc, i) => (
+              // By position: two documents can share a title.
+              // biome-ignore lint/suspicious/noArrayIndexKey: titles can repeat
+              <span key={i}>
+                {doc.title} v{doc.version}
+              </span>
+            ))}
+            {cueCount !== undefined && (
+              <span className="font-mono tabular-nums">
+                {cueCount} {cueCount === 1 ? 'cue' : 'cues'}
+              </span>
+            )}
+            {toReview > 0 && (
+              <Badge status="info" size="sm">
+                <span className="font-mono tabular-nums">{toReview}</span> to review
+              </Badge>
+            )}
+          </div>
+          <div className="mt-auto flex items-center justify-between gap-2">
+            {cueCount === 0 && (
+              <span className="inline-flex items-center rounded-[var(--r)] border border-line-2 px-2.5 py-1.5 font-hand text-[15px] leading-snug text-red">
+                {documents.length > 0 ? 'script in, nothing placed yet' : 'nothing placed yet'}
+              </span>
+            )}
+            {ago && (
+              <span className="ml-auto text-[12px] text-muted">
+                Updated{' '}
+                <time dateTime={show.updated_at ?? undefined} className="font-mono tabular-nums">
+                  {ago}
+                </time>
+              </span>
+            )}
+          </div>
+        </>
+      )}
     </li>
   )
 }

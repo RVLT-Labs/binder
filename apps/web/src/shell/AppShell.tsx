@@ -1,7 +1,9 @@
 import { useRouterState } from '@tanstack/react-router'
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Notices } from '@/components/Notices'
 import { cn } from '@/lib/utils'
+import { recallShow, rememberShow } from './lastShow'
+import { activeNavKey } from './navItems'
 import { Rail } from './Rail'
 import { TabBar } from './TabBar'
 import { TopBar } from './TopBar'
@@ -48,12 +50,28 @@ export function AppShell({
   const slots = useMemo(() => ({ chip, actions: actionsEl }), [chip, actionsEl])
   const slotRefs = useMemo(() => ({ chip: setChip, actions: setActionsEl }), [])
 
+  // Outside a show the rail still points at the one last opened on this device.
+  useEffect(() => {
+    if (showId) rememberShow(account.email, showId)
+  }, [showId, account.email])
+  const [lastShow] = useState(() => (showId ? undefined : recallShow(account.email)))
+
+  // Phone: which screens are tab-level (no back button, a bigger title) and how big the title is.
+  const navKey = showId ? activeNavKey(pathname) : null
+  const phoneTab =
+    pathname === '/'
+      ? 20
+      : navKey === 'cues' || navKey === 'docs' || navKey === 'activity' || navKey === 'more'
+        ? 22
+        : undefined
+
   return (
     <TopBarSlotsContext value={slots}>
       <div className="flex h-dvh w-full bg-paper text-ink">
         {!phone && (
           <Rail
             showId={showId}
+            destinationsFor={showId ?? lastShow}
             iconsOnly={breakpoint === 'tablet'}
             pathname={pathname}
             account={account}
@@ -68,6 +86,7 @@ export function AppShell({
             actions={actions}
             primary={primary}
             slotRefs={slotRefs}
+            phoneTab={phoneTab}
           />
           <main
             data-full-bleed={fullBleed ? 'true' : undefined}
@@ -75,7 +94,7 @@ export function AppShell({
               'min-h-0 flex-1',
               fullBleed
                 ? 'flex flex-col overflow-hidden'
-                : 'overflow-y-auto px-4 py-5 md:px-8 md:py-7',
+                : 'overflow-y-auto px-4 py-3.5 md:px-8 md:py-7',
             )}
           >
             {children}

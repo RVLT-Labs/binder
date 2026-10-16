@@ -3,12 +3,14 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import { api } from '@/api/client'
+import { CloseIcon } from '@/components/icons'
 import { pushNotice } from '@/components/noticeStore'
 import { Button } from '@/components/ui/button'
-import { DialogFooter, DialogHeader, DialogShell } from '@/components/ui/dialog-shell'
+import { DialogFooterBar, DialogShell } from '@/components/ui/dialog-shell'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { closeModal, openModal, restoreFocus } from '@/lib/modalDialog'
+import { cn, focusRing } from '@/lib/utils'
 
 /** How long to wait for a new show to sync down before going to it anyway. */
 const SYNC_WAIT_MS = 5_000
@@ -22,7 +24,9 @@ export interface NewShowDialogProps {
 
 /**
  * "New show": a name, then Create. It is a modal opened by the caller mounting it and closed by
- * Cancel, Escape or a created show, which it then goes to. Only the name step exists so far.
+ * the close button, Cancel, Escape or a created show, which it then goes to. Only the name step
+ * exists so far; the mockup's sheet (an over-label, a title and description, the close button and a
+ * footer bar) is drawn around it. The dialog's name is the over-label, "New show", as the mockup's is.
  */
 export function NewShowDialog({ returnFocusTo, onClose }: NewShowDialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -81,6 +85,7 @@ export function NewShowDialog({ returnFocusTo, onClose }: NewShowDialogProps) {
     <DialogShell
       ref={ref}
       labelledBy={titleId}
+      className="overflow-hidden p-0 backdrop:bg-scrim-strong"
       // Escape and Cancel both end in the dialog's `close` event.
       onClose={() => {
         restoreFocus(returnFocusTo)
@@ -88,30 +93,49 @@ export function NewShowDialog({ returnFocusTo, onClose }: NewShowDialogProps) {
       }}
     >
       <form onSubmit={submit}>
-        <DialogHeader id={titleId}>New show</DialogHeader>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={fieldId}>New show title</Label>
-          <Input
-            id={fieldId}
-            value={title}
-            maxLength={200}
-            autoComplete="off"
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <p className="text-[12px] text-muted">You can rename it any time.</p>
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={() => closeModal(ref.current, returnFocusTo)}
+          className={cn(
+            "absolute top-3.5 right-3.5 grid size-7 place-items-center rounded-[8px] text-muted hover:text-ink after:absolute after:-inset-2 after:content-['']",
+            focusRing,
+          )}
+        >
+          <CloseIcon className="size-3.5" />
+        </button>
+        <div className="px-5 pt-[26px] pb-6 md:px-[30px]">
+          <p id={titleId} className="t-over">
+            New show
+          </p>
+          <h2 className="t-title mt-0.5">Name</h2>
+          <p className="mt-1 mb-[18px] max-w-[60ch] text-[13.5px] text-muted">
+            Give the show a title. You can rename it any time.
+          </p>
+          <div className="flex flex-col gap-[3px]">
+            <Label htmlFor={fieldId}>New show title</Label>
+            <Input
+              id={fieldId}
+              value={title}
+              maxLength={200}
+              autoComplete="off"
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
         </div>
-        <DialogFooter>
+        <DialogFooterBar>
           <Button
             type="button"
-            variant="line"
+            variant="ghost"
             onClick={() => closeModal(ref.current, returnFocusTo)}
           >
             Cancel
           </Button>
+          <span aria-hidden className="flex-1" />
           <Button type="submit" loading={create.isPending} disabled={!title.trim() || !orgs.data}>
             Create
           </Button>
-        </DialogFooter>
+        </DialogFooterBar>
       </form>
     </DialogShell>
   )

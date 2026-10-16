@@ -3,6 +3,7 @@ import { SectionHeading } from '@/components/SectionHeading'
 import { Button } from '@/components/ui/button'
 import type { ShowRow } from '../powersync/schema'
 import { ShowCard } from './ShowCard'
+import type { ShowSummary } from './useShowSummaries'
 
 export interface ShowsHomeProps {
   shows: ShowRow[]
@@ -11,6 +12,10 @@ export interface ShowsHomeProps {
   cueCounts?: Record<string, number>
   /** "Good evening, Jayden." */
   greeting: string
+  /** The organisation's name, the over-label above the greeting; left off until known. */
+  orgName?: string
+  /** Per show id: its documents with their current version, and the items waiting for review. */
+  summaries?: ReadonlyMap<string, ShowSummary>
   now?: Date
   /** Start a new show; gets the button that was pressed, so focus can come back to it. */
   onNewShow: (opener: HTMLElement) => void
@@ -33,6 +38,8 @@ export function ShowsHome({
   loading,
   cueCounts,
   greeting,
+  orgName,
+  summaries,
   now,
   onNewShow,
   onRename,
@@ -41,15 +48,16 @@ export function ShowsHome({
   const archived = shows.filter((s) => s.status === 'archived')
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
-      <header>
+    <div className="mx-auto flex w-full max-w-6xl flex-col">
+      <header className="mb-[22px]">
         {/* The top bar's crumb says "Shows" in words; this is the page's name for everything else. */}
         <h1 className="sr-only">Shows</h1>
-        <p className="font-display text-[28px] font-extrabold leading-tight text-ink md:text-[32px]">
+        {orgName && <p className="t-over">{orgName}</p>}
+        <p className="font-display text-[24px] font-extrabold leading-[1.15] tracking-[-.025em] text-ink md:text-[30px]">
           {greeting}
         </p>
         {!loading && (
-          <p className="mt-1 text-[14px] text-muted">
+          <p className="mt-1 text-[13.5px] text-muted">
             <span className="font-mono tabular-nums">{active.length}</span>{' '}
             {active.length === 1 ? 'active show' : 'active shows'}
             {archived.length > 0 && (
@@ -65,7 +73,7 @@ export function ShowsHome({
       {loading ? (
         <p className="text-muted">Loading…</p>
       ) : (
-        <>
+        <div className="flex flex-col gap-[26px]">
           <section className="flex flex-col gap-3">
             <SectionHeading>Active</SectionHeading>
             {active.length === 0 ? (
@@ -88,6 +96,8 @@ export function ShowsHome({
                     key={show.id}
                     show={show}
                     cueCount={cueCounts ? (cueCounts[show.id] ?? 0) : undefined}
+                    documents={summaries?.get(show.id)?.documents}
+                    toReview={summaries?.get(show.id)?.toReview}
                     now={now}
                     onRename={(title) => onRename(show.id, title)}
                   />
@@ -105,6 +115,8 @@ export function ShowsHome({
                     key={show.id}
                     show={show}
                     cueCount={cueCounts ? (cueCounts[show.id] ?? 0) : undefined}
+                    documents={summaries?.get(show.id)?.documents}
+                    toReview={summaries?.get(show.id)?.toReview}
                     now={now}
                     onRename={(title) => onRename(show.id, title)}
                   />
@@ -112,7 +124,7 @@ export function ShowsHome({
               </ul>
             </section>
           )}
-        </>
+        </div>
       )}
     </div>
   )

@@ -57,6 +57,7 @@ async function renderAt(path: string, ui: ReactElement) {
 
 beforeEach(() => {
   clearNotices()
+  localStorage.clear()
   // The router scrolls to the top on load; jsdom does not implement it.
   vi.stubGlobal('scrollTo', vi.fn())
 })
@@ -168,6 +169,39 @@ describe('AppShell rail', () => {
     expect(within(rail).getByRole('link', { name: 'Shows' }).getAttribute('aria-current')).toBe(
       'page',
     )
+  })
+
+  it('draws the destinations of the show last opened outside a show, none of them current', async () => {
+    setWidth(1280)
+    localStorage.setItem('binder.lastShow.jayden@example.test', 's9')
+    await renderAt(
+      '/',
+      <AppShell crumbs={[{ label: 'Shows' }]} account={account()}>
+        <h1>Shows</h1>
+      </AppShell>,
+    )
+    const rail = screen.getByRole('navigation', { name: 'Binder' })
+    for (const name of ['Script', 'Cues', 'Docs', 'Activity', 'Exports']) {
+      const link = within(rail).getByRole('link', { name })
+      expect(link.getAttribute('href')).toContain('/shows/s9')
+      expect(link.getAttribute('aria-current')).toBeNull()
+      expect(link.className).toContain('text-muted')
+    }
+    // Shows is current but keeps the muted colour: the mockup draws no current treatment for it.
+    const shows = within(rail).getByRole('link', { name: 'Shows' })
+    expect(shows.getAttribute('aria-current')).toBe('page')
+    expect(shows.className).toContain('text-muted')
+  })
+
+  it('remembers the show it is in, so the home can point back at it', async () => {
+    setWidth(1280)
+    await renderAt(
+      '/shows/s1',
+      <AppShell showId="s1" crumbs={crumbs} account={account()}>
+        <h1>Overview</h1>
+      </AppShell>,
+    )
+    expect(localStorage.getItem('binder.lastShow.jayden@example.test')).toBe('s1')
   })
 })
 
@@ -389,5 +423,48 @@ describe('TopBar breadcrumbs', () => {
     const trail = screen.getByRole('navigation', { name: 'Breadcrumb' })
     expect(within(trail).getAllByText('Hamilton')).toHaveLength(2)
     expect(error.mock.calls.flat().join(' ')).not.toMatch(/same key/)
+  })
+})
+
+describe('AppShell phone top bar', () => {
+  it('a tab-level screen has no back button and a 22 px title; a drill-in has the parent name next to the chevron', async () => {
+    setWidth(390)
+    await renderAt(
+      '/shows/s1/cues',
+      <AppShell
+        showId="s1"
+        crumbs={[
+          { label: 'Shows', link: { to: '/' }, phoneOnly: true, backLabel: true },
+          { label: 'Cues' },
+        ]}
+        account={account()}
+      >
+        <h1>Cue list</h1>
+      </AppShell>,
+    )
+    expect(screen.queryByRole('link', { name: 'Shows' })).toBeNull()
+    expect(screen.getByText('Cues', { selector: 'span.font-display' }).className).toContain(
+      'text-[22px]',
+    )
+    cleanup()
+
+    await renderAt(
+      '/shows/s1',
+      <AppShell
+        showId="s1"
+        crumbs={[
+          { label: 'Shows', link: { to: '/' }, backLabel: true },
+          { label: 'Songs for a New World' },
+        ]}
+        account={account()}
+      >
+        <h1>Overview</h1>
+      </AppShell>,
+    )
+    const back = screen.getByRole('link', { name: 'Shows' })
+    expect(back.textContent).toBe('Shows')
+    expect(
+      screen.getByText('Songs for a New World', { selector: 'span.font-display' }).className,
+    ).toContain('text-[19px]')
   })
 })

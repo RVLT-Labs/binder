@@ -16,7 +16,8 @@ export interface SegmentedProps {
 }
 
 /**
- * Segmented control (DESIGN §8): single-select radio group on a paper-2 track.
+ * Segmented control (the mockups' `.seg`): one 2px outline, radius 9 (12 on phone, where the items
+ * are 44 px), no track fill or padding; the chosen item is `elev`.
  * Radix ToggleGroup gives roving focus + arrow keys; roles are explicit so it reads as a
  * radiogroup (items are role="radio" with aria-checked).
  */
@@ -32,7 +33,7 @@ export function Segmented({ value, onValueChange, options, className, ...rest }:
         if (next) onValueChange(next)
       }}
       className={cn(
-        'inline-flex items-center gap-0.5 rounded-[10px] border-2 border-line-2 bg-paper-2 p-0.5',
+        'inline-flex items-center overflow-hidden rounded-[12px] border-2 border-line-2 md:rounded-[9px]',
         className,
       )}
     >
@@ -43,10 +44,10 @@ export function Segmented({ value, onValueChange, options, className, ...rest }:
           role="radio"
           aria-checked={option.value === value}
           className={cn(
-            'inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-[7px] px-3 font-sans text-[13px] font-semibold text-ink-2 transition-colors md:h-8',
-            'hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-1 focus-visible:ring-offset-paper-2',
+            'inline-flex h-11 min-w-11 items-center justify-center gap-1.5 px-3 font-sans text-[14px] font-semibold text-muted transition-colors md:h-[27px] md:px-2.5 md:text-[12px]',
+            'hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red',
             'disabled:cursor-not-allowed disabled:opacity-45',
-            'data-[state=on]:bg-card data-[state=on]:text-ink data-[state=on]:shadow-card',
+            'data-[state=on]:bg-elev data-[state=on]:text-ink',
           )}
         >
           {option.label}

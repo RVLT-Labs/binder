@@ -13,7 +13,7 @@ export function SectionHeading({
 }) {
   return (
     <div className={cn('flex items-center gap-3', className)}>
-      <h2 id={id} className="text-[12px] font-bold text-muted">
+      <h2 id={id} className="text-[11px] font-semibold text-muted">
         {children}
       </h2>
       <span aria-hidden className="h-px flex-1 bg-line" />

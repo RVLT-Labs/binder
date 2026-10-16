@@ -8,6 +8,8 @@ import { useAccount } from '../shell/useAccount'
 import { firstName, greeting } from '../shows/greeting'
 import { NewShowDialog } from '../shows/NewShowDialog'
 import { ShowsHome } from '../shows/ShowsHome'
+import { useOrgName } from '../shows/useOrgName'
+import { useShowSummaries } from '../shows/useShowSummaries'
 
 export const Route = createFileRoute('/')({ component: HomePage })
 
@@ -25,6 +27,8 @@ function HomePage() {
     () => (counting ? undefined : Object.fromEntries(counts.map((c) => [c.show_id, c.n]))),
     [counts, counting],
   )
+  const orgName = useOrgName(account.email)
+  const summaries = useShowSummaries()
   // The control that opened the dialog, so focus can go back to it.
   const [opener, setOpener] = useState<HTMLElement | null>(null)
 
@@ -33,12 +37,7 @@ function HomePage() {
       crumbs={[{ label: 'Shows' }]}
       account={account}
       primary={
-        <Button
-          type="button"
-          size="sm"
-          className="max-md:mx-2"
-          onClick={(e) => setOpener(e.currentTarget)}
-        >
+        <Button type="button" className="max-md:mx-2" onClick={(e) => setOpener(e.currentTarget)}>
           New show
         </Button>
       }
@@ -47,6 +46,8 @@ function HomePage() {
         shows={shows}
         loading={isLoading}
         cueCounts={cueCounts}
+        orgName={orgName}
+        summaries={summaries}
         greeting={greeting(new Date(), firstName(account.name, account.email))}
         onNewShow={setOpener}
         // Local write first; PowerSync queues it and uploads when online.

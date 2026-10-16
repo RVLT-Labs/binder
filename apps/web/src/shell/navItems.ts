@@ -1,11 +1,11 @@
 import {
-  Activity,
-  Download,
-  FileText,
-  type LucideIcon,
-  NotepadText,
-  SlidersHorizontal,
-} from 'lucide-react'
+  ActivityIcon,
+  CuesIcon,
+  DocsIcon,
+  ExportsIcon,
+  type IconComponent,
+  ScriptIcon,
+} from '@/components/icons'
 
 export type NavKey = 'script' | 'cues' | 'docs' | 'activity' | 'exports'
 /** The module hue each destination takes when it is the current one (DESIGN §6.2). */
@@ -22,21 +22,21 @@ export interface NavItem {
     | '/shows/$showId/exports'
   params: { showId: string }
   hue: NavHue
-  icon: LucideIcon
+  icon: IconComponent
 }
 
 /** A show's destinations, in rail order. */
 export function navItems(showId: string): NavItem[] {
   const params = { showId }
   return [
-    { key: 'script', label: 'Script', to: '/shows/$showId', params, hue: 'blue', icon: FileText },
+    { key: 'script', label: 'Script', to: '/shows/$showId', params, hue: 'blue', icon: ScriptIcon },
     {
       key: 'cues',
       label: 'Cues',
       to: '/shows/$showId/cues',
       params,
       hue: 'amber',
-      icon: SlidersHorizontal,
+      icon: CuesIcon,
     },
     {
       key: 'docs',
@@ -44,7 +44,7 @@ export function navItems(showId: string): NavItem[] {
       to: '/shows/$showId/docs',
       params,
       hue: 'teal',
-      icon: NotepadText,
+      icon: DocsIcon,
     },
     {
       key: 'activity',
@@ -52,7 +52,7 @@ export function navItems(showId: string): NavItem[] {
       to: '/shows/$showId/activity',
       params,
       hue: 'purple',
-      icon: Activity,
+      icon: ActivityIcon,
     },
     {
       key: 'exports',
@@ -60,7 +60,7 @@ export function navItems(showId: string): NavItem[] {
       to: '/shows/$showId/exports',
       params,
       hue: 'green',
-      icon: Download,
+      icon: ExportsIcon,
     },
   ]
 }

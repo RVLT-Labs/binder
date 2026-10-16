@@ -18,7 +18,7 @@ const DialogShell = React.forwardRef<HTMLDialogElement, DialogShellProps>(
       ref={ref}
       aria-labelledby={labelledBy}
       className={cn(
-        'm-auto w-full max-w-[min(32rem,calc(100vw-32px))] rounded-[20px] border-2 border-line-2 bg-card p-6 text-ink shadow-stk backdrop:bg-scrim',
+        'm-auto w-full max-w-[min(32rem,calc(100vw-32px))] rounded-[20px] border-2 border-line-2 bg-card p-6 text-ink shadow-dialog backdrop:bg-scrim',
         className,
       )}
       {...props}
@@ -42,12 +42,15 @@ function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLHeadingE
   )
 }
 
-/** Right-aligned actions, 8px gap; stacked full-width on phones. */
+/**
+ * Right-aligned actions under a rule (the print sheet's footer); stacked full-width on phones.
+ * For the wizard's full-bleed footer bar (a `paper-2` bar with a top rule) use `DialogFooterBar`.
+ */
 function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        'mt-6 flex flex-col gap-2 md:flex-row md:justify-end [&>*]:w-full md:[&>*]:w-auto',
+        'mt-6 flex flex-col gap-2 border-t border-line pt-3.5 md:flex-row md:justify-end [&>*]:w-full md:[&>*]:w-auto',
         className,
       )}
       {...props}
@@ -55,4 +58,20 @@ function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
   )
 }
 
-export { DialogFooter, DialogHeader, DialogShell }
+/**
+ * The new-show wizard's footer (`.ac-mfoot`): a full-width `paper-2` bar with a top rule, padding
+ * 16 30, the actions in a row. Put the dialog's own padding at zero and the body above it.
+ */
+function DialogFooterBar({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3.5 border-t border-line bg-paper-2 px-5 py-4 md:px-[30px]',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+export { DialogFooter, DialogFooterBar, DialogHeader, DialogShell }

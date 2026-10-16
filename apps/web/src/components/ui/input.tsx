@@ -3,17 +3,26 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
+export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  /** `lg` is the sign-in field (38 px / 14 px at 768 and up); the default is the form field. */
+  inputSize?: 'default' | 'lg'
+}
+
 /**
- * RVLT Flow input — 2px outline, red focus ring, 16px text (no iOS zoom, §16.13),
- * 44px min height. Set aria-invalid for the error state (§9.1).
+ * The mockups' field (`.field .in`): 2px outline on the paper ground (darker than the card it sits
+ * in), red focus ring. 768 px and up: 30 px high, radius 9, 13 px text (`lg`: 38 px, 14 px).
+ * Phone: 48 px, radius 12, 16 px text (which is also the iOS no-zoom floor, §16.13). Set
+ * aria-invalid for the error state (§9.1).
  */
-const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, type, ...props }, ref) => (
+const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ className, type, inputSize = 'default', ...props }, ref) => (
     <input
       type={type}
       ref={ref}
       className={cn(
-        'flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink',
+        'flex h-12 w-full rounded-[12px] border-2 border-input bg-paper px-3.5 py-0 text-[16px] text-ink',
+        'md:rounded-[9px] md:px-[9px]',
+        inputSize === 'lg' ? 'md:h-[38px] md:text-[14px]' : 'md:h-[30px] md:text-[13px]',
         'placeholder:text-faint',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper',
         'aria-[invalid=true]:border-t-out aria-[invalid=true]:focus-visible:ring-t-out',

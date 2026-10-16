@@ -6,7 +6,7 @@ import { cn, focusRing } from '@/lib/utils'
 import { authClient } from './client'
 
 export interface LoginFormProps {
-  /** Show "Email me a sign-in link"; false when the server cannot send mail. */
+  /** Show "Email me a link instead"; false when the server cannot send mail. */
   magicLink: boolean
   onSignedIn: () => Promise<void>
 }
@@ -49,49 +49,55 @@ export function LoginForm({ magicLink, onSignedIn }: LoginFormProps) {
 
   return (
     <>
-      <form onSubmit={signIn} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={emailId}>Email</Label>
-          <Input
-            id={emailId}
-            type="email"
-            autoComplete="username"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+      <form onSubmit={signIn} className="flex flex-col gap-[22px] md:gap-[18px]">
+        <div className="flex flex-col gap-3.5">
+          <div className="flex flex-col gap-[3px]">
+            <Label htmlFor={emailId}>Email</Label>
+            <Input
+              id={emailId}
+              inputSize="lg"
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-[3px]">
+            <Label htmlFor={passwordId}>Password</Label>
+            <Input
+              id={passwordId}
+              inputSize="lg"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
         </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={passwordId}>Password</Label>
-          <Input
-            id={passwordId}
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+        <div className="flex flex-col items-stretch gap-1.5 md:gap-3.5">
+          <Button type="submit" size="lg" className="w-full" disabled={busy || !password}>
+            Sign in
+          </Button>
+          {magicLink && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={sendLink}
+              className={cn(
+                'mx-auto inline-flex min-h-11 items-center rounded-sm px-3 text-[14px] font-semibold text-ink-2 underline decoration-line-2 underline-offset-[3px] hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 md:min-h-0 md:px-0 md:text-[13px]',
+                focusRing,
+              )}
+            >
+              Email me a link instead
+            </button>
+          )}
         </div>
-        <Button type="submit" size="lg" className="mt-1 w-full" disabled={busy || !password}>
-          Sign in
-        </Button>
-        {magicLink && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={sendLink}
-            className={cn(
-              'mx-auto min-h-11 rounded-sm px-2 text-[14px] font-semibold text-ink-2 underline decoration-line-2 decoration-2 underline-offset-4 hover:text-ink disabled:cursor-not-allowed disabled:opacity-45',
-              focusRing,
-            )}
-          >
-            Email me a sign-in link
-          </button>
-        )}
       </form>
       {message && (
         <p
           role="status"
-          className={cn('mt-3 text-center text-[13px]', message.failed ? 'text-red' : 'text-ink-2')}
+          className={cn('text-center text-[13px]', message.failed ? 'text-red' : 'text-ink-2')}
         >
           {message.text}
         </p>

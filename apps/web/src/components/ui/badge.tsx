@@ -8,15 +8,22 @@ import { cn } from '@/lib/utils'
  * AND a text label, never colour-only (DESIGN.md §3.3). Always render the label.
  */
 const badgeVariants = cva(
-  'inline-flex items-center gap-1.5 rounded-full font-sans font-bold text-[11px] leading-none px-2.5 py-1',
+  // The mockups' `.pill`: 20 px high, 8 px side padding, 5 px gap, 11 px / 600.
+  'inline-flex items-center gap-[5px] rounded-full font-sans font-semibold text-[11px] leading-none',
   {
     variants: {
+      size: {
+        default: 'h-5 px-2',
+        // the inline flag ("4 to review") is 18 px
+        sm: 'h-[18px] px-2',
+      },
       status: {
         ok: 'text-ok bg-ok-soft', // available / ready / pass
         warn: 'text-warn bg-warn-soft', // check / due / warning
         overbooked: 'text-t-out bg-out-soft', // overbooked / short / error
         repair: 'text-rep bg-rep-soft', // in repair / neutral
-        neutral: 'text-ink-2 bg-paper-2',
+        // the mockups' `rep` pill: warm grey on a 14 % grey fill (Archived, Processing)
+        neutral: 'text-rep bg-rep-soft',
         // #989 — mirrors status-colors.ts's `info`/`primary` ColorIntent pills
         // (`intentStyles.info.pill` / `.primary.pill`) so a quote's SENT/ACCEPTED
         // state renders in the SAME solid-red-is-live vocabulary DESIGN.md defines,
@@ -25,16 +32,17 @@ const badgeVariants = cva(
         primary: 'text-white bg-red', // live/active/in-use — DESIGN.md's solid red
       },
     },
-    defaultVariants: { status: 'neutral' },
+    defaultVariants: { status: 'neutral', size: 'default' },
   },
 )
 
 function Badge({
   className,
   status,
+  size,
   ...props
 }: React.HTMLAttributes<HTMLSpanElement> & VariantProps<typeof badgeVariants>) {
-  return <span className={cn(badgeVariants({ status, className }))} {...props} />
+  return <span className={cn(badgeVariants({ status, size, className }))} {...props} />
 }
 
 export { Badge, badgeVariants }

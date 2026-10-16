@@ -42,3 +42,12 @@ test('Flow component class names resolve unchanged: font-display and the cream v
   expect(tokens).toContain('--sh-cream:')
   expect(tokens).toContain('--sh-cream-press:')
 })
+
+test("the mockups' type roles and button shadows are defined", () => {
+  expect(tokens).toContain('@utility t-over')
+  expect(tokens).toContain('@utility t-title')
+  expect(tokens).toContain('--shadow-sticker: var(--sh-stk), var(--lit)')
+  expect(tokens).toContain('--shadow-dialog: var(--sh-dialog)')
+  expect(tokens).toContain('--sh-dialog: 0 6px 0 #0c0a08, 0 30px 60px rgba(0, 0, 0, 0.45)')
+  expect(tokens).toContain('--scrim-strong: rgba(10, 8, 6, 0.76)')
+})

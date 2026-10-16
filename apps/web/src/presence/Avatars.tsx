@@ -147,7 +147,8 @@ export function BinderAvatars() {
   const shown = people.slice(0, 3)
   const more = people.length - shown.length
   const chip =
-    'flex size-7 items-center justify-center rounded-full border-2 border-paper text-[11px] font-bold'
+    // the mockup's `.presence .avatar`: 24 px, a 2 px paper ring, overlapping 6 px
+    'flex size-6 items-center justify-center rounded-full border-2 border-paper text-[11px] font-bold'
   return (
     // biome-ignore lint/a11y/useSemanticElements: a <fieldset> is a form control group; this labels inline avatars
     <span role="group" aria-label="In the binder now" className="flex items-center -space-x-1.5">

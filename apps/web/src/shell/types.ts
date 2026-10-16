@@ -9,6 +9,8 @@ export interface Crumb {
   link?: LinkOptions
   /** Only the phone draws it (as the back button); the rail's Shows item is that link elsewhere. */
   phoneOnly?: boolean
+  /** On the phone, when this is the parent: say its name next to the back chevron ("Shows", "More"). */
+  backLabel?: boolean
 }
 
 export interface Account {

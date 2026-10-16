@@ -26,14 +26,20 @@ export function SyncStatus() {
       : state === 'Connecting'
         ? 'Syncing…'
         : 'Offline'
-  const dot = word === 'Synced' ? 'bg-ok' : word === 'Syncing…' ? 'bg-warn' : 'bg-muted'
+  // The mockup's `.sync .dot`: 7 px with a 2 px soft halo in the dot's own colour.
+  const dot =
+    word === 'Synced'
+      ? 'bg-ok shadow-[0_0_0_2px_var(--ok-soft)]'
+      : word === 'Syncing…'
+        ? 'bg-warn shadow-[0_0_0_2px_var(--warn-soft)]'
+        : 'bg-muted shadow-[0_0_0_2px_var(--muted-soft)]'
   return (
     <output
-      className="sync-status inline-flex shrink-0 items-center gap-1.5 text-[12px] text-ink-2"
+      className="sync-status inline-flex shrink-0 items-center gap-1.5 text-[12px] text-muted"
       aria-label="Sync status"
       data-state={state.toLowerCase()}
     >
-      <span aria-hidden className={`size-2 rounded-full ${dot}`} />
+      <span aria-hidden className={`size-[7px] rounded-full ${dot}`} />
       <span>{word}</span>
       {state === 'Connected' && pending > 0 && (
         <span className="pending font-mono tabular-nums"> {pending}</span>

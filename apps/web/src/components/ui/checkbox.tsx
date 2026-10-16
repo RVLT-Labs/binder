@@ -11,8 +11,10 @@ const Checkbox = React.forwardRef<
   <CheckboxPrimitive.Root
     ref={ref}
     className={cn(
-      'size-5 shrink-0 rounded-[8px] border-2 border-border bg-paper-2 transition-[background-color,border-color]',
-      'data-[state=checked]:bg-red data-[state=checked]:border-red',
+      // the mockups' `.dx-cb`: 16 px, radius 5, paper fill, ink when checked. The `after:` layer
+      // is the 44 px hit area.
+      "relative size-4 shrink-0 rounded-[5px] border-2 border-border bg-paper transition-[background-color,border-color] after:absolute after:-inset-[14px] after:content-['']",
+      'data-[state=checked]:bg-ink data-[state=checked]:border-ink',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper',
       'disabled:cursor-not-allowed disabled:opacity-45',
       className,
@@ -20,7 +22,7 @@ const Checkbox = React.forwardRef<
     {...props}
   >
     <CheckboxPrimitive.Indicator className="flex items-center justify-center">
-      <Check className="size-3.5 text-primary-foreground" strokeWidth={3} />
+      <Check className="size-2.5 text-paper" strokeWidth={3} />
     </CheckboxPrimitive.Indicator>
   </CheckboxPrimitive.Root>
 ))

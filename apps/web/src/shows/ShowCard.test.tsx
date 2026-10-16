@@ -112,3 +112,41 @@ test('a long title wraps inside the card instead of widening it', async () => {
   const link = screen.getByRole('link', { name: 'A'.repeat(60) })
   expect(link.className).toContain('[overflow-wrap:anywhere]')
 })
+
+test('lists its documents with their current version, then the cue count, then a review flag', async () => {
+  await renderCard({
+    documents: [
+      { title: 'Libretto', version: 2 },
+      { title: 'Piano-vocal', version: 1 },
+    ],
+    cueCount: 96,
+    toReview: 4,
+  })
+  const text = screen.getByRole('listitem').textContent ?? ''
+  expect(text).toContain('Libretto v2')
+  expect(text).toContain('Piano-vocal v1')
+  expect(text).toContain('96 cues')
+  expect(text).toContain('4 to review')
+})
+
+test('no review flag when nothing is waiting', async () => {
+  await renderCard({ toReview: 0 })
+  expect(screen.getByRole('listitem').textContent).not.toContain('to review')
+})
+
+test('an empty show with a script says so in a red Kalam chip, without one it just says nothing is placed', async () => {
+  await renderCard({ cueCount: 0, documents: [{ title: 'Libretto', version: 1 }] })
+  const chip = screen.getByText('script in, nothing placed yet')
+  expect(chip.className).toContain('font-hand')
+  expect(chip.className).toContain('text-red')
+  expect(chip.className).toContain('text-[15px]')
+  expect(screen.getByRole('listitem').textContent).toContain('0 cues')
+})
+
+test('an archived card is the dimmed dashed card that says exports still work', async () => {
+  await renderCard({ show: show({ status: 'archived' }) })
+  const card = screen.getByRole('listitem')
+  expect(card.className).toContain('opacity-75')
+  expect(card.className).toContain('bg-card')
+  expect(within(card).getByText('exports still work')).toBeTruthy()
+})

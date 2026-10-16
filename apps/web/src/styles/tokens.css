@@ -31,6 +31,7 @@
   --ok-soft: rgba(62, 207, 122, 0.14);
   --warn-soft: rgba(235, 165, 58, 0.15);
   --rep-soft: rgba(158, 148, 131, 0.14);
+  --muted-soft: rgba(158, 148, 131, 0.18);
   --out-soft: rgba(224, 54, 61, 0.18);
   --amber: #eba53a;
   --blue: #5b8def;
@@ -48,12 +49,15 @@
   --coral-soft: rgba(239, 126, 85, 0.15);
   --teal-soft: rgba(63, 200, 190, 0.15);
   --scrim: rgba(14, 12, 10, 0.66);
+  --scrim-strong: rgba(10, 8, 6, 0.76);
   --select: rgba(224, 54, 61, 0.2);
   --link: #5b8def;
   --sh-card: 0 3px 0 #0c0a08;
   --sh-hover: 0 7px 0 #0c0a08;
   --lit: inset 0 1px 0 rgba(255, 253, 248, 0.14);
   --sh-stk: 2px 4px 0 rgba(0, 0, 0, 0.5);
+  /* the mockups' dialog and overlay sheet: a hard drop and a soft cast */
+  --sh-dialog: 0 6px 0 #0c0a08, 0 30px 60px rgba(0, 0, 0, 0.45);
   /* === the page (DESIGN 4.2): the PDF ground and its ink, the same in every theme === */
   --page: #ffffff;
   --page-ink: #1a1715;
@@ -132,6 +136,7 @@
   --ok-soft: #e7f5ec;
   --warn-soft: #fbf0d6;
   --rep-soft: #efe9dc;
+  --muted-soft: rgba(125, 117, 101, 0.18);
   --out-soft: #fbe7e3;
   --amber: #e79a2b;
   --blue: #2f6bd6;
@@ -149,12 +154,14 @@
   --coral-soft: #fbe6db;
   --teal-soft: #dbf1ef;
   --scrim: rgba(40, 30, 15, 0.45);
+  --scrim-strong: rgba(40, 30, 15, 0.6);
   --select: rgba(193, 34, 41, 0.16);
   --link: #2f6bd6;
   --sh-card: 0 3px 0 var(--line-2);
   --sh-hover: 0 7px 0 var(--line-2);
   --lit: inset 0 1px 0 rgba(255, 253, 248, 0.14);
   --sh-stk: 2px 4px 0 rgba(40, 30, 15, 0.13);
+  --sh-dialog: 0 6px 0 var(--line-2), 0 30px 60px rgba(40, 30, 15, 0.25);
   /* === theme-dependent aliases: 2px outline = --ink on light === */
   --border: var(--ink);
 }
@@ -193,6 +200,7 @@
   --color-ok-soft: var(--ok-soft);
   --color-warn-soft: var(--warn-soft);
   --color-rep-soft: var(--rep-soft);
+  --color-muted-soft: var(--muted-soft);
   --color-out-soft: var(--out-soft);
   --color-blue-soft: var(--blue-soft);
   --color-amber-soft: var(--amber-soft);
@@ -201,6 +209,7 @@
   --color-coral-soft: var(--coral-soft);
   --color-teal-soft: var(--teal-soft);
   --color-scrim: var(--scrim);
+  --color-scrim-strong: var(--scrim-strong);
   --color-select: var(--select);
   /* the page and department defaults → bg-page, text-page-ink, bg-dept-lx… */
   --color-page: var(--page);
@@ -218,6 +227,10 @@
   --shadow-card: var(--sh-card);
   --shadow-hover: var(--sh-hover);
   --shadow-stk: var(--sh-stk);
+  /* the red button's sticker (hard drop plus the top highlight), its pressed state, and dialogs */
+  --shadow-sticker: var(--sh-stk), var(--lit);
+  --shadow-lit: var(--lit);
+  --shadow-dialog: var(--sh-dialog);
   /* shadcn role utilities → bg-primary, text-foreground, border-border, ring-ring… */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -262,4 +275,20 @@
   --font-mono: "Geist Mono", ui-monospace, monospace;
   /* radius */
   --radius: 0.875rem;
+}
+
+/* The mockups' type roles (_head.html .t-over, .t-title). */
+@utility t-over {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+@utility t-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: var(--ink);
 }

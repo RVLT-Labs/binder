@@ -1,5 +1,5 @@
-import { ChevronLeft } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { BackIcon } from '@/components/icons'
 import { SyncStatus } from '@/components/SyncStatus'
 import { cn, focusRing } from '@/lib/utils'
 import { AccountMenu } from './AccountMenu'
@@ -8,8 +8,10 @@ import type { Account, Crumb } from './types'
 
 /**
  * The top bar. Desktop and tablet (44 px): breadcrumbs on the left, then sync state, the secondary
- * actions and the one red primary on the right. Phone (56 px): a back chevron to the parent crumb,
- * the current crumb as the title, sync, the one primary and the avatar menu.
+ * actions and the one red primary on the right. Phone (56 px): a back chevron to the parent crumb
+ * (with its name when it is a tab or the shows list), the current crumb as the title, sync, the one
+ * primary and the avatar menu. A tab-level screen (Shows, Cues, Documents, Activity, More) has no
+ * back button, 16 px of left padding and a bigger title (`phoneTab`: 20 px for Shows, 22 for the rest).
  */
 export function TopBar({
   crumbs,
@@ -19,9 +21,12 @@ export function TopBar({
   actions,
   primary,
   slotRefs,
+  phoneTab,
 }: {
   crumbs: Crumb[]
   phone: boolean
+  /** The phone title size of a tab-level screen; absent on a drill-in. */
+  phoneTab?: 20 | 22
   showId?: string
   account: Account
   actions?: ReactNode
@@ -33,23 +38,32 @@ export function TopBar({
     const title = crumbs.at(-1)
     const parent = crumbs.at(-2)
     return (
-      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-line bg-paper pr-1 pl-1">
-        {parent?.link ? (
+      <header
+        className={cn(
+          'flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-paper pr-2.5',
+          phoneTab || !parent?.link ? 'pl-4' : 'pl-1',
+        )}
+      >
+        {!phoneTab && parent?.link && (
           <NavLink
             link={parent.link}
             active={false}
             label={parent.label}
             className={cn(
-              'flex size-11 shrink-0 items-center justify-center text-ink-2',
+              'flex h-11 min-w-11 shrink-0 items-center py-0 pr-1.5 pl-0.5 text-[15px] font-semibold text-ink-2',
               focusRing,
             )}
           >
-            <ChevronLeft className="size-6" strokeWidth={1.8} aria-hidden />
+            <BackIcon className="size-6" />
+            {parent.backLabel && <span aria-hidden>{parent.label}</span>}
           </NavLink>
-        ) : (
-          <span className="w-3 shrink-0" />
         )}
-        <span className="min-w-0 flex-1 truncate font-display text-[18px] font-extrabold text-ink">
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate font-display font-extrabold leading-[1.1] tracking-[-.02em] text-ink',
+            phoneTab === 22 ? 'text-[22px]' : phoneTab === 20 ? 'text-[20px]' : 'text-[19px]',
+          )}
+        >
           {title?.label}
         </span>
         <SyncStatus />
@@ -61,7 +75,7 @@ export function TopBar({
 
   const shown = crumbs.filter((c) => !c.phoneOnly)
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-paper px-4">
+    <header className="flex h-11 shrink-0 items-center gap-3.5 border-b border-line bg-paper px-3.5">
       <nav aria-label="Breadcrumb" className="min-w-0">
         <ol className="flex items-center gap-1.5 text-[13px]">
           {shown.map((crumb, i) => {
@@ -91,7 +105,7 @@ export function TopBar({
                     aria-current={last ? 'page' : undefined}
                     className={cn(
                       'max-w-[40ch] truncate',
-                      last ? 'font-bold text-ink' : 'text-muted',
+                      last ? 'font-semibold text-ink' : 'text-muted',
                     )}
                   >
                     {crumb.label}

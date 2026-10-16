@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import { useSessionUser } from '../auth/session'
 
 /** Cues and annotations on a document's current version whose status is not `ok`; `d` is the document. */
-const REVIEW_COUNT_EXPR = `(
+export const REVIEW_COUNT_EXPR = `(
     (SELECT COUNT(*) FROM cues c
       WHERE c.show_id = d.show_id
         AND json_extract(c.anchor, '$.documentVersionId') = d.current_version_id

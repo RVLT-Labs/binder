@@ -30,7 +30,7 @@ function RootLayout() {
 }
 
 /** The shell around the account's own pages. The shows home and a show draw their own shell. */
-const SHOWS_ROOT: Crumb = { label: 'Shows', link: { to: '/' }, phoneOnly: true }
+const SHOWS_ROOT: Crumb = { label: 'Shows', link: { to: '/' }, phoneOnly: true, backLabel: true }
 
 function crumbsFor(pathname: string): Crumb[] {
   if (pathname === '/settings/tokens') return [SHOWS_ROOT, { label: 'Personal access tokens' }]
