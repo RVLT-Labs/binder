@@ -64,15 +64,23 @@ export function DocumentRows({
   )
 }
 
-/** "2 current · 1 processing · 1 couldn't be processed": only the kinds there are. */
+/** Failures that are about the file itself: the mockup's "couldn’t be read". */
+const UNREADABLE = new Set(['unreadable', 'password_protected', 'no_text', 'low_resolution'])
+
+/**
+ * "2 current · 1 processing · 1 couldn’t be read": only the kinds there are. A failure that is not
+ * about the file (cancelled, timed out, did not start) is counted apart as "didn’t finish".
+ */
 export function documentsSummary(entries: DocumentsData['entries']) {
   const current = entries.filter((e) => e.kind === 'ready').length
   const processing = entries.filter((e) => e.kind === 'processing').length
-  const failed = entries.filter((e) => e.kind === 'failed').length
+  const failed = entries.filter((e) => e.kind === 'failed')
+  const unread = failed.filter((e) => e.code !== null && UNREADABLE.has(e.code)).length
   return [
     current > 0 && { n: current, text: 'current' },
     processing > 0 && { n: processing, text: 'processing' },
-    failed > 0 && { n: failed, text: 'couldn’t be processed' },
+    unread > 0 && { n: unread, text: 'couldn’t be read' },
+    failed.length - unread > 0 && { n: failed.length - unread, text: 'didn’t finish' },
   ].filter((p): p is { n: number; text: string } => p !== false)
 }
 

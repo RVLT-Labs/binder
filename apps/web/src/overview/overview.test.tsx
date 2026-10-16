@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -168,6 +169,8 @@ const processing: ProcessingEntry = {
     { key: 'layer', label: 'Build word layer', state: 'pending' },
     { key: 'reanchor', label: 'Re-anchor 96 cues', state: 'pending' },
   ],
+  sizeBytes: null,
+  canCancel: true,
 }
 const failed: FailedEntry = {
   kind: 'failed',
@@ -177,17 +180,22 @@ const failed: FailedEntry = {
   title: 'Blocking notes.pdf',
   versionNumber: null,
   currentNumber: null,
+  code: null,
+  pill: 'couldn’t be processed',
   reason: 'No text layer and OCR is off',
   detail: null,
   isNewVersion: false,
+  canRetryInPlace: false,
 }
 
 function row(entry: DocumentEntry, over: Partial<Parameters<typeof DocumentRow>[0]> = {}) {
   const onUpload = vi.fn()
   const ui = (
-    <ul>
-      <DocumentRow showId="s1" entry={entry} canUpload onUpload={onUpload} {...over} />
-    </ul>
+    <QueryClientProvider client={new QueryClient()}>
+      <ul>
+        <DocumentRow showId="s1" entry={entry} canUpload onUpload={onUpload} {...over} />
+      </ul>
+    </QueryClientProvider>
   )
   return { ui, onUpload }
 }
@@ -246,6 +254,7 @@ test('a processing row shows a progress bar with its value, the four steps and w
   expect(item.querySelector('.version-status')?.getAttribute('data-status')).toBe('processing')
   // Nothing in it claims a size or a speed the data does not have.
   expect(item.textContent).not.toMatch(/\bMB\b/)
+  expect(item.textContent).toContain('Uploaded, now extracting text')
 })
 
 test('with no page rows yet the progress bar is indeterminate: it has no value', async () => {
@@ -255,15 +264,14 @@ test('with no page rows yet the progress bar is indeterminate: it has no value',
   expect(bar.getAttribute('aria-valuetext')).toBeTruthy()
 })
 
-test('a failed row shows the reason it gives, and Upload again opens the upload; it invents no Try again or Remove', async () => {
+test('a legacy failed row (no code) shows its sentence, and Try again opens the upload for another version', async () => {
   const { ui, onUpload } = row(failed)
   await renderInRouter(ui)
   const item = screen.getByRole('listitem')
   expect(item.textContent).toContain('No text layer and OCR is off')
   expect(item.querySelector('.version-status')?.getAttribute('data-status')).toBe('failed')
-  expect(within(item).queryByRole('button', { name: 'Try again' })).toBeNull()
-  expect(within(item).queryByRole('button', { name: 'Remove' })).toBeNull()
-  fireEvent.click(within(item).getByRole('button', { name: 'Upload again' }))
+  expect(item.querySelector('.version-status')?.textContent).toBe('couldn’t be processed')
+  fireEvent.click(within(item).getByRole('button', { name: 'Try again' }))
   // A failed first upload is retried as a version of that same document, never a second document.
   expect(onUpload).toHaveBeenCalledWith(
     { kind: 'version', documentId: 'd2', documentTitle: 'Blocking notes.pdf' },
@@ -293,7 +301,7 @@ test('a failed row with nothing more to say has no Details', async () => {
   expect(document.querySelector('details')).toBeNull()
 })
 
-test('Upload again on a failed new version uploads another version of that document', async () => {
+test('Try again on a failed new version uploads another version of that document', async () => {
   const { ui, onUpload } = row({
     ...failed,
     docId: 'd1',
@@ -303,7 +311,7 @@ test('Upload again on a failed new version uploads another version of that docum
     isNewVersion: true,
   })
   await renderInRouter(ui)
-  fireEvent.click(screen.getByRole('button', { name: 'Upload again' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(onUpload).toHaveBeenCalledWith(
     { kind: 'version', documentId: 'd1', documentTitle: 'Libretto' },
     expect.anything(),

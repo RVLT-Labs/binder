@@ -1,5 +1,6 @@
+import { formatBytes } from '@binder/shared'
 import { Link } from '@tanstack/react-router'
-import { useRef } from 'react'
+import { Fragment, type ReactNode, useRef } from 'react'
 import { CheckIcon, ChevronRightIcon, MoreIcon } from '@/components/icons'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn, focusRing } from '@/lib/utils'
 import { blobUrl } from '../blobs/fetchBlob'
+import { useConfirm } from '../shell/useConfirm'
 import type {
   DocumentEntry,
   FailedEntry,
@@ -19,6 +21,7 @@ import type {
   VersionStep,
 } from './documentEntries'
 import type { UploadTarget } from './UploadDialog'
+import { useVersionActions } from './useVersionActions'
 
 export interface DocumentRowProps {
   showId: string
@@ -381,8 +384,10 @@ function Name({ title, versionNumber }: { title: string; versionNumber: number |
 }
 
 function ProcessingRow({
+  showId,
   entry,
   thumbKey,
+  canUpload,
   compact,
 }: DocumentRowProps & { entry: ProcessingEntry }) {
   const { progress } = entry
@@ -390,12 +395,15 @@ function ProcessingRow({
   const pct = known ? Math.min(100, Math.round((progress.ready / progress.total) * 100)) : null
   const queued = entry.status === 'queued'
   const reanchoring = entry.status === 'reanchoring'
+  const actions = useVersionActions(showId, entry.versionId)
+  // Cancel stops work that is running; the re-anchoring wait is past that, and a viewer cannot.
+  const cancellable = canUpload && entry.canCancel
   return (
     <li className={shell(compact, 'busy')}>
-      <div className="flex items-start gap-4">
+      <div className="flex items-start gap-4 max-md:flex-col max-md:gap-2.5">
         <Thumb thumbKey={thumbKey} dashed={!thumbKey} dim />
-        <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5 max-md:w-full">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 max-md:justify-between">
             <Name title={entry.title} versionNumber={entry.versionNumber} />
             <Badge status="neutral" size="sm">
               <span className="version-status" data-status={entry.status}>
@@ -406,11 +414,20 @@ function ProcessingRow({
           <div className="flex flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-3 text-[12.5px] text-muted">
               <span>
+                {entry.sizeBytes !== null && !reanchoring && (
+                  <>
+                    <Size bytes={entry.sizeBytes} />{' '}
+                  </>
+                )}
                 {queued
-                  ? 'Uploaded, waiting to start'
+                  ? entry.sizeBytes !== null
+                    ? 'uploaded, waiting to start'
+                    : 'Uploaded, waiting to start'
                   : reanchoring
                     ? 'Text is ready, now moving cues across'
-                    : 'Uploaded, now extracting text'}
+                    : entry.sizeBytes !== null
+                      ? 'uploaded, now extracting text'
+                      : 'Uploaded, now extracting text'}
               </span>
               {pct !== null && <span className={cn(mono, 'shrink-0 text-ink-2')}>{pct} %</span>}
             </div>
@@ -439,9 +456,64 @@ function ProcessingRow({
             </p>
           )}
         </div>
+        {cancellable && (
+          // The mockup's ghost Cancel: top right of the card, and under the text on a phone.
+          <div className="flex flex-col items-end gap-1 max-md:items-start">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!actions.online || actions.busy}
+              loading={actions.cancelling}
+              onClick={actions.cancel}
+            >
+              Cancel
+            </Button>
+            {!actions.online && <NeedsConnection />}
+          </div>
+        )}
       </div>
     </li>
   )
+}
+
+/** "12 MB" in mono (the mockup's `m("12 MB")`); on a phone the unit is sans, as `<span class="mono">12</span> MB`. */
+function Size({ bytes }: { bytes: number }) {
+  const [value, unit] = formatBytes(bytes).split(' ')
+  return (
+    <span className={mono}>
+      {value}
+      <span className="max-md:font-sans"> {unit}</span>
+    </span>
+  )
+}
+
+/** Why a button is greyed offline: cancel, try again and remove are server actions. */
+function NeedsConnection() {
+  return (
+    <span role="status" className="text-[12px] text-muted">
+      Needs a connection
+    </span>
+  )
+}
+
+/** The copy with each "72 dpi" in mono (the mockup's `m("72 dpi")`): a number with its unit. */
+function withMonoNumbers(text: string) {
+  const nodes: ReactNode[] = []
+  let from = 0
+  for (const match of text.matchAll(/\d+ dpi/g)) {
+    const at = match.index ?? 0
+    // each piece is keyed by where it starts in the text, which is stable and unique
+    if (at > from) nodes.push(<Fragment key={from}>{text.slice(from, at)}</Fragment>)
+    nodes.push(
+      <span key={at} className={mono}>
+        {match[0]}
+      </span>,
+    )
+    from = at + match[0].length
+  }
+  if (from < text.length) nodes.push(<Fragment key={from}>{text.slice(from)}</Fragment>)
+  return nodes
 }
 
 function Steps({ steps }: { steps: VersionStep[] }) {
@@ -506,36 +578,43 @@ function StepIcon({ state }: { state: VersionStep['state'] }) {
 }
 
 function FailedRow({
+  showId,
   entry,
   canUpload,
   onUpload,
   compact,
 }: DocumentRowProps & { entry: FailedEntry }) {
-  // There is no retry or remove for a version, so the way forward is another upload. It is always
-  // another version of this document: that needs only the document, and when the document has no
-  // ready version the new one becomes its current (so no second document is made).
+  const actions = useVersionActions(showId, entry.versionId)
+  const { confirm, dialog } = useConfirm('Remove upload', 'Remove')
+  // A deterministic failure would fail the same way again, so "Try again" asks for another upload.
+  // It is always another version of this document: that needs only the document, and when the
+  // document has no ready version the new one becomes its current (so no second document is made).
   const target: UploadTarget = {
     kind: 'version',
     documentId: entry.docId,
     documentTitle: entry.title || 'document',
   }
+  const name = `${entry.title}${entry.versionNumber !== null ? ` v${entry.versionNumber}` : ''}`
+  const inPlace = entry.canRetryInPlace
+  // Cancelling is the person's own choice, not a fault: it gets the quiet pill and card, no red.
+  const cancelled = entry.code === 'cancelled'
   return (
-    <li className={shell(compact, 'failed')}>
+    <li className={shell(compact, cancelled ? 'busy' : 'failed')}>
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-4">
           <Thumb dashed />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
               <Name title={entry.title} versionNumber={entry.versionNumber} />
-              <Badge status="overbooked" size="sm">
-                <span aria-hidden className="size-1.5 rounded-full bg-current" />
+              <Badge status={cancelled ? 'neutral' : 'overbooked'} size="sm">
+                {!cancelled && <span aria-hidden className="size-1.5 rounded-full bg-current" />}
                 <span className="version-status" data-status="failed">
-                  Couldn’t be processed
+                  {entry.pill}
                 </span>
               </Badge>
             </div>
             <p className="m-0 max-w-[640px] text-[12px] text-muted [overflow-wrap:anywhere]">
-              {entry.reason}
+              {withMonoNumbers(entry.reason)}
             </p>
             {entry.detail && (
               <details className="mt-1 text-[12px] text-muted">
@@ -555,19 +634,40 @@ function FailedRow({
           </div>
         </div>
         {canUpload && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="line"
-              size="sm"
-              className="md:bg-elev"
-              onClick={(e) => onUpload(target, e.currentTarget)}
-            >
-              Upload again
-            </Button>
+          <div className="flex flex-col items-start gap-1 md:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="line"
+                size="sm"
+                className="md:bg-elev"
+                disabled={inPlace && (!actions.online || actions.busy)}
+                loading={actions.retrying}
+                onClick={(e) => (inPlace ? actions.retry() : onUpload(target, e.currentTarget))}
+              >
+                Try again
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={!actions.online || actions.busy}
+                loading={actions.removing}
+                onClick={async () => {
+                  const ok = await confirm(
+                    `Remove ${name}? The file and its record go. Nothing in the script uses it.`,
+                  )
+                  if (ok) actions.remove()
+                }}
+              >
+                Remove
+              </Button>
+            </div>
+            {!actions.online && <NeedsConnection />}
           </div>
         )}
       </div>
+      {dialog}
     </li>
   )
 }
