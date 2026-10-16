@@ -294,3 +294,45 @@
 - [ ] **Step 4: Run** the whole suite: `pnpm -r typecheck`, `pnpm lint`, `pnpm test`, `cd apps/web && pnpm e2e`, `pnpm e2e:offline`, `pnpm --filter @binder/web build`.
 - [ ] **Step 5: Screenshot** every route at 390, 834 and 1280 into the scratchpad and look at each next to its mockup; fix what differs in ways DESIGN.md cares about (not pixel nits).
 - [ ] **Step 6: Commit** `feat(web): states, responsive checks and the end of styles.css`.
+
+---
+
+## Part 2: mockup features (Jayden's selection, 2026-10-16)
+
+**Spec:** `docs/superpowers/specs/2026-10-16-mockup-features.md` (binding; section numbers below refer to its "Feature N" parts). Run after Task 14 and before Task 15. Each task's tests are the ones the spec lists under its "(d) Tests" for the scope named; add them first, see them fail, implement, see them pass. API tests run from the repo root (`pnpm exec vitest run apps/api`). Migrations: generate with drizzle-kit in packages/db following existing naming; the next numbers are 0015 (export options) and 0016 (version processing controls) — renumber if one lands first.
+
+### Task F1a: Show-card pulse — core grammar and last-change API
+Spec Feature 1 (b) "Batched last change per show" and "Composing the sentence"; (e) tasks 1–2. Produces `cardSentence`, the document/revision grammar in `summariseBatch`, `toActivityGroup` extracted from `activityFeed`, service `latestChangePerShow`, route `GET /api/me/shows/last-changes`. Tests: the summarise and homePulse "last change" tests listed in (d).
+
+### Task F1b: Show-card pulse — presence summary, MCP, web
+Spec Feature 1 (b) "Presence across shows", "MCP", "Web"; (e) tasks 3–5. Produces `PresenceHub.occupants`, `presenceSummary`, `GET /api/me/shows/presence`, `list_shows` `inNow`/`lastChange`, `useShowPulse`, `AvatarStack`, the ShowCard foot (avatars + sentence + relative time; local `Updated …` fallback offline), `useNow`. Tests: (d)'s presenceHub, homePulse presence, mcp, ShowCard, useShowPulse tests and the two presence.spec e2e. The card foot must match the `home` / `phone-home` mockups.
+
+### Task F2a: Print options — shared and core
+Spec Feature 2 (b) "Shared" and "Core", including decision 1 (cue notes under the tag); (e) tasks 1–2. Produces `PrintOptions`/`printOptionsSchema`, `parsePageRange`, `normalisePageRange`, `validateExportFilename`, `scriptExportFilename` (slug form, decision 4), `buildStampItems` include filters and cue-note items, `layoutCueTags` note blocks, `stampScript` page subset and paper fit. Tests: (d)'s printOptions, stampItems and stampScript tests plus the four cue-note tests in the spec's Core note.
+
+### Task F2b: Print options — record, API, MCP
+Spec Feature 2 (b) "Record, API and MCP"; (e) tasks 3–4. Migration 0015 `export_records.options`, client schema column, route meta, `createExportRecord` file-name validation, `exportMarkedScript` options, `export_marked_script` params, `list_exports` options. Tests: (d)'s printExport, exports and mcpExports tests.
+
+### Task F2c: Print options — web dialog, preview, e2e
+Spec Feature 2 (b) "Dialog" and "Offline"; (e) tasks 5–7. `runPrintExport` options and outbox meta, `PrintDialog` two-column layout matching the `print` mockup (Layers with counts and All / Only mine, Pages Segmented + range input, Paper Segmented, Include checkboxes, preview, file name, footer), `PrintPreview`. Tests: (d)'s PrintDialog, PrintPreview, runPrintExport tests and both export e2e (online and offline).
+
+### Task F3a: Processing controls — taxonomy, schema, size capture
+Spec Feature 3 (b) "Schema", "Size capture", "Failure taxonomy"; (e) tasks 1–2. `packages/shared/src/processing.ts` (`describeFailure`, `formatBytes`), migration 0016 with backfill, client schema columns, `BlobStore.put` size, `original_size_bytes` captured at upload. Tests: (d)'s processing.test (shared), schema backfill test, documents size tests.
+
+### Task F3b: Processing controls — classification, guards, no-text detection
+Spec Feature 3 (b) "New detection" and the resurrection guards in "Cancel"; (e) tasks 3–4. `markVersionFailed` with codes, `classifyJobFailure`, `enqueueProcessing` code, conditional status updates in `processDocumentVersion`/final transaction/`processPage`, `imageStats`, `countTextChars`, the text-anchored rule (decision 3). Tests: (d)'s processing classification and detection tests and the two "not resurrected" tests.
+
+### Task F3c: Processing controls — cancellation of running work
+Spec Feature 3 (b) "Cancel" (stopping the work); (e) task 5. `runTool` signal with process-group kill (SIGTERM then SIGKILL after 5 s), `ToolError.aborted`, `watchForCancel`, `runOcrmypdf` rethrow on abort, `ProcessingCancelled` handling. Tests: (d)'s runTool and runOcrmypdf tool-wrapper tests and "cancel during OCR kills ocrmypdf within about 3 s".
+
+### Task F3d: Processing controls — services, routes, MCP
+Spec Feature 3 (b) "Cancel" (service), "Retry", "Remove", "Roles", "Routes", "MCP", change-log grammar; (e) tasks 6–7. Tests: (d)'s processingControls and mcpDocuments tests.
+
+### Task F3e: Processing controls — web rows and e2e
+Spec Feature 3 (b) "Web"; (e) tasks 8–9. `DocumentRow` processing (size + Cancel) and failed (pill, coded copy, Try again / Remove, Details) rows matching the `docs` / `m-docs` mockups, `useVersionActions`, confirm, offline-disabled buttons. Tests: (d)'s documentEntries and DocumentRow tests and `e2e/documents.spec.ts`.
+
+### Task F4a: Keep-offline — store and runner
+Spec Feature 4 (b) "Where the preference lives", "Runner", "Sign-out and user change"; (e) tasks 1–2. Tests: (d)'s runner, store and signOut tests.
+
+### Task F4b: Keep-offline — mount, switch UI, e2e
+Spec Feature 4 (b) "UI states"; (e) tasks 3–5. `KeepOfflineRunner` mounted in the root, `KeepOfflineSwitch` in the More card (matching `m-more`) and the overview's Offline card, state copy. Tests: (d)'s KeepOfflineSwitch tests and the two offline.spec e2e.
