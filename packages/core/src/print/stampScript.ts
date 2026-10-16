@@ -1,3 +1,4 @@
+import type { PaperSize } from '@binder/shared'
 import {
   appendBezierCurve,
   closePath,
@@ -40,6 +41,7 @@ import {
   type CueTagLayout,
   LEADER_WIDTH,
   layoutCueTags,
+  NOTE_FONT_SIZE,
   TAG_FONT_SIZE,
   TAG_RADIUS,
   UNDERLINE_WIDTH,
@@ -344,11 +346,14 @@ class DisplayedPage {
 }
 
 type CueItem = Extract<StampItem, { kind: 'cue' }>
+type CueNoteItem = Extract<StampItem, { kind: 'cue-note' }>
 
 interface PlacedCue {
   layout: CueTagLayout
   colour: ReturnType<typeof rgb>
   numberInk: ReturnType<typeof rgb>
+  /** The note's colour, when the cue has one. */
+  noteColour: ReturnType<typeof rgb> | null
 }
 
 /**
@@ -356,7 +361,12 @@ interface PlacedCue {
  * footer. Underlines and connectors go down first, under the annotations as on screen; the opaque
  * tags go on last. Print never fills the trigger words: the script stays as it was, underlined.
  */
-function layoutCues(pageWidth: number, pageHeight: number, items: CueItem[]): PlacedCue[] {
+function layoutCues(
+  pageWidth: number,
+  pageHeight: number,
+  items: CueItem[],
+  notes: ReadonlyMap<string, CueNoteItem>,
+): PlacedCue[] {
   const extent = items.find((c) => c.textExtent)?.textExtent ?? null
   const inputs: CueTagInput[] = items.map((c) => ({
     id: c.id,
@@ -369,6 +379,7 @@ function layoutCues(pageWidth: number, pageHeight: number, items: CueItem[]): Pl
     triggerBoxes: c.triggerBoxes,
     anchorX: c.x,
     sortKey: c.sortKey,
+    note: toWinAnsi(notes.get(c.id)?.text ?? ''),
   }))
   const layouts = layoutCueTags({
     pageWidth,
@@ -380,8 +391,11 @@ function layoutCues(pageWidth: number, pageHeight: number, items: CueItem[]): Pl
     layout,
     colour: colourOf((items[i] as CueItem).colour),
     numberInk: colourOf((items[i] as CueItem).numberInk),
+    noteColour: noteColourOf(notes.get((items[i] as CueItem).id)),
   }))
 }
+
+const noteColourOf = (note: CueNoteItem | undefined) => (note ? colourOf(note.colour) : null)
 
 function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
   for (const u of t.underlines) d.line(u.x1, u.y, u.x2, u.y, colour, UNDERLINE_WIDTH)
@@ -408,6 +422,13 @@ function drawTag(
   })
   if (t.lead) d.centredText(t.lead, t.leadX, t.centreY, TAG_FONT_SIZE, colour)
   d.centredText(t.number, t.numberX, t.centreY, TAG_FONT_SIZE, numberInk, true)
+}
+
+/** The cue's note: one line of 7 pt text in the department colour, under the tag. */
+function drawNote(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
+  if (!t.note) return
+  const { box, text } = t.note
+  d.centredText(text, box.x, box.y + box.h / 2, NOTE_FONT_SIZE, colour)
 }
 
 function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'annotation' }>) {
@@ -504,26 +525,54 @@ function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'anno
   }
 }
 
+/** The paper sizes in points, portrait. */
+export const PAPER_POINTS: Record<PaperSize, { width: number; height: number }> = {
+  A4: { width: 595.28, height: 841.89 },
+  Letter: { width: 612, height: 792 },
+}
+/** A page this close to the paper's size (each side) is left as it is. */
+const FIT_TOLERANCE = 0.03
+
+export interface StampOptions {
+  /** Zero-based indices of the pages to keep; the output has just these, in page order. */
+  pages?: readonly number[]
+  /** Fit every page to this paper, centred and scaled to fit, the sheet turned to match the page. */
+  paper?: PaperSize
+}
+
 /**
- * The script PDF with its markup drawn on: cue tags, annotations, and a footer on every page.
- * Pages are only drawn on, so sizes, boxes, rotation and the invisible text layer are untouched.
- * Item coordinates are displayed page space, relative to each page's visible box; items for
- * pages the PDF does not have are skipped.
+ * The script PDF with its markup drawn on: cue tags (and their notes), annotations, and a footer
+ * on every page. Item coordinates are displayed page space, relative to each page's visible box;
+ * items for pages the PDF does not have, or that `pages` leaves out, are skipped.
+ *
+ * Without options pages are only drawn on, so sizes, boxes, rotation and the invisible text layer
+ * are untouched. `pages` copies the chosen pages into a fresh document, so the rest of the script
+ * is not carried along. `paper` then wraps each stamped page that is not already within 3% of the
+ * paper in a page of that paper, scaled to fit and centred; the wrapped page is a form XObject, so
+ * its text still reads, and the footer scales with the page.
  */
 export async function stampScript(
   pdf: Uint8Array,
   items: StampItem[],
   footer: FooterInfo,
+  opts: StampOptions = {},
 ): Promise<Uint8Array> {
-  const doc = await PDFDocument.load(pdf, { updateMetadata: false })
+  const src = await PDFDocument.load(pdf, { updateMetadata: false })
+  const { doc, remap } = await subset(src, opts.pages)
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const boldFont = await doc.embedFont(StandardFonts.HelveticaBold)
   const pages = doc.getPages()
   const drawers = pages.map((page) => new DisplayedPage(page, frameOf(page), font, boldFont))
 
-  const cuesByPage = new Map<number, CueItem[]>()
+  const kept: StampItem[] = []
   for (const item of items) {
-    if (!drawers[item.pageIndex]) continue
+    const pageIndex = remap(item.pageIndex)
+    if (pageIndex !== undefined && drawers[pageIndex]) kept.push({ ...item, pageIndex })
+  }
+  const notes = new Map<string, CueNoteItem>()
+  for (const item of kept) if (item.kind === 'cue-note') notes.set(item.cueId, item)
+  const cuesByPage = new Map<number, CueItem[]>()
+  for (const item of kept) {
     if (item.kind === 'cue')
       cuesByPage.set(item.pageIndex, [...(cuesByPage.get(item.pageIndex) ?? []), item])
   }
@@ -533,23 +582,97 @@ export async function stampScript(
     const quarter = frame.rotation === 90 || frame.rotation === 270
     placed.set(
       pageIndex,
-      layoutCues(quarter ? frame.h : frame.w, quarter ? frame.w : frame.h, cues),
+      layoutCues(quarter ? frame.h : frame.w, quarter ? frame.w : frame.h, cues, notes),
     )
   }
   // Underlines and connectors first, then the annotations, then the tags, which are opaque and
-  // so sit on top of everything: the order the screen draws in.
+  // so sit on top of everything: the order the screen draws in. Notes go last: they sit in the
+  // margin, clear of the tags.
   for (const [pageIndex, cues] of placed)
     for (const { layout, colour } of cues)
       drawTrigger(drawers[pageIndex] as DisplayedPage, layout, colour)
-  for (const item of items) {
+  for (const item of kept) {
     const d = drawers[item.pageIndex]
     if (d && item.kind === 'annotation') drawAnnotation(d, item)
   }
   for (const [pageIndex, cues] of placed)
     for (const { layout, colour, numberInk } of cues)
       drawTag(drawers[pageIndex] as DisplayedPage, layout, colour, numberInk)
+  for (const [pageIndex, cues] of placed)
+    for (const { layout, noteColour } of cues)
+      if (noteColour) drawNote(drawers[pageIndex] as DisplayedPage, layout, noteColour)
 
   const line = footerText(footer)
   for (const d of drawers) d.text(line, FOOTER_LEFT, FOOTER_BOTTOM, FOOTER_SIZE, FOOTER_GREY)
+  if (opts.paper) await fitToPaper(doc, opts.paper)
   return doc.save()
+}
+
+/**
+ * The document to stamp: `src` itself, or when `pages` is given a fresh one holding copies of just
+ * those pages (pdf-lib's `removePage` leaves the orphaned objects in the file, copying does not).
+ * `remap` gives a source page's index in that document, or undefined when it was left out.
+ */
+async function subset(
+  src: PDFDocument,
+  pages: readonly number[] | undefined,
+): Promise<{ doc: PDFDocument; remap: (sourceIndex: number) => number | undefined }> {
+  if (!pages) return { doc: src, remap: (i) => i }
+  const count = src.getPageCount()
+  const keep = [...new Set(pages)].sort((a, b) => a - b)
+  if (keep.length === 0) throw new RangeError('Choose at least one page to print.')
+  const bad = keep.find((i) => !Number.isInteger(i) || i < 0 || i >= count)
+  if (bad !== undefined)
+    throw new RangeError(`Page ${bad + 1} is not in this ${count}-page script.`)
+  const doc = await PDFDocument.create({ updateMetadata: false })
+  for (const page of await doc.copyPages(src, keep)) doc.addPage(page)
+  const out = new Map(keep.map((from, to) => [from, to]))
+  return { doc, remap: (i) => out.get(i) }
+}
+
+/** Where displayed space sits in a page's user space, as a form matrix (the inverse of `displayedToUser`). */
+function toDisplayedMatrix(f: PageFrame): [number, number, number, number, number, number] {
+  switch (f.rotation) {
+    case 90:
+      return [0, -1, 1, 0, -f.by, f.bx + f.w]
+    case 180:
+      return [-1, 0, 0, -1, f.bx + f.w, f.by + f.h]
+    case 270:
+      return [0, 1, -1, 0, f.by + f.h, -f.bx]
+    default:
+      return [1, 0, 0, 1, -f.bx, -f.by]
+  }
+}
+
+/**
+ * Replaces each page that is not already within 3% of `paper` (in both directions, with the sheet
+ * turned to the page's orientation) by a page of the paper that draws the old one, scaled to fit
+ * and centred. The old page is embedded by its visible box and `/Rotate`, the frame the stamps
+ * use, so the new page is upright with no rotation of its own.
+ */
+async function fitToPaper(doc: PDFDocument, paper: PaperSize): Promise<void> {
+  const { width: pw, height: ph } = PAPER_POINTS[paper]
+  const pages = doc.getPages()
+  for (const [i, page] of pages.entries()) {
+    const frame = frameOf(page)
+    const quarter = frame.rotation === 90 || frame.rotation === 270
+    const w = quarter ? frame.h : frame.w
+    const h = quarter ? frame.w : frame.h
+    const [tw, th] = w > h ? [ph, pw] : [pw, ph]
+    if (Math.abs(w / tw - 1) <= FIT_TOLERANCE && Math.abs(h / th - 1) <= FIT_TOLERANCE) continue
+    const embedded = await doc.embedPage(
+      page,
+      { left: frame.bx, bottom: frame.by, right: frame.bx + frame.w, top: frame.by + frame.h },
+      toDisplayedMatrix(frame),
+    )
+    const scale = Math.min(tw / w, th / h)
+    const sheet = doc.insertPage(i, [tw, th])
+    sheet.drawPage(embedded, {
+      x: (tw - w * scale) / 2,
+      y: (th - h * scale) / 2,
+      xScale: scale,
+      yScale: scale,
+    })
+    doc.removePage(i + 1)
+  }
 }

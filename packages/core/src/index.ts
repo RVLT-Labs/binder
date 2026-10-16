@@ -43,6 +43,9 @@ export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
   LEADER_WIDTH,
   layoutCueTags,
+  NOTE_FONT_SIZE,
+  NOTE_HEIGHT,
+  NOTE_MIN_COLUMN,
   SELECTED_FILL_OPACITY,
   TAG_FONT_SIZE,
   TAG_RADIUS,
@@ -55,10 +58,10 @@ export { asCueType, markerLead, markerText, markerTypeWord } from './markup/mark
 export { wordBoxes } from './markup/wordBoxes'
 export type { FooterInfo } from './print/footer'
 export { footerText, layerSelectionLabel } from './print/footer'
-export type { StampInput, StampItem } from './print/stampItems'
+export type { StampInclude, StampInput, StampItem } from './print/stampItems'
 export { buildStampItems, PAGE_INK } from './print/stampItems'
-export type { PageFrame } from './print/stampScript'
-export { displayedToUser, stampScript } from './print/stampScript'
+export type { PageFrame, StampOptions } from './print/stampScript'
+export { displayedToUser, PAPER_POINTS, stampScript } from './print/stampScript'
 export { toWinAnsi } from './print/winAnsi'
 export { normaliseToken } from './search/normalise'
 export type { DocHit, Hit } from './search/search'

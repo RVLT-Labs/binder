@@ -50,6 +50,17 @@ export type StampItem =
       textExtent: TextExtent | null
     }
   | {
+      /** The one-line note printed under a cue's tag; lays out and draws with its `cue` item. */
+      kind: 'cue-note'
+      /** The `id` of the cue item this note belongs to. */
+      cueId: string
+      pageIndex: number
+      /** The note with its whitespace collapsed; never empty. */
+      text: string
+      /** The department colour: the note is drawn in it. */
+      colour: string
+    }
+  | {
       kind: 'annotation'
       pageIndex: number
       x: number
@@ -64,6 +75,16 @@ export type StampItem =
       /** A highlight's rectangles, one per covered line; empty when its words are not bound. */
       wordBoxes: Box[]
     }
+
+/** What a print leaves in or out; every flag defaults to true. */
+export interface StampInclude {
+  /** False keeps only `go` cues: no standby or warn tags. */
+  standbyWarn?: boolean
+  /** False draws no annotations (highlights, notes, shapes, stamps). */
+  annotations?: boolean
+  /** False prints no cue note under the tags. */
+  cueNotes?: boolean
+}
 
 export interface StampInput {
   versionId: string
@@ -81,6 +102,7 @@ export interface StampInput {
   settings: Record<string, unknown>
   /** The word layers of the pages that have a bound cue or highlight, by page index. */
   wordLayers: ReadonlyMap<number, WordLayer>
+  include?: StampInclude
 }
 
 const onVersion = (a: Anchor | null, versionId: string): a is Anchor =>
@@ -98,8 +120,13 @@ export function buildStampItems(input: StampInput): StampItem[] {
   const selected = new Set(input.layers.map(layerKey))
   const departments = new Map(input.departments.map((d) => [d.id, d]))
   const items: StampItem[] = []
+  const include = {
+    standbyWarn: input.include?.standbyWarn ?? true,
+    annotations: input.include?.annotations ?? true,
+    cueNotes: input.include?.cueNotes ?? true,
+  }
 
-  for (const a of input.annotations) {
+  for (const a of include.annotations ? input.annotations : []) {
     if (!onVersion(a.anchor, input.versionId)) continue
     if (!selected.has(layerKey({ kind: a.layerKind, id: a.layerId }))) continue
     const dept = a.layerKind === 'department' ? departments.get(a.layerId) : undefined
@@ -127,6 +154,7 @@ export function buildStampItems(input: StampInput): StampItem[] {
 
   for (const c of input.cues) {
     if (!onVersion(c.anchor, input.versionId)) continue
+    if (!include.standbyWarn && c.type !== 'go') continue
     if (!selected.has(layerKey({ kind: 'department', id: c.departmentId }))) continue
     const dept = departments.get(c.departmentId)
     if (!dept) continue
@@ -148,6 +176,16 @@ export function buildStampItems(input: StampInput): StampItem[] {
       triggerBoxes: words && c.anchor.text ? wordBoxes(words, c.anchor.text) : [],
       textExtent: textExtent(words),
     })
+    const note = c.notes.replace(/\s+/g, ' ').trim()
+    if (include.cueNotes && note !== '') {
+      items.push({
+        kind: 'cue-note',
+        cueId: c.id,
+        pageIndex: c.anchor.pageIndex,
+        text: note,
+        colour: dept.colour,
+      })
+    }
   }
   return items
 }

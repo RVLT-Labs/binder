@@ -39,6 +39,14 @@ const STRAIGHT_TOLERANCE = 1
 export const DEFAULT_MARGIN = 56
 /** The air kept between a tag and the text block. */
 export const TEXT_CLEARANCE = 4
+/** A cue note is one line of Helvetica this size under its tag, in a block this high. */
+export const NOTE_FONT_SIZE = 7
+export const NOTE_HEIGHT = 9
+/** A note's column is the margin less this (the gaps at the page edge and at the text block). */
+export const NOTE_COLUMN_INSET = 8
+/** A column narrower than this draws no note. */
+export const NOTE_MIN_COLUMN = 40
+const ELLIPSIS = '…'
 
 /** The horizontal extent of a page's text block: its leftmost word's left edge and rightmost word's right edge. */
 export interface TextExtent {
@@ -91,6 +99,8 @@ export interface CueTagInput {
   triggerBoxes: readonly Box[]
   /** The cue's anchor x: where an unbound cue's tick stands. */
   anchorX: number
+  /** The cue's note, printed in one line under the tag; empty or absent for none. */
+  note?: string
   /** Cues on one line are ordered by department sort order, then cue number, then id. */
   sortKey: { department: number; major: number; minor: number }
 }
@@ -107,6 +117,12 @@ export interface CueTagLayout {
   lead: string
   number: string
   tag: Box
+  /**
+   * The note under the tag: its text, cut with an ellipsis to the tag column, and its box (a block
+   * `NOTE_HEIGHT` high directly under the tag, flush with the tag's outer edge; `w` is the text's
+   * width). Null when the cue has no note or the column is under `NOTE_MIN_COLUMN` wide.
+   */
+  note: { text: string; box: Box } | null
   /** Left edges of the lead and the number; both are centred vertically on `centreY`. */
   leadX: number
   numberX: number
@@ -131,7 +147,8 @@ export interface CueTagLayout {
  *
  * Down each side tags are placed top to bottom in page order (higher y first, ties by department,
  * number, id). A tag stays level with its own line unless it would overlap the tag just above it;
- * then it is pushed down to 2 points below that one. Finally the stack is held inside `bounds`: a
+ * then it is pushed down to 2 points below that one. A tag with a note counts as the tag plus the
+ * note's 9 points, so a tag never lands on a note. Finally the stack is held inside `bounds`: a
  * tag below `minY` is lifted to it, and the tags above are lifted in turn if they would overlap;
  * nothing goes above `maxY`. The result is in the order of `cues`.
  */
@@ -148,6 +165,18 @@ export function layoutCueTags(input: {
   const right = input.textExtent
     ? input.textExtent.maxX + TEXT_CLEARANCE
     : pageWidth - DEFAULT_MARGIN
+  // Where the text block starts and ends: the connector's gutters sit just outside it.
+  const textEdges = {
+    left: input.textExtent ? input.textExtent.minX : DEFAULT_MARGIN,
+    right: input.textExtent ? input.textExtent.maxX : pageWidth - DEFAULT_MARGIN,
+  }
+  // A note's column: the margin between the page edge and the text block, less 8.
+  const columns = {
+    left: textEdges.left - NOTE_COLUMN_INSET,
+    right: pageWidth - textEdges.right - NOTE_COLUMN_INSET,
+  }
+  const notes = cues.map((c) => fitNote(c.note, columns[c.side]))
+  const noteExtra = notes.map((n) => (n ? NOTE_HEIGHT : 0))
   const fitted = cues.map((c) => {
     const room = (c.side === 'left' ? left : pageWidth - right) - TAG_EDGE
     // The department goes first, then the type word: the outline carries the type, but a word is
@@ -166,12 +195,7 @@ export function layoutCueTags(input: {
     order.forEach((i, k) => {
       rank.set(i, k)
     })
-    stackSide(order, cues, centres, bounds)
-  }
-  // Where the text block starts and ends: the connector's gutters sit just outside it.
-  const textEdges = {
-    left: input.textExtent ? input.textExtent.minX : DEFAULT_MARGIN,
-    right: input.textExtent ? input.textExtent.maxX : pageWidth - DEFAULT_MARGIN,
+    stackSide(order, cues, noteExtra, centres, bounds)
   }
   const targets = cues.map((c) => markTarget(c))
   const offsets = leaderOffsets(cues, targets, rank)
@@ -180,6 +204,7 @@ export function layoutCueTags(input: {
       c,
       (fitted[i] as { lead: string }).lead,
       (fitted[i] as { w: number }).w,
+      notes[i] ?? null,
       centres[i] as number,
       pageWidth,
       textEdges,
@@ -192,6 +217,8 @@ export function layoutCueTags(input: {
 function stackSide(
   order: number[],
   cues: readonly CueTagInput[],
+  /** The points a note adds under each tag: 0 or `NOTE_HEIGHT`. */
+  extra: readonly number[],
   centres: number[],
   bounds: { minY: number; maxY: number },
 ) {
@@ -199,20 +226,24 @@ function stackSide(
   let above: number | undefined
   for (const i of order) {
     const y = (cues[i] as CueTagInput).y
+    const below = above === undefined ? 0 : (extra[above] as number)
     centres[i] =
-      above !== undefined && y > (centres[above] as number) - TAG_HEIGHT
-        ? (centres[above] as number) - step
+      above !== undefined && y > (centres[above] as number) - TAG_HEIGHT - below
+        ? (centres[above] as number) - step - below
         : y
     above = i
   }
   // Bottom up: lift what is below the floor, and whatever it then overlaps, in turn.
-  const floor = bounds.minY + TAG_HEIGHT / 2
   for (let k = order.length - 1; k >= 0; k--) {
     const i = order[k] as number
+    // A note hangs below its tag, so the tag is lifted that much further off the floor.
+    const floor = bounds.minY + TAG_HEIGHT / 2 + (extra[i] as number)
     if ((centres[i] as number) < floor) centres[i] = floor
     const up = order[k - 1]
-    if (up !== undefined && (centres[up] as number) - (centres[i] as number) < TAG_HEIGHT) {
-      centres[up] = (centres[i] as number) + step
+    if (up === undefined) continue
+    const held = extra[up] as number
+    if ((centres[up] as number) - (centres[i] as number) < TAG_HEIGHT + held) {
+      centres[up] = (centres[i] as number) + step + held
     }
   }
   // Nothing leaves the page at the top, even if a dense cluster has to overlap there.
@@ -272,6 +303,7 @@ function layoutOne(
   c: CueTagInput,
   lead: string,
   w: number,
+  note: string | null,
   centre: number,
   pageWidth: number,
   textEdges: { left: number; right: number },
@@ -280,6 +312,12 @@ function layoutOne(
   const left = c.side === 'left'
   const x = left ? TAG_EDGE : pageWidth - TAG_EDGE - w
   const tag: Box = { x, y: centre - TAG_HEIGHT / 2, w, h: TAG_HEIGHT }
+  const noteBox = note
+    ? {
+        text: note,
+        box: noteBoxUnder(tag, note, left),
+      }
+    : null
   const leadX = x + TAG_PAD
   const numberX = lead === '' ? leadX : leadX + helveticaWidth(lead, TAG_FONT_SIZE) + TAG_TEXT_GAP
   const underlines = c.triggerBoxes.map((b) => ({
@@ -308,6 +346,7 @@ function layoutOne(
     lead,
     number: c.number,
     tag,
+    note: noteBox,
     leadX,
     numberX,
     triggerBoxes: c.triggerBoxes.map((b) => ({ ...b })),
@@ -315,6 +354,31 @@ function layoutOne(
     tick,
     leader,
   }
+}
+
+/**
+ * A cue note cut to the column it prints in: whitespace collapsed, and if it is wider than the
+ * column, the longest start of it that fits with an ellipsis. Null when there is no note or the
+ * column is narrower than `NOTE_MIN_COLUMN`.
+ */
+function fitNote(note: string | undefined, column: number): string | null {
+  const text = (note ?? '').replace(/\s+/g, ' ').trim()
+  if (text === '' || column < NOTE_MIN_COLUMN) return null
+  if (helveticaWidth(text, NOTE_FONT_SIZE) <= column) return text
+  const chars = [...text]
+  let n = chars.length
+  while (
+    n > 0 &&
+    helveticaWidth(chars.slice(0, n).join('').trimEnd() + ELLIPSIS, NOTE_FONT_SIZE) > column
+  )
+    n--
+  return chars.slice(0, n).join('').trimEnd() + ELLIPSIS
+}
+
+/** The block under a tag that holds its note, flush with the tag's outer (page-edge) side. */
+function noteBoxUnder(tag: Box, text: string, left: boolean): Box {
+  const w = helveticaWidth(text, NOTE_FONT_SIZE)
+  return { x: left ? tag.x : tag.x + tag.w - w, y: tag.y - NOTE_HEIGHT, w, h: NOTE_HEIGHT }
 }
 
 /**
