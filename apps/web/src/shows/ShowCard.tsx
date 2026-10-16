@@ -161,14 +161,14 @@ export function ShowCard({
               </Badge>
             )}
           </div>
-          <div className="mt-auto flex items-center justify-between gap-2">
+          <div className="mt-auto flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
             {cueCount === 0 && (
-              <span className="inline-flex items-center rounded-[var(--r)] border border-line-2 px-2.5 py-1.5 font-hand text-[15px] leading-snug text-red">
+              <span className="inline-flex items-center whitespace-nowrap rounded-[var(--r)] border border-line-2 px-2.5 py-1.5 font-hand text-[15px] leading-snug text-red">
                 {documents.length > 0 ? 'script in, nothing placed yet' : 'nothing placed yet'}
               </span>
             )}
             {ago && (
-              <span className="ml-auto text-[12px] text-muted">
+              <span className="ml-auto whitespace-nowrap text-[12px] text-muted">
                 Updated{' '}
                 <time dateTime={show.updated_at ?? undefined} className="font-mono tabular-nums">
                   {ago}

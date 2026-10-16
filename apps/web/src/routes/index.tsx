@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { ShowRow } from '../powersync/schema'
 import { AppShell } from '../shell/AppShell'
+import { useLastShowId } from '../shell/lastShow'
 import { useAccount } from '../shell/useAccount'
 import { firstName, greeting } from '../shows/greeting'
 import { NewShowDialog } from '../shows/NewShowDialog'
@@ -27,6 +28,7 @@ function HomePage() {
     () => (counting ? undefined : Object.fromEntries(counts.map((c) => [c.show_id, c.n]))),
     [counts, counting],
   )
+  const lastShowId = useLastShowId(account.email)
   const orgName = useOrgName(account.email)
   const summaries = useShowSummaries()
   // The control that opened the dialog, so focus can go back to it.
@@ -35,6 +37,7 @@ function HomePage() {
   return (
     <AppShell
       crumbs={[{ label: 'Shows' }]}
+      lastShowId={lastShowId}
       account={account}
       primary={
         <Button type="button" className="max-md:mx-2" onClick={(e) => setOpener(e.currentTarget)}>

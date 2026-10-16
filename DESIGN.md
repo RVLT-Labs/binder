@@ -34,7 +34,7 @@ Binder additions:
 - **Every cue number, page number, version, time, count, file name and key cap is Geist Mono with tabular figures**, everywhere: tags on screen, tables, cards, the palette, the keypad, history rows. Columns of numbers must line up.
 - **The script's own text is never restyled.** Binder draws over the PDF; it never reflows or re-fonts it.
 - **Markup type on the page** (tag lead and number, stamps, notes) is Helvetica-metric (`helveticaWidth` in core) on screen and Helvetica in print, so screen and paper measure identically. This is the one place Binder's UI fonts are not used, by design.
-- 11 px floor, sentence case everywhere, uppercase only for over-labels with letter-spacing (Flow §Type Rules).
+- 11 px floor, sentence case everywhere, over-labels included (the mockups' `.t-over`: 11 px / 600, .02em tracking, muted; no uppercase).
 
 ## 4. Colour
 
@@ -102,7 +102,7 @@ Calling mode is designed for the tablet first (iPad landscape and portrait), and
 ### 6.2 Desktop shell
 
 - **Rail** 56 px, `--paper-2`, right rule `--line`. Top: the Binder mark (28 px). Items 44 × 44, icon over an 10 px label. Module hues: Script blue, Cues amber, Docs teal, Activity purple, Exports green; the active item takes its hue's soft fill and colour with `--sh-card`. Foot: Shows, then the user's avatar.
-- **Top bar** 44 px, `--paper`, bottom rule `--line`: breadcrumbs (show / document, current item bold), version chip, then on the right sync state, presence avatars, secondary actions, and the one red primary.
+- **Top bar** 44 px, `--paper`, bottom rule `--line`: breadcrumbs (show / document, current item bold), version chip, then on the right sync state, presence avatars, secondary actions, and the primary button (red).
 - **Content** on `--paper`, 28–32 px padding, sections labelled with Flow's section-label (over-label plus rule).
 - **Script screen**: thumbnails column (92 px) · the page centred on a `#0E0C0A` stage with a floating tool strip at its left edge · the right panel (340 px, `--paper-2`, tabs Cue / Layers / History / Review). A 26 px status bar at the bottom: page n of N, snap state, active layer, the four shortcuts people forget (`c` `]` `g` `⌘K`).
 

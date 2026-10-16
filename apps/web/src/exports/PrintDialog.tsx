@@ -222,7 +222,7 @@ export function PrintDialog({
             {error}
           </p>
         )}
-        <DialogFooter className="mt-2">
+        <DialogFooter divided className="mt-2">
           <Button
             type="button"
             variant="line"

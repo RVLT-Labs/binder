@@ -43,14 +43,20 @@ function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLHeadingE
 }
 
 /**
- * Right-aligned actions under a rule (the print sheet's footer); stacked full-width on phones.
- * For the wizard's full-bleed footer bar (a `paper-2` bar with a top rule) use `DialogFooterBar`.
+ * Right-aligned actions, stacked full-width on phones. `divided` draws the rule above them that
+ * the print sheet's footer has (`.dx-sh-foot`); the confirm and upload dialogs have none in the
+ * mockups. For the wizard's full-bleed footer bar (a `paper-2` bar with a top rule) use `DialogFooterBar`.
  */
-function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+function DialogFooter({
+  className,
+  divided = false,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & { divided?: boolean }) {
   return (
     <div
       className={cn(
-        'mt-6 flex flex-col gap-2 border-t border-line pt-3.5 md:flex-row md:justify-end [&>*]:w-full md:[&>*]:w-auto',
+        'mt-6 flex flex-col gap-2 md:flex-row md:justify-end [&>*]:w-full md:[&>*]:w-auto',
+        divided && 'border-t border-line pt-3.5',
         className,
       )}
       {...props}

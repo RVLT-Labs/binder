@@ -5,6 +5,7 @@ import type { ShowRow } from '../powersync/schema'
 import { BinderAvatars } from '../presence/Avatars'
 import { PresenceProvider } from '../presence/PresenceProvider'
 import { AppShell } from '../shell/AppShell'
+import { useRememberShow } from '../shell/lastShow'
 import { useAccount } from '../shell/useAccount'
 import { useShowCrumbs } from '../shell/useShowCrumbs'
 
@@ -23,6 +24,7 @@ function ShowLayout() {
   const account = useAccount()
   const { data, isLoading } = useQuery<ShowRow>('SELECT * FROM shows WHERE id = ?', [showId])
   const show = data[0]
+  useRememberShow(account.email, showId, Boolean(show))
   const crumbs = useShowCrumbs(showId, show?.title ?? undefined)
   const leaf = useMatches({ select: (matches) => matches.at(-1)?.routeId })
   // The document lays out and scrolls its own panels, so it gets the content area to itself.

@@ -173,10 +173,9 @@ describe('AppShell rail', () => {
 
   it('draws the destinations of the show last opened outside a show, none of them current', async () => {
     setWidth(1280)
-    localStorage.setItem('binder.lastShow.jayden@example.test', 's9')
     await renderAt(
       '/',
-      <AppShell crumbs={[{ label: 'Shows' }]} account={account()}>
+      <AppShell crumbs={[{ label: 'Shows' }]} account={account()} lastShowId="s9">
         <h1>Shows</h1>
       </AppShell>,
     )
@@ -191,17 +190,6 @@ describe('AppShell rail', () => {
     const shows = within(rail).getByRole('link', { name: 'Shows' })
     expect(shows.getAttribute('aria-current')).toBe('page')
     expect(shows.className).toContain('text-muted')
-  })
-
-  it('remembers the show it is in, so the home can point back at it', async () => {
-    setWidth(1280)
-    await renderAt(
-      '/shows/s1',
-      <AppShell showId="s1" crumbs={crumbs} account={account()}>
-        <h1>Overview</h1>
-      </AppShell>,
-    )
-    expect(localStorage.getItem('binder.lastShow.jayden@example.test')).toBe('s1')
   })
 })
 

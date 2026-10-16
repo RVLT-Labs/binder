@@ -8,6 +8,7 @@ import { useSessionUser } from '../auth/session'
 import { PowerSyncProvider } from '../powersync/provider'
 import type { RouterContext } from '../router'
 import { AppShell } from '../shell/AppShell'
+import { useLastShowId } from '../shell/lastShow'
 import type { Crumb } from '../shell/types'
 import { useAccount } from '../shell/useAccount'
 
@@ -40,11 +41,12 @@ function crumbsFor(pathname: string): Crumb[] {
 function SignedIn() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const account = useAccount()
+  const lastShowId = useLastShowId(account.email)
   // A show's screens are drawn by the show route, which knows the show for the rail and the crumbs;
   // the shows home draws its own too, for the one primary action in the top bar.
   if (pathname === '/' || pathname.startsWith('/shows/')) return <Outlet />
   return (
-    <AppShell crumbs={crumbsFor(pathname)} account={account}>
+    <AppShell crumbs={crumbsFor(pathname)} account={account} lastShowId={lastShowId}>
       <Outlet />
     </AppShell>
   )

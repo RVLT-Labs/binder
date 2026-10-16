@@ -247,7 +247,8 @@ describe('form controls and chrome (mockup _head.html)', () => {
       </DialogShell>,
     ).className
     expect(shell).toContain('shadow-dialog')
-    expect(first(<DialogFooter />).className).toContain('border-t')
+    expect(first(<DialogFooter />).className).not.toContain('border-t')
+    expect(first(<DialogFooter divided />).className).toContain('border-t')
     const bar = first(<DialogFooterBar />).className
     expect(bar).toContain('bg-paper-2')
     expect(bar).toContain('border-t')
