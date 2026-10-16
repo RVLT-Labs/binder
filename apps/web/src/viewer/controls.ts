@@ -13,10 +13,9 @@ export const TABLET_PAGE_GUTTER = 91
 /** At phone width there is no strip beside the page, so the gutters shrink to a thumb's margin. */
 export const PHONE_PAGE_GUTTER = 12
 /** Room for a classic scrollbar, so fit width never scrolls sideways. */
-const SCROLLBAR_ROOM = 16
-/** What fit width leaves out of the stage's width: both gutters plus the scrollbar. */
-export const fitAllowance = (gutter: number) => 2 * gutter + SCROLLBAR_ROOM
-export const FIT_ALLOWANCE = fitAllowance(PAGE_GUTTER)
+export const SCROLLBAR_ROOM = 16
+/** What fit width leaves out of the stage's width: both gutters plus the scrollbar (`room`). */
+export const fitAllowance = (gutter: number, room: number = SCROLLBAR_ROOM) => 2 * gutter + room
 
 const STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4]
 const EPSILON = 1e-6

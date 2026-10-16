@@ -90,14 +90,18 @@ const markerBox = (page: Page, id: string) => marker(page, id).locator('.cue-tag
 const cueEditor = (page: Page) => page.getByRole('region', { name: 'Cue editor' })
 const annotationEditor = (page: Page) => page.getByRole('region', { name: 'Annotation editor' })
 
-/** Selects the cue's marker and opens the History disclosure under its editor. */
+/** The context panel's tabs: Cue (the editor), Layers, History and Review. */
+const panelTab = (page: Page, name: string) => page.getByRole('tab', { name, exact: true })
+/** The History tab's content: the selected row's change log. */
+const historyRegion = (page: Page) => page.getByRole('region', { name: 'History' })
+
+/** Selects the cue's marker and opens the panel's History tab. */
 async function openCueHistory(page: Page, id: string) {
   await expect(marker(page, id)).toBeVisible(SYNC)
   await markerBox(page, id).click()
   await expect(marker(page, id)).toHaveAttribute('data-selected', 'true')
-  const history = cueEditor(page).getByRole('region', { name: 'History' })
-  await history.getByRole('button', { name: 'History', exact: true }).click()
-  return history
+  await panelTab(page, 'History').click()
+  return historyRegion(page)
 }
 
 const localClock = (iso: string) => {
@@ -277,8 +281,8 @@ test("an annotation's History tab lists its text edit and reverts it", async ({ 
       await expect.poll(() => annotationText(a.page, id)).toBe('Bring up house lights')
       await uploaded(a.page)
 
-      const history = editor.getByRole('region', { name: 'History' })
-      await history.getByRole('button', { name: 'History', exact: true }).click()
+      await panelTab(a.page, 'History').click()
+      const history = historyRegion(a.page)
       const entries = history.getByRole('list', { name: 'Changes' }).locator('> li')
       await expect(entries.first()).toContainText('Text edited', SYNC)
       await expect(entries.last()).toContainText('Placed on p.1')
@@ -310,12 +314,14 @@ test('offline, the History tab says it needs a connection and undo still works',
       await expect(history.getByText('History needs a connection.')).toBeVisible()
       await expect(list).toHaveCount(0)
 
-      // Personal undo is a local write: it works with no connection.
+      // Personal undo is a local write: it works with no connection. (The editor is the Cue tab.)
+      await panelTab(a.page, 'Cue').click()
       await cueEditor(a.page).getByLabel('Label').fill('Blackout late')
       await cueEditor(a.page).getByLabel('Label').press('Enter')
       await expect.poll(() => cueLabel(a.page, id)).toBe('Blackout late')
       await a.page.getByRole('button', { name: 'Undo', exact: true }).click()
       await expect.poll(() => cueLabel(a.page, id)).toBe('Blackout')
+      await panelTab(a.page, 'History').click()
       await expect(history.getByText('History needs a connection.')).toBeVisible()
 
       await a.context.setOffline(false)

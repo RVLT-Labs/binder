@@ -25,6 +25,7 @@ import {
   fitWidthZoom,
   PAGE_GUTTER,
   PHONE_PAGE_GUTTER,
+  SCROLLBAR_ROOM,
   TABLET_PAGE_GUTTER,
   viewerKeyAction,
   zoomIn,
@@ -74,8 +75,13 @@ export interface ViewerProps {
   thumbnails?: boolean
   /** What the status bar says beside the page number. */
   status?: Pick<StatusBarProps, 'snap' | 'onSnapChange' | 'activeLayer'>
-  /** A panel beside the pages, e.g. layers and the cue editor. */
+  /**
+   * The context panel: docked beside the stage at desktop, over its right edge at tablet (the body
+   * is positioned for it), a drawer outside the layout at phone.
+   */
   side?: ReactNode
+  /** Phone only: floats at the stage's bottom right, e.g. the Place cue button. */
+  phoneAction?: ReactNode
   ref?: Ref<ViewerHandle>
 }
 
@@ -84,8 +90,13 @@ export interface ViewerHandle {
   scrollToPoint(pageIndex: number, y: number): void
   /** Focuses the toolbar's page input. */
   focusPageInput(): void
-  /** Focuses the search box. */
+  /** Opens the Find card (if it is closed) and focuses its search box. */
   focusSearch(): void
+  /**
+   * The page under the middle of the view and the point of it that sits there (displayed points, y
+   * up), or null before the pages are drawn. Where the phone's Place cue button places a cue.
+   */
+  visiblePoint(): { pageIndex: number; point: { x: number; y: number } } | null
 }
 
 /**
@@ -106,6 +117,7 @@ export function Viewer({
   thumbnails = true,
   status = { snap: false, activeLayer: null },
   side,
+  phoneAction,
   ref,
 }: ViewerProps) {
   const breakpoint = useBreakpoint()
@@ -126,6 +138,10 @@ export function Viewer({
   const list = useRef<PageListHandle>(null)
   const pageInput = useRef<HTMLInputElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
+  /** The Find card is open: the strip's Find tool or `/` opens it, Escape or its close button shuts it. */
+  const [findOpen, setFindOpen] = useState(false)
+  /** What had focus when Find opened, so closing it puts the cursor back there. */
+  const findOpener = useRef<Element | null>(null)
 
   const widest = useMemo(() => Math.max(...pages.map((p) => p.width)), [pages])
   const gutter = phone
@@ -133,10 +149,15 @@ export function Viewer({
     : breakpoint === 'tablet'
       ? TABLET_PAGE_GUTTER
       : PAGE_GUTTER
-  const fit = useCallback(
-    () => fitWidthZoom((area.current?.clientWidth ?? 0) - fitAllowance(gutter), widest),
-    [widest, gutter],
-  )
+  const fit = useCallback(() => {
+    const stage = area.current
+    // Desktop keeps room for a classic scrollbar. A tablet or phone has overlay ones (the mockups
+    // fill the width to the gutters); a classic one on a narrow desktop window is measured.
+    const list = stage?.querySelector<HTMLElement>('.page-list')
+    const room =
+      breakpoint === 'desktop' ? SCROLLBAR_ROOM : list ? list.offsetWidth - list.clientWidth : 0
+    return fitWidthZoom((stage?.clientWidth ?? 0) - fitAllowance(gutter, room), widest)
+  }, [widest, gutter, breakpoint])
   // Open at fit width, measured before the first paint so pages never render at a throwaway zoom.
   useLayoutEffect(() => {
     if (zoom === null) setZoom(fit())
@@ -167,10 +188,33 @@ export function Viewer({
         else goTo(pageIndex)
       },
       focusPageInput: () => pageInput.current?.focus(),
-      focusSearch: () => searchInput.current?.focus(),
+      focusSearch() {
+        if (searchInput.current) return searchInput.current.focus()
+        findOpener.current = document.activeElement
+        setFindOpen(true)
+      },
+      visiblePoint() {
+        const at = list.current?.visibleCentre()
+        const page = at && pages[at.pageIndex]
+        if (!at || !page) return null
+        return { pageIndex: at.pageIndex, point: { x: page.width / 2, y: at.y } }
+      },
     }),
     [pages, zoom, goTo],
   )
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false)
+    setHits([])
+    setActiveHit(null)
+    const back = findOpener.current
+    findOpener.current = null
+    // the box is going away: hand the cursor back, to the page list when its old holder has gone
+    queueMicrotask(() => {
+      if (back instanceof HTMLElement && back.isConnected && back !== document.body) back.focus()
+      else document.querySelector<HTMLElement>('.page-list')?.focus()
+    })
+  }, [])
 
   const hitsByPage = useMemo(() => {
     const byPage = new Map<number, DocHit[]>()
@@ -278,7 +322,7 @@ export function Viewer({
           }
         />
       )}
-      <div className="viewer-body flex min-h-0 flex-1 max-md:flex-col">
+      <div className="viewer-body relative flex min-h-0 flex-1 max-md:flex-col">
         {thumbnails && !phone && (
           <ThumbnailRail pages={pages} current={current} onSelect={goTo} peersByPage={onPages} />
         )}
@@ -288,6 +332,25 @@ export function Viewer({
           className={cn('viewer-pages relative flex min-h-0 min-w-0 flex-1 bg-stage')}
         >
           {!phone && tools}
+          {findOpen && (
+            <SearchPanel
+              className="absolute top-3 right-6 z-20 w-[min(20rem,calc(100%-2rem))] max-md:right-4"
+              inputRef={searchInput}
+              search={documentSearch.search}
+              loading={documentSearch.loading}
+              unavailable={documentSearch.unavailable}
+              hits={hits}
+              active={activeHit}
+              onClose={closeFind}
+              onResults={(found, jump) => {
+                setHits(found)
+                setActiveHit(null)
+                if (jump && found.length > 0) activateHit(found, 0)
+              }}
+              onActivate={(index) => activateHit(hits, index)}
+            />
+          )}
+          {phone && phoneAction}
           {pdfStatus === 'error' ? (
             <p role="alert" className="viewer-message p-4 text-t-out">
               {error}
@@ -309,24 +372,7 @@ export function Viewer({
             <p className="viewer-message p-4 text-ink-2">Loading PDF…</p>
           )}
         </div>
-        {/* One column beside the page at tablet width; plain siblings elsewhere. */}
-        <div className="viewer-side contents md:max-[1024px]:flex md:max-[1024px]:w-72 md:max-[1024px]:shrink-0 md:max-[1024px]:flex-col md:max-[1024px]:overflow-hidden md:max-[1024px]:border-l md:max-[1024px]:border-line">
-          {side && <aside className="markup-panel">{side}</aside>}
-          <SearchPanel
-            inputRef={searchInput}
-            search={documentSearch.search}
-            loading={documentSearch.loading}
-            unavailable={documentSearch.unavailable}
-            hits={hits}
-            active={activeHit}
-            onResults={(found, jump) => {
-              setHits(found)
-              setActiveHit(null)
-              if (jump && found.length > 0) activateHit(found, 0)
-            }}
-            onActivate={(index) => activateHit(hits, index)}
-          />
-        </div>
+        {side}
       </div>
       {!phone && (
         <StatusBar

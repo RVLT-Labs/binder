@@ -111,8 +111,9 @@ async function open(
   return page
 }
 
+/** The panel's Review tab carries the count as a pill: "Review 4". */
 const toReview = (page: Page, n: number) =>
-  expect(page.getByRole('button', { name: `${n} to review`, exact: true })).toBeVisible({
+  expect(page.getByRole('tab', { name: `Review ${n}`, exact: true })).toBeVisible({
     timeout: 30_000,
   })
 
@@ -121,8 +122,8 @@ const item = (page: Page, text: string) =>
   reviewPanel(page).locator('li[data-review-item]').filter({ hasText: text })
 
 async function openReview(page: Page) {
-  const button = page.getByRole('button', { name: /to review$/ })
-  if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click()
+  const tab = page.getByRole('tab', { name: /^Review/ })
+  if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click()
   await expect(reviewPanel(page)).toBeVisible()
 }
 
@@ -135,7 +136,7 @@ test('uploading a revision re-anchors, the header counts items to review, accept
     const owner = await open(browser, 'owner', contexts)
     const lx = await open(browser, 'lxEditor', contexts)
     // Nothing is moved yet, so there is nothing to review and no revision to compare.
-    await expect(owner.getByRole('button', { name: /to review$/ })).toHaveCount(0)
+    await expect(owner.getByRole('tab', { name: 'Review', exact: true })).toBeVisible()
 
     await owner.getByRole('button', { name: 'Upload revision' }).click()
     const dialog = owner.getByRole('dialog', { name: 'Upload revision' })

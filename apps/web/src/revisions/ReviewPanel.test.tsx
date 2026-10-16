@@ -57,11 +57,21 @@ test('a move that fails shows the error as a notice instead of an unhandled reje
   const unhandled = vi.fn()
   process.on('unhandledRejection', unhandled)
   h.getOptional.mockRejectedValue(new Error('database is locked'))
-  render(<ReviewPanel documentId="d" versionNumbers={new Map()} onClose={() => {}} />)
+  render(<ReviewPanel documentId="d" versionNumbers={new Map()} />)
   fireEvent.click(screen.getByRole('button', { name: 'Move' }))
   await waitFor(() => expect(getNotices()).toHaveLength(1))
   expect(getNotices()[0]?.message).toBe('Could not start moving note · hello: database is locked')
   await new Promise((r) => setTimeout(r, 10))
   expect(unhandled).not.toHaveBeenCalled()
   process.off('unhandledRejection', unhandled)
+})
+
+test('the heading takes focus when the review opens, and the actions read as the mockup words', () => {
+  render(<ReviewPanel documentId="d" versionNumbers={new Map()} />)
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Review revision' }))
+  // Revert keeps its full name for assistive technology and shows the mockup's short word
+  const revert = screen.getByRole('button', { name: 'Revert to old version' })
+  expect(revert.textContent).toBe('Revert')
+  expect(screen.getByRole('button', { name: 'Accept' })).toBeTruthy()
+  expect(screen.getByRole('region', { name: 'LX layer' })).toBeTruthy()
 })

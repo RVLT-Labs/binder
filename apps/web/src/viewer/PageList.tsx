@@ -14,11 +14,7 @@ import { AvatarGroup } from '../presence/Avatars'
 import { PAGE_GUTTER } from './controls'
 import { PageCanvas } from './PageCanvas'
 import type { PDFDocumentProxy } from './pdfjs'
-
-/** Vertical space around each page, in CSS pixels. Part of every item's size. */
-const GAP = 16
-/** The page slot's top padding (set inline on `.page-slot`): where the page box starts in its item. */
-const SLOT_PADDING_TOP = 22
+import { pageAtOffset, SLOT_PADDING_TOP, slotSize, slotStart } from './slots'
 
 export interface ListPage {
   id: string
@@ -31,6 +27,8 @@ export interface PageListHandle {
   scrollToPage(index: number): void
   /** Scrolls so a point `top` CSS pixels below the top of page `index` sits a third of the way down the view. */
   scrollToPoint(index: number, top: number): void
+  /** The page under the middle of the view, and the point of it there (displayed points, y up). */
+  visibleCentre(): { pageIndex: number; y: number } | null
 }
 
 export interface PageListProps {
@@ -75,12 +73,12 @@ export function PageList({
     for (const p of pages) sums.push((sums.at(-1) as number) + p.height)
     return sums
   }, [pages])
-  const startOf = (index: number, z: number) => heightBefore[index] * z + GAP * index
+  const startOf = (index: number, z: number) => slotStart(heightBefore[index], index, z)
 
   const virtualizer = useVirtualizer({
     count: pages.length,
     getScrollElement: () => scroller.current,
-    estimateSize: (i) => pages[i].height * zoom + GAP,
+    estimateSize: (i) => slotSize(pages[i].height, zoom),
     overscan: 1,
     getItemKey: (i) => pages[i].id,
     initialOffset: () => startOf(Math.min(initialPage, pages.length - 1), zoom),
@@ -122,12 +120,20 @@ export function PageList({
       scrollToPage: (index) => virtualizer.scrollToIndex(index, { align: 'start' }),
       scrollToPoint: (index, top) => {
         const view = scroller.current?.clientHeight ?? 0
-        const start = heightBefore[index] * zoom + GAP * index
-        const at = start + SLOT_PADDING_TOP + top - view / 3
+        const at = slotStart(heightBefore[index], index, zoom) + SLOT_PADDING_TOP + top - view / 3
         virtualizer.scrollToOffset(Math.max(0, at))
       },
+      visibleCentre: () => {
+        const el = scroller.current
+        if (!el) return null
+        return pageAtOffset(
+          el.scrollTop + el.clientHeight / 2,
+          pages.map((p) => p.height),
+          zoom,
+        )
+      },
     }),
-    [virtualizer, zoom, heightBefore],
+    [virtualizer, zoom, heightBefore, pages],
   )
 
   return (

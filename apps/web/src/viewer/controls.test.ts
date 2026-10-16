@@ -1,5 +1,16 @@
 import { expect, test } from 'vitest'
-import { fitWidthZoom, MAX_ZOOM, MIN_ZOOM, viewerKeyAction, zoomIn, zoomOut } from './controls'
+import {
+  fitAllowance,
+  fitWidthZoom,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  PAGE_GUTTER,
+  PHONE_PAGE_GUTTER,
+  SCROLLBAR_ROOM,
+  viewerKeyAction,
+  zoomIn,
+  zoomOut,
+} from './controls'
 
 const key = (k: string, mods: Partial<Record<'ctrlKey' | 'metaKey' | 'altKey', boolean>> = {}) =>
   viewerKeyAction({ key: k, ctrlKey: false, metaKey: false, altKey: false, ...mods })
@@ -45,4 +56,11 @@ test('modified keys are left to the browser', () => {
   expect(key('+', { ctrlKey: true })).toBeNull()
   expect(key('0', { metaKey: true })).toBeNull()
   expect(key('ArrowDown', { altKey: true })).toBeNull()
+})
+
+test('fit width leaves both gutters and, unless told otherwise, room for a classic scrollbar', () => {
+  expect(fitAllowance(PAGE_GUTTER)).toBe(2 * PAGE_GUTTER + SCROLLBAR_ROOM)
+  // a touch device has overlay scrollbars: the page fills the width to its gutters
+  expect(fitAllowance(PHONE_PAGE_GUTTER, 0)).toBe(24)
+  expect(fitWidthZoom(390 - fitAllowance(PHONE_PAGE_GUTTER, 0), 612)).toBeCloseTo(366 / 612, 6)
 })

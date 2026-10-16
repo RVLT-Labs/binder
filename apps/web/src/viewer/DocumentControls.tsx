@@ -1,4 +1,4 @@
-import { PanelLeft } from 'lucide-react'
+import { PanelLeft, PanelRight } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { PrintIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
@@ -10,8 +10,17 @@ import { PhoneBarMenu } from './PhoneBarMenu'
 export interface DocumentControlsProps {
   /** The version chip (the switcher), and the same switcher as a field for the phone's menu. */
   version: (display: 'chip' | 'field') => ReactNode
-  /** How many items the revision review holds, and whether its panel is open; null draws no toggle. */
-  review: { count: number; open: boolean; onToggle: () => void } | null
+  /**
+   * The context panel's openers where it is not docked: the tablet's top bar toggle, and the phone
+   * menu's Layers and "N to review" rows (`review` is null when the document has no revisions to
+   * review). Null while there is no panel (a version that is not ready).
+   */
+  panel: {
+    open: boolean
+    onToggle: () => void
+    onOpenTab: (tab: 'layers' | 'review') => void
+    review: { count: number } | null
+  } | null
   /** Upload revision, when the user may and the network is there; null draws nothing. */
   onUploadRevision: ((opener: HTMLElement) => void) | null
   /** The page thumbnails' toggle: tablet only, where they start hidden. */
@@ -30,7 +39,7 @@ export function documentMenuItems(
   close: () => void,
   opener: () => HTMLElement | null,
 ) {
-  const { review, onUploadRevision, onPrint } = props
+  const { panel, onUploadRevision, onPrint } = props
   const row = 'w-full justify-start'
   return (
     <div className="flex flex-col gap-2">
@@ -38,18 +47,30 @@ export function documentMenuItems(
         <span className="t-over">Version</span>
         {props.version('field')}
       </div>
-      {review && (
+      {panel && (
         <Button
           type="button"
           variant="line"
-          className={`review-count ${row} aria-pressed:border-ink`}
-          aria-pressed={review.open}
+          className={row}
           onClick={() => {
-            review.onToggle()
+            panel.onOpenTab('layers')
             close()
           }}
         >
-          <span className="font-mono tabular-nums">{review.count}</span> to review
+          Layers
+        </Button>
+      )}
+      {panel?.review && (
+        <Button
+          type="button"
+          variant="line"
+          className={`review-count ${row}`}
+          onClick={() => {
+            panel.onOpenTab('review')
+            close()
+          }}
+        >
+          <span className="font-mono tabular-nums">{panel.review.count}</span> to review
         </Button>
       )}
       {onUploadRevision && (
@@ -87,28 +108,16 @@ export function documentMenuItems(
 
 /**
  * What the script screen puts in the top bar (DESIGN 6.2): the version chip after the crumbs, then
- * at the right who else is here, undo and redo, the review count, Upload revision and Print, all
- * the mockup's small buttons. At phone the bar is the mockup's: the title, the page position and
+ * at the right who else is here, undo and redo, Upload revision and Print, all the mockup's small
+ * buttons (the review count is the context panel's Review tab now; a tablet gets a toggle for the
+ * panel's sheet). At phone the bar is the mockup's: the title, the page position and
  * one menu (`PhoneBarMenu`); while a version is not ready there is no viewer to add the page, so
  * the menu holds the document's actions alone. With a viewer, the viewer draws the menu itself.
  */
 export function DocumentControls(props: DocumentControlsProps & { viewerOwnsPhoneBar?: boolean }) {
-  const { version, review, onUploadRevision, thumbnails, print, history, viewerOwnsPhoneBar } =
-    props
+  const { version, panel, onUploadRevision, thumbnails, print, history, viewerOwnsPhoneBar } = props
   const breakpoint = useBreakpoint()
 
-  const reviewToggle = review && (
-    <Button
-      type="button"
-      variant="line"
-      size="sm"
-      className="review-count shrink-0 aria-pressed:border-ink aria-pressed:bg-card"
-      aria-pressed={review.open}
-      onClick={review.onToggle}
-    >
-      <span className="font-mono tabular-nums">{review.count}</span> to review
-    </Button>
-  )
   const upload = onUploadRevision && (
     <Button
       type="button"
@@ -144,8 +153,20 @@ export function DocumentControls(props: DocumentControlsProps & { viewerOwnsPhon
             <PanelLeft aria-hidden strokeWidth={1.8} />
           </Button>
         )}
+        {breakpoint === 'tablet' && panel && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="hover:bg-elev hover:text-ink aria-pressed:bg-card aria-pressed:text-ink"
+            aria-label="Context panel"
+            aria-pressed={panel.open}
+            onClick={panel.onToggle}
+          >
+            <PanelRight aria-hidden strokeWidth={1.8} />
+          </Button>
+        )}
         {history}
-        {reviewToggle}
         {upload}
         {print}
       </TopBarActions>

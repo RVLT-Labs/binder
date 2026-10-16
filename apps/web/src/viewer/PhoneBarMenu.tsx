@@ -1,8 +1,15 @@
-import { type ReactNode, useState } from 'react'
+import { createContext, type ReactNode, useContext, useRef, useState } from 'react'
 import { MoreIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TopBarPhone } from '../shell/TopBarSlots'
+
+/**
+ * Closes the menu for a control inside it that opens something else which should keep the focus
+ * (Find): the menu does not hand focus back to its "..." button on this close.
+ */
+const CloseForFocus = createContext<(() => void) | null>(null)
+export const useCloseMenuKeepingFocus = () => useContext(CloseForFocus)
 
 export interface PhoneBarMenuProps {
   /** Zero-based page in view and the page count; absent while there is no viewer. */
@@ -22,6 +29,11 @@ export interface PhoneBarMenuProps {
 export function PhoneBarMenu({ page, items, viewer }: PhoneBarMenuProps) {
   const [open, setOpen] = useState(false)
   const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null)
+  const keepFocus = useRef(false)
+  const closeKeepingFocus = () => {
+    keepFocus.current = true
+    setOpen(false)
+  }
   return (
     <TopBarPhone>
       {page && (
@@ -46,12 +58,19 @@ export function PhoneBarMenu({ page, items, viewer }: PhoneBarMenuProps) {
           align="end"
           aria-label="Document menu"
           className="flex max-h-[calc(100dvh-7rem)] w-[min(22rem,calc(100vw-24px))] flex-col gap-3 overflow-y-auto p-3"
+          onCloseAutoFocus={(e) => {
+            if (!keepFocus.current) return
+            keepFocus.current = false
+            e.preventDefault()
+          }}
         >
-          {items(
-            () => setOpen(false),
-            () => trigger,
-          )}
-          {viewer}
+          <CloseForFocus.Provider value={closeKeepingFocus}>
+            {items(
+              () => setOpen(false),
+              () => trigger,
+            )}
+            {viewer}
+          </CloseForFocus.Provider>
         </PopoverContent>
       </Popover>
     </TopBarPhone>

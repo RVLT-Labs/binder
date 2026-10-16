@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Anchor } from '@binder/shared'
 import { expect, type Page, test } from '@playwright/test'
 import { NO_DEPARTMENT_HINT } from '../src/markup/activeDepartment'
-import { readRun } from './env'
+import { readRun, storageStateFor } from './env'
 import { clickAt, clientPoint, type Line, lineOf, pageText, withUsers } from './markupHelpers'
 
 /**
@@ -616,4 +616,124 @@ test('a drag ends cleanly when a collaborator deletes the cue mid-drag', async (
     expect(await localCue(a.page, id)).toBeNull()
     await expect(a.page.getByRole('alert')).toHaveCount(0)
   })
+})
+
+test('a cue placed on the very bottom of a page lands on that page, not under the next slot', async ({
+  browser,
+}) => {
+  await withUsers(browser, ['owner'], async ([a]) => {
+    await a.page.getByLabel('Active layer LX').check()
+    // Small enough that pages 1 and 2 are both on screen, so the next slot is mounted below page 1.
+    const level = a.page.getByRole('toolbar', { name: 'Viewer' }).getByLabel('Zoom level')
+    while (Number.parseInt((await level.textContent()) ?? '0', 10) > 67) {
+      await a.page.getByRole('button', { name: 'Zoom out' }).click()
+    }
+    await expect(a.page.locator('[data-page-index="1"] .markup-surface')).toBeInViewport()
+    const before = await versionCueIds(a.page)
+    const tool = a.page.getByRole('button', { name: 'Cue tool' })
+    if ((await tool.getAttribute('aria-pressed')) !== 'true') await tool.click()
+    // Three points (about two pixels at this zoom) above the page's bottom edge, at its middle:
+    // inside the bottom 6 px that the next slot's padding used to cover.
+    const { width } = await pageText(a.page, 0)
+    await clickAt(a.page, 0, width / 2, 3)
+    await expect.poll(async () => (await versionCueIds(a.page)).length).toBe(before.length + 1)
+    const id = (await versionCueIds(a.page)).find((c) => !before.includes(c)) ?? ''
+    try {
+      const anchor = (await localCue(a.page, id))?.anchor
+      expect(anchor?.pageIndex).toBe(0)
+      expect(anchor?.y).toBeLessThan(12)
+    } finally {
+      await a.page.evaluate(async (cueId) => {
+        await window.__binder?.db.execute('DELETE FROM cues WHERE id = ?', [cueId])
+      }, id)
+    }
+  })
+})
+
+test('on a phone the page fills the width, Place cue opens the drawer, and Done hands the tag its focus back', async ({
+  browser,
+}) => {
+  const { sharedShow, libretto } = readRun()
+  const context = await browser.newContext({
+    storageState: storageStateFor('owner'),
+    viewport: { width: 390, height: 844 },
+  })
+  const page = await context.newPage()
+  let id = ''
+  try {
+    await page.goto(`/shows/${sharedShow.id}/docs/${libretto.documentId}`)
+    await expect(page.locator('[data-page-index="0"] .markup-surface')).toBeVisible({
+      timeout: 30_000,
+    })
+    // The page fills the width but for its 12 px gutters, and nothing scrolls sideways.
+    const sheet = await page.locator('.page-sheet').first().boundingBox()
+    expect(sheet?.x).toBeGreaterThanOrEqual(11)
+    expect((sheet?.x ?? 0) + (sheet?.width ?? 0)).toBeLessThanOrEqual(390 - 11)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true)
+    // Nothing is selected: no drawer, and the red floating button, at least 56 px high.
+    await expect(page.getByRole('dialog', { name: 'Context panel' })).toHaveCount(0)
+    const place = page.getByRole('button', { name: 'Place cue' })
+    await expect(place).toBeEnabled({ timeout: 20_000 })
+    expect((await place.boundingBox())?.height).toBeGreaterThanOrEqual(56)
+
+    // Place cue puts a cue at the middle of the page in view and selects it: the drawer opens.
+    const before = await versionCueIds(page)
+    await place.click()
+    await expect.poll(async () => (await versionCueIds(page)).length).toBe(before.length + 1)
+    id = (await versionCueIds(page)).find((c) => !before.includes(c)) ?? ''
+    const drawer = page.getByRole('dialog', { name: 'Context panel' })
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByRole('tab')).toHaveText(['Cue', 'Layers', 'History', 'Review'])
+    await expect(place).toHaveCount(0)
+    await expect(selected(page)).toHaveAttribute('data-cue-id', id)
+    expect((await localCue(page, id))?.anchor?.pageIndex).toBe(0)
+    // The drawer covers the tab bar: the bottom of the screen is the sheet's.
+    const box = await drawer.boundingBox()
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeGreaterThanOrEqual(843)
+    // The cue went in at the middle of the page, which the drawer now covers: the page scrolls so
+    // the selected tag sits in the part of the screen still seen.
+    await expect
+      .poll(async () => {
+        const tag = await marker(page, id).locator('rect.cue-tag-body').boundingBox()
+        return (tag?.y ?? 1e9) + (tag?.height ?? 0)
+      })
+      .toBeLessThan(box?.y ?? 0)
+
+    // Edit the label in the drawer, then Done: it closes, and the tag has the focus.
+    await drawer.getByLabel('Label').fill('Phone cue')
+    await drawer.getByLabel('Label').press('Enter')
+    await expect.poll(async () => (await localCue(page, id))?.label).toBe('Phone cue')
+    await drawer.getByRole('button', { name: 'Done' }).click()
+    await expect(drawer).toHaveCount(0)
+    await expect(marker(page, id)).toBeFocused()
+    await expect(page.getByRole('button', { name: 'Place cue' })).toBeVisible()
+
+    // Selecting it by its tag opens the drawer on the Cue tab with the label in its field.
+    await marker(page, id).locator('rect.cue-tag-body').click()
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByRole('tab', { name: 'Cue' })).toHaveAttribute('aria-selected', 'true')
+    await expect(drawer.getByLabel('Label')).toHaveValue('Phone cue')
+    await drawer.getByLabel('Label').fill('Phone cue 2')
+    await drawer.getByLabel('Label').press('Enter')
+    await expect.poll(async () => (await localCue(page, id))?.label).toBe('Phone cue 2')
+    await drawer.getByRole('button', { name: 'Done' }).click()
+    await expect(drawer).toHaveCount(0)
+    await expect(marker(page, id)).toBeFocused()
+
+    // c typed in a drawer field is text, not a place-cue key.
+    await marker(page, id).locator('rect.cue-tag-body').click()
+    await drawer.getByLabel('Label').fill('')
+    await page.keyboard.type('cc')
+    await expect(drawer.getByLabel('Label')).toHaveValue('cc')
+    expect((await versionCueIds(page)).length).toBe(before.length + 1)
+  } finally {
+    if (id) {
+      await page.evaluate(async (cueId) => {
+        await window.__binder?.db.execute('DELETE FROM cues WHERE id = ?', [cueId])
+      }, id)
+    }
+    await context.close()
+  }
 })

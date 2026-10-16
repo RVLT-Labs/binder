@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { presenceColour } from '@binder/shared'
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test'
 import { readRun, storageStateFor, type UserKey } from './env'
-import { clientPoint } from './markupHelpers'
+import { clientPoint, zoomOutTo } from './markupHelpers'
 
 /**
  * Presence on the short libretto (three pages): A's place in the binder shows as an avatar on B's
@@ -157,6 +157,8 @@ test("B sees A's avatar on page 3's thumbnail within 3s and an outline on the cu
     const cueId = randomUUID()
     try {
       await atPage(a.page, 3)
+      // A clicks low on page 3 below: zoomed out, that is above the status bar.
+      await zoomOutTo(a.page)
 
       // A's avatar is on page 3's thumbnail, in A's colour, named for a screen reader. Not page 1's.
       const avatar = thumbSlot(b.page, 3).getByRole('img', { name: `${owner.name} on page 3` })

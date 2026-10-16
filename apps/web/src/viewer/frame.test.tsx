@@ -4,7 +4,7 @@ import type { MarkupSession } from '../markup/MarkupSession'
 import { ToolStrip } from '../markup/ToolStrip'
 import { setTool } from '../markup/tools'
 import { UndoRedoButtons } from '../markup/UndoRedoButtons'
-import { FIT_ALLOWANCE, PAGE_GUTTER, TABLET_PAGE_GUTTER } from './controls'
+import { fitAllowance, PAGE_GUTTER, TABLET_PAGE_GUTTER } from './controls'
 import { StatusBar } from './StatusBar'
 import { THUMB_COLUMN, THUMB_WIDTH } from './ThumbnailRail'
 
@@ -152,7 +152,7 @@ test('thumbnails are the mockup 62 px in a 92 px column and fit width leaves the
   // and the page keeps the mockup's ~19 px clear of it: 12 + 50 + 19 desktop, 12 + 60 + 19 tablet
   expect(PAGE_GUTTER).toBe(12 + 50 + 19)
   expect(TABLET_PAGE_GUTTER).toBe(12 + 60 + 19)
-  expect(FIT_ALLOWANCE).toBeGreaterThanOrEqual(2 * PAGE_GUTTER)
+  expect(fitAllowance(PAGE_GUTTER)).toBeGreaterThanOrEqual(2 * PAGE_GUTTER)
 })
 
 test('the strip is the mockup tool set in its order, with ellipse and line after the box, one rule before Find', () => {

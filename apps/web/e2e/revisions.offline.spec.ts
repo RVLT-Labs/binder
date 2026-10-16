@@ -118,7 +118,7 @@ test('after a cold offline reload, the switcher shows v1 from cached blobs with 
   await page.goto(`${docPath}?review=true`)
   const panel = page.getByRole('region', { name: 'Revision review' })
   const older = panel.locator('details.review-older')
-  await expect(older.locator('summary')).toHaveText('On an older version (1)', { timeout: 60_000 })
+  await expect(older.locator('summary')).toHaveText('On an older version · 1', { timeout: 60_000 })
   await older.locator('summary').click()
   const row = older.locator('li[data-review-item]')
   await expect(row.getByRole('button', { name: 'Accept' })).toHaveCount(0)

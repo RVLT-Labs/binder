@@ -20,6 +20,8 @@ test('search lists hits, Enter steps through them, and a hit scrolls to its page
   const toolbar = page.getByRole('toolbar', { name: 'Viewer' })
   await expect(toolbar).toContainText(`1 / ${PAGES}`, { timeout: 30_000 })
 
+  // Find is the strip's tool (and the `/` key): it opens the search card with the cursor in its box.
+  await page.getByRole('button', { name: 'Find in document' }).click()
   // Typing searches; results show page numbers and snippets.
   const box = page.getByRole('searchbox', { name: 'Search document' })
   await box.fill('pirate')
@@ -66,4 +68,15 @@ test('search lists hits, Enter steps through them, and a hit scrolls to its page
   await box.fill('zzzzqqqq')
   await expect(page.getByRole('status').filter({ hasText: 'No results' })).toBeVisible()
   await expect(page.locator('svg rect.search-hit')).toHaveCount(0)
+
+  // Escape in the box shuts the card, takes the highlights off the pages and keeps the document.
+  await box.fill('pirate')
+  await expect(hits.first()).toBeVisible()
+  await box.press('Escape')
+  await expect(box).toHaveCount(0)
+  await expect(page.locator('svg rect.search-hit')).toHaveCount(0)
+  // and the `/` key brings it back
+  await page.getByRole('region', { name: 'Pages' }).focus()
+  await page.keyboard.press('/')
+  await expect(box).toBeFocused()
 })

@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Button } from '@/components/ui/button'
 import { blobUrl } from '../blobs/fetchBlob'
 import { PrintButton, PrintDialog } from '../exports/PrintDialog'
 import { AnnotationHistory, CueHistory } from '../history/HistoryPanel'
@@ -18,12 +19,16 @@ import { CueEditor } from '../markup/CueEditor'
 import { LayerPanel } from '../markup/LayerPanel'
 import { PageMarkup } from '../markup/MarkupOverlay'
 import { MarkupSessionProvider, useMarkupSession } from '../markup/MarkupSession'
+import { PlaceCueButton } from '../markup/PlaceCueButton'
 import { SelectionAnnouncer } from '../markup/SelectionAnnouncer'
-import { useSelection } from '../markup/selection'
+import { clearSelection, useSelection } from '../markup/selection'
 import { ToolStrip } from '../markup/ToolStrip'
 import { UndoRedoButtons } from '../markup/UndoRedoButtons'
 import { useMarkupShortcuts } from '../markup/useMarkupShortcuts'
 import { useOnline } from '../offline/useOnline'
+import { ContextPanel, type PanelTab } from '../panel/ContextPanel'
+import { Note } from '../panel/fields'
+import { type PanelState, type PanelTabId, usePanelState } from '../panel/usePanelState'
 import type { DocumentRow, DocumentVersionRow, PageRow } from '../powersync/schema'
 import { PresencePublisher } from '../presence/PresencePublisher'
 import { useVersionAnchors } from '../revisions/api'
@@ -48,7 +53,7 @@ interface DocumentSearch {
   p?: number
   /** A cue to select and scroll to once the markup has loaded (from the cue list). */
   cue?: string
-  /** Open the revision review panel. */
+  /** Open the context panel on its Review tab (once: the address drops it). */
   review?: boolean
 }
 
@@ -92,6 +97,18 @@ function DocumentPage() {
   const viewer = useRef<ViewerHandle>(null)
   /** Zero-based page in view, as the viewer last settled on it: what presence tells the show. */
   const [viewPage, setViewPage] = useState(() => (p ?? 1) - 1)
+  // The context panel's tab and, where it is a sheet or drawer, whether it is drawn. `?review=`
+  // (the overview's Needs you link, a finished upload) opens it on Review, and is then dropped.
+  const dropReview = useCallback(
+    () =>
+      void navigate({
+        search: (prev) => ({ ...prev, review: undefined }),
+        replace: true,
+        resetScroll: false,
+      }),
+    [navigate],
+  )
+  const panel = usePanelState({ review: review === true, onReviewHandled: dropReview })
   const { data: docs, isLoading } = useQuery<DocumentRow>(
     'SELECT * FROM documents WHERE id = ? AND show_id = ?',
     [docId, showId],
@@ -113,6 +130,8 @@ function DocumentPage() {
   const currentId = doc?.current_version_id ?? null
   const isCurrent = !version || !currentId || version.id === currentId
   const ready = version?.status === 'ready'
+  /** The viewer draws (and so the context panel exists) once the version's text and pages are in. */
+  const viewerReady = ready && Boolean(version?.searchable_key) && pages.length > 0
   // A version that is not current is drawn where its rows were: from the server when online, else
   // from the device's rows that still point at it.
   const { anchors: remoteAnchors, loading: anchorsLoading } = useVersionAnchors(
@@ -181,19 +200,14 @@ function DocumentPage() {
             onSelect={(id) => void navigate({ search: { v: id === currentId ? undefined : id } })}
           />
         ),
-        review:
-          reviewCount > 0 || review || versions.length > 1
-            ? {
-                count: reviewCount,
-                open: review === true,
-                onToggle: () =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, review: prev.review ? undefined : true }),
-                    replace: true,
-                    resetScroll: false,
-                  }),
-              }
-            : null,
+        panel: viewerReady
+          ? {
+              open: panel.open,
+              onToggle: panel.toggle,
+              onOpenTab: panel.openTab,
+              review: reviewCount > 0 || versions.length > 1 ? { count: reviewCount } : null,
+            }
+          : null,
         onUploadRevision:
           canUpload && online
             ? (opener) => {
@@ -317,24 +331,14 @@ function DocumentPage() {
                     )
                 : undefined
             }
-            side={
-              <MarkupSide
-                showId={showId}
-                documentId={doc.id}
-                versionNumbers={versionNumbers}
-                reviewOpen={review === true}
-                isCurrent={isCurrent}
-                currentId={currentId}
-                onSwitchToCurrent={() => void navigate({ search: { review: true } })}
-                onCloseReview={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, review: undefined }),
-                    replace: true,
-                    resetScroll: false,
-                  })
-                }
-              />
-            }
+            panel={panel}
+            showId={showId}
+            documentId={doc.id}
+            versionNumbers={versionNumbers}
+            reviewCount={reviewCount}
+            isCurrent={isCurrent}
+            currentId={currentId}
+            onSwitchToCurrent={() => void navigate({ search: { review: true } })}
           />
         </MarkupSessionProvider>
       )}
@@ -342,29 +346,67 @@ function DocumentPage() {
   )
 }
 
-/** The viewer with the markup session's tools and status wired in. */
+interface ScriptPanelProps {
+  panel: PanelState
+  showId: string
+  documentId: string
+  versionNumbers: ReadonlyMap<string, number>
+  reviewCount: number
+  isCurrent: boolean
+  currentId: string | null
+  onSwitchToCurrent: () => void
+}
+
+/** The viewer with the markup session's tools, status and context panel wired in. */
 function ScriptViewer({
   viewer,
+  panel,
+  showId,
+  documentId,
+  versionNumbers,
+  reviewCount,
+  isCurrent,
+  currentId,
+  onSwitchToCurrent,
   ...props
-}: Omit<ComponentProps<typeof Viewer>, 'tools' | 'phoneTools' | 'status' | 'ref'> & {
-  viewer: Ref<ViewerHandle>
-}) {
+}: Omit<
+  ComponentProps<typeof Viewer>,
+  'tools' | 'phoneTools' | 'status' | 'ref' | 'side' | 'phoneAction'
+> &
+  ScriptPanelProps & { viewer: Ref<ViewerHandle> }) {
   const session = useMarkupSession()
+  const selection = useSelection()
   const active = session.active
   return (
-    <Viewer
-      ref={viewer}
-      {...props}
-      tools={<ToolStrip />}
-      phoneTools={<ToolStrip variant="inline" />}
-      status={{
-        snap: session.snap,
-        onSnapChange: session.setSnap,
-        activeLayer: active
-          ? { name: session.layerName(active), colour: session.layerColour(active) }
-          : null,
-      }}
-    />
+    <>
+      <SelectionAnnouncer />
+      <Viewer
+        ref={viewer}
+        {...props}
+        tools={<ToolStrip />}
+        phoneTools={<ToolStrip variant="inline" />}
+        status={{
+          snap: session.snap,
+          onSnapChange: session.setSnap,
+          activeLayer: active
+            ? { name: session.layerName(active), colour: session.layerColour(active) }
+            : null,
+        }}
+        side={
+          <ScriptPanel
+            panel={panel}
+            showId={showId}
+            documentId={documentId}
+            versionNumbers={versionNumbers}
+            reviewCount={reviewCount}
+            isCurrent={isCurrent}
+            currentId={currentId}
+            onSwitchToCurrent={onSwitchToCurrent}
+          />
+        }
+        phoneAction={<PlaceCueButton hidden={selection !== null || panel.open} />}
+      />
+    </>
   )
 }
 
@@ -388,63 +430,144 @@ function MarkupKeys() {
   return null
 }
 
-/** The review, layers, and the selected cue's or annotation's editor. */
-function MarkupSide({
+/** The tag a closed sheet or drawer hands focus back to: the row that was selected last. */
+function selectedTag(selection: { table: string; id: string } | null): HTMLElement | null {
+  if (!selection) return null
+  const attr = selection.table === 'annotations' ? 'data-annotation-id' : 'data-cue-id'
+  return document.querySelector<HTMLElement>(`[${attr}="${CSS.escape(selection.id)}"]`)
+}
+
+/**
+ * The context panel's four tabs: the selected cue's or annotation's editor over the layers (Cue),
+ * the layers alone, the selected row's change log (History) and the revision review (Review, with
+ * its count).
+ */
+function ScriptPanel({
+  panel,
   showId,
   documentId,
   versionNumbers,
-  reviewOpen,
+  reviewCount,
   isCurrent,
   currentId,
   onSwitchToCurrent,
-  onCloseReview,
-}: {
-  showId: string
-  documentId: string
-  versionNumbers: ReadonlyMap<string, number>
-  reviewOpen: boolean
-  isCurrent: boolean
-  currentId: string | null
-  onSwitchToCurrent: () => void
-  onCloseReview: () => void
-}) {
+}: ScriptPanelProps) {
+  const session = useMarkupSession()
   const selection = useSelection()
+  const phone = useBreakpoint() === 'phone'
+  // Done clears the selection before the drawer closes: it still has to find the tag.
+  const lastSelection = useRef(selection)
+  if (selection) lastSelection.current = selection
+  // At phone width the drawer covers the lower half of the screen: a tag that lands under it (a cue
+  // placed at the middle of the page, one tapped low down) is scrolled up into the part still seen.
+  const selectedId = selection?.id
+  const selectedTable = selection?.table
+  // the session changes with every markup edit; only a new selection moves the page
+  const latest = useRef(session)
+  latest.current = session
+  useEffect(() => {
+    if (!phone || !panel.open || !selectedId || !selectedTable) return
+    let frame = 0
+    let tries = 0
+    const check = () => {
+      const tag = selectedTag({ table: selectedTable, id: selectedId })
+      const sheet = document.querySelector<HTMLElement>('[data-panel="drawer"]')
+      if (!tag || !sheet) {
+        if (tries++ < 30) frame = requestAnimationFrame(check)
+        return
+      }
+      // the drawer slides in: its height is final, its position is not yet
+      const top = window.innerHeight - sheet.offsetHeight
+      if (tag.getBoundingClientRect().bottom <= top - 8) return
+      const { view, viewer } = latest.current
+      const row =
+        selectedTable === 'cues'
+          ? view.ordered.find((c) => c.id === selectedId)
+          : [...view.annotationsByPage.values()].flat().find((a) => a.id === selectedId)
+      if (row) viewer.current?.scrollToPoint(row.anchor.pageIndex, row.anchor.y)
+    }
+    frame = requestAnimationFrame(check)
+    return () => cancelAnimationFrame(frame)
+  }, [phone, panel.open, selectedId, selectedTable])
+  const done = phone
+    ? () => {
+        clearSelection()
+        panel.onOpenChange(false)
+      }
+    : undefined
+
+  const tabs: PanelTab[] = [
+    {
+      id: 'cue',
+      label: 'Cue',
+      content: (
+        <>
+          {selection?.table === 'cues' && (
+            <CueEditor key={selection.id} cueId={selection.id} onDone={done} />
+          )}
+          {selection?.table === 'annotations' && (
+            <AnnotationEditor key={selection.id} annotationId={selection.id} onDone={done} />
+          )}
+          {!selection && (
+            <Note>
+              Select a cue or an annotation on the page to edit it, or press c to place one.
+            </Note>
+          )}
+          {/* the phone's sheet is the mockup's: Layers is its own tab there */}
+          {!phone && <LayerPanel showId={showId} versionId={session.versionId} labelled />}
+        </>
+      ),
+    },
+    {
+      id: 'layers',
+      label: 'Layers',
+      content: <LayerPanel showId={showId} versionId={session.versionId} />,
+    },
+    {
+      id: 'history',
+      label: 'History',
+      content: !selection ? (
+        <Note>Select a cue or an annotation to see its history.</Note>
+      ) : selection.table === 'cues' ? (
+        <CueHistory key={selection.id} cueId={selection.id} />
+      ) : (
+        <AnnotationHistory key={selection.id} annotationId={selection.id} />
+      ),
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      badge: reviewCount,
+      wide: true,
+      content: isCurrent ? (
+        <ReviewPanel documentId={documentId} versionNumbers={versionNumbers} />
+      ) : (
+        <section aria-label="Revision review" className="review-panel flex flex-col gap-2">
+          <Note>The review is of the current version.</Note>
+          {currentId && (
+            <Button type="button" variant="line" size="sm" onClick={onSwitchToCurrent}>
+              Go to the current version
+            </Button>
+          )}
+        </section>
+      ),
+    },
+  ]
   return (
-    <>
-      <SelectionAnnouncer />
-      {reviewOpen &&
-        (isCurrent ? (
-          <ReviewPanel
-            documentId={documentId}
-            versionNumbers={versionNumbers}
-            onClose={onCloseReview}
-          />
-        ) : (
-          <section className="review-panel" aria-label="Revision review">
-            <p>The review is of the current version.</p>
-            {currentId && (
-              <button type="button" onClick={onSwitchToCurrent}>
-                Go to the current version
-              </button>
-            )}
-          </section>
-        ))}
-      <LayerPanel showId={showId} />
-      {selection?.table === 'cues' && (
-        <CueEditor
-          key={selection.id}
-          cueId={selection.id}
-          historySlot={<CueHistory cueId={selection.id} />}
-        />
-      )}
-      {selection?.table === 'annotations' && (
-        <AnnotationEditor
-          key={selection.id}
-          annotationId={selection.id}
-          historySlot={<AnnotationHistory annotationId={selection.id} />}
-        />
-      )}
-    </>
+    <ContextPanel
+      tabs={tabs}
+      value={panel.tab}
+      onValueChange={(id) => panel.setTab(id as PanelTabId)}
+      open={panel.open}
+      onOpenChange={panel.onOpenChange}
+      returnFocusTo={() => {
+        // Closed from inside the panel (Done, Escape) or with focus gone: back to the tag. Closed by
+        // a control outside it (the tablet's toggle), that control keeps the focus it has.
+        const at = document.activeElement
+        const inside = !at || at === document.body || at.closest('[data-panel]') !== null
+        return inside ? selectedTag(lastSelection.current) : null
+      }}
+    />
   )
 }
 

@@ -49,6 +49,7 @@ test('make available offline, go offline, reload, view and search', async ({ pag
     .toBeGreaterThan(0)
 
   // Search works from the cached word layers, and a hit highlights its page.
+  await page.getByRole('button', { name: 'Find in document' }).click()
   await page.getByRole('searchbox', { name: 'Search document' }).fill('pirate')
   const hits = page.getByRole('list', { name: 'Search results' }).getByRole('listitem')
   await expect(hits.first()).toBeVisible({ timeout: 30_000 })

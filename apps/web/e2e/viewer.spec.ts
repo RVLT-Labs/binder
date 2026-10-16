@@ -1,6 +1,6 @@
 import { FIXTURES } from '@binder/fixtures'
 import { expect, test } from '@playwright/test'
-import { FIT_ALLOWANCE } from '../src/viewer/controls'
+import { fitAllowance, PAGE_GUTTER } from '../src/viewer/controls'
 import { readRun, storageStateFor } from './env'
 import { hasInk, uploadAndWaitReady } from './helpers'
 
@@ -62,6 +62,9 @@ test('upload, process, and view the libretto', async ({ page }) => {
   await page.keyboard.press('PageDown')
   await expect(toolbar).toContainText(`4 / ${PAGES}`)
   const zoomBefore = await toolbar.getByLabel('Zoom level').textContent()
+  // Two steps: fit width can land within a hair of a preset (110 %), where the first step only
+  // rounds up to it and the label does not change.
+  await page.keyboard.press('+')
   await page.keyboard.press('+')
   await expect(toolbar.getByLabel('Zoom level')).not.toHaveText(zoomBefore ?? '')
   await expect(toolbar).toContainText(`4 / ${PAGES}`)
@@ -77,7 +80,7 @@ test('upload, process, and view the libretto', async ({ page }) => {
         sheet.evaluate((el) => el.getBoundingClientRect().width),
         stage.evaluate((el) => el.clientWidth),
       ])
-      return Math.abs(sheetWidth - (stageWidth - FIT_ALLOWANCE))
+      return Math.abs(sheetWidth - (stageWidth - fitAllowance(PAGE_GUTTER)))
     })
     .toBeLessThanOrEqual(1)
   // No sideways scroll, and the page starts clear of the strip's lane at the stage's left edge.

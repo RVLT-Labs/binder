@@ -4,6 +4,7 @@ import { SearchIcon } from '@/components/icons'
 import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, focusRing } from '@/lib/utils'
+import { useCloseMenuKeepingFocus } from '../viewer/PhoneBarMenu'
 import { useMarkupSession } from './MarkupSession'
 import { TOOL_DEFS } from './MarkupTools'
 import { StampPicker } from './StampPicker'
@@ -115,6 +116,8 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
   const hintId = useId()
   const annotationHintId = useId()
   const floating = variant === 'floating'
+  // Inline (the phone's menu), Find shuts the menu first so the box it opens keeps the cursor.
+  const closeMenu = useCloseMenuKeepingFocus()
   const disabled = 'disabled' in session.cueTarget ? session.cueTarget.disabled : null
   const annotationDisabled =
     'disabled' in session.annotationTarget ? session.annotationTarget.disabled : null
@@ -212,7 +215,10 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
             aria-label="Find in document"
             aria-keyshortcuts="/"
             className={BUTTON_CLASS}
-            onClick={() => session.viewer.current?.focusSearch()}
+            onClick={() => {
+              closeMenu?.()
+              session.viewer.current?.focusSearch()
+            }}
           >
             <SearchIcon className={GLYPH} strokeWidth={1.8} />
             <KeyHint>/</KeyHint>

@@ -1,7 +1,7 @@
 import type { Anchor, WordLayer } from '@binder/shared'
 import { expect, type Page, test } from '@playwright/test'
 import { readRun } from './env'
-import { clientPoint, lineOf, pageText, withUsers } from './markupHelpers'
+import { clientPoint, lineOf, pageText, withUsers, zoomOutTo } from './markupHelpers'
 
 /**
  * Annotations on the short libretto: drawn with the viewer's tools into the local PowerSync
@@ -309,6 +309,8 @@ test("resizing a rect by its corner and moving an arrow's end are saved", async 
     const made: string[] = []
     try {
       await a.page.getByLabel('Active layer LX').check()
+      // The shape is drawn low on the page: zoomed out, all of it is above the status bar.
+      await zoomOutTo(a.page)
       await pick(a.page, 'Rect')
       const rectId = await drawing(a.page, () =>
         dragPage(a.page, { x: 100, y: 200 }, { x: 200, y: 140 }),
