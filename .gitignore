@@ -14,5 +14,13 @@ apps/web/test-results/
 apps/web/playwright-report/
 fixtures/public/generated/
 
-# Parallel worktrees for SDD lanes
+# Parallel worktrees (SDD lanes, spawned sessions)
 .worktrees/
+.claude/worktrees/
+
+# Controller scratch: ledgers, briefs, reports. Copy anything durable into docs/superpowers/records/.
+.superpowers/
+
+# Local dev logs and packaged skill zips
+*.log
+/skills.zip
