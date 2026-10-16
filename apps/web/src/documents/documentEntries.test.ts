@@ -3,6 +3,7 @@ import {
   buildDocumentEntries,
   type DocumentSource,
   type PageProgress,
+  splitFailure,
   type VersionSource,
 } from './documentEntries'
 
@@ -122,9 +123,14 @@ describe('buildDocumentEntries', () => {
     expect(entries[0]).toMatchObject({
       kind: 'failed',
       reason: 'No text layer and OCR is off',
+      detail: null,
       isNewVersion: false,
     })
-    expect(entries[1]).toMatchObject({ kind: 'failed', reason: 'Processing failed.' })
+    expect(entries[1]).toMatchObject({
+      kind: 'failed',
+      reason: 'Binder could not process this file.',
+      detail: null,
+    })
   })
 
   it('a failed new version sits beside the current one and is marked as a new version', () => {
@@ -171,5 +177,39 @@ describe('buildDocumentEntries', () => {
   it('a document with no version row yet is shown as waiting, not dropped', () => {
     const [entry] = buildDocumentEntries([doc('d1', 'New', null)], [], none)
     expect(entry).toMatchObject({ kind: 'processing', title: 'New' })
+  })
+})
+
+describe('splitFailure', () => {
+  const raw =
+    "This file could not be read as a PDF. (ocrmypdf exit 2: InputFileError; pdfinfo exit 1: Syntax Error: Couldn't find trailer dictionary)"
+
+  it('keeps the plain sentence before the first " (" and the whole error as detail', () => {
+    expect(splitFailure(raw)).toEqual({
+      reason: 'This file could not be read as a PDF.',
+      detail: raw,
+    })
+  })
+
+  it('shows an error with no tool output as it is, with no detail', () => {
+    expect(splitFailure('Could not queue processing')).toEqual({
+      reason: 'Could not queue processing',
+      detail: null,
+    })
+  })
+
+  it('falls back to a stock line when there is no plain part, keeping what was recorded as detail', () => {
+    expect(splitFailure('(pdfinfo exit 1)')).toEqual({
+      reason: 'Binder could not process this file.',
+      detail: '(pdfinfo exit 1)',
+    })
+    expect(splitFailure(null)).toEqual({
+      reason: 'Binder could not process this file.',
+      detail: null,
+    })
+    expect(splitFailure('  ')).toEqual({
+      reason: 'Binder could not process this file.',
+      detail: null,
+    })
   })
 })

@@ -178,6 +178,7 @@ const failed: FailedEntry = {
   versionNumber: null,
   currentNumber: null,
   reason: 'No text layer and OCR is off',
+  detail: null,
   isNewVersion: false,
 }
 
@@ -261,7 +262,33 @@ test('a failed row shows the reason it gives, and Upload again opens the upload;
   expect(within(item).queryByRole('button', { name: 'Try again' })).toBeNull()
   expect(within(item).queryByRole('button', { name: 'Remove' })).toBeNull()
   fireEvent.click(within(item).getByRole('button', { name: 'Upload again' }))
-  expect(onUpload).toHaveBeenCalledWith({ kind: 'document' }, expect.anything())
+  // A failed first upload is retried as a version of that same document, never a second document.
+  expect(onUpload).toHaveBeenCalledWith(
+    { kind: 'version', documentId: 'd2', documentTitle: 'Blocking notes.pdf' },
+    expect.anything(),
+  )
+})
+
+test('a failed row puts tool output behind Details, and shows only the plain sentence', async () => {
+  const raw = 'This file could not be read as a PDF. (ocrmypdf exit 2: InputFileError)'
+  await renderInRouter(
+    row({ ...failed, reason: 'This file could not be read as a PDF.', detail: raw }).ui,
+  )
+  const item = screen.getByRole('listitem')
+  const details = item.querySelector('details') as HTMLDetailsElement
+  expect(details.querySelector('summary')?.textContent).toBe('Details')
+  expect(details.open).toBe(false)
+  expect(details.textContent).toContain(raw)
+  expect(details.querySelector('p')?.className).toContain('font-mono')
+  // Outside the disclosure only the plain sentence is on the row.
+  expect(item.querySelector(':scope > div > div > div > p')?.textContent).toBe(
+    'This file could not be read as a PDF.',
+  )
+})
+
+test('a failed row with nothing more to say has no Details', async () => {
+  await renderInRouter(row(failed).ui)
+  expect(document.querySelector('details')).toBeNull()
 })
 
 test('Upload again on a failed new version uploads another version of that document', async () => {

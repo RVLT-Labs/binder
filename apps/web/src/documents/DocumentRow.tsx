@@ -336,11 +336,14 @@ function FailedRow({
   onUpload,
   compact,
 }: DocumentRowProps & { entry: FailedEntry }) {
-  // There is no retry or remove for a version, so the way forward is another upload: another
-  // version of the document when it already had one, otherwise a new document.
-  const target: UploadTarget = entry.isNewVersion
-    ? { kind: 'version', documentId: entry.docId, documentTitle: entry.title || 'document' }
-    : { kind: 'document' }
+  // There is no retry or remove for a version, so the way forward is another upload. It is always
+  // another version of this document: that needs only the document, and when the document has no
+  // ready version the new one becomes its current (so no second document is made).
+  const target: UploadTarget = {
+    kind: 'version',
+    documentId: entry.docId,
+    documentTitle: entry.title || 'document',
+  }
   return (
     <li className={shell(compact, true)}>
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
@@ -359,6 +362,21 @@ function FailedRow({
             <p className="m-0 mt-1 text-[13px] text-ink-2 [overflow-wrap:anywhere]">
               {entry.reason}
             </p>
+            {entry.detail && (
+              <details className="mt-1 text-[12px] text-muted">
+                <summary
+                  className={cn(
+                    'inline-flex min-h-11 cursor-pointer items-center md:min-h-0',
+                    focusRing,
+                  )}
+                >
+                  Details
+                </summary>
+                <p className="m-0 mt-1 font-mono text-[12px] [overflow-wrap:anywhere]">
+                  {entry.detail}
+                </p>
+              </details>
+            )}
           </div>
         </div>
         {canUpload && (

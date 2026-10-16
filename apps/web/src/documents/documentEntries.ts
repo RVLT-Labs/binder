@@ -88,15 +88,31 @@ export interface FailedEntry {
   title: string
   versionNumber: number | null
   currentNumber: number | null
-  /** What went wrong, as the pipeline recorded it. */
+  /** What went wrong in plain words: the pipeline's sentence, without the tool output after it. */
   reason: string
+  /** The full recorded error, when it says more than `reason` (tool output); null otherwise. */
+  detail: string | null
   /** A new version of a document that already had one (so "upload again" is another version). */
   isNewVersion: boolean
 }
 
 export type DocumentEntry = ReadyEntry | ProcessingEntry | FailedEntry
 
-const FAILED_FALLBACK = 'Processing failed.'
+export const FAILED_FALLBACK = 'Binder could not process this file.'
+
+/**
+ * The pipeline writes "<plain sentence> (<tool output>)" (documentJob.markVersionFailed), so the
+ * plain part is what comes before the first " (". An error with no plain part gets a stock line.
+ */
+export function splitFailure(error: string | null): { reason: string; detail: string | null } {
+  const text = error?.trim() ?? ''
+  const at = text.indexOf(' (')
+  const plain = (at < 0 ? text : text.slice(0, at)).trim()
+  if (!plain || plain.startsWith('(')) {
+    return { reason: FAILED_FALLBACK, detail: text || null }
+  }
+  return { reason: plain, detail: at < 0 ? null : text }
+}
 const num = (v: VersionSource) => v.version_number ?? 0
 
 /** Documents in the order given, each as its ready entry and, if a newer version is not ready, a second one for it. */
@@ -153,7 +169,7 @@ export function buildDocumentEntries(
           title,
           versionNumber: isNew ? num(newest) : null,
           currentNumber: current ? num(current) : null,
-          reason: newest.error?.trim() || FAILED_FALLBACK,
+          ...splitFailure(newest.error),
           isNewVersion: isNew,
         })
       } else {
