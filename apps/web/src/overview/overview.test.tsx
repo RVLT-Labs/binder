@@ -418,6 +418,9 @@ test('on the Scripts card Open is the red button, after Cue lists and Compare', 
   expect(links.map((l) => l.textContent)).toEqual(['Cue lists', 'Compare v1 → v2', 'Open'])
   expect(links[2].className).toContain('bg-red')
   expect(links[0].className).not.toContain('bg-red')
+  // The overview's buttons are the card fill (`.btn`); only Documents rows use elev (`.dx-row .btn`).
+  expect(links[0].className).not.toContain('md:bg-elev')
+  expect(links[1].className).not.toContain('md:bg-elev')
   // The version number in the compare button is plain text, not mono.
   expect(links[1].querySelector('.font-mono')).toBeNull()
 })

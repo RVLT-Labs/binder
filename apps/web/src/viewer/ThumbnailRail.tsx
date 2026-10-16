@@ -40,7 +40,7 @@ export function ThumbnailRail({ pages, current, onSelect, peersByPage }: Thumbna
   return (
     <nav
       ref={rail}
-      className="thumbnail-rail flex w-[92px] shrink-0 flex-col items-center gap-3.5 overflow-y-auto border-r border-line bg-paper-2 pt-2.5 pb-6"
+      className="thumbnail-rail flex w-[92px] shrink-0 flex-col items-center gap-6 overflow-y-auto border-r border-line bg-paper-2 pt-2.5 pb-6"
       aria-label="Thumbnails"
     >
       {pages.map((page, i) => {
@@ -79,7 +79,7 @@ export function ThumbnailRail({ pages, current, onSelect, peersByPage }: Thumbna
                 )}
               </span>
               <span
-                className="thumbnail-number absolute inset-x-0 -bottom-[15px] text-center font-mono text-[11px] leading-none tabular-nums text-muted group-aria-[current=page]:text-ink"
+                className="thumbnail-number absolute inset-x-0 top-[calc(100%+6px)] text-center font-mono text-[11px] leading-none tabular-nums text-muted group-aria-[current=page]:text-ink"
                 aria-hidden="true"
               >
                 {i + 1}

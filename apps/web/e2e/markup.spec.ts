@@ -396,8 +396,10 @@ test('opening ?cue= scrolls to the cue and leaves its tag inside the viewport, c
 
 test('on a short window every tool in the strip is still reachable', async ({ browser }) => {
   await withUsers(browser, ['owner'], async ([a]) => {
-    const snap = a.page.getByLabel('Snap to text')
-    const label = a.page.locator('label').filter({ has: snap })
+    // Find in document is the strip's last tool (undo and redo are in the top bar and snap to text
+    // is in the status bar, so they are not the strip's to reach).
+    const find = a.page.getByRole('button', { name: 'Find in document' })
+    const search = a.page.getByRole('searchbox', { name: 'Search document' })
     for (const viewport of [
       { width: 1024, height: 600 },
       { width: 1280, height: 640 },
@@ -410,16 +412,31 @@ test('on a short window every tool in the strip is still reachable', async ({ br
       if (!stage || !strip) throw new Error('stage or strip not on screen')
       expect(strip.y).toBeGreaterThanOrEqual(stage.y)
       expect(strip.y + strip.height).toBeLessThanOrEqual(stage.y + stage.height)
-      const before = await snap.isChecked()
-      await label.click()
-      const tool = await label.boundingBox()
+      // A real click on the last tool lands (Playwright scrolls the strip itself if it must) and
+      // does what the tool does: it puts the cursor in the search box.
+      await find.click()
+      const tool = await find.boundingBox()
       if (!tool) throw new Error('last tool not on screen')
       expect(tool.y).toBeGreaterThanOrEqual(stage.y)
       expect(tool.y + tool.height).toBeLessThanOrEqual(stage.y + stage.height)
-      await expect(snap).toBeChecked({ checked: !before })
-      await label.click()
-      await expect(snap).toBeChecked({ checked: before })
+      await expect(search).toBeFocused()
+      await a.page.getByRole('button', { name: 'Select', exact: true }).focus()
     }
+  })
+})
+
+test('snap to text is the status bar word: clicking it toggles it, and so does the keyboard', async ({
+  browser,
+}) => {
+  await withUsers(browser, ['owner'], async ([a]) => {
+    const snap = a.page.getByLabel('Snap to text')
+    const bar = a.page.getByRole('region', { name: 'Script status' })
+    const before = await snap.isChecked()
+    await bar.getByText('Snap to text').click()
+    await expect(snap).toBeChecked({ checked: !before })
+    await snap.focus()
+    await a.page.keyboard.press('Space')
+    await expect(snap).toBeChecked({ checked: before })
   })
 })
 

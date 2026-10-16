@@ -157,7 +157,7 @@ function ReadyRow({
     <Link
       to="/shows/$showId/docs/$docId/compare"
       params={{ showId, docId: entry.docId }}
-      className={cn(ROW_ACTION, 'relative z-10', !compact && 'max-md:hidden')}
+      className={cn(compact ? ACTION : ROW_ACTION, 'relative z-10', !compact && 'max-md:hidden')}
     >
       Compare v{entry.compare.from} → v{entry.compare.to}
     </Link>
@@ -266,7 +266,7 @@ function ReadyRow({
               >
                 Open
               </Link>
-              <CueLists showId={showId} className="relative z-10 max-md:flex-1" />
+              <CueLists showId={showId} elev className="relative z-10 max-md:flex-1" />
               {compare}
               {uploadNew}
               {(entry.compare || canUpload) && (
@@ -288,9 +288,22 @@ function ReadyRow({
   )
 }
 
-function CueLists({ showId, className }: { showId: string; className?: string }) {
+function CueLists({
+  showId,
+  className,
+  elev,
+}: {
+  showId: string
+  className?: string
+  /** On the Documents screen the button is `--elev`; on the overview's card it is the card fill. */
+  elev?: boolean
+}) {
   return (
-    <Link to="/shows/$showId/cues" params={{ showId }} className={cn(ROW_ACTION, className)}>
+    <Link
+      to="/shows/$showId/cues"
+      params={{ showId }}
+      className={cn(elev ? ROW_ACTION : ACTION, className)}
+    >
       Cue lists
     </Link>
   )

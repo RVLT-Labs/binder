@@ -4,7 +4,7 @@ import type { MarkupSession } from '../markup/MarkupSession'
 import { ToolStrip } from '../markup/ToolStrip'
 import { setTool } from '../markup/tools'
 import { UndoRedoButtons } from '../markup/UndoRedoButtons'
-import { FIT_ALLOWANCE, PAGE_GUTTER } from './controls'
+import { FIT_ALLOWANCE, PAGE_GUTTER, TABLET_PAGE_GUTTER } from './controls'
 import { StatusBar } from './StatusBar'
 import { THUMB_COLUMN, THUMB_WIDTH } from './ThumbnailRail'
 
@@ -87,12 +87,24 @@ test('the top bar undo and redo keep their names and follow the undo stack', () 
   expect(screen.getByRole('button', { name: 'Redo' })).toHaveProperty('disabled', true)
 })
 
-test('the snap toggle keeps its name', () => {
+test('the strip no longer has the snap toggle: it is the status bar word', () => {
   render(<ToolStrip />)
+  expect(screen.queryByLabelText('Snap to text')).toBeNull()
+  render(<ToolStrip variant="inline" />)
+  expect(screen.queryByLabelText('Snap to text')).toBeNull()
+})
+
+test('the status bar word is the snap toggle: named "Snap to text", a checkbox, keyboard operable', () => {
+  const onSnapChange = vi.fn()
+  render(<StatusBar page={1} pages={3} snap onSnapChange={onSnapChange} activeLayer={null} />)
   const snap = screen.getByLabelText('Snap to text') as HTMLInputElement
+  expect(snap.type).toBe('checkbox')
   expect(snap.checked).toBe(true)
+  expect(screen.getByRole('region', { name: 'Script status' }).textContent).toContain(
+    'Snap to text on',
+  )
   fireEvent.click(snap)
-  expect((h.session.setSnap as ReturnType<typeof vi.fn>).mock.calls[0]).toEqual([false])
+  expect(onSnapChange).toHaveBeenCalledWith(false)
 })
 
 test('the cue type and stamp choices appear beside their tool while it is chosen', () => {
@@ -137,7 +149,9 @@ test('thumbnails are the mockup 62 px in a 92 px column and fit width leaves the
   expect(THUMB_COLUMN).toBe(92)
   // Both sides of the page list keep the strip's lane (12 px in, 60 wide at the tablet's 44 px
   // buttons), plus room for a classic scrollbar.
-  expect(PAGE_GUTTER).toBeGreaterThanOrEqual(12 + 60)
+  // and the page keeps the mockup's ~19 px clear of it: 12 + 50 + 19 desktop, 12 + 60 + 19 tablet
+  expect(PAGE_GUTTER).toBe(12 + 50 + 19)
+  expect(TABLET_PAGE_GUTTER).toBe(12 + 60 + 19)
   expect(FIT_ALLOWANCE).toBeGreaterThanOrEqual(2 * PAGE_GUTTER)
 })
 
@@ -158,6 +172,7 @@ test('the strip is the mockup tool set in its order, with ellipse and line after
     'Stamp tool',
     'Find in document',
   ])
+  // Find is the strip's last tool now (undo and redo are in the top bar, snap in the status bar)
 })
 
 test('the strip and its buttons carry the mockup sizes: 34 px buttons on a card with radius 12', () => {

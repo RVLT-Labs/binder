@@ -359,6 +359,7 @@ function ScriptViewer({
       phoneTools={<ToolStrip variant="inline" />}
       status={{
         snap: session.snap,
+        onSnapChange: session.setSnap,
         activeLayer: active
           ? { name: session.layerName(active), colour: session.layerColour(active) }
           : null,

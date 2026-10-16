@@ -23,7 +23,6 @@ export function TopBar({
   slotRefs,
   phoneTab,
   phoneTitleSize,
-  phoneBare,
 }: {
   crumbs: Crumb[]
   phone: boolean
@@ -31,12 +30,6 @@ export function TopBar({
   phoneTab?: 20 | 22
   /** A smaller phone title for a drill-in whose title is a long name (the show's own page: 16). */
   phoneTitleSize?: 16
-  /**
-   * The screen draws the phone bar's right-hand side itself (into the `phone` slot): no sync
-   * state, no primary, no avatar. The script screen's mockup bar is the back chevron, the
-   * title, the page position and one menu.
-   */
-  phoneBare?: boolean
   showId?: string
   account: Account
   actions?: ReactNode
@@ -54,7 +47,7 @@ export function TopBar({
     return (
       <header
         className={cn(
-          'flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-paper pr-2.5',
+          'group/bar flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-paper pr-2.5',
           phoneTab || !parent?.link ? 'pl-4' : 'pl-1',
         )}
       >
@@ -86,15 +79,15 @@ export function TopBar({
         >
           {title?.phoneLabel ?? title?.label}
         </span>
-        {phoneBare ? (
-          <div ref={slotRefs?.phone} className="contents" />
-        ) : (
-          <>
-            <SyncStatus />
-            {primary}
-            <AccountMenu account={account} showId={showId} side="bottom" />
-          </>
-        )}
+        {/* A screen can draw its own controls here (the script: page position and menu, see
+            TopBarSlots); while it has put something in, the sync state, primary and avatar make
+            way for it. A screen that has not (its loading, empty or error states) keeps them. */}
+        <div ref={slotRefs?.phone} data-phone-slot className="contents" />
+        <div className="flex items-center gap-1.5 group-has-[[data-phone-slot]:not(:empty)]/bar:hidden">
+          <SyncStatus />
+          {primary}
+          <AccountMenu account={account} showId={showId} side="bottom" />
+        </div>
       </header>
     )
   }

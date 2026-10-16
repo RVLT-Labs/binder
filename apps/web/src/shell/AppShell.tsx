@@ -92,8 +92,6 @@ export function AppShell({
             slotRefs={slotRefs}
             phoneTab={phoneTab}
             phoneTitleSize={phoneTitleSize}
-            // a full-bleed screen (the script) brings its own phone controls
-            phoneBare={fullBleed}
           />
           <main
             data-full-bleed={fullBleed ? 'true' : undefined}

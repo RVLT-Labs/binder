@@ -44,6 +44,7 @@ export function PhoneBarMenu({ page, items, viewer }: PhoneBarMenuProps) {
         </PopoverTrigger>
         <PopoverContent
           align="end"
+          aria-label="Document menu"
           className="flex max-h-[calc(100dvh-7rem)] w-[min(22rem,calc(100vw-24px))] flex-col gap-3 overflow-y-auto p-3"
         >
           {items(

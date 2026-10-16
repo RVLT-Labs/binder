@@ -8,6 +8,8 @@ export interface StatusBarProps {
   pages: number
   /** Whether placed cues snap to the text under them. */
   snap: boolean
+  /** Turns snapping on or off: the word "on" / "off" is the toggle. Without it the line only reads. */
+  onSnapChange?: (on: boolean) => void
   /** The layer new markup goes on, with its colour from the data; null until membership has synced. */
   activeLayer: { name: string; colour: string } | null
   /** The page and zoom controls, at the right. */
@@ -26,7 +28,15 @@ const KEYS: Array<[key: string, does: string]> = [
  * The 26 px strip under the script screen: where you are, what snapping and the active layer will
  * do to the next mark, and the page and zoom controls. Desktop and tablet only.
  */
-export function StatusBar({ page, pages, snap, activeLayer, children, className }: StatusBarProps) {
+export function StatusBar({
+  page,
+  pages,
+  snap,
+  onSnapChange,
+  activeLayer,
+  children,
+  className,
+}: StatusBarProps) {
   return (
     <section
       aria-label="Script status"
@@ -40,12 +50,36 @@ export function StatusBar({ page, pages, snap, activeLayer, children, className 
         <span className="font-mono tabular-nums text-ink-2">{pages}</span>
       </span>
       <span aria-hidden className="h-[18px] w-px bg-line" />
-      <span className="whitespace-nowrap">
-        Snap to text{' '}
-        <span className={cn('font-mono', snap ? 'text-ok' : 'text-muted')}>
-          {snap ? 'on' : 'off'}
+      {onSnapChange ? (
+        <label
+          className={cn(
+            'relative inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm',
+            // a 44 px hit area on a touch tablet, and a focus ring from the checkbox inside
+            "after:absolute after:-inset-x-1 after:-inset-y-2 after:content-['']",
+            'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-red has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper-2',
+          )}
+        >
+          <input
+            type="checkbox"
+            className="peer sr-only"
+            // the word beside it says the state; the control's name is the setting
+            aria-label="Snap to text"
+            checked={snap}
+            onChange={(e) => onSnapChange(e.target.checked)}
+          />
+          Snap to text{' '}
+          <span aria-hidden className={cn('font-mono', snap ? 'text-ok' : 'text-muted')}>
+            {snap ? 'on' : 'off'}
+          </span>
+        </label>
+      ) : (
+        <span className="whitespace-nowrap">
+          Snap to text{' '}
+          <span className={cn('font-mono', snap ? 'text-ok' : 'text-muted')}>
+            {snap ? 'on' : 'off'}
+          </span>
         </span>
-      </span>
+      )}
       {activeLayer && (
         <>
           <span aria-hidden className="h-[18px] w-px bg-line" />

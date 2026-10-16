@@ -1,15 +1,14 @@
 import type { CueType } from '@binder/shared'
-import { Magnet } from 'lucide-react'
 import { type ReactNode, useId, useLayoutEffect, useRef, useState } from 'react'
-import { RedoIcon, SearchIcon, UndoIcon } from '@/components/icons'
+import { SearchIcon } from '@/components/icons'
 import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, focusRing } from '@/lib/utils'
-import { useUndo } from '../undo/useUndo'
 import { useMarkupSession } from './MarkupSession'
 import { TOOL_DEFS } from './MarkupTools'
 import { StampPicker } from './StampPicker'
 import { setStamp, setTool, useTool } from './tools'
+import { UndoRedoButtons } from './UndoRedoButtons'
 
 // The mockup's `.tool`: 34 x 34, radius 9, a 17 px icon in `--muted`, at the desktop. Below 1025 px
 // (the mockup's tablet strip, `.mb-tt`, and the phone's inline one) it is 44 x 44 with a 19 px icon.
@@ -106,14 +105,13 @@ function Flyout({ floating, children }: { floating: boolean; children: ReactNode
 /**
  * The markup tools, as a column floating at the stage's left edge (DESIGN 6.2), or inline (the
  * phone's "More tools"): select, the cue tool and the annotation tools with their keys in the
- * corner, find in the document, undo and redo, and snap to text. The cue's type and the stamp it
+ * corner and find in the document (undo and redo are in the top bar, snap to text in the status bar). The cue's type and the stamp it
  * places show beside their tool while it is chosen. Why a tool is off (an archived show, an old
  * version) is said on the stage and wired to the tool with `aria-describedby`.
  */
 export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'inline' }) {
   const session = useMarkupSession()
   const { tool, cueType, stamp } = useTool()
-  const undo = useUndo(session.showId)
   const hintId = useId()
   const annotationHintId = useId()
   const floating = variant === 'floating'
@@ -122,7 +120,6 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
     'disabled' in session.annotationTarget ? session.annotationTarget.disabled : null
   // One hint element serves both groups when the reason is the same (an archived show).
   const annotationHint = annotationDisabled === disabled ? hintId : annotationHintId
-  const readOnly = session.versionReadOnly
   // On a short stage the strip's buttons shrink first (a 1280x640 window), then the strip scrolls.
   // (Under 1025 px only: the desktop's 34 px buttons already fit.)
   const BUTTON_CLASS = floating
@@ -222,54 +219,13 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
           </button>
         </Tip>
         {/* Undo and redo are in the top bar (the mockup's); the phone's inline strip, which has no
-            top bar room, keeps them. */}
+            top bar room, keeps them. Snap to text is the status bar's (the phone's menu has it). */}
         {!floating && (
           <>
             {divider}
-            <Tip floating={floating} label="Undo" keyHint="⌘Z">
-              <button
-                type="button"
-                aria-label="Undo"
-                className={BUTTON_CLASS}
-                disabled={!undo.canUndo || readOnly !== null}
-                title={readOnly ?? undefined}
-                onClick={() => void undo.undo()}
-              >
-                <UndoIcon className={GLYPH} strokeWidth={1.8} />
-              </button>
-            </Tip>
-            <Tip floating={floating} label="Redo" keyHint="⇧⌘Z">
-              <button
-                type="button"
-                aria-label="Redo"
-                className={BUTTON_CLASS}
-                disabled={!undo.canRedo || readOnly !== null}
-                title={readOnly ?? undefined}
-                onClick={() => void undo.redo()}
-              >
-                <RedoIcon className={GLYPH} strokeWidth={1.8} />
-              </button>
-            </Tip>
+            <UndoRedoButtons strip={{ buttonClassName: BUTTON_CLASS, iconClassName: GLYPH }} />
           </>
         )}
-        {divider}
-        <Tip floating={floating} label="Snap to text">
-          <label
-            className={cn(
-              BUTTON_CLASS,
-              'cursor-pointer has-[:checked]:bg-elev has-[:checked]:text-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-red has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-card',
-            )}
-          >
-            <input
-              type="checkbox"
-              className="peer sr-only"
-              checked={session.snap}
-              onChange={(e) => session.setSnap(e.target.checked)}
-            />
-            <Magnet className={GLYPH} strokeWidth={1.8} aria-hidden />
-            <span className="sr-only">Snap to text</span>
-          </label>
-        </Tip>
       </fieldset>
       {(disabled || annotationDisabled) && (
         <div

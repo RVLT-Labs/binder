@@ -18,7 +18,7 @@ import type { PDFDocumentProxy } from './pdfjs'
 /** Vertical space around each page, in CSS pixels. Part of every item's size. */
 const GAP = 16
 /** The page slot's top padding (set inline on `.page-slot`): where the page box starts in its item. */
-const SLOT_PADDING_TOP = 8
+const SLOT_PADDING_TOP = 22
 
 export interface ListPage {
   id: string
@@ -84,6 +84,8 @@ export function PageList({
     overscan: 1,
     getItemKey: (i) => pages[i].id,
     initialOffset: () => startOf(Math.min(initialPage, pages.length - 1), zoom),
+    // the last page keeps the clearance the first one has above it
+    paddingEnd: SLOT_PADDING_TOP,
     useFlushSync: false,
   })
 

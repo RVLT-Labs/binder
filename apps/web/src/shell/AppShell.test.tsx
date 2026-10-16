@@ -471,7 +471,7 @@ describe('AppShell phone top bar', () => {
     )
   })
 
-  it('a full-bleed screen (the script) draws its own phone controls: no sync state, no avatar', async () => {
+  it('keeps sync state and the account menu until a screen draws its own phone controls into the bar', async () => {
     setWidth(390)
     await renderAt(
       '/shows/s1/docs/d1',
@@ -488,6 +488,12 @@ describe('AppShell phone top bar', () => {
       </AppShell>,
     )
     expect(screen.getByText('Libretto v2', { selector: 'span.font-display' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /account|menu/i })).toBeNull()
+    // With nothing in the slot (loading, no versions, not found) the bar is the normal one.
+    const slot = document.querySelector('[data-phone-slot]') as HTMLElement
+    expect(slot.children).toHaveLength(0)
+    const rest = slot.nextElementSibling as HTMLElement
+    expect(rest.querySelector('button')).not.toBeNull()
+    // Once something is in the slot, CSS hides them (the slot's content makes it :not(:empty)).
+    expect(rest.className).toContain('group-has-[[data-phone-slot]:not(:empty)]/bar:hidden')
   })
 })

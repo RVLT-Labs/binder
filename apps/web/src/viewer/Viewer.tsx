@@ -5,12 +5,15 @@ import {
   type Ref,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { usePresencePeers } from '../presence/PresenceProvider'
 import { peersByPage } from '../presence/peers'
@@ -22,6 +25,7 @@ import {
   fitWidthZoom,
   PAGE_GUTTER,
   PHONE_PAGE_GUTTER,
+  TABLET_PAGE_GUTTER,
   viewerKeyAction,
   zoomIn,
   zoomOut,
@@ -69,7 +73,7 @@ export interface ViewerProps {
   /** The column of page thumbnails. */
   thumbnails?: boolean
   /** What the status bar says beside the page number. */
-  status?: Pick<StatusBarProps, 'snap' | 'activeLayer'>
+  status?: Pick<StatusBarProps, 'snap' | 'onSnapChange' | 'activeLayer'>
   /** A panel beside the pages, e.g. layers and the cue editor. */
   side?: ReactNode
   ref?: Ref<ViewerHandle>
@@ -104,7 +108,9 @@ export function Viewer({
   side,
   ref,
 }: ViewerProps) {
-  const phone = useBreakpoint() === 'phone'
+  const breakpoint = useBreakpoint()
+  const snapId = useId()
+  const phone = breakpoint === 'phone'
   const { pdf, status: pdfStatus, error } = usePdfDocument(pdfUrl)
   const firstPage = Math.min(Math.max(0, initialPage), pages.length - 1)
   const [current, setCurrent] = useState(firstPage)
@@ -122,7 +128,11 @@ export function Viewer({
   const searchInput = useRef<HTMLInputElement>(null)
 
   const widest = useMemo(() => Math.max(...pages.map((p) => p.width)), [pages])
-  const gutter = phone ? PHONE_PAGE_GUTTER : PAGE_GUTTER
+  const gutter = phone
+    ? PHONE_PAGE_GUTTER
+    : breakpoint === 'tablet'
+      ? TABLET_PAGE_GUTTER
+      : PAGE_GUTTER
   const fit = useCallback(
     () => fitWidthZoom((area.current?.clientWidth ?? 0) - fitAllowance(gutter), widest),
     [widest, gutter],
@@ -245,6 +255,19 @@ export function Viewer({
             <div className="flex flex-col gap-1">
               <span className="t-over">View</span>
               {controls}
+              {status.onSnapChange && (
+                // the status bar's toggle is not drawn at phone width: it is here instead
+                <div className="flex min-h-11 items-center gap-3 text-[14px] text-ink">
+                  <Checkbox
+                    id={snapId}
+                    checked={status.snap}
+                    onCheckedChange={(on) => status.onSnapChange?.(on === true)}
+                  />
+                  <Label htmlFor={snapId} className="flex-1 cursor-pointer text-[14px] text-ink">
+                    Snap to text
+                  </Label>
+                </div>
+              )}
               {phoneTools && (
                 <>
                   <span className="t-over mt-2">Markup tools</span>
@@ -310,6 +333,7 @@ export function Viewer({
           page={current + 1}
           pages={pages.length}
           snap={status.snap}
+          onSnapChange={status.onSnapChange}
           activeLayer={status.activeLayer}
         >
           {controls}
