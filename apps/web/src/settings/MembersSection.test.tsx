@@ -74,6 +74,16 @@ test('another member has a role select, department scope boxes and Remove', asyn
   expect((oli.getByLabelText('SND') as HTMLButtonElement).disabled).toBe(true)
 })
 
+test('the note under the invite row describes what editors are given', async () => {
+  renderSection(true)
+  await screen.findByText('Oli')
+  expect(
+    screen.getByText(
+      'Editors place and move cues in the departments they are given. Viewers read and export.',
+    ),
+  ).toBeTruthy()
+})
+
 test('Remove asks first', async () => {
   renderSection(true)
   await screen.findByText('Oli')

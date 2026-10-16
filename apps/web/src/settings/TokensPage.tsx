@@ -274,14 +274,23 @@ function TokenRow({
         >
           {t.name}
         </span>
-        <span className="col-start-1 row-start-2 flex flex-wrap gap-x-3 text-[12px] text-muted md:contents md:text-[13px]">
+        <span className="col-start-1 row-start-2 flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted md:contents md:text-[13px]">
           <span>
             <span className="md:sr-only">Created </span>
             <Parts parts={dayParts(t.createdAt)} />
           </span>
+          <span aria-hidden className="md:hidden">
+            ·
+          </span>
           <span>
-            <span className="md:sr-only">Last used </span>
-            {t.lastUsedAt ? <Parts parts={whenParts(t.lastUsedAt)} /> : 'never used'}
+            {t.lastUsedAt ? (
+              <>
+                <span className="md:sr-only">Last used </span>
+                <Parts parts={whenParts(t.lastUsedAt)} />
+              </>
+            ) : (
+              'never used'
+            )}
           </span>
         </span>
         <span className="col-start-2 row-span-2 row-start-1 flex min-h-11 items-center justify-end md:col-start-4 md:row-span-1 md:min-h-0">

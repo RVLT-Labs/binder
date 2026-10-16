@@ -80,7 +80,7 @@ export function MembersSection({
       {editable && <InviteRow showId={showId} />}
       {editable && (
         <p className="m-0 text-[12px] text-muted">
-          Editors place and move cues on any layer. Viewers read and export.
+          Editors place and move cues in the departments they are given. Viewers read and export.
         </p>
       )}
     </section>

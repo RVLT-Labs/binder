@@ -23,6 +23,7 @@ test('an owner manages departments and member scope; an editor sees them read-on
     await expect(row(b, code)).toBeVisible({ timeout: 20_000 })
   }
   await expect(b.getByText('Only the owner can change these.')).toBeVisible()
+  await expect(b.getByRole('button', { name: 'Archive show' })).toHaveCount(0)
   await expect(b.getByRole('form', { name: 'Add department' })).toHaveCount(0)
   await expect(a.getByRole('form', { name: 'Add department' })).toBeVisible()
 
