@@ -1,7 +1,19 @@
+import { describeFailure } from '@binder/shared'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
-import { getDocument, listDocuments, updateDocument, uploadDocumentFromUrl } from '../../services'
+import {
+  cancelVersionProcessing,
+  getDocument,
+  getDocumentVersion,
+  listDocuments,
+  removeVersion,
+  requireShowRole,
+  retryVersion,
+  updateDocument,
+  uploadDocumentFromUrl,
+} from '../../services'
 import type { Document, DocumentVersion, Page } from '../../services/documents'
+import { CONFIRM_DESCRIPTION, confirmationRequired } from '../confirm'
 import type { McpContext } from '../context'
 import { guarded, jsonResult, pageArgs, paginate } from '../results'
 
@@ -30,6 +42,12 @@ const versionSummary = (v: DocumentVersion) => ({
   pageCount: v.pageCount,
   uploadedAt: v.uploadedAt,
   error: v.error,
+  failureCode: v.failureCode,
+  // The plain-language reason, with the scan resolution where the copy quotes it.
+  failureMessage: v.failureCode
+    ? describeFailure(v.failureCode, { dpi: v.failureDpi }).message
+    : null,
+  originalSizeBytes: v.originalSizeBytes,
 })
 
 const pageSummary = (p: Page) => ({
@@ -49,8 +67,10 @@ export function registerDocumentTools(server: McpServer, mcp: McpContext): void 
       title: 'List documents',
       description:
         "Lists a show's documents (libretto, score, blocking, other) in display order, each with " +
-        'its versions and their processing status (queued, processing, ready, failed). A version ' +
-        'id is what get_page and search_script take; currentVersionId is the one in use. Paginated.',
+        'its versions and their processing status (queued, processing, ready, failed; a failed ' +
+        'version has failureCode and a plain failureMessage, and every version its ' +
+        'originalSizeBytes). A version id is what get_page and search_script take; ' +
+        'currentVersionId is the one in use. Paginated.',
       inputSchema: z.object({ showId: id('show'), ...pageArgs }),
       annotations: READ,
     },
@@ -144,6 +164,80 @@ export function registerDocumentTools(server: McpServer, mcp: McpContext): void 
         args,
       )
       return jsonResult({ document: documentSummary(document), version: versionSummary(version) })
+    }),
+  )
+
+  const versionArgs = { versionId: id('version') }
+
+  server.registerTool(
+    'cancel_version_processing',
+    {
+      title: 'Cancel version processing',
+      description:
+        'Stops an upload that is still queued or processing: the version becomes failed with ' +
+        'failureCode cancelled and the stored file is kept, so retry_version can run it again. ' +
+        'Editors and owners. A version that already finished is a conflict. Returns the version.',
+      inputSchema: z.object(versionArgs),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    guarded(async ({ versionId }, ctx) =>
+      jsonResult(versionSummary(await cancelVersionProcessing(db, mcp.actor(ctx), { versionId }))),
+    ),
+  )
+
+  server.registerTool(
+    'retry_version',
+    {
+      title: 'Retry version processing',
+      description:
+        'Runs a failed version again from the file already stored, without uploading it again. ' +
+        "Only the document's newest version can be retried. Retrying cannot fix a damaged, " +
+        'password-protected or text-less file (failureCode unreadable, password_protected, ' +
+        'no_text, low_resolution): upload a corrected file with upload_document instead. Editors ' +
+        'and owners. Processing then runs in the background: poll get_document. Returns the version.',
+      inputSchema: z.object(versionArgs),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    guarded(async ({ versionId }, ctx) =>
+      jsonResult(
+        versionSummary(await retryVersion(db, blobs, jobs, mcp.actor(ctx), { versionId })),
+      ),
+    ),
+  )
+
+  server.registerTool(
+    'remove_version',
+    {
+      title: 'Remove failed version',
+      description:
+        'Permanently removes a failed version and its stored files; cancel_version_processing ' +
+        'first if it is still running. When it is the only version of its document the document ' +
+        'is removed too, which returns CONFIRMATION_REQUIRED until called with confirm: true. ' +
+        'This cannot be undone or reverted. Editors and owners. Returns what was removed.',
+      inputSchema: z.object({
+        ...versionArgs,
+        confirm: z.boolean().optional().describe(CONFIRM_DESCRIPTION),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    guarded(async ({ versionId, confirm }, ctx) => {
+      const actor = mcp.actor(ctx)
+      if (confirm !== true) {
+        // Authorise first, so someone who may not remove it is told so instead of asked to confirm.
+        const found = await getDocumentVersion(db, actor, { versionId })
+        await requireShowRole(db, actor, found.showId, 'editor')
+        if (found.status === 'failed') {
+          const { versions, document } = await getDocument(db, actor, {
+            documentId: found.documentId,
+          })
+          if (versions.length === 1) {
+            return confirmationRequired(
+              `This is the only version of "${document.title}", so removing it deletes the whole document and its stored file permanently.`,
+            )
+          }
+        }
+      }
+      return jsonResult({ removed: await removeVersion(db, blobs, actor, { versionId }) })
     }),
   )
 }

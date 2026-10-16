@@ -113,6 +113,15 @@ export class PresenceHub {
     return [...(this.#shows.get(showId)?.values() ?? [])].map(peerOf)
   }
 
+  /** Who is in the show right now, once per user (a user with two tabs counts once), in join order. */
+  occupants(showId: string): { userId: string; name: string }[] {
+    const seen = new Map<string, string>()
+    for (const { conn } of this.#shows.get(showId)?.values() ?? []) {
+      if (!seen.has(conn.userId)) seen.set(conn.userId, conn.name)
+    }
+    return [...seen].map(([userId, name]) => ({ userId, name }))
+  }
+
   /** How many connections this user holds open on this show. */
   connectionCount(showId: string, userId: string): number {
     let count = 0

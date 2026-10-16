@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { ActivityFeed } from '../history/ActivityFeed'
 
 interface ActivitySearch {
@@ -19,14 +19,5 @@ export const Route = createFileRoute('/shows/$showId/activity')({
 function ActivityPage() {
   const { showId } = Route.useParams()
   const { from } = Route.useSearch()
-  return (
-    <>
-      <p>
-        <Link to="/shows/$showId" params={{ showId }}>
-          ← Show
-        </Link>
-      </p>
-      <ActivityFeed showId={showId} from={from} />
-    </>
-  )
+  return <ActivityFeed showId={showId} from={from} />
 }

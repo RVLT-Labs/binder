@@ -1,7 +1,7 @@
 import type { Anchor, WordLayer } from '@binder/shared'
 import { expect, type Page, test } from '@playwright/test'
 import { readRun } from './env'
-import { clientPoint, lineOf, pageText, withUsers } from './markupHelpers'
+import { clientPoint, lineOf, pageText, withUsers, zoomOutTo } from './markupHelpers'
 
 /**
  * Annotations on the short libretto: drawn with the viewer's tools into the local PowerSync
@@ -286,9 +286,14 @@ test("editing a note's text and colour shows for both users", async ({ browser }
       await expect
         .poll(async () => (await localAnnotation(b.page, id))?.style.colour, { timeout: 10_000 })
         .toBe('#cc0000')
-      await expect(shape(b.page, id).locator('rect.annotation-note')).toHaveAttribute(
-        'stroke',
+      // A note's colour is its left bar, and its block is that colour mixed 12 % into white.
+      await expect(shape(b.page, id).locator('rect.annotation-note-bar')).toHaveAttribute(
+        'fill',
         '#cc0000',
+      )
+      await expect(shape(b.page, id).locator('rect.annotation-note')).toHaveAttribute(
+        'fill',
+        '#f9e0e0',
       )
 
       // Escape in the field throws a draft away; the note keeps its text and stays selected.
@@ -309,6 +314,8 @@ test("resizing a rect by its corner and moving an arrow's end are saved", async 
     const made: string[] = []
     try {
       await a.page.getByLabel('Active layer LX').check()
+      // The shape is drawn low on the page: zoomed out, all of it is above the status bar.
+      await zoomOutTo(a.page)
       await pick(a.page, 'Rect')
       const rectId = await drawing(a.page, () =>
         dragPage(a.page, { x: 100, y: 200 }, { x: 200, y: 140 }),
@@ -457,8 +464,8 @@ test('a stamp from the show stamp set lands where clicked', async ({ browser }) 
     try {
       await a.page.getByLabel('Active layer LX').check()
       await pick(a.page, 'Stamp')
-      const toolbar = a.page.getByRole('toolbar', { name: 'Viewer' })
-      const picker = toolbar.getByLabel('Stamp', { exact: true })
+      const strip = a.page.getByRole('group', { name: 'Markup tools' })
+      const picker = strip.getByLabel('Stamp', { exact: true })
       await expect(picker.locator('option')).toHaveText([
         'Enter',
         'Exit',
@@ -508,7 +515,7 @@ test('an owner edit to the stamp set reaches another member’s stamp picker', a
     const toolbarStamps = async (page: Page) => {
       await pick(page, 'Stamp')
       return page
-        .getByRole('toolbar', { name: 'Viewer' })
+        .getByRole('group', { name: 'Markup tools' })
         .getByLabel('Stamp', { exact: true })
         .locator('option')
     }
@@ -559,9 +566,10 @@ test('Delete removes the selected annotation for both users; a locked layer refu
       )
       made.push(id)
       await expect(shape(b.page, id)).toBeVisible({ timeout: 10_000 })
-      await expect(a.page.locator('[role="status"].visually-hidden')).toContainText(
-        /^Selected LX ellipse, page 1$/,
-      )
+      // The mode announcer is a second visually hidden status (it is empty until Calling mode is entered).
+      await expect(
+        a.page.locator('[role="status"].visually-hidden').filter({ hasText: 'Selected' }),
+      ).toHaveText(/^Selected LX ellipse, page 1$/)
 
       // Locked: the tools are disabled with the reason, and Delete does nothing.
       await a.page.getByLabel('Lock LX').check()

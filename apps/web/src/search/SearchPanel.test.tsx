@@ -142,3 +142,28 @@ test('a search that fails shows an error', async () => {
   await typeQuery('pirate')
   expect((await screen.findByRole('alert')).textContent).toContain('db closed')
 })
+
+test('the box has the cursor when the card opens, and Escape closes the card without the markup keys seeing it', () => {
+  const onClose = vi.fn()
+  render(
+    <SearchPanel
+      search={async () => []}
+      loading={false}
+      unavailable={0}
+      hits={[]}
+      active={null}
+      onResults={() => {}}
+      onActivate={() => {}}
+      onClose={onClose}
+    />,
+  )
+  const box = screen.getByRole('searchbox', { name: 'Search document' })
+  expect(document.activeElement).toBe(box)
+  const escapeKey = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+  box.dispatchEvent(escapeKey)
+  expect(onClose).toHaveBeenCalledTimes(1)
+  // handled here: the viewer's Escape-deselects shortcut skips an event that is already prevented
+  expect(escapeKey.defaultPrevented).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Close search' }))
+  expect(onClose).toHaveBeenCalledTimes(2)
+})

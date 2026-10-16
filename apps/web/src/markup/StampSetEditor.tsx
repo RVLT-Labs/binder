@@ -1,5 +1,10 @@
 import { usePowerSync, useQuery } from '@powersync/react'
 import { useId, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
+import { SECTION_LABEL } from '../panel/fields'
+import { ADD_ROW, Field } from '../settings/parts'
 import { CommitInput } from './CommitInput'
 import { checkStampName, readStamps, STAMP_NAME_MAX, withStamps } from './stampSettings'
 
@@ -52,15 +57,16 @@ export function StampSetEditor({ showId, editable }: { showId: string; editable:
   }
 
   return (
-    <section aria-labelledby={`${ids}-heading`}>
-      <h2 id={`${ids}-heading`}>Stamps</h2>
-      <p>
-        The stamps the stamp tool offers. Stamps already placed keep their text when one is renamed
-        or removed.
-      </p>
-      <ul aria-label="Stamps" className="settings-list">
+    <section aria-labelledby={`${ids}-heading`} className="flex flex-col gap-2">
+      <h2 id={`${ids}-heading`} className={SECTION_LABEL}>
+        Stamps
+      </h2>
+      <ul aria-label="Stamps" className="m-0 list-none p-0">
         {stamps.map((stamp, i) => (
-          <li key={stamp}>
+          <li
+            key={stamp}
+            className="flex min-h-11 items-center gap-3 border-t border-line text-[13px] text-ink first:border-t-0 md:min-h-10"
+          >
             {editable ? (
               <>
                 <CommitInput
@@ -69,15 +75,20 @@ export function StampSetEditor({ showId, editable }: { showId: string; editable:
                   value={stamp}
                   onCommit={(value) => rename(i, value)}
                   onCancel={() => setError(null)}
+                  className="-ml-1.5 max-w-[260px] flex-1 border-transparent bg-transparent px-1.5 hover:border-input focus-visible:bg-paper md:-ml-[9px] md:px-[9px]"
                 />
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto text-muted"
+                  aria-label={`Remove ${stamp}`}
                   disabled={stamps.length === 1}
                   title={stamps.length === 1 ? 'A show keeps at least one stamp.' : undefined}
                   onClick={() => void save(stamps.filter((_, j) => j !== i))}
                 >
-                  Remove {stamp}
-                </button>
+                  Remove
+                </Button>
               </>
             ) : (
               stamp
@@ -88,23 +99,35 @@ export function StampSetEditor({ showId, editable }: { showId: string; editable:
       {editable && (
         <form
           aria-label="Add stamp"
-          className="settings-form"
+          className={cn(ADD_ROW, 'flex flex-wrap items-end gap-3')}
           onSubmit={(e) => {
             e.preventDefault()
             add()
           }}
         >
-          <input
-            aria-label="New stamp name"
-            placeholder="Stamp (Hold)"
-            value={name}
-            maxLength={STAMP_NAME_MAX}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <button type="submit">Add stamp</button>
+          <Field label="New stamp" className="max-w-[260px] flex-1 max-md:max-w-none">
+            <Input
+              aria-label="New stamp name"
+              placeholder="Stamp (Hold)"
+              value={name}
+              maxLength={STAMP_NAME_MAX}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </Field>
+          <Button type="submit" variant="line">
+            Add stamp
+          </Button>
         </form>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert" className="m-0 text-[12px] text-ink-2">
+          {error}
+        </p>
+      )}
+      <p className="m-0 text-[12px] text-muted">
+        The stamps the stamp tool offers. Stamps already placed keep their text when one is renamed
+        or removed.
+      </p>
     </section>
   )
 }

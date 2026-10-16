@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { presenceColour } from '@binder/shared'
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test'
 import { readRun, storageStateFor, type UserKey } from './env'
-import { clientPoint } from './markupHelpers'
+import { clientPoint, zoomOutTo } from './markupHelpers'
 
 /**
  * Presence on the short libretto (three pages): A's place in the binder shows as an avatar on B's
@@ -157,6 +157,8 @@ test("B sees A's avatar on page 3's thumbnail within 3s and an outline on the cu
     const cueId = randomUUID()
     try {
       await atPage(a.page, 3)
+      // A clicks low on page 3 below: zoomed out, that is above the status bar.
+      await zoomOutTo(a.page)
 
       // A's avatar is on page 3's thumbnail, in A's colour, named for a screen reader. Not page 1's.
       const avatar = thumbSlot(b.page, 3).getByRole('img', { name: `${owner.name} on page 3` })
@@ -325,7 +327,7 @@ test('the show page lists who is in the binder: in the show, then the document a
   await withBoth(
     browser,
     async (a, b) => {
-      const list = b.page.getByRole('region', { name: 'Who is in the binder' })
+      const list = b.page.getByRole('region', { name: 'In the binder now' })
       const entry = list.getByRole('listitem').filter({ hasText: users.owner.name })
       // The row starts with the avatar's initials, which are decorative; the sentence follows.
       const inShow = new RegExp(`${users.owner.name} — in the show$`)
@@ -352,4 +354,114 @@ test('the show page lists who is in the binder: in the show, then the document a
     },
     { aPath: showPath, bPath: showPath },
   )
+})
+
+/** The show's card on the shows home. */
+const homeCard = (page: Page, title: string) =>
+  page.getByRole('listitem').filter({ has: page.getByRole('link', { name: title, exact: true }) })
+
+test("the shows home card shows B's avatar while B has the show open, and it is gone within 20s of B closing the tab", async ({
+  browser,
+}) => {
+  const { users, sharedShow } = readRun()
+  const contexts: BrowserContext[] = []
+  try {
+    // A is on the shows home, which holds no show socket of its own.
+    const a = await openAs(browser, 'owner', contexts, '/')
+    const card = homeCard(a.page, sharedShow.title)
+    await expect(card).toBeVisible({ timeout: 20_000 })
+    const avatar = card.getByRole('img', { name: new RegExp(`^${users.sndEditor.name}`) })
+    await expect(avatar).toHaveCount(0)
+
+    // B opens the show: the next 15 s poll draws B's avatar on the card, in B's colour. B is an
+    // editor scoped to SND, which the tooltip says.
+    const b = await openAs(browser, 'sndEditor', contexts, `/shows/${sharedShow.id}`)
+    await expect(card.getByRole('group', { name: 'In the show now' })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(avatar).toHaveCount(1)
+    await expect(avatar).toHaveAttribute('title', `${users.sndEditor.name}, SND`)
+    await expect(avatar).toHaveCSS('background-color', rgb(presenceColour(users.sndEditor.id)))
+
+    // B closes the tab: the socket closes at once and the next poll takes the avatar away.
+    await b.page.close()
+    await expect(avatar).toHaveCount(0, { timeout: 20_000 })
+    await expect(card.getByRole('group', { name: 'In the show now' })).toHaveCount(0)
+  } finally {
+    for (const context of contexts) await context.close()
+  }
+})
+
+test('after A relabels cues the card reads "LX relabelled N cues"', async ({ browser }) => {
+  const { sharedShow, departments, libretto: doc } = readRun()
+  const contexts: BrowserContext[] = []
+  const ids = [randomUUID(), randomUUID()]
+  let a: Opened | undefined
+  try {
+    a = await openAs(browser, 'owner', contexts, '/')
+    await expect(homeCard(a.page, sharedShow.title)).toBeVisible({ timeout: 20_000 })
+    const page = a.page
+    const uploaded = () =>
+      expect
+        .poll(
+          () =>
+            page.evaluate(
+              async () => (await window.__binder?.db.getUploadQueueStats())?.count ?? 0,
+            ),
+          { timeout: 20_000 },
+        )
+        .toBe(0)
+
+    // Two LX cues, placed in one write ...
+    await page.evaluate(
+      async (c) => {
+        const now = new Date().toISOString()
+        const anchor = JSON.stringify({
+          documentId: c.documentId,
+          documentVersionId: c.versionId,
+          pageIndex: 2,
+          x: 200,
+          y: 500,
+          status: 'ok',
+        })
+        await window.__binder?.db.writeTransaction(async (tx) => {
+          for (const [i, id] of c.ids.entries()) {
+            await tx.execute(
+              `INSERT INTO cues (id, show_id, department_id, major, minor, label, anchor, type, notes,
+                                 colour, payload, created_at, updated_at, updated_by)
+               VALUES (?, ?, ?, ?, 0, 'Pulse', ?, 'go', '', NULL, '{}', ?, ?, NULL)`,
+              [id, c.showId, c.departmentId, 80 + i, anchor, now, now],
+            )
+          }
+        })
+      },
+      {
+        ids,
+        showId: sharedShow.id,
+        departmentId: departments.LX,
+        documentId: doc.documentId,
+        versionId: doc.versionId,
+      },
+    )
+    await uploaded()
+
+    // ... then both relabelled in one write: that is the last change, one batch of two rows.
+    await page.evaluate(async (ids) => {
+      await window.__binder?.db.writeTransaction(async (tx) => {
+        for (const id of ids)
+          await tx.execute(`UPDATE cues SET label = 'Pulse 2' WHERE id = ?`, [id])
+      })
+    }, ids)
+    await uploaded()
+
+    // A fresh load of the home asks the server for the last changes at once.
+    await page.reload()
+    const card = homeCard(page, sharedShow.title)
+    await expect(card).toContainText('LX relabelled 2 cues', { timeout: 20_000 })
+    await expect(card).toContainText(/just now|\d+ min ago/)
+    await expect(card).not.toContainText('Updated')
+  } finally {
+    if (a) await remove(a.page, 'cues', ids)
+    for (const context of contexts) await context.close()
+  }
 })

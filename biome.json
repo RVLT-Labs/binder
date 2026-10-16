@@ -12,13 +12,19 @@
       "!apps/web/e2e/.auth",
       "!apps/web/test-results",
       "!apps/web/playwright-report",
-      "!docs/superpowers/design"
+      "!docs/superpowers/design",
+      "!.worktrees"
     ]
   },
   "formatter": {
     "indentStyle": "space",
     "indentWidth": 2,
     "lineWidth": 100
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
   },
   "javascript": {
     "formatter": {

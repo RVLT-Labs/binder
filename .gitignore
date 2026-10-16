@@ -13,3 +13,6 @@ apps/web/e2e/.auth/
 apps/web/test-results/
 apps/web/playwright-report/
 fixtures/public/generated/
+
+# Parallel worktrees for SDD lanes
+.worktrees/

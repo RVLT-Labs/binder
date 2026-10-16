@@ -1,11 +1,14 @@
 import { useEffect, useRef } from 'react'
+import { modalIsOpen } from '@/lib/modalDialog'
+import { openKeypad } from '../calling/keypadState'
+import { isPaletteOpen } from '../palette/paletteState'
 import { useUndo } from '../undo/useUndo'
 import { useMarkupSession } from './MarkupSession'
 import { stepCue } from './markupView'
 import { endRelocate, isRelocating } from './relocate'
 import { clearSelection, useSelection } from './selection'
 import { resolveShortcut } from './shortcuts'
-import { useTool } from './tools'
+import { setTool, useTool } from './tools'
 
 /** Inputs that take no typing: a shortcut pressed while one has focus still counts. */
 const NON_TEXT_INPUTS = new Set([
@@ -19,6 +22,8 @@ const NON_TEXT_INPUTS = new Set([
   'file',
 ])
 
+export { modalIsOpen }
+
 /** True for elements that take typed keys (text fields, selects, editable content). */
 export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -30,32 +35,47 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   )
 }
 
+/** What the document page tells the keys about Calling mode (DESIGN §9). */
+export interface CallingKeys {
+  /** In Calling only the navigation keys act: ←/→ turn pages, `g` opens the keypad. */
+  active: boolean
+  /** ⇧C: into Calling from markup, out of it from Calling. */
+  onToggle: () => void
+}
+
 /**
  * The viewer's markup keys while a document is open: `]` and `[` walk the shown cues, `c` places
- * a cue at the pointer, `g` jumps to a page, `1`-`9` pick the active layer, Delete removes the
+ * a cue at the pointer, `g` jumps to a page, `/` finds in the document, `v` `h` `n` `r` `a` `s`
+ * choose a tool, `1`-`9` pick the active layer, Delete removes the
  * selected cue or annotation, Escape deselects, Mod+Z and Mod+Shift+Z undo and redo
  * the user's own edits (never while a text field has focus, where the browser's own undo applies).
+ * ⇧C switches to Calling mode and back; while `calling.active`, every key but the navigation ones
+ * (←/→ and `g`) and ⇧C is ignored.
  */
-export function useMarkupShortcuts(): void {
+export function useMarkupShortcuts(calling?: CallingKeys): void {
   const session = useMarkupSession()
   const undo = useUndo(session.showId)
-  const current = { session, selection: useSelection(), tool: useTool(), undo }
+  const current = { session, selection: useSelection(), tool: useTool(), undo, calling }
   // The listener stays attached; it reads what is current when a key arrives.
   const latest = useRef(current)
   latest.current = current
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      const { session, selection, tool, undo } = latest.current
-      if (e.defaultPrevented || e.repeat) return
-      const action = resolveShortcut({
-        key: e.key,
-        metaKey: e.metaKey,
-        ctrlKey: e.ctrlKey,
-        shiftKey: e.shiftKey,
-        altKey: e.altKey,
-        editableTarget: isEditableTarget(e.target),
-      })
+      const { session, selection, tool, undo, calling } = latest.current
+      // The palette's results are not editable fields, so a key pressed on one must be kept out too.
+      if (e.defaultPrevented || e.repeat || modalIsOpen() || isPaletteOpen()) return
+      const action = resolveShortcut(
+        {
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+          editableTarget: isEditableTarget(e.target),
+        },
+        { calling: calling?.active === true },
+      )
       if (!action) return
       const selectedCue = selection?.table === 'cues' ? selection.id : null
       switch (action.kind) {
@@ -78,8 +98,27 @@ export function useMarkupShortcuts(): void {
           break
         }
         case 'jumpToPage':
-          session.viewer.current?.focusPageInput()
+          // Calling has no page box: `g` opens the keypad.
+          if (calling?.active) openKeypad()
+          else session.viewer.current?.focusPageInput()
           break
+        case 'turnPage':
+          session.viewer.current?.turnPage(action.direction)
+          break
+        case 'toggleCalling':
+          if (!calling) return
+          calling.onToggle()
+          break
+        case 'focusSearch':
+          session.viewer.current?.focusSearch()
+          break
+        case 'tool': {
+          // A tool that cannot place anything (read-only, no layer) is not switched to.
+          const blocked = action.tool === 'select' ? false : 'disabled' in session.annotationTarget
+          if (blocked) return
+          setTool(action.tool)
+          break
+        }
         case 'activeLayer': {
           const layer = session.editable[action.index]
           if (!layer) return

@@ -1,0 +1,185 @@
+import type * as React from 'react'
+
+import { cn } from '@/lib/utils'
+
+function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn('motion-safe:animate-pulse rounded-[8px] bg-elev', className)} {...props} />
+  )
+}
+
+/**
+ * Loading rows, the mockups' `.ov-skrow` states sheet: a card of rows with the table's column widths
+ * (52 px · flexible · 44 px), each a `--elev` bar with no gradient. `label` is the words a screen
+ * reader (and a test) gets in place of the picture.
+ */
+function RowsSkeleton({
+  rows = 3,
+  label = 'Loading…',
+  className,
+}: {
+  rows?: number
+  label?: string
+  className?: string
+}) {
+  return (
+    <div
+      aria-busy="true"
+      className={cn(
+        'overflow-hidden rounded-[var(--r)] border-2 border-line-2 bg-card shadow-[var(--sh-card)]',
+        className,
+      )}
+    >
+      <span className="sr-only">{label}</span>
+      {Array.from({ length: rows }).map((_, r) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder rows never reorder
+          key={r}
+          aria-hidden
+          className="grid h-[46px] grid-cols-[52px_minmax(0,1fr)_44px] items-center gap-4 border-t border-line px-4 first:border-t-0"
+        >
+          <Skeleton className="h-3 rounded-[6px]" />
+          {/* deterministic widths, as the mockup's 72 / 54 / 84 % */}
+          <Skeleton className="h-3 rounded-[6px]" style={{ width: `${[72, 54, 84][r % 3]}%` }} />
+          <Skeleton className="h-3 rounded-[6px]" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Table skeleton — matches DataTable structure. Deterministic widths (no
+ * Math.random) to avoid SSR/CSR hydration mismatches. */
+function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
+  const w = (n: number) => `${56 + ((n * 23) % 70)}px`
+  return (
+    <div className="overflow-hidden rounded-[var(--r-lg)] border border-line">
+      <div className="flex gap-4 border-b border-line px-4 py-3">
+        {Array.from({ length: cols }).map((_, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder rows never reorder
+          <Skeleton key={i} className="h-3" style={{ width: w(i + 1) }} />
+        ))}
+      </div>
+      {Array.from({ length: rows }).map((_, r) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder rows never reorder
+          key={r}
+          className="flex items-center gap-4 border-b border-line px-4 py-3 last:border-b-0"
+        >
+          {Array.from({ length: cols }).map((_, c) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder rows never reorder
+            <Skeleton key={c} className="h-3.5" style={{ width: w(r * cols + c + 2) }} />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Card skeleton — info card pattern. */
+function CardSkeleton() {
+  return (
+    <div className="space-y-3 rounded-[var(--r-lg)] border border-line bg-card p-4 shadow-[var(--sh-card)]">
+      <Skeleton className="h-3 w-24" />
+      <div className="space-y-2">
+        {[
+          ['w-16', 'w-20'],
+          ['w-20', 'w-14'],
+          ['w-14', 'w-24'],
+        ].map(([a, b], i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder rows never reorder
+          <div key={i} className="flex justify-between">
+            <Skeleton className={`h-3 ${a}`} />
+            <Skeleton className={`h-3 ${b}`} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Detail page skeleton — hero + tabs + card grid. */
+function DetailPageSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex gap-4">
+          <Skeleton className="size-16 shrink-0 rounded-[var(--r)]" />
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-48" />
+            <div className="flex gap-2">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Skeleton className="h-9 w-20" />
+          <Skeleton className="h-9 w-20" />
+        </div>
+      </div>
+      <div className="flex gap-1 border-b border-line pb-2">
+        <Skeleton className="h-7 w-16" />
+        <Skeleton className="h-7 w-16" />
+        <Skeleton className="h-7 w-16" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <CardSkeleton />
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+    </div>
+  )
+}
+
+/** Form page skeleton — header + flat form surface. */
+function FormSkeleton({ fields = 6 }: { fields?: number }) {
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-3.5 w-64" />
+      </div>
+      <div className="space-y-6 rounded-[var(--r-lg)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+          {Array.from({ length: fields }).map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder rows never reorder
+            <div key={i} className="space-y-1.5">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-end border-t border-line pt-4">
+          <Skeleton className="h-9 w-24" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** List page skeleton — header + table. */
+function ListPageSkeleton({ rows = 8 }: { rows?: number }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between">
+        <div className="space-y-1">
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-3.5 w-56" />
+        </div>
+        <Skeleton className="h-9 w-28" />
+      </div>
+      <TableSkeleton rows={rows} />
+    </div>
+  )
+}
+
+export {
+  CardSkeleton,
+  DetailPageSkeleton,
+  FormSkeleton,
+  ListPageSkeleton,
+  RowsSkeleton,
+  Skeleton,
+  TableSkeleton,
+}

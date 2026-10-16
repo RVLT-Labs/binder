@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { afterSignIn } from '../auth/afterSignIn'
 import { authCapabilitiesQueryKey, fetchAuthCapabilities } from '../auth/capabilities'
-import { LoginForm } from '../auth/LoginForm'
+import { LoginCard } from '../auth/LoginCard'
 import { meQueryKey } from '../auth/session'
 
 export const Route = createFileRoute('/login')({ component: LoginPage })
@@ -18,9 +18,8 @@ function LoginPage() {
   })
 
   return (
-    <main className="page login">
-      <h1>Sign in to Binder</h1>
-      <LoginForm
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-paper px-4 py-10 text-ink">
+      <LoginCard
         magicLink={capabilities.data?.magicLink === true}
         onSignedIn={() =>
           afterSignIn({

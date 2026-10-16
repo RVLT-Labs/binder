@@ -170,9 +170,9 @@ describe('POST /api/shows/:showId/exports', () => {
         exists: (k) => s.deps.blobs.exists(k),
         delete: (k) => s.deps.blobs.delete(k),
         async put(key, body, contentType) {
-          await s.deps.blobs.put(key, body, contentType)
+          const result = await s.deps.blobs.put(key, body, contentType)
           stored.push(key)
-          if (raced) return
+          if (raced) return result
           raced = true
           await s.deps.blobs.put(winnerKey, pdfBytes(), 'application/pdf')
           await s.deps.db.insert(exportRecords).values({
@@ -185,6 +185,7 @@ describe('POST /api/shows/:showId/exports', () => {
             createdBy: winnerUser,
             updatedBy: winnerUser,
           })
+          return result
         },
       }
       return { store, stored, winnerKey }
@@ -356,8 +357,61 @@ describe('POST /api/shows/:showId/exports', () => {
       expect([name, res.status]).toEqual([name, 400])
     }
     expect((await post(s.owner, meta(), null)).status).toBe(400)
-    // 200 characters is fine.
-    expect((await post(s.owner, meta({ filename: 'x'.repeat(200) }))).status).toBe(201)
+    // 200 characters in all, with the .pdf, is fine.
+    expect((await post(s.owner, meta({ filename: `${'x'.repeat(196)}.pdf` }))).status).toBe(201)
+  })
+
+  test('the upload meta options round-trip to the record', async () => {
+    const options = {
+      pages: '2-3',
+      paper: 'Letter',
+      includeStandbyWarn: false,
+      includeAnnotations: true,
+      includeCueNotes: false,
+    }
+    const res = await post(s.owner, meta({ options }))
+    expect(res.status).toBe(201)
+    const created = await res.json()
+    expect(created.options).toEqual(options)
+    // A partial options object is filled with the defaults; none at all leaves the column null.
+    const partial = await post(s.owner, meta({ options: { pages: '1-4' } }))
+    expect((await partial.json()).options).toEqual({
+      pages: '1-4',
+      includeStandbyWarn: true,
+      includeAnnotations: true,
+      includeCueNotes: true,
+    })
+    expect((await (await post(s.owner, meta())).json()).options).toBeNull()
+    const listed = await listExportRecords(s.deps.db, s.actors.owner, { showId: s.show.id })
+    expect(listed.find((r) => r.id === created.id)?.options).toEqual(options)
+  })
+
+  test('bad options in the meta are 400', async () => {
+    for (const options of [
+      { pages: 'a-b' },
+      { pages: '3, 1' },
+      { pages: '0' },
+      { paper: 'A3' },
+      { includeCueNotes: 'yes' },
+    ]) {
+      const res = await post(s.owner, meta({ options }))
+      expect([JSON.stringify(options), res.status]).toEqual([JSON.stringify(options), 400])
+    }
+  })
+
+  test('an unsafe client file name is rejected', async () => {
+    for (const filename of ['a/b.pdf', 'a:b.pdf', 'CON.pdf', '.hidden.pdf', 'a\u0001b.pdf']) {
+      const res = await post(s.owner, meta({ filename }))
+      expect([filename, res.status]).toEqual([filename, 400])
+    }
+    const direct = await code(
+      createExportRecord(s.deps.db, s.deps.blobs, s.actors.owner, input({ filename: 'a|b.pdf' })),
+    )
+    expect(direct).toBe('invalid')
+    // A name without .pdf gets one, and the stored name is the cleaned one.
+    const res = await post(s.owner, meta({ filename: '  Act one  ' }))
+    expect(res.status).toBe(201)
+    expect((await res.json()).filename).toBe('Act one.pdf')
   })
 
   test('createdAt is honoured when given', async () => {
@@ -620,7 +674,7 @@ describe('exportMarkedScript', () => {
     expect(uri).toBe(`binder://shows/${f.show.id}/exports/${record.id}`)
     expect(record).toMatchObject({
       kind: 'pdf-script',
-      filename: 'Show - Libretto v1 - All layers.pdf',
+      filename: 'show-libretto-v1-all-layers.pdf',
       privateTo: null,
       createdBy: f.viewer.id,
       snapshotId: null,
@@ -646,7 +700,7 @@ describe('exportMarkedScript', () => {
         documentId: f.docId,
         layers: 'none',
       })
-      expect(record.filename).toBe('Show - Libretto v1 - Clean copy.pdf')
+      expect(record.filename).toBe('show-libretto-v1-clean.pdf')
       const text = await footerOf(await readRecord(f, record))
       expect(text).toContain('Show · Libretto v1 · Clean copy · export ')
       expect(text).toContain(`export ${record.id.slice(-8)}`)
@@ -673,7 +727,7 @@ describe('exportMarkedScript', () => {
       ],
     })
     expect(record.privateTo).toBe(f.viewer.id)
-    expect(record.filename).toBe('Show - Libretto v1 - LX + personal.pdf')
+    expect(record.filename).toBe('show-libretto-v1-LX-personal.pdf')
     expect(
       (await listExportRecords(f.deps.db, f.actors.owner, { showId: f.show.id })).map((r) => r.id),
     ).not.toContain(record.id)
@@ -784,14 +838,14 @@ describe('exportMarkedScript', () => {
     },
   )
 
-  test('filename characters / \\ : * ? " < > | become dashes', async () => {
+  test('filename characters / \\ : * ? " < > | become hyphens in the slug', async () => {
     const f = await ready({ title: 'Act 1/2: "Intro"?' })
     await f.deps.db.update(shows).set({ title: 'A|B*C' }).where(eq(shows.id, f.show.id))
     const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
       documentId: f.docId,
       layers: 'none',
     })
-    expect(record.filename).toBe('A-B-C - Act 1-2- -Intro-- v1 - Clean copy.pdf')
+    expect(record.filename).toBe('a-b-c-act-1-2-intro-v1-clean.pdf')
   })
 
   test('a version without a searchable PDF, an unknown document, a non-member and an unknown version are refused', async () => {

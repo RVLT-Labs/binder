@@ -3,11 +3,13 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { ensureFixtures, FIXTURES } from '@binder/fixtures'
+import { chromium } from '@playwright/test'
 import {
   API_URL,
   APP_URL,
   AUTH_DIR,
   apiEnv,
+  PREVIEW_URL,
   REPO_ROOT,
   RUN_FILE,
   type RunData,
@@ -83,6 +85,67 @@ export default async function globalSetup() {
   mkdirSync(AUTH_DIR, { recursive: true })
   const data: RunData = { password, users, sharedShow, departments, cShow, libretto }
   writeFileSync(RUN_FILE, JSON.stringify(data, null, 2))
+
+  await warmUp(owner, data)
+}
+
+/**
+ * Loads the app once in a real browser before any spec does. A cold dev server compiles every module
+ * on first request (and re-optimises its dependencies, which reloads the page), and a first
+ * navigation that has to wait for that would fail the first spec's timeout on a fresh machine. The
+ * visit signs in as the run's owner and opens the screens that pull in the most code (the show, the
+ * script with PDF.js). The preview server, when this run has one, is visited too, for its first
+ * response. Best effort: a warm-up that fails only costs the speed-up, so it never fails the run.
+ */
+async function warmUp(ownerCookie: string, run: RunData) {
+  const browser = await chromium.launch()
+  try {
+    const cookies = ownerCookie.split('; ').map((pair) => {
+      const at = pair.indexOf('=')
+      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: APP_URL }
+    })
+    const targets: { origin: string; paths: string[] }[] = [
+      {
+        origin: APP_URL,
+        paths: [
+          '/login',
+          '/',
+          `/shows/${run.sharedShow.id}`,
+          `/shows/${run.sharedShow.id}/docs/${run.libretto.documentId}`,
+          `/shows/${run.sharedShow.id}/cues`,
+        ],
+      },
+    ]
+    if (await responds(PREVIEW_URL)) targets.push({ origin: PREVIEW_URL, paths: ['/login'] })
+    for (const { origin, paths } of targets) {
+      const context = await browser.newContext()
+      await context.addCookies(cookies.map((c) => ({ ...c, url: origin })))
+      const page = await context.newPage()
+      for (const path of paths) {
+        try {
+          // Not `networkidle`: the sync stream is a request that never ends, so the app never idles.
+          await page.goto(`${origin}${path}`, { waitUntil: 'load', timeout: 90_000 })
+          // Lazily imported modules (routes, PDF.js, the worker) are requested after `load`.
+          await page.waitForTimeout(3_000)
+        } catch (err) {
+          console.warn(`warm-up: ${origin}${path}: ${(err as Error).message.split('\n')[0]}`)
+        }
+      }
+      await context.close()
+    }
+  } finally {
+    await browser.close()
+  }
+}
+
+/** Whether something answers at the URL within a few seconds. */
+async function responds(url: string): Promise<boolean> {
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(3_000) })
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function addMember(

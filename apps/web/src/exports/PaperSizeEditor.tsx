@@ -1,6 +1,9 @@
 import type { PaperSize } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
 import { useId } from 'react'
+import { cn } from '@/lib/utils'
+import { SECTION_LABEL } from '../panel/fields'
+import { SelectBox } from '../settings/parts'
 import { readPaperSize, withPaperSize } from './paperSize'
 
 const SIZES: Array<{ value: PaperSize; label: string }> = [
@@ -36,24 +39,29 @@ export function PaperSizeEditor({ showId, editable }: { showId: string; editable
   }
 
   return (
-    <section aria-labelledby={`${ids}-heading`}>
-      <h2 id={`${ids}-heading`}>Cue sheet paper</h2>
-      <p>The paper cue sheet PDFs are laid out for.</p>
+    <section aria-labelledby={`${ids}-heading`} className="flex flex-col gap-2">
+      <h2 id={`${ids}-heading`} className={SECTION_LABEL}>
+        Cue sheet paper
+      </h2>
       {editable ? (
-        <select
+        <SelectBox
           aria-label="Paper size"
           value={size}
           onChange={(e) => void save(e.target.value as PaperSize)}
+          className="w-full max-w-[260px]"
         >
           {SIZES.map((s) => (
             <option key={s.value} value={s.value}>
               {s.label}
             </option>
           ))}
-        </select>
+        </SelectBox>
       ) : (
-        <p>{SIZES.find((s) => s.value === size)?.label}</p>
+        <p className={cn('m-0 text-[13px] text-ink')}>
+          {SIZES.find((s) => s.value === size)?.label}
+        </p>
       )}
+      <p className="m-0 text-[12px] text-muted">The paper cue sheet PDFs are laid out for.</p>
     </section>
   )
 }

@@ -1,11 +1,11 @@
 import type * as core from '@binder/core'
-import type { LayerRef } from '@binder/shared'
+import type { LayerRef, PrintOptions } from '@binder/shared'
 import { PDFDocument } from 'pdf-lib'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { clearNotices } from '../components/noticeStore'
 import type { EditContext } from '../markup/mutations'
 import type { PendingExport } from './outbox'
-import { type ExportDb, exportFilename, runPrintExport } from './runPrintExport'
+import { type ExportDb, exportFilename, type PrintInput, runPrintExport } from './runPrintExport'
 
 const stamp = vi.hoisted(() => ({ calls: [] as unknown[][] }))
 vi.mock('@binder/core', async (importOriginal) => {
@@ -122,7 +122,7 @@ const annotations = [
   note('a3', 'department', 'd-lx', 'lx note'),
 ]
 
-function fakeDb(): ExportDb {
+function fakeDb(cueRows: unknown[] = cues): ExportDb {
   return {
     async getAll<T>(sql: string): Promise<T[]> {
       const rows = (() => {
@@ -130,11 +130,17 @@ function fakeDb(): ExportDb {
           return [{ title: 'Pirates: A/B', settings: '{"markerSides":{"d-snd":"right"}}' }]
         if (sql.includes('FROM documents')) return [{ title: 'Libretto' }]
         if (sql.includes('FROM document_versions'))
-          return [{ version_number: 2, searchable_key: 'shows/show-1/v1/searchable.pdf' }]
+          return [
+            { version_number: 2, searchable_key: 'shows/show-1/v1/searchable.pdf', page_count: 2 },
+          ]
         if (sql.includes('FROM departments')) return departments
-        if (sql.includes('FROM cues')) return cues
+        if (sql.includes('FROM cues')) return cueRows
         if (sql.includes('FROM annotations')) return annotations
-        if (sql.includes('FROM pages')) return [{ index: 0, words_key: 'w0' }]
+        if (sql.includes('FROM pages'))
+          return [
+            { index: 0, words_key: 'w0' },
+            { index: 1, words_key: 'w1' },
+          ]
         throw new Error(`unexpected query ${sql}`)
       })()
       return rows as T[]
@@ -149,7 +155,10 @@ async function sourcePdf(): Promise<Uint8Array> {
   return doc.save()
 }
 
-async function run(layers: LayerRef[]) {
+async function run(
+  layers: LayerRef[],
+  extra: { options?: Partial<PrintOptions>; filename?: string; cueRows?: unknown[] } = {},
+) {
   const source = await sourcePdf()
   vi.stubGlobal(
     'fetch',
@@ -157,20 +166,30 @@ async function run(layers: LayerRef[]) {
   )
   const downloads: Array<{ filename: string; bytes: Uint8Array }> = []
   const queued: PendingExport[] = []
-  const result = await runPrintExport(
-    fakeDb(),
-    ctx,
-    { documentId: 'doc-1', versionId: 'v1', layers },
-    {
-      download: (filename, bytes) => downloads.push({ filename, bytes }),
-      enqueue: async (p) => void queued.push(p),
-      now: () => new Date(2026, 9, 15, 14, 2),
-      loadWords: async (key) => (key === 'w0' ? pageWords : null),
+  const wordKeys: string[] = []
+  const input: PrintInput = { documentId: 'doc-1', versionId: 'v1', layers }
+  if (extra.options) input.options = { ...DEFAULTS, ...extra.options }
+  if (extra.filename !== undefined) input.filename = extra.filename
+  const result = await runPrintExport(fakeDb(extra.cueRows), ctx, input, {
+    download: (filename, bytes) => downloads.push({ filename, bytes }),
+    enqueue: async (p) => void queued.push(p),
+    now: () => new Date(2026, 9, 15, 14, 2),
+    loadWords: async (key) => {
+      wordKeys.push(key)
+      return key === 'w0' ? pageWords : null
     },
-  )
-  const items = (stamp.calls[0]?.[1] ?? []) as core.StampItem[]
-  const footer = stamp.calls[0]?.[2] as core.FooterInfo
-  return { result, downloads, queued, items, footer, source }
+  })
+  const items = (stamp.calls.at(-1)?.[1] ?? []) as core.StampItem[]
+  const footer = stamp.calls.at(-1)?.[2] as core.FooterInfo
+  const stampOptions = stamp.calls.at(-1)?.[3] as core.StampOptions | undefined
+  return { result, downloads, queued, items, footer, source, wordKeys, stampOptions }
+}
+
+const DEFAULTS: PrintOptions = {
+  pages: 'all',
+  includeStandbyWarn: true,
+  includeAnnotations: true,
+  includeCueNotes: true,
 }
 
 const dept = (id: string): LayerRef => ({ kind: 'department', id })
@@ -193,7 +212,7 @@ test('stamps the chosen layers for this version, downloads the file, and queues 
 
   const out = await PDFDocument.load(result.bytes)
   expect(out.getPageCount()).toBe(2)
-  expect(result.filename).toBe('Pirates- A-B - Libretto v2 - LX + personal.pdf')
+  expect(result.filename).toBe('pirates-a-b-libretto-v2-LX-personal.pdf')
   expect(downloads).toEqual([{ filename: result.filename, bytes: result.bytes }])
   expect(queued).toHaveLength(1)
   expect(queued[0]).toMatchObject({
@@ -299,6 +318,129 @@ test('a failed queue write does not lose the download, and tells the user', asyn
   )
   expect(download).toHaveBeenCalledOnce()
   expect(getNotices()[0]?.message).toContain('storage is full')
+})
+
+const cueOf = (over: object) => ({
+  id: 'cn',
+  department_id: 'd-lx',
+  major: 40,
+  minor: 0,
+  label: 'Extra',
+  type: 'go',
+  notes: '',
+  colour: null,
+  anchor: anchor(0),
+  ...over,
+})
+
+test('omitted pages load no word layers', async () => {
+  const all = await run([dept('d-lx'), dept('d-snd')])
+  expect(all.wordKeys.sort()).toEqual(['w0', 'w1'])
+  // Page 2 only: page 1's cue is not in the output, so its words are never read.
+  const second = await run([dept('d-lx'), dept('d-snd')], { options: { pages: '2' } })
+  expect(second.wordKeys).toEqual(['w1'])
+  expect(second.stampOptions?.pages).toEqual([1])
+  expect((await PDFDocument.load(second.result.bytes)).getPageCount()).toBe(1)
+})
+
+test('highlights load their words only when annotations are included', async () => {
+  const highlight = {
+    id: 'h1',
+    layer_kind: 'department',
+    layer_id: 'd-lx',
+    anchor: anchor(1, 'v1', { quote: 'two', wordStart: 0, wordEnd: 0 }),
+    type: 'highlight',
+    geometry: '{}',
+    text: '',
+    style: '{}',
+  }
+  const withIt = async (options: Partial<PrintOptions>) => {
+    annotations.push(highlight)
+    try {
+      return await run([dept('d-lx')], { options })
+    } finally {
+      annotations.pop()
+    }
+  }
+  expect((await withIt({})).wordKeys).toContain('w1')
+  expect((await withIt({ includeAnnotations: false })).wordKeys).not.toContain('w1')
+})
+
+test('the include flags reach buildStampItems: no standby tags, no annotations, no cue notes', async () => {
+  const rows = [
+    cueOf({ id: 'g', type: 'go', notes: 'hold for applause' }),
+    cueOf({ id: 's', type: 'standby', major: 41 }),
+  ]
+  const full = await run([dept('d-lx'), personal], { cueRows: rows })
+  expect(full.items.map((i) => i.kind).sort()).toEqual([
+    'annotation',
+    'annotation',
+    'cue',
+    'cue',
+    'cue-note',
+  ])
+  const trimmed = await run([dept('d-lx'), personal], {
+    cueRows: rows,
+    options: { includeStandbyWarn: false, includeAnnotations: false, includeCueNotes: false },
+  })
+  expect(trimmed.items.map((i) => (i.kind === 'cue' ? `${i.type}` : i.kind))).toEqual(['go'])
+})
+
+test('pages and paper reach stampScript, as zero-based indices and the chosen paper', async () => {
+  const { stampOptions } = await run([], { options: { pages: '1-2', paper: 'A4' } })
+  expect(stampOptions).toEqual({ pages: [0, 1], paper: 'A4' })
+  const plain = await run([])
+  expect(plain.stampOptions?.pages).toBeUndefined()
+  expect(plain.stampOptions?.paper).toBeUndefined()
+})
+
+test('the outbox meta carries the options and the typed file name, and the download uses that name', async () => {
+  const { downloads, queued, result } = await run([dept('d-lx')], {
+    options: { pages: '2', paper: 'Letter', includeStandbyWarn: false },
+    filename: 'My cue copy',
+  })
+  expect(result.filename).toBe('My cue copy.pdf')
+  expect(downloads[0]?.filename).toBe('My cue copy.pdf')
+  expect(queued[0]?.meta.filename).toBe('My cue copy.pdf')
+  expect(queued[0]?.meta.options).toEqual({
+    pages: '2',
+    paper: 'Letter',
+    includeStandbyWarn: false,
+    includeAnnotations: true,
+    includeCueNotes: true,
+  })
+})
+
+test('the range is stored normalised, and without options the meta says all pages', async () => {
+  const typed = await run([], { options: { pages: ' 2 – 2 , 1 ' } })
+  expect(typed.queued[0]?.meta.options?.pages).toBe('1-2')
+  const plain = await run([])
+  expect(plain.queued[0]?.meta.options).toEqual(DEFAULTS)
+})
+
+test('an unusable range or file name stops the export before anything is downloaded', async () => {
+  const source = await sourcePdf()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(source as BlobPart, { status: 200 })),
+  )
+  const bad: Array<[Partial<PrintInput>, RegExp]> = [
+    [{ options: { ...DEFAULTS, pages: '1-9' } }, /This script has 2 pages/],
+    [{ options: { ...DEFAULTS, pages: 'a-b' } }, /Pages look like/],
+    [{ filename: 'a/b' }, /can't contain/],
+  ]
+  for (const [extra, message] of bad) {
+    const download = vi.fn()
+    await expect(
+      runPrintExport(
+        fakeDb(),
+        ctx,
+        { documentId: 'doc-1', versionId: 'v1', layers: [], ...extra },
+        { download },
+      ),
+    ).rejects.toThrow(message)
+    expect(download).not.toHaveBeenCalled()
+  }
 })
 
 test('file names drop characters no platform allows and stay short', () => {

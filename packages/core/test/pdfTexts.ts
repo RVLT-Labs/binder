@@ -41,3 +41,9 @@ export async function pdfTexts(bytes: Uint8Array): Promise<string[][]> {
     return out
   })
 }
+
+/** Each page's decoded content stream text, for tests that look at colours and operators. */
+export async function pdfContent(bytes: Uint8Array): Promise<string[]> {
+  const doc = await PDFDocument.load(bytes)
+  return doc.getPages().map((page) => contentOf(doc, page.node.get(PDFName.of('Contents'))))
+}

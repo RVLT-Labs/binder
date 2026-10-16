@@ -46,7 +46,7 @@ export function SelectionAnnouncer() {
   }, [id, name, kind])
 
   return (
-    <p role="status" aria-live="polite" className="visually-hidden">
+    <p role="status" aria-live="polite" className="visually-hidden sr-only">
       {message}
     </p>
   )

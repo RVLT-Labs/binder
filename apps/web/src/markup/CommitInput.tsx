@@ -1,4 +1,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 
 /**
  * Escape in a choice or field leaves it and keeps the row selected; only an Escape outside the form
@@ -25,6 +28,8 @@ export interface CommitInputProps {
   onCancel?: () => void
   multiline?: boolean
   disabled?: boolean
+  className?: string
+  placeholder?: string
   'aria-label'?: string
   'aria-invalid'?: boolean
   'aria-describedby'?: string
@@ -50,6 +55,13 @@ export function CommitInput({
   }, [value, focused])
   const common = {
     ...aria,
+    // the tablet sheet's fields are 40 px / 14 px (t-markup `.mb-tsheet .field .in`)
+    className: cn(
+      multiline
+        ? 'md:max-[1024px]:min-h-[60px] md:max-[1024px]:text-[14px]'
+        : 'md:max-[1024px]:h-10 md:max-[1024px]:text-[14px]',
+      aria.className,
+    ),
     value: draft,
     onFocus: () => setFocused(true),
     onBlur: () => {
@@ -75,13 +87,13 @@ export function CommitInput({
     }
   }
   return multiline ? (
-    <textarea
+    <Textarea
       {...common}
-      rows={3}
+      rows={2}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={cancelOnEscape}
     />
   ) : (
-    <input {...common} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKeyDown} />
+    <Input {...common} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKeyDown} />
   )
 }

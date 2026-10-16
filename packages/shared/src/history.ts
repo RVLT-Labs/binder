@@ -38,6 +38,25 @@ export interface ActivityGroup {
   agent: string | null
 }
 
+/**
+ * A show's most recent visible change, for the show card: who, what ("LX relabelled 3 cues") and
+ * when. `label` and `summary` (`Jayden via Claude Code`, `moved 3 LX cues`) feed the tooltip and the
+ * accessible name; `sentence` is the card text.
+ */
+export interface ShowLastChange {
+  /** The batch's newest `server_ts`. */
+  at: string
+  userId: string
+  label: string
+  summary: string
+  sentence: string
+  /** Rows in the batch (at least, when it is over 500). */
+  count: number
+  via: Via
+  agent: string | null
+  batchId: string | null
+}
+
 export interface RevertResult {
   /** The new batch the revert was written in. */
   batchId: string

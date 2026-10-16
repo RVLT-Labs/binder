@@ -1,74 +1,65 @@
 import { useQuery } from '@powersync/react'
-import { createFileRoute, Link, Outlet, useChildMatches } from '@tanstack/react-router'
-import { DocumentList } from '../documents/DocumentList'
-import { useDepartments } from '../markup/useDepartments'
-import { OfflineButton } from '../offline/OfflineButton'
+import { createFileRoute, Outlet, useMatches } from '@tanstack/react-router'
+import { RowsSkeleton } from '@/components/ui/skeleton'
+import { UploadDocumentButton, UploadProvider } from '../documents/UploadProvider'
 import type { ShowRow } from '../powersync/schema'
-import { BinderPresence } from '../presence/Avatars'
+import { BinderAvatars } from '../presence/Avatars'
 import { PresenceProvider } from '../presence/PresenceProvider'
-import { useCanUpload } from '../revisions/useCanUpload'
+import { AppShell } from '../shell/AppShell'
+import { useRememberShow } from '../shell/lastShow'
+import { useAccount } from '../shell/useAccount'
+import { useBreakpoint } from '../shell/useBreakpoint'
+import { useShowCrumbs } from '../shell/useShowCrumbs'
 
-export const Route = createFileRoute('/shows/$showId')({ component: ShowPage })
+export const Route = createFileRoute('/shows/$showId')({ component: ShowLayout })
 
 /**
- * The show's documents. A document opened from here renders in place of the list (the Outlet).
- * One presence connection serves the whole show, list and documents alike.
+ * The screens whose top bar carries the show's one red action, "Upload document". The phone's
+ * overview has none (its mockup draws no button, so the long show name keeps its room); uploading
+ * is on the Documents tab.
  */
-function ShowPage() {
+const UPLOAD_SCREENS: readonly string[] = ['/shows/$showId/', '/shows/$showId/docs/']
+
+/**
+ * The shell around everything inside a show: its rail and tabs, crumbs and notices, the one
+ * presence connection that serves the show's screens and its documents alike, and the show's one
+ * upload dialog. The screens themselves are the child routes; the show's own page is the index.
+ */
+function ShowLayout() {
   const { showId } = Route.useParams()
+  const account = useAccount()
+  const { data, isLoading } = useQuery<ShowRow>('SELECT * FROM shows WHERE id = ?', [showId])
+  const show = data[0]
+  useRememberShow(account.email, showId, Boolean(show))
+  const crumbs = useShowCrumbs(showId, show?.title ?? undefined)
+  const leaf = useMatches({ select: (matches) => matches.at(-1)?.routeId })
+  // The document, its compare screen and the cue list lay out and scroll their own panels, so they
+  // get the content area to themselves.
+  const fullBleed =
+    leaf === '/shows/$showId/docs/$docId' ||
+    leaf === '/shows/$showId/docs/$docId/compare' ||
+    leaf === '/shows/$showId/cues'
+  const phone = useBreakpoint() === 'phone'
+
   return (
     <PresenceProvider showId={showId}>
-      <ShowBody showId={showId} />
+      <UploadProvider showId={showId}>
+        <AppShell
+          showId={showId}
+          crumbs={crumbs}
+          account={account}
+          fullBleed={fullBleed}
+          // The show's own page draws who is in the binder between the sync state and the buttons.
+          actions={leaf === '/shows/$showId/' ? <BinderAvatars /> : undefined}
+          primary={
+            leaf && UPLOAD_SCREENS.includes(leaf) && !(phone && leaf === '/shows/$showId/') ? (
+              <UploadDocumentButton />
+            ) : undefined
+          }
+        >
+          {isLoading ? <RowsSkeleton /> : !show ? <p>Show not found.</p> : <Outlet />}
+        </AppShell>
+      </UploadProvider>
     </PresenceProvider>
-  )
-}
-
-function ShowBody({ showId }: { showId: string }) {
-  const { data, isLoading } = useQuery<ShowRow>('SELECT * FROM shows WHERE id = ?', [showId])
-  const canUpload = useCanUpload(showId)
-  const departments = useDepartments(showId)
-  const children = useChildMatches()
-  const show = data[0]
-  if (isLoading) return <p>Loading…</p>
-  if (!show) return <p>Show not found.</p>
-  if (children.length > 0) return <Outlet />
-
-  return (
-    <>
-      <p>
-        <Link to="/">← Shows</Link>
-      </p>
-      <h1>{show.title}</h1>
-      <OfflineButton showId={showId} />
-      <BinderPresence showId={showId} />
-      <p>
-        <Link to="/shows/$showId/settings" params={{ showId }}>
-          Settings
-        </Link>{' '}
-        ·{' '}
-        <Link to="/shows/$showId/activity" params={{ showId }}>
-          Activity
-        </Link>{' '}
-        ·{' '}
-        <Link to="/shows/$showId/exports" params={{ showId }}>
-          Exports
-        </Link>
-      </p>
-      <nav aria-label="Cue lists">
-        <h2>Cue lists</h2>
-        <ul className="cue-list-links">
-          {departments
-            .filter((d) => !d.hidden)
-            .map((d) => (
-              <li key={d.id}>
-                <Link to="/shows/$showId/cues" params={{ showId }} search={{ department: d.id }}>
-                  {d.code} cue list
-                </Link>
-              </li>
-            ))}
-        </ul>
-      </nav>
-      <DocumentList showId={showId} canUpload={canUpload} />
-    </>
   )
 }

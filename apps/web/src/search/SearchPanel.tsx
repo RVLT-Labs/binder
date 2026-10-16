@@ -1,5 +1,8 @@
 import type { DocHit } from '@binder/core'
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { type KeyboardEvent, type Ref, useEffect, useRef, useState } from 'react'
+import { CloseIcon, SearchIcon } from '@/components/icons'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 
 /** How long typing rests before a search runs; Enter searches at once. */
 const TYPE_DELAY_MS = 200
@@ -20,11 +23,19 @@ export interface SearchPanelProps {
   onResults: (hits: DocHit[], jump: boolean) => void
   /** Go to hit `index`. */
   onActivate: (index: number) => void
+  /** The search box, so the `/` key and the strip's find button can focus it. */
+  inputRef?: Ref<HTMLInputElement>
+  /** Text to search for as soon as it arrives (the command palette's "In the script"); each new `n` runs again. */
+  seed?: { text: string; n: number } | null
+  /** Escape or the close button: the card hides and the highlights go. */
+  onClose?: () => void
+  className?: string
 }
 
 /**
- * The search box and its results. Results follow typing; Enter goes to the next hit (the first,
- * if none is current), wrapping at the end; clicking a hit goes to it.
+ * The Find card (the strip's Find tool, or `/`): the search box and its results. Results follow
+ * typing; Enter goes to the next hit (the first, if none is current), wrapping at the end; clicking
+ * a hit goes to it. The box takes focus when the card opens.
  */
 export function SearchPanel({
   search,
@@ -34,6 +45,10 @@ export function SearchPanel({
   active,
   onResults,
   onActivate,
+  inputRef,
+  seed,
+  onClose,
+  className,
 }: SearchPanelProps) {
   const [query, setQuery] = useState('')
   const [pending, setPending] = useState(false)
@@ -44,6 +59,9 @@ export function SearchPanel({
   const seq = useRef(0)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(timer.current), [])
+  const box = useRef<HTMLInputElement | null>(null)
+  // The card opens with the cursor in the box, from the strip's button or the `/` key.
+  useEffect(() => box.current?.focus(), [])
 
   function run(text: string, jump: boolean) {
     clearTimeout(timer.current)
@@ -65,6 +83,15 @@ export function SearchPanel({
     )
   }
 
+  const seeded = useRef(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new seed runs a search; `run` reads current state
+  useEffect(() => {
+    if (!seed || seeded.current === seed.n) return
+    seeded.current = seed.n
+    setQuery(seed.text)
+    run(seed.text, true)
+  }, [seed])
+
   function onChange(text: string) {
     setQuery(text)
     clearTimeout(timer.current)
@@ -80,6 +107,12 @@ export function SearchPanel({
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Escape' && onClose) {
+      // Handled here: the markup keys' Escape (deselect) must not also run.
+      e.preventDefault()
+      onClose()
+      return
+    }
     if (e.key !== 'Enter') return
     e.preventDefault()
     if (query.trim() === '') return
@@ -100,40 +133,75 @@ export function SearchPanel({
         : ''
 
   return (
-    <aside className="search-panel" aria-label="Search">
-      <input
-        type="search"
-        aria-label="Search document"
-        placeholder="Search this document"
-        value={query}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-      />
-      <p role="status" className="search-status">
+    <aside
+      className={cn(
+        'search-panel flex flex-col gap-2 rounded-[12px] border-2 border-line-2 bg-card p-2.5 shadow-card',
+        className,
+      )}
+      aria-label="Search"
+    >
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <SearchIcon
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint"
+          />
+          <Input
+            ref={(el) => {
+              box.current = el
+              if (typeof inputRef === 'function') inputRef(el)
+              else if (inputRef) inputRef.current = el
+            }}
+            type="search"
+            aria-label="Search document"
+            placeholder="Search this document"
+            className="pl-10 md:pl-8 [&::-webkit-search-cancel-button]:hidden"
+            value={query}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={onKeyDown}
+          />
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            aria-label="Close search"
+            className="grid size-8 shrink-0 place-items-center rounded-[8px] text-muted hover:bg-elev hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red max-md:size-11"
+            onClick={onClose}
+          >
+            <CloseIcon aria-hidden className="size-4" strokeWidth={1.8} />
+          </button>
+        )}
+      </div>
+      <p role="status" className="search-status m-0 min-h-[1em] text-[12px] text-muted">
         {status}
       </p>
       {unavailable > 0 && (
-        <p className="search-unavailable">
+        <p className="search-unavailable m-0 text-[12px] text-muted">
           {unavailable} {unavailable === 1 ? 'page' : 'pages'} could not be searched.
         </p>
       )}
       {error && (
-        <p role="alert" className="search-error">
+        <p role="alert" className="search-error m-0 text-[12px] text-t-out">
           Search failed: {error}
         </p>
       )}
       {hits.length > 0 && query.trim() !== '' && (
-        <ol aria-label="Search results" className="search-results">
+        <ol
+          aria-label="Search results"
+          className="search-results m-0 max-h-[min(50dvh,22rem)] list-none overflow-y-auto p-0"
+        >
           {hits.map((hit, i) => (
             <li key={`${hit.pageIndex}:${hit.lineIndex}:${hit.wordStart}`}>
               <button
                 type="button"
-                className="search-result"
+                className="search-result grid w-full gap-0.5 rounded-[8px] px-2 py-1.5 text-left text-[12.5px] text-ink hover:bg-elev focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red aria-[current=true]:bg-elev max-md:min-h-11"
                 aria-current={i === active ? 'true' : undefined}
                 onClick={() => onActivate(i)}
               >
-                <span className="search-result-page">Page {hit.pageIndex + 1}</span>
-                <span className="search-result-snippet">{hit.snippet}</span>
+                <span className="search-result-page font-mono text-[11px] text-faint">
+                  Page {hit.pageIndex + 1}
+                </span>
+                <span className="search-result-snippet text-ink-2">{hit.snippet}</span>
               </button>
             </li>
           ))}

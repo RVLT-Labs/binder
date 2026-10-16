@@ -11,13 +11,10 @@ import {
   useRef,
 } from 'react'
 import { AvatarGroup } from '../presence/Avatars'
+import { PAGE_GUTTER } from './controls'
 import { PageCanvas } from './PageCanvas'
 import type { PDFDocumentProxy } from './pdfjs'
-
-/** Vertical space around each page, in CSS pixels. Part of every item's size. */
-const GAP = 16
-/** The page slot's top padding (styles.css `.page-slot`): where the page box starts in its item. */
-const SLOT_PADDING_TOP = 8
+import { pageAtOffset, SLOT_PADDING_TOP, slotSize, slotStart } from './slots'
 
 export interface ListPage {
   id: string
@@ -28,8 +25,10 @@ export interface ListPage {
 export interface PageListHandle {
   /** Scrolls so the top of page `index` (zero-based) is at the top of the list. */
   scrollToPage(index: number): void
-  /** Scrolls so a point `top` CSS pixels below the top of page `index` sits a third of the way down the view. */
-  scrollToPoint(index: number, top: number): void
+  /** Scrolls so a point `top` CSS pixels below the top of page `index` sits `at` (a third by default) of the way down the view. */
+  scrollToPoint(index: number, top: number, at?: number): void
+  /** The page under the middle of the view, and the point of it there (displayed points, y up). */
+  visibleCentre(): { pageIndex: number; y: number } | null
 }
 
 export interface PageListProps {
@@ -40,8 +39,12 @@ export interface PageListProps {
   overlay?: (pageIndex: number) => ReactNode
   /** Who is on each page (zero-based) of this version: avatars at the page's top right. */
   peersByPage?: ReadonlyMap<number, readonly PresencePeer[]>
+  /** Each side of the page column, in CSS pixels (see PAGE_GUTTER); fit width must allow for it. */
+  gutter?: number
   /** Zero-based page to open at. Read on mount only. */
   initialPage?: number
+  /** Room under the last page, in CSS pixels; a page's own top clearance by default. */
+  endClearance?: number
   /** Called with the zero-based page at the top of the view whenever it changes. */
   onVisiblePage: (index: number) => void
   onKeyDown?: KeyboardEventHandler<HTMLElement>
@@ -59,9 +62,11 @@ export function PageList({
   zoom,
   overlay,
   peersByPage,
+  gutter = PAGE_GUTTER,
   initialPage = 0,
   onVisiblePage,
   onKeyDown,
+  endClearance = SLOT_PADDING_TOP,
   ref,
 }: PageListProps) {
   const scroller = useRef<HTMLElement>(null)
@@ -71,15 +76,17 @@ export function PageList({
     for (const p of pages) sums.push((sums.at(-1) as number) + p.height)
     return sums
   }, [pages])
-  const startOf = (index: number, z: number) => heightBefore[index] * z + GAP * index
+  const startOf = (index: number, z: number) => slotStart(heightBefore[index], index, z)
 
   const virtualizer = useVirtualizer({
     count: pages.length,
     getScrollElement: () => scroller.current,
-    estimateSize: (i) => pages[i].height * zoom + GAP,
+    estimateSize: (i) => slotSize(pages[i].height, zoom),
     overscan: 1,
     getItemKey: (i) => pages[i].id,
     initialOffset: () => startOf(Math.min(initialPage, pages.length - 1), zoom),
+    // the last page keeps the clearance the first one has above it
+    paddingEnd: endClearance,
     useFlushSync: false,
   })
 
@@ -114,33 +121,52 @@ export function PageList({
     ref,
     () => ({
       scrollToPage: (index) => virtualizer.scrollToIndex(index, { align: 'start' }),
-      scrollToPoint: (index, top) => {
+      scrollToPoint: (index, top, at = 1 / 3) => {
         const view = scroller.current?.clientHeight ?? 0
-        const start = heightBefore[index] * zoom + GAP * index
-        const at = start + SLOT_PADDING_TOP + top - view / 3
-        virtualizer.scrollToOffset(Math.max(0, at))
+        const offset =
+          slotStart(heightBefore[index], index, zoom) + SLOT_PADDING_TOP + top - view * at
+        virtualizer.scrollToOffset(Math.max(0, offset))
+      },
+      visibleCentre: () => {
+        const el = scroller.current
+        if (!el) return null
+        return pageAtOffset(
+          el.scrollTop + el.clientHeight / 2,
+          pages.map((p) => p.height),
+          zoom,
+        )
       },
     }),
-    [virtualizer, zoom, heightBefore],
+    [virtualizer, zoom, heightBefore, pages],
   )
 
   return (
     <section
       ref={scroller}
-      className="page-list"
+      className="page-list flex-1 overflow-auto outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-red"
       aria-label="Pages"
       // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region takes focus for keyboard paging
       tabIndex={0}
       onKeyDown={onKeyDown}
     >
-      <div className="page-list-inner" style={{ height: virtualizer.getTotalSize() }}>
+      <div
+        className="page-list-inner relative w-full"
+        style={{ height: virtualizer.getTotalSize() }}
+      >
         {items.map((item) => {
           const page = pages[item.index]
           return (
             <div
               key={item.key}
-              className="page-slot"
-              style={{ transform: `translateY(${item.start}px)`, height: item.size }}
+              // The padding is the one source for the virtualiser's sizing (SLOT_PADDING_TOP) and
+              // for fit width (the gutter, via fitAllowance).
+              className="page-slot absolute top-0 left-0 box-border w-max min-w-full"
+              style={{
+                transform: `translateY(${item.start}px)`,
+                height: item.size,
+                paddingTop: SLOT_PADDING_TOP,
+                paddingInline: gutter,
+              }}
             >
               <PageCanvas
                 pdf={pdf}

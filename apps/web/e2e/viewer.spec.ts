@@ -1,5 +1,6 @@
 import { FIXTURES } from '@binder/fixtures'
 import { expect, test } from '@playwright/test'
+import { fitAllowance, PAGE_GUTTER } from '../src/viewer/controls'
 import { readRun, storageStateFor } from './env'
 import { hasInk, uploadAndWaitReady } from './helpers'
 
@@ -61,8 +62,38 @@ test('upload, process, and view the libretto', async ({ page }) => {
   await page.keyboard.press('PageDown')
   await expect(toolbar).toContainText(`4 / ${PAGES}`)
   const zoomBefore = await toolbar.getByLabel('Zoom level').textContent()
+  // Two steps: fit width can land within a hair of a preset (110 %), where the first step only
+  // rounds up to it and the label does not change.
+  await page.keyboard.press('+')
   await page.keyboard.press('+')
   await expect(toolbar.getByLabel('Zoom level')).not.toHaveText(zoomBefore ?? '')
+  await expect(toolbar).toContainText(`4 / ${PAGES}`)
+
+  // Fit width fills the stage minus the allowance, so pages never scroll sideways and the tool
+  // strip's lane stays clear of the page.
+  await toolbar.getByRole('button', { name: 'Fit width' }).click()
+  const sheet = page.locator('.page-sheet').first()
+  const stage = page.locator('.viewer-pages')
+  await expect
+    .poll(async () => {
+      const [sheetWidth, stageWidth] = await Promise.all([
+        sheet.evaluate((el) => el.getBoundingClientRect().width),
+        stage.evaluate((el) => el.clientWidth),
+      ])
+      return Math.abs(sheetWidth - (stageWidth - fitAllowance(PAGE_GUTTER)))
+    })
+    .toBeLessThanOrEqual(1)
+  // No sideways scroll, and the page starts clear of the strip's lane at the stage's left edge.
+  await expect
+    .poll(() =>
+      page
+        .getByRole('region', { name: 'Pages' })
+        .evaluate((el) => el.scrollWidth <= el.clientWidth),
+    )
+    .toBe(true)
+  const [sheetBox, stageBox] = await Promise.all([sheet.boundingBox(), stage.boundingBox()])
+  if (!sheetBox || !stageBox) throw new Error('page or stage not on screen')
+  expect(sheetBox.x - stageBox.x).toBeGreaterThanOrEqual(60)
   await expect(toolbar).toContainText(`4 / ${PAGES}`)
 
   // Scroll through the whole document: virtualisation keeps only a handful of canvases alive.

@@ -235,11 +235,13 @@ test('an annotation that cannot be edited is a disabled form with the reason', (
   expect(container.querySelector('fieldset')?.disabled).toBe(true)
 })
 
-test('Delete removes it, and the history slot is rendered', () => {
-  const { getByRole, getByText } = render(
-    <AnnotationEditor annotationId="a1" historySlot={<p>history here</p>} />,
-  )
+test('Delete removes it, and Done (phone) is drawn only when the panel supplies it', () => {
+  const onDone = vi.fn()
+  const { getByRole, queryByRole, rerender } = render(<AnnotationEditor annotationId="a1" />)
   fireEvent.click(getByRole('button', { name: 'Delete annotation' }))
   expect(session.removeAnnotation).toHaveBeenCalledWith('a1')
-  expect(getByText('history here')).toBeTruthy()
+  expect(queryByRole('button', { name: 'Done' })).toBeNull()
+  rerender(<AnnotationEditor annotationId="a1" onDone={onDone} />)
+  fireEvent.click(getByRole('button', { name: 'Done' }))
+  expect(onDone).toHaveBeenCalledTimes(1)
 })

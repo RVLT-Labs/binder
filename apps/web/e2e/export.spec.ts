@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { FIXTURES } from '@binder/fixtures'
+import { scriptExportFilename } from '@binder/shared'
 import {
   type Browser,
   type BrowserContext,
@@ -12,7 +13,9 @@ import {
   type Page,
   test,
 } from '@playwright/test'
+import { PDFDocument } from 'pdf-lib'
 import { API_URL, APP_URL, readRun, storageStateFor, type UserKey } from './env'
+import { railLink, showCrumb } from './helpers'
 
 /**
  * Print, the export outbox, and the exports screen. The specs share one fresh show of their own (made
@@ -182,7 +185,7 @@ async function exportFrom(
   await choose(dialog)
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    dialog.getByRole('button', { name: 'Export PDF' }).click(),
+    dialog.getByRole('button', { name: 'Download PDF' }).click(),
   ])
   await expect(dialog).toBeHidden()
   return download
@@ -190,6 +193,15 @@ async function exportFrom(
 
 const callingScript = (dialog: ReturnType<Page['getByRole']>) =>
   dialog.getByRole('button', { name: 'Calling script: all layers' }).click()
+
+/** The default name a script export gets from this spec's show and document. */
+const defaultName = (layerLabel: string) =>
+  scriptExportFilename({
+    show: show.title,
+    document: 'Export libretto',
+    versionNumber: 1,
+    layerLabel,
+  })
 
 const exportRow = (page: Page, filename: string) =>
   page.locator('li[data-export-id]').filter({ hasText: filename })
@@ -206,7 +218,7 @@ test('exporting the calling script downloads a PDF with the same page count whos
 
     const download = await exportFrom(page, callingScript)
     const filename = download.suggestedFilename()
-    expect(filename).toBe(`${show.title} - Export libretto v1 - All layers.pdf`)
+    expect(filename).toBe(defaultName('All layers'))
     const saved = join(work, 'calling-script.pdf')
     await download.saveAs(saved)
     const bytes = readFileSync(saved)
@@ -230,7 +242,7 @@ test('exporting the calling script downloads a PDF with the same page count whos
     expect(exported.join('\n')).toContain(`${show.title} · Export libretto v1 · All layers`)
 
     // The exports screen lists the record once it has uploaded and synced back.
-    await page.getByRole('link', { name: 'Exports', exact: true }).click()
+    await railLink(page, 'Exports').click()
     const row = exportRow(page, filename)
     await expect(row).toHaveCount(1, { timeout: 30_000 })
     await expect(row).toContainText('All layers')
@@ -257,6 +269,69 @@ test('exporting the calling script downloads a PDF with the same page count whos
   }
 })
 
+/** Reads a PDF with pdf-lib: how many pages, and the size of the first. */
+async function pdfShape(path: string): Promise<{ pages: number; width: number; height: number }> {
+  const doc = await PDFDocument.load(readFileSync(path))
+  const { width, height } = doc.getPage(0).getSize()
+  return { pages: doc.getPageCount(), width: Math.round(width), height: Math.round(height) }
+}
+
+test('printing range 2–3 on Letter downloads a 2-page Letter PDF named as typed, and the export record carries the options', async ({
+  browser,
+}) => {
+  const contexts: BrowserContext[] = []
+  try {
+    const { page } = await open(browser, 'owner', contexts, docPath())
+    await viewerReady(page)
+    await page.getByRole('button', { name: 'Print', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Print' })
+    // The libretto is A4, so A4 is where the paper starts, and the name is the slug default.
+    await expect(dialog.getByRole('radio', { name: 'A4' })).toBeChecked()
+    await expect(dialog.getByLabel('File name')).toHaveValue(defaultName('All layers'))
+    await dialog.getByRole('radio', { name: 'Range' }).click()
+    await dialog.getByLabel('Page range').fill('9')
+    await expect(dialog.getByText('This script has 3 pages.')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Download PDF' })).toBeDisabled()
+    await dialog.getByLabel('Page range').fill('2–3')
+    await dialog.getByRole('radio', { name: 'Letter' }).click()
+    await dialog.getByLabel('Standby and warn tags').uncheck()
+    await dialog.getByLabel('File name').fill('second-act')
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      dialog.getByRole('button', { name: 'Download PDF' }).click(),
+    ])
+    await expect(dialog).toBeHidden()
+    expect(download.suggestedFilename()).toBe('second-act.pdf')
+    const saved = join(work, 'range-letter.pdf')
+    await download.saveAs(saved)
+    expect(await pdfShape(saved)).toEqual({ pages: 2, width: 612, height: 792 })
+    if (hasPdftotext) {
+      // The text layer survives the subset and the fit: the script's own words are on both pages.
+      const text = pagesText(saved)
+      expect(text).toHaveLength(2)
+      expect(text.every((t) => t.trim().length > 20)).toBe(true)
+    }
+
+    // The record syncs down with what was asked for.
+    await railLink(page, 'Exports').click()
+    await expect(exportRow(page, 'second-act.pdf')).toHaveCount(1, { timeout: 30_000 })
+    const { users, password } = readRun()
+    const cookie = await signIn(users.owner.email, password)
+    const { exports: records } = await call<{
+      exports: Array<{ filename: string; options: Record<string, unknown> | null }>
+    }>(cookie, 'GET', `/api/shows/${show.showId}/exports`)
+    expect(records.find((r) => r.filename === 'second-act.pdf')?.options).toEqual({
+      pages: '2-3',
+      paper: 'Letter',
+      includeStandbyWarn: false,
+      includeAnnotations: true,
+      includeCueNotes: true,
+    })
+  } finally {
+    for (const context of contexts) await context.close()
+  }
+})
+
 test('an export made offline downloads at once and its record appears after reconnecting', async ({
   browser,
 }) => {
@@ -274,7 +349,7 @@ test('an export made offline downloads at once and its record appears after reco
     await expect(records.first()).toBeVisible({ timeout: 30_000 })
     const before = await records.count()
 
-    await page.getByRole('link', { name: '← Show' }).click()
+    await showCrumb(page, show.title).click()
     await page.getByRole('list', { name: 'Documents' }).getByRole('link').first().click()
     await viewerReady(page)
 
@@ -282,14 +357,14 @@ test('an export made offline downloads at once and its record appears after reco
     await page.getByRole('button', { name: 'Print', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Print' })
     await callingScript(dialog)
-    await expect(dialog.getByText('Footer layers: All layers')).toBeVisible()
+    await expect(dialog.getByLabel('File name')).toHaveValue(defaultName('All layers'))
     await page.waitForTimeout(1_000)
     await context.setOffline(true)
     await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false)
 
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      dialog.getByRole('button', { name: 'Export PDF' }).click(),
+      dialog.getByRole('button', { name: 'Download PDF' }).click(),
     ])
     await expect(dialog).toBeHidden()
     const filename = download.suggestedFilename()
@@ -298,7 +373,7 @@ test('an export made offline downloads at once and its record appears after reco
     expect(readFileSync(saved).subarray(0, 5).toString()).toBe('%PDF-')
 
     // Offline the file is on the device and waiting to upload; the list has no record of it yet.
-    await page.getByRole('link', { name: 'Exports', exact: true }).click()
+    await railLink(page, 'Exports').click()
     const waiting = page.getByRole('region', { name: 'Waiting to upload' })
     await expect(waiting).toContainText(filename)
     await expect(records).toHaveCount(before)
@@ -327,15 +402,18 @@ test('an export that includes the personal layer says so, is private to its make
     await viewerReady(page)
 
     const download = await exportFrom(page, async (dialog) => {
-      await dialog.getByRole('button', { name: 'Clean copy' }).click()
-      await expect(dialog.getByText('Only you will see this export.')).toHaveCount(0)
+      // A clean copy has no layer ticked, so nothing is private about it.
       await dialog.getByLabel('Personal layer').check()
+      await expect(dialog.getByText('Only you will see this export.')).toBeVisible()
+      await dialog.getByLabel('Personal layer').uncheck()
+      await expect(dialog.getByText('Only you will see this export.')).toHaveCount(0)
+      await dialog.getByRole('button', { name: 'Only mine' }).click()
       await expect(dialog.getByText('Only you will see this export.')).toBeVisible()
       // Another person's personal layer is never offered, and neither is a departments' hidden one.
       await expect(dialog.getByLabel('Personal layer')).toHaveCount(1)
     })
     const privateName = download.suggestedFilename()
-    expect(privateName).toBe(`${show.title} - Export libretto v1 - Personal.pdf`)
+    expect(privateName).toBe(defaultName('Personal'))
 
     await page.goto(`/shows/${show.showId}/exports`)
     const mine = exportRow(page, privateName)
@@ -344,9 +422,7 @@ test('an export that includes the personal layer says so, is private to its make
 
     // The viewer gets the shared exports, never the owner's private one.
     const viewer = await open(browser, 'viewer', contexts, `/shows/${show.showId}/exports`)
-    await expect(
-      exportRow(viewer.page, `${show.title} - Export libretto v1 - All layers.pdf`).first(),
-    ).toBeVisible({
+    await expect(exportRow(viewer.page, defaultName('All layers')).first()).toBeVisible({
       timeout: 30_000,
     })
     await expect(exportRow(viewer.page, privateName)).toHaveCount(0)
@@ -411,7 +487,7 @@ test('an export kept waiting is uploaded right after signing in, with no reload'
 
     // Client-side navigation only: a reload would flush at start and hide what this tests.
     await page.getByRole('link', { name: show.title }).click()
-    await page.getByRole('link', { name: 'Exports', exact: true }).click()
+    await railLink(page, 'Exports').click()
     await expect(exportRow(page, filename)).toHaveCount(1, { timeout: 30_000 })
   } finally {
     await context.close()

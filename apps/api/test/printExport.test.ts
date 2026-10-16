@@ -4,9 +4,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { type FooterInfo, type StampItem, stampScript } from '@binder/core'
+import { documentVersions, shows } from '@binder/db'
 import { FIXTURES } from '@binder/fixtures'
+import { eq } from 'drizzle-orm'
 import { degrees, PDFDocument } from 'pdf-lib'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { searchableBlobKey } from '../src/blob/keys'
+import { AppError } from '../src/errors'
+import { exportMarkedScript, listExportRecords } from '../src/services'
+import { librettoBytes } from './documentHelpers'
+import { setupMarkupShow } from './markupHelpers'
 import { findMissingTools, skipWithoutTools } from './tools'
 
 const run = promisify(execFile)
@@ -64,6 +71,7 @@ const cueAt = (
   lead,
   typeWord: /^(SB|W) /.test(lead) ? (lead.split(' ')[0] as string) : '',
   number,
+  numberInk: '#1A1715',
   colour: AMBER,
   side: 'left',
   sortKey: { department: 0, major: Number.parseInt(number, 10) || 0, minor: 0 },
@@ -518,12 +526,285 @@ describe.skipIf(skip)('print stamping with poppler', () => {
     expect(gap.xMin).toBeGreaterThan(note.xMin)
     expect(Math.abs(gap.yMin - note.yMin)).toBeLessThan(2)
     const text = (await pdftotext(out, 1)).replace(/\s+/g, ' ')
-    for (const s of ['second paragraph', 'Blackout', 'an unbound', 'SB LX 10', 'W LX 11']) {
+    for (const s of ['second paragraph', 'an unbound', 'SB LX 10', 'W LX 11']) {
       expect(text).toContain(s)
     }
+    // The stamp is turned 3 degrees and letter-spaced (R23), so poppler may break its word: compare without spaces.
+    expect(text.replace(/ /g, '')).toContain('Blackout')
     // A highlight's colour lands where its word box says (120 from the left, 400 up on a 595 tall
     // page), at 35% over white.
     const { height } = (await pageSizes(src))[1] as PageInfo
     expect(near(await pixelAt(out, 1, 140, height - 405), '#C0D8F5', 10)).toBe(true)
+  })
+})
+
+describe.skipIf(skip)('page subset, paper fit and cue notes with poppler', () => {
+  const norm = (s: string) => s.replace(/\s+/g, ' ')
+
+  test('a page subset keeps only those pages, with the footer, and pdftotext still finds the script text', async () => {
+    const src = await read(FIXTURES.librettoShortPdf)
+    const sizes = await pageSizes(src)
+    expect(sizes.length).toBeGreaterThanOrEqual(3)
+    const out = await stampScript(
+      src,
+      [cueAt(0, 72, 700, 'LX', '10'), cueAt(2, 72, 700, 'LX', '12')],
+      footer,
+      { pages: [2, 1] },
+    )
+    expect(await pageSizes(out)).toEqual([sizes[1], sizes[2]])
+    // Page 2 of the source is page 1 of the output, with the same words (and the footer).
+    const original = new Set((await bboxWords(src, 1)).map((w) => w.t))
+    const kept = new Set((await bboxWords(out, 0)).map((w) => w.t))
+    expect(original.size).toBeGreaterThan(20)
+    for (const w of original) expect(kept.has(w), w).toBe(true)
+    for (const p of [0, 1]) expect(norm(await pdftotext(out, p))).toContain(FOOTER_TEXT)
+    // The tag of the kept third page is on the second output page; the dropped page's is gone.
+    expect(norm(await pdftotext(out, 1))).toContain('LX 12')
+    expect(norm(await pdftotext(out, 0))).not.toContain('LX 10')
+    expect(out.byteLength).toBeLessThan(src.byteLength)
+  })
+
+  test('a Letter fit keeps the text layer searchable and puts the words where the scaling says', async () => {
+    const src = await read(FIXTURES.librettoShortPdf)
+    const info = (await pageSizes(src))[0] as PageInfo
+    // Fit to the paper the page is not already (within 3%) so the fit does something.
+    const paper = Math.abs(info.width / 612 - 1) <= 0.03 ? 'A4' : 'Letter'
+    const [tw, th] = paper === 'Letter' ? [612, 792] : [595.28, 841.89]
+    const out = await stampScript(src, [], footer, { pages: [0], paper })
+    const [fitted] = await pageSizes(out)
+    expect(fitted?.width).toBeCloseTo(tw, 1)
+    expect(fitted?.height).toBeCloseTo(th, 1)
+    expect(fitted?.rotation).toBe(0)
+    const scale = Math.min(tw / info.width, th / info.height)
+    const dx = (tw - info.width * scale) / 2
+    const dy = (th - info.height * scale) / 2
+    const before = await bboxWords(src, 0)
+    const after = await bboxWords(out, 0)
+    expect(before.length).toBeGreaterThan(50)
+    for (const w of before) {
+      const moved = after.find(
+        (a) =>
+          a.t === w.t &&
+          Math.abs(a.xMin - (dx + w.xMin * scale)) < 1 &&
+          Math.abs(a.yMin - (dy + w.yMin * scale)) < 1,
+      )
+      expect(moved, `${w.t} at ${w.xMin},${w.yMin}`).toBeDefined()
+    }
+    // The footer is drawn before the fit, so it is on the sheet and scaled with the page.
+    expect(norm(await pdftotext(out, 0))).toContain(FOOTER_TEXT)
+    const first = after.find((w) => w.t === 'Pirates')
+    expect(first?.xMin).toBeCloseTo(dx + 24 * scale, 0)
+  })
+
+  test('a rotated page is fitted upright, and a stamp on it keeps its place under the scaling', async () => {
+    const src = await read(FIXTURES.mixedPdf)
+    const info = (await pageSizes(src))[1] as PageInfo
+    expect(info.rotation).toBe(90)
+    const out = await stampScript(
+      src,
+      [cueAt(1, 200, 300, 'LX', '12', { triggerBoxes: [{ x: 200, y: 295, w: 50, h: 10 }] })],
+      footer,
+      { pages: [1], paper: 'Letter' },
+    )
+    const [fitted] = await pageSizes(out)
+    expect([fitted?.width, fitted?.height, fitted?.rotation]).toEqual([792, 612, 0])
+    const scale = Math.min(792 / info.width, 612 / info.height)
+    const dx = (792 - info.width * scale) / 2
+    const dy = (612 - info.height * scale) / 2
+    const words = await bboxWords(out, 0)
+    const lx = words.find((w) => w.t === 'LX')
+    const twelve = words.find((w) => w.t === '12')
+    if (!lx || !twelve) throw new Error('the tag text is not in the text layer')
+    expect(lx.xMin).toBeCloseTo(dx + 10 * scale, 0)
+    expect((lx.yMin + lx.yMax) / 2).toBeCloseTo(dy + (info.height - 300) * scale, -0.5)
+    expect(twelve.xMin).toBeGreaterThan(lx.xMax)
+    expect(Math.abs(twelve.yMin - lx.yMin)).toBeLessThan(2)
+    // The tag's pill is drawn, in the department colour, where the scaling puts its top edge.
+    expect(
+      near(
+        await pixelAt(out, 0, dx + 24 * scale, dy + (info.height - 300 - 7) * scale, 288),
+        AMBER,
+        40,
+      ),
+    ).toBe(true)
+  })
+
+  test('a cue note reads under its tag in the margin and never over the script', async () => {
+    const src = await read(FIXTURES.librettoShortPdf)
+    const info = (await pageSizes(src))[0] as PageInfo
+    const words = await bboxWords(src, 0)
+    const minX = Math.min(...words.map((w) => w.xMin))
+    const note = { kind: 'cue-note', cueId: '', pageIndex: 0, text: 'Pad', colour: AMBER } as const
+    const cue = cueAt(0, 300, 500, 'LX', '10', {
+      textExtent: { minX, maxX: info.width - minX },
+    })
+    const out = await stampScript(
+      src,
+      [cue, { ...note, cueId: (cue as { id: string }).id }],
+      footer,
+    )
+    const after = await bboxWords(out, 0)
+    const lx = after.find((w) => w.t === 'LX')
+    const pad = after.find((w) => w.t === 'Pad')
+    if (!lx || !pad) throw new Error('the tag or its note is not in the text layer')
+    // Under the tag (9 pt down), flush with its left edge, 7 pt type.
+    expect(pad.yMin).toBeGreaterThan(lx.yMax)
+    expect(pad.yMin - lx.yMin).toBeLessThan(14)
+    expect(pad.xMin).toBeCloseTo(4, 0)
+    expect(pad.yMax - pad.yMin).toBeLessThan(9)
+    expect(pad.xMax).toBeLessThan(minX)
+    for (const w of words) {
+      const overlaps =
+        pad.xMin < w.xMax && pad.xMax > w.xMin && pad.yMin < w.yMax && pad.yMax > w.yMin
+      expect(overlaps, `note over ${w.t}`).toBe(false)
+    }
+  })
+})
+
+describe.skipIf(skip)('exportMarkedScript print options with poppler', () => {
+  async function ready(title?: string) {
+    const f = await setupMarkupShow()
+    const key = searchableBlobKey(f.show.id, f.docId, f.versionId)
+    await f.deps.blobs.put(key, new Uint8Array(librettoBytes()), 'application/pdf')
+    await f.deps.db
+      .update(documentVersions)
+      .set({ searchableKey: key })
+      .where(eq(documentVersions.id, f.versionId))
+    if (title) await f.deps.db.update(shows).set({ title }).where(eq(shows.id, f.show.id))
+    return f
+  }
+
+  async function bytesOf(f: Awaited<ReturnType<typeof ready>>, fileKey: string) {
+    const blob = await f.deps.blobs.get(fileKey)
+    if (!blob) throw new Error('export blob missing')
+    const chunks: Buffer[] = []
+    for await (const c of blob.stream) chunks.push(c as Buffer)
+    return new Uint8Array(Buffer.concat(chunks))
+  }
+
+  const code = (p: Promise<unknown>) =>
+    p.then(
+      () => 'ok',
+      (e) => (e instanceof AppError ? e.code : `other: ${e}`),
+    )
+
+  const norm = (s: string) => s.replace(/\s+/g, ' ')
+
+  test('a page range keeps only those pages and pdftotext still finds the script text', async () => {
+    const f = await ready()
+    const whole = new Uint8Array(librettoBytes())
+    const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+      options: { pages: '2-3, 5' },
+    })
+    const out = await bytesOf(f, record.fileKey)
+    expect((await pageSizes(out)).length).toBe(3)
+    expect((await pageSizes(whole)).length).toBeGreaterThan(5)
+    // Output page 1 reads the same as page 2 of the source (plus the footer).
+    const want = norm(await pdftotext(whole, 1)).slice(0, 200)
+    expect(want.length).toBeGreaterThan(40)
+    expect(norm(await pdftotext(out, 0))).toContain(want)
+    expect(norm(await pdftotext(out, 2))).toContain(norm(await pdftotext(whole, 4)).slice(0, 200))
+    expect(out.byteLength).toBeLessThan(whole.byteLength)
+  }, 30_000)
+
+  test('a Letter fit keeps the text layer searchable', async () => {
+    const f = await ready()
+    const whole = new Uint8Array(librettoBytes())
+    const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+      options: { pages: '1-2', paper: 'Letter' },
+    })
+    const out = await bytesOf(f, record.fileKey)
+    const sizes = await pageSizes(out)
+    expect(sizes.map((s) => [s.width, s.height])).toEqual([
+      [612, 792],
+      [612, 792],
+    ])
+    expect(norm(await pdftotext(out, 0))).toContain(norm(await pdftotext(whole, 0)).slice(0, 200))
+  })
+
+  test('options are stored on the export record, defaults filled in, and read back by list', async () => {
+    const f = await ready()
+    const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+      options: { pages: '3, 1-2', paper: 'A4', includeStandbyWarn: false },
+    })
+    const want = {
+      pages: '1-3',
+      paper: 'A4',
+      includeStandbyWarn: false,
+      includeAnnotations: true,
+      includeCueNotes: true,
+    }
+    expect(record.options).toEqual(want)
+    const listed = await listExportRecords(f.deps.db, f.actors.owner, { showId: f.show.id })
+    expect(listed.find((r) => r.id === record.id)?.options).toEqual(want)
+    // No options given: the record says what was done, with no paper refit.
+    const plain = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+    })
+    expect(plain.record.options).toEqual({
+      pages: 'all',
+      includeStandbyWarn: true,
+      includeAnnotations: true,
+      includeCueNotes: true,
+    })
+  })
+
+  test('a range beyond the page count, or not a range, is invalid and stores nothing', async () => {
+    const f = await ready()
+    const count = (await pageSizes(new Uint8Array(librettoBytes()))).length
+    for (const pages of [`1-${count + 1}`, `${count + 1}`, 'a-b', '0', '']) {
+      const res = await code(
+        exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+          documentId: f.docId,
+          layers: 'none',
+          options: { pages },
+        }),
+      )
+      expect([pages, res]).toEqual([pages, 'invalid'])
+    }
+    expect(await listExportRecords(f.deps.db, f.actors.owner, { showId: f.show.id })).toHaveLength(
+      0,
+    )
+  }, 30_000)
+
+  test('a custom file name is used (with .pdf added) and an unsafe one is invalid', async () => {
+    const f = await ready()
+    const named = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'none',
+      filename: 'Act one pages',
+    })
+    expect(named.record.filename).toBe('Act one pages.pdf')
+    for (const filename of ['a/b', 'CON', '.hidden', 'x'.repeat(201), '  ']) {
+      const res = await code(
+        exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+          documentId: f.docId,
+          layers: 'none',
+          filename,
+        }),
+      )
+      expect([filename, res]).toEqual([filename, 'invalid'])
+    }
+  })
+
+  test('the default file name is the slug form', async () => {
+    const f = await ready('Songs for a New World')
+    const all = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: 'all',
+    })
+    expect(all.record.filename).toBe('songs-for-a-new-world-libretto-v1-all-layers.pdf')
+    const lx = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: [{ kind: 'department', id: f.depts.LX.id }],
+    })
+    expect(lx.record.filename).toBe('songs-for-a-new-world-libretto-v1-LX.pdf')
   })
 })

@@ -18,15 +18,22 @@ export {
 export type { RenumberCue, RenumberResult } from './cues/renumber'
 export { renumberByBlocks } from './cues/renumber'
 export type { SummaryRow } from './history/summarise'
-export { actorLabel, summariseBatch } from './history/summarise'
+export { actorLabel, cardSentence, summariseBatch } from './history/summarise'
 export { columnEqual, jsonEqual } from './json/jsonEqual'
 export {
   ANNOTATION_PAD,
   DEFAULT_NOTE_FONT,
   DEFAULT_STAMP_FONT,
   DEFAULT_STROKE,
+  mixIntoWhite,
+  NOTE_BAR_WIDTH,
   NOTE_LINE_HEIGHT,
   NOTE_MAX_WIDTH,
+  NOTE_TINT,
+  STAMP_ANGLE,
+  STAMP_FILL_OPACITY,
+  STAMP_TRACKING,
+  stampTextWidth,
   UNBOUND_CHARS,
   UNBOUND_FONT,
   unboundSnippet,
@@ -36,6 +43,9 @@ export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
   LEADER_WIDTH,
   layoutCueTags,
+  NOTE_FONT_SIZE,
+  NOTE_HEIGHT,
+  NOTE_MIN_COLUMN,
   SELECTED_FILL_OPACITY,
   TAG_FONT_SIZE,
   TAG_RADIUS,
@@ -48,10 +58,10 @@ export { asCueType, markerLead, markerText, markerTypeWord } from './markup/mark
 export { wordBoxes } from './markup/wordBoxes'
 export type { FooterInfo } from './print/footer'
 export { footerText, layerSelectionLabel } from './print/footer'
-export type { StampInput, StampItem } from './print/stampItems'
-export { buildStampItems } from './print/stampItems'
-export type { PageFrame } from './print/stampScript'
-export { displayedToUser, stampScript } from './print/stampScript'
+export type { StampInclude, StampInput, StampItem } from './print/stampItems'
+export { buildStampItems, PAGE_INK } from './print/stampItems'
+export type { PageFrame, StampOptions } from './print/stampScript'
+export { displayedToUser, PAPER_POINTS, stampScript } from './print/stampScript'
 export { toWinAnsi } from './print/winAnsi'
 export { normaliseToken } from './search/normalise'
 export type { DocHit, Hit } from './search/search'

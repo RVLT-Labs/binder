@@ -124,10 +124,20 @@ describe('departments', () => {
       .from(departmentsTable)
       .where(eq(departmentsTable.showId, bare.id))
       .orderBy(asc(departmentsTable.sortOrder))
-    // The SQL copy of the defaults must not drift from DEFAULT_DEPARTMENTS.
-    expect(seeded.map((d) => [d.code, d.name, d.colour, d.numberFormat])).toEqual(
-      DEFAULT_DEPARTMENTS.map((d) => [d.code, d.name, d.colour, d.numberFormat]),
+    // The SQL copy is frozen history (migration 0005): it keeps the M1 colours, so only the
+    // codes, names and formats must not drift from DEFAULT_DEPARTMENTS.
+    expect(seeded.map((d) => [d.code, d.name, d.numberFormat])).toEqual(
+      DEFAULT_DEPARTMENTS.map((d) => [d.code, d.name, d.numberFormat]),
     )
+    expect(seeded.map((d) => d.colour)).toEqual([
+      '#F5A623',
+      '#4A90E2',
+      '#9B51E0',
+      '#2BB0A6',
+      '#D0021B',
+      '#8B572A',
+      '#417505',
+    ])
     expect(seeded.map((d) => d.sortOrder)).toEqual([0, 10, 20, 30, 40, 50, 60])
     expect(seeded.every((d) => d.updatedBy === 'system')).toBe(true)
     expect(new Set(seeded.map((d) => d.id)).size).toBe(7)

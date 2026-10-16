@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { fromPopplerBbox } from '@binder/core'
 import { documents, documentVersions, pages } from '@binder/db'
-import { and, eq, notExists, sql } from 'drizzle-orm'
+import { and, eq, exists, notExists, sql } from 'drizzle-orm'
 import { pageThumbBlobKey, pageWordsBlobKey } from '../blob/keys'
 import { extractBboxXhtml, renderThumbnail } from './poppler'
 import { blobFile, withTempDir } from './tmp'
@@ -15,7 +15,9 @@ export const SYSTEM = 'system'
 export type FinishResult = 'not-done' | 'ready' | 'needs-reanchor'
 
 /**
- * Marks the version ready once none of its pages is still queued (a failed page counts as done). One
+ * Marks the version ready once it has pages and none of them is still queued (a failed page counts
+ * as done). A version with no page rows is never ready: it is between a cancel and a retry's document
+ * job, and a stale page job finishing then must not finish the version for it. One
  * conditional UPDATE, so when two page jobs finish together exactly one of them wins. A document's
  * first version (no current version yet) becomes current at once. A newer version leaves the current
  * one in place and queues the re-anchoring job after the transaction commits (`'needs-reanchor'`);
@@ -38,6 +40,9 @@ export async function finishVersionIfDone(
         and(
           eq(documentVersions.id, versionId),
           eq(documentVersions.status, 'processing'),
+          exists(
+            tx.select({ one: sql`1` }).from(pages).where(eq(pages.documentVersionId, versionId)),
+          ),
           notExists(
             tx
               .select({ one: sql`1` })
@@ -97,6 +102,9 @@ export async function processPage(deps: ProcessingDeps, pageId: string): Promise
     .where(eq(pages.id, pageId))
   if (!row) return
   const { page, version } = row
+  // Pages only run while their version does. A cancelled version is failed, so a page job queued
+  // before the cancel does no work and cannot bring the version back.
+  if (version.status !== 'processing') return
 
   if (page.status === 'queued') {
     const stillQueued = and(eq(pages.id, pageId), eq(pages.status, 'queued'))
@@ -117,16 +125,21 @@ export async function processPage(deps: ProcessingDeps, pageId: string): Promise
         await blobs.put(keys.thumbKey, createReadStream(thumb), 'image/png')
         await blobs.put(keys.wordsKey, Buffer.from(JSON.stringify(layer)), 'application/json')
       })
-      await db
+      const done = await db
         .update(pages)
         .set({ status: 'ready', error: null, ...keys, updatedBy: SYSTEM })
         .where(stillQueued)
+        .returning({ id: pages.id })
+      // No row: the page was deleted (cancel, retry) while this job rendered. Not this job's version.
+      if (done.length === 0) return
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      await db
+      const failed = await db
         .update(pages)
         .set({ status: 'failed', error: message, updatedBy: SYSTEM })
         .where(stillQueued)
+        .returning({ id: pages.id })
+      if (failed.length === 0) return
     }
   }
   await finishVersionIfDone(deps, version.id)

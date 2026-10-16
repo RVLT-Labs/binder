@@ -1,7 +1,8 @@
 import type { Readable } from 'node:stream'
 
 export interface BlobStore {
-  put(key: string, body: Readable | Uint8Array, contentType: string): Promise<void>
+  /** Stores the body and returns how many bytes were stored. */
+  put(key: string, body: Readable | Uint8Array, contentType: string): Promise<{ size: number }>
   get(key: string): Promise<{ stream: Readable; size: number; contentType: string } | null>
   exists(key: string): Promise<boolean>
   delete(key: string): Promise<void>

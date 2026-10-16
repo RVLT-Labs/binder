@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 let online = true
@@ -8,7 +9,7 @@ vi.mock('../blobs/fetchBlob', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../blobs/fetchBlob')>()),
   isBlobCached: (...args: unknown[]) => isBlobCached(...args),
 }))
-const { DownloadAgain } = await import('./DownloadAgain')
+const { DownloadAgain, DownloadLocal } = await import('./DownloadAgain')
 
 const KEY = 'shows/s1/exports/e1/n1.pdf'
 
@@ -39,4 +40,36 @@ test('offline but already stored: still a working link', async () => {
   render(<DownloadAgain fileKey={KEY} filename="x.pdf" />)
   expect(await screen.findByRole('link', { name: 'Download again' })).toBeTruthy()
   expect(screen.queryByText('Available when online')).toBeNull()
+})
+
+test('a waiting export downloads from its held bytes, and the link stays live under StrictMode', () => {
+  const made: string[] = []
+  const revoked: string[] = []
+  let n = 0
+  vi.stubGlobal('URL', {
+    ...URL,
+    createObjectURL: () => {
+      const u = `blob:held-${++n}`
+      made.push(u)
+      return u
+    },
+    revokeObjectURL: (u: string) => revoked.push(u),
+  })
+  const { unmount } = render(
+    <StrictMode>
+      <DownloadLocal
+        bytes={new Uint8Array([1, 2])}
+        contentType="application/pdf"
+        filename="a.pdf"
+      />
+    </StrictMode>,
+  )
+  const link = screen.getByRole('link', { name: 'Download again' })
+  // the dev double-run revoked the first URL and made another: the link points at the live one
+  expect(revoked).toContain(made[0])
+  expect(link.getAttribute('href')).toBe(made[made.length - 1])
+  expect(revoked).not.toContain(made[made.length - 1])
+  expect(link.getAttribute('download')).toBe('a.pdf')
+  unmount()
+  expect(revoked).toContain(made[made.length - 1])
 })

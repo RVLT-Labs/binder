@@ -3,6 +3,7 @@ import { documentVersions } from '@binder/db'
 import { newId } from '@binder/shared'
 import type { Client } from '@modelcontextprotocol/client'
 import { eq } from 'drizzle-orm'
+import { PDFDocument } from 'pdf-lib'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { searchableBlobKey } from '../src/blob/keys'
 import {
@@ -107,6 +108,66 @@ describe('export_marked_script', () => {
     })
     expect(bad.isError).toBe(true)
     expect(resultText(bad)).toMatch(/invalid/)
+  })
+
+  test('pages and paper make the subset PDF, record the options, and name the file in slug form', async () => {
+    const res = await callTool(owner, 'export_marked_script', {
+      documentId: s.docId,
+      layers: 'none',
+      pages: '2–3',
+      paper: 'Letter',
+      includeStandbyWarn: false,
+      includeCueNotes: false,
+    })
+    expect(res.isError).toBeFalsy()
+    const { record, uri } = res.structuredContent as Json
+    expect(record.options).toEqual({
+      pages: '2-3',
+      paper: 'Letter',
+      includeStandbyWarn: false,
+      includeAnnotations: true,
+      includeCueNotes: false,
+    })
+    expect(record.filename).toBe('show-libretto-v1-clean.pdf')
+    const read = await owner.readResource({ uri })
+    const [content] = read.contents as Json[]
+    const out = await PDFDocument.load(Buffer.from(content.blob, 'base64'))
+    expect(out.getPageCount()).toBe(2)
+    expect(out.getPage(0).getSize()).toEqual({ width: 612, height: 792 })
+    // list_exports carries the options.
+    const listed = await callTool(owner, 'list_exports', { showId: s.show.id })
+    const row = (listed.structuredContent as Json).items.find((r: Json) => r.id === record.id)
+    expect(row.options).toEqual(record.options)
+  })
+
+  test('without options the pages and paper are untouched, and a custom file name is used', async () => {
+    const res = await callTool(owner, 'export_marked_script', {
+      documentId: s.docId,
+      layers: 'none',
+      filename: 'whole script',
+    })
+    expect(res.isError).toBeFalsy()
+    const { record, uri } = res.structuredContent as Json
+    expect(record.filename).toBe('whole script.pdf')
+    expect(record.options).toMatchObject({ pages: 'all' })
+    expect(record.options.paper).toBeUndefined()
+    const [content] = (await owner.readResource({ uri })).contents as Json[]
+    const out = await PDFDocument.load(Buffer.from(content.blob, 'base64'))
+    const src = await PDFDocument.load(librettoBytes())
+    expect(out.getPageCount()).toBe(src.getPageCount())
+    expect(out.getPage(0).getSize()).toEqual(src.getPage(0).getSize())
+  })
+
+  test('a range past the end, a bad range and an unsafe file name are invalid', async () => {
+    for (const args of [{ pages: '1-9999' }, { pages: 'x' }, { filename: 'a/b' }]) {
+      const res = await callTool(owner, 'export_marked_script', {
+        documentId: s.docId,
+        layers: 'none',
+        ...args,
+      })
+      expect([JSON.stringify(args), res.isError]).toEqual([JSON.stringify(args), true])
+      expect(resultText(res)).toMatch(/invalid/)
+    }
   })
 
   test("another show's token is forbidden", async () => {

@@ -1,9 +1,14 @@
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { DialogFooter, DialogHeader, DialogShell } from '@/components/ui/dialog-shell'
+import { closeModal, openModal } from '@/lib/modalDialog'
 import { type RevertTarget, useRevert } from './api'
 
 interface Asking {
   question: string
   resolve: (yes: boolean) => void
+  /** What had focus when it was asked: the Revert button, which gets focus back. */
+  opener: HTMLElement | null
 }
 
 /**
@@ -17,55 +22,77 @@ export function useRevertAction(showId: string): {
 } {
   const [asking, setAsking] = useState<Asking | null>(null)
   const ask = useCallback(
-    (question: string) => new Promise<boolean>((resolve) => setAsking({ question, resolve })),
+    (question: string) =>
+      new Promise<boolean>((resolve) => {
+        const active = document.activeElement
+        setAsking({
+          question,
+          resolve,
+          opener: active instanceof HTMLElement && active !== document.body ? active : null,
+        })
+      }),
     [],
   )
   const mutation = useRevert(showId, ask)
-  const answer = (yes: boolean) => {
-    asking?.resolve(yes)
-    setAsking(null)
-  }
   return {
     revert: (target) => mutation.mutate(target),
     pending: mutation.isPending,
-    dialog: asking ? <ConfirmDialog question={asking.question} onAnswer={answer} /> : null,
+    dialog: asking ? (
+      <ConfirmDialog
+        question={asking.question}
+        opener={asking.opener}
+        onAnswer={(yes) => {
+          asking.resolve(yes)
+          setAsking(null)
+        }}
+      />
+    ) : null,
   }
 }
 
 function ConfirmDialog({
   question,
+  opener,
   onAnswer,
 }: {
   question: string
+  opener: HTMLElement | null
   onAnswer: (yes: boolean) => void
 }) {
   const headingId = useId()
   const dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
-    dialog.current?.showModal()
+    if (dialog.current) openModal(dialog.current)
   }, [])
+  // Close it itself, then hand focus back to the Revert that asked: unmounting an open modal does neither.
+  const answer = (yes: boolean) => {
+    closeModal(dialog.current, opener)
+    onAnswer(yes)
+  }
   return (
-    <dialog
+    <DialogShell
       ref={dialog}
-      className="confirm-dialog"
-      aria-labelledby={headingId}
+      labelledBy={headingId}
+      className="max-w-[min(26rem,calc(100vw-32px))]"
       // The document's markup keys (Delete, Escape, digits) must not act on the selection behind it.
       onKeyDown={(e) => e.stopPropagation()}
       // Escape closes a modal dialog: that is a no.
       onCancel={(e) => {
         e.preventDefault()
-        onAnswer(false)
+        answer(false)
       }}
     >
-      <h2 id={headingId}>{question}</h2>
-      <div className="dialog-actions">
-        <button type="button" onClick={() => onAnswer(false)}>
+      <DialogHeader id={headingId} className="mb-0">
+        {question}
+      </DialogHeader>
+      <DialogFooter>
+        <Button type="button" variant="line" onClick={() => answer(false)}>
           Cancel
-        </button>
-        <button type="button" className="danger" onClick={() => onAnswer(true)}>
+        </Button>
+        <Button type="button" onClick={() => answer(true)}>
           Revert anyway
-        </button>
-      </div>
-    </dialog>
+        </Button>
+      </DialogFooter>
+    </DialogShell>
   )
 }

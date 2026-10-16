@@ -2,22 +2,20 @@ import type { ActivityGroup } from '@binder/shared'
 import { useQuery } from '@powersync/react'
 import { Link } from '@tanstack/react-router'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { useSessionUser } from '../auth/session'
 import { ARCHIVED_HINT } from '../markup/MarkupSession'
 import { useDepartments } from '../markup/useDepartments'
 import { useMembership } from '../markup/useMembership'
 import { useOnline } from '../offline/useOnline'
 import type { ShowRow } from '../powersync/schema'
-import { type KindFilter, targetOfGroup, useActivity } from './api'
+import { ActivityFilters } from './ActivityFilters'
+import { ActivityRow } from './ActivityRow'
+import { type KindFilter, useActivity } from './api'
 import { NeedsConnection } from './NeedsConnection'
-import { dayHeading, formatClock, formatWhen, localDay } from './time'
+import { dayHeading, formatWhen, localDay } from './time'
 import { useRevertAction } from './useRevertAction'
-
-const KIND_OPTIONS: Array<{ value: KindFilter; label: string }> = [
-  { value: 'all', label: 'People and agents' },
-  { value: 'human', label: 'People only' },
-  { value: 'agent', label: 'Agents only' },
-]
 
 interface Day {
   key: string
@@ -81,97 +79,115 @@ export function ActivityFeed({ showId, from }: { showId: string; from?: string }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   return (
-    <section className="activity" aria-labelledby={`${ids}-heading`}>
-      <h1 id={`${ids}-heading`}>Activity</h1>
+    <section
+      className="activity mr-auto flex w-full max-w-[916px] flex-col md:-mt-2.5"
+      aria-labelledby={`${ids}-heading`}
+    >
+      <h1 id={`${ids}-heading`} className="sr-only">
+        Activity
+      </h1>
       {from && (
-        <p className="muted">
+        <p className="m-0 mb-3 text-[13px] text-muted">
           Changes since {formatWhen(from)}.{' '}
-          <Link to="/shows/$showId/activity" params={{ showId }} search={{}}>
+          <Link
+            to="/shows/$showId/activity"
+            params={{ showId }}
+            search={{}}
+            className="font-semibold text-blue hover:underline"
+          >
             Show all
           </Link>
         </p>
       )}
-      <div className="activity-filters">
-        <label>
-          Layer
-          <select value={layer} onChange={(e) => setLayer(e.target.value)}>
-            <option value="">All layers</option>
-            {departments.map((d) => (
-              <option key={d.id} value={`department:${d.id}`}>
-                {d.code}
-              </option>
-            ))}
-            {user && <option value={`personal:${user.id}`}>Personal</option>}
-          </select>
-        </label>
-        <label>
-          Changes by
-          <select value={kind} onChange={(e) => setKind(e.target.value as KindFilter)}>
-            {KIND_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      {/* the filters (the mockup's `.filters`); on a phone they stay put under the title */}
+      <div className="activity-filters z-[3] max-md:sticky max-md:-top-3.5 mb-2.5 flex flex-wrap items-center gap-2 max-md:-mx-4 max-md:-mt-3.5 max-md:mb-2 max-md:border-b max-md:border-line max-md:bg-paper max-md:px-4 max-md:pt-2.5 max-md:pb-2">
+        <ActivityFilters
+          departments={departments.map((d) => ({ id: d.id, code: d.code ?? '', colour: d.colour }))}
+          userId={user?.id}
+          layer={layer}
+          kind={kind}
+          onLayerChange={setLayer}
+          onKindChange={setKind}
+        />
+        {days[0] && (
+          <span
+            aria-hidden
+            className="text-[12px] text-muted md:ml-auto max-md:order-1 max-md:mr-auto"
+          >
+            {days[0].heading}
+          </span>
+        )}
       </div>
       {whyCantRevert && (
-        <p id={reasonId} className="muted">
+        <p id={reasonId} className="m-0 mb-2 text-[12.5px] text-muted">
           {whyCantRevert}
         </p>
       )}
       {!online ? (
         <NeedsConnection />
       ) : query.isPending ? (
-        <p className="muted">Loading activity…</p>
+        <p className="m-0 text-[13px] text-muted">Loading activity…</p>
       ) : query.isError ? (
-        <p role="alert" className="field-error">
+        <p role="alert" className="m-0 text-[13px] text-t-out">
           Could not load activity.{' '}
-          <button type="button" onClick={() => void query.refetch()}>
+          <button
+            type="button"
+            className="font-semibold underline max-md:min-h-11"
+            onClick={() => void query.refetch()}
+          >
             Try again
           </button>
         </p>
       ) : groups.length === 0 ? (
-        <p className="muted">No changes match.</p>
+        <p className="m-0 text-[13px] text-muted">No changes match.</p>
       ) : (
         <>
-          {days.map((day) => (
+          {days.map((day, i) => (
             <section key={day.key} aria-label={day.heading} className="activity-day">
-              <h2>{day.heading}</h2>
-              <ul className="activity-list">
+              {/* the first day's heading is drawn in the filter row; later days get their own line */}
+              <h2
+                className={cn(
+                  'm-0 text-[12px] font-normal text-muted',
+                  i === 0 ? 'sr-only' : 'mt-5 mb-1 max-md:mt-4 max-md:mb-2',
+                )}
+              >
+                {day.heading}
+              </h2>
+              <ul className="activity-list m-0 flex list-none flex-col p-0 max-md:gap-2 max-md:pt-2.5">
                 {day.groups.map((group) => (
-                  <li key={group.toSeq} className="activity-row" data-seq={group.toSeq}>
-                    <span id={`${ids}-${group.toSeq}`} className="activity-text">
-                      {group.label} {group.summary},{' '}
-                      <time dateTime={group.at}>{formatClock(group.at)}</time>
-                    </span>
-                    <button
-                      type="button"
-                      disabled={whyCantRevert !== null || pending}
-                      aria-describedby={
-                        whyCantRevert
-                          ? `${reasonId} ${ids}-${group.toSeq}`
-                          : `${ids}-${group.toSeq}`
-                      }
-                      onClick={() => revert(targetOfGroup(group))}
-                    >
-                      Revert
-                    </button>
-                  </li>
+                  <ActivityRow
+                    key={group.toSeq}
+                    group={group}
+                    textId={`${ids}-${group.toSeq}`}
+                    disabled={whyCantRevert !== null || pending}
+                    describedBy={
+                      whyCantRevert ? `${reasonId} ${ids}-${group.toSeq}` : `${ids}-${group.toSeq}`
+                    }
+                    onRevert={revert}
+                  />
                 ))}
               </ul>
             </section>
           ))}
-          <div ref={end} aria-hidden="true" className="activity-end" />
+          <div ref={end} aria-hidden="true" className="activity-end h-px" />
           {hasNextPage && (
-            <button
+            <Button
               type="button"
+              variant="line"
+              className="mt-3 self-start"
               disabled={isFetchingNextPage}
               onClick={() => void fetchNextPage()}
             >
               Load more
-            </button>
+            </Button>
           )}
+          <p className="m-0 mt-4 rounded-[10px] border border-dashed border-line-2 px-3 py-2.5 text-[12.5px] text-muted max-md:rounded-[14px] max-md:border-2 max-md:border-solid max-md:border-line max-md:bg-paper-2 max-md:p-3.5">
+            Personal layers never appear here.
+            <span className="max-md:hidden">
+              {' '}
+              Your own personal notes show in your row history only.
+            </span>
+          </p>
         </>
       )}
       {dialog}

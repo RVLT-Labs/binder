@@ -5,8 +5,15 @@ import {
   DEFAULT_STROKE,
   helveticaWidth,
   NOTE_LINE_HEIGHT as LINE_HEIGHT,
+  mixIntoWhite,
+  NOTE_BAR_WIDTH,
   NOTE_MAX_WIDTH,
+  NOTE_TINT,
   ANNOTATION_PAD as PAD,
+  STAMP_ANGLE,
+  STAMP_FILL_OPACITY,
+  STAMP_TRACKING,
+  stampTextWidth,
   UNBOUND_FONT,
   unboundSnippet,
   wordBoxes,
@@ -167,19 +174,23 @@ function drawNote(a: ShapeAnnotation, colour: string): Drawn {
           y={box.y}
           width={w}
           height={h}
-          fill="#fff"
-          fillOpacity={0.92}
-          stroke={colour}
-          strokeWidth={1.25}
+          fill={mixIntoWhite(colour, NOTE_TINT)}
         />
-        <rect x={box.x} y={box.y} width={3} height={h} fill={colour} />
+        <rect
+          className="annotation-note-bar"
+          x={box.x}
+          y={box.y}
+          width={NOTE_BAR_WIDTH}
+          height={h}
+          fill={colour}
+        />
         {lines.map((line, i) => (
           <SvgText
             // biome-ignore lint/suspicious/noArrayIndexKey: wrapped lines have no identity beyond their position
             key={i}
             x={box.x + PAD + 3}
             y={a.anchor.y - PAD - lineHeight * (i + 0.5)}
-            fill="#111827"
+            fill="var(--page-ink)"
             fontFamily={FONT_FAMILY}
             fontSize={size}
             dominantBaseline="central"
@@ -194,14 +205,14 @@ function drawNote(a: ShapeAnnotation, colour: string): Drawn {
 
 function drawStamp(a: ShapeAnnotation, colour: string, sw: number): Drawn {
   const size = a.style.fontSize ?? DEFAULT_STAMP_FONT
-  const w = helveticaWidth(a.text, size) + PAD * 3
+  const w = stampTextWidth(a.text, size) + PAD * 3
   const h = size + PAD * 2
   // A stamp sits centred on the point it was placed at.
   const box = { x: a.anchor.x - w / 2, y: a.anchor.y - h / 2, w, h }
   return {
     box,
     body: (
-      <>
+      <g transform={`rotate(${STAMP_ANGLE} ${a.anchor.x} ${a.anchor.y})`}>
         <rect
           className="annotation-stamp"
           x={box.x}
@@ -209,8 +220,8 @@ function drawStamp(a: ShapeAnnotation, colour: string, sw: number): Drawn {
           width={w}
           height={h}
           rx={3}
-          fill="#fff"
-          fillOpacity={0.85}
+          fill="var(--page)"
+          fillOpacity={STAMP_FILL_OPACITY}
           stroke={colour}
           strokeWidth={sw}
         />
@@ -220,11 +231,13 @@ function drawStamp(a: ShapeAnnotation, colour: string, sw: number): Drawn {
           fill={colour}
           fontFamily={FONT_FAMILY}
           fontSize={size}
+          fontWeight={800}
+          letterSpacing={`${STAMP_TRACKING}em`}
           dominantBaseline="central"
         >
           {a.text}
         </SvgText>
-      </>
+      </g>
     ),
   }
 }
@@ -273,7 +286,7 @@ function drawHighlight(a: ShapeAnnotation, colour: string, words: WordLayer | nu
           width={w}
           height={h}
           rx={2}
-          fill="#fff"
+          fill="var(--page)"
           fillOpacity={0.85}
           stroke={colour}
           strokeWidth={1.25}
@@ -386,14 +399,15 @@ export function AnnotationShape({
       {selected && (
         <rect
           className="annotation-selection"
-          x={box.x - 2}
-          y={box.y - 2}
-          width={box.w + 4}
-          height={box.h + 4}
+          x={box.x - 3}
+          y={box.y - 3}
+          width={box.w + 6}
+          height={box.h + 6}
+          rx={6}
           fill="none"
-          stroke="#111827"
-          strokeWidth={1}
-          strokeDasharray="2 1.5"
+          stroke="var(--red)"
+          strokeWidth={2}
+          vectorEffect="non-scaling-stroke"
           pointerEvents="none"
         />
       )}

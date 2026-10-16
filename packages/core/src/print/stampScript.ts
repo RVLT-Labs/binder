@@ -1,3 +1,4 @@
+import type { PaperSize } from '@binder/shared'
 import {
   appendBezierCurve,
   closePath,
@@ -13,6 +14,7 @@ import {
   pushGraphicsState,
   rgb,
   StandardFonts,
+  setCharacterSpacing,
   setDashPattern,
   setFillingColor,
   setLineWidth,
@@ -20,9 +22,16 @@ import {
   stroke as strokePath,
 } from 'pdf-lib'
 import {
+  mixIntoWhite,
+  NOTE_BAR_WIDTH,
   NOTE_LINE_HEIGHT,
   NOTE_MAX_WIDTH,
+  NOTE_TINT,
   ANNOTATION_PAD as PAD,
+  STAMP_ANGLE,
+  STAMP_FILL_OPACITY,
+  STAMP_TRACKING,
+  stampTextWidth,
   UNBOUND_FONT,
   unboundSnippet,
   wrapText,
@@ -32,6 +41,7 @@ import {
   type CueTagLayout,
   LEADER_WIDTH,
   layoutCueTags,
+  NOTE_FONT_SIZE,
   TAG_FONT_SIZE,
   TAG_RADIUS,
   UNDERLINE_WIDTH,
@@ -47,7 +57,7 @@ const FOOTER_BOTTOM = 12
 /** The footer's top edge: tags never go below it, so none ends up under the footer text. */
 const FOOTER_TOP = FOOTER_BOTTOM + FOOTER_SIZE
 const FOOTER_GREY = rgb(0.45, 0.45, 0.45)
-const INK = rgb(0.067, 0.094, 0.153)
+const PAGE_INK_RGB = rgb(0x1a / 255, 0x17 / 255, 0x15 / 255)
 const WHITE = rgb(1, 1, 1)
 /** Helvetica's cap height is about 0.72 em: centring a line on y puts its baseline this far below. */
 const BASELINE_DROP = 0.36
@@ -140,17 +150,61 @@ class DisplayedPage {
     size: number,
     colour: ReturnType<typeof rgb>,
     bold = false,
+    o: { extraTurn?: number; tracking?: number } = {},
   ) {
     const text = toWinAnsi(s)
     if (!text) return
     const p = displayedToUser(this.frame, x, y)
+    if (o.tracking) this.page.pushOperators(pushGraphicsState(), setCharacterSpacing(o.tracking))
     this.page.drawText(text, {
       x: p.x,
       y: p.y,
       size,
       font: bold ? this.boldFont : this.font,
       color: colour,
-      rotate: this.turn,
+      rotate: degrees(this.frame.rotation + (o.extraTurn ?? 0)),
+    })
+    if (o.tracking) this.page.pushOperators(popGraphicsState())
+  }
+
+  /**
+   * A rounded rectangle turned `angle` degrees counter-clockwise about its centre (displayed
+   * space), filled and outlined, the fill at `fillOpacity`.
+   */
+  turnedRoundedRect(
+    cx: number,
+    cy: number,
+    w: number,
+    h: number,
+    r: number,
+    angle: number,
+    o: {
+      fill: ReturnType<typeof rgb>
+      fillOpacity: number
+      stroke: ReturnType<typeof rgb>
+      strokeWidth: number
+    },
+  ) {
+    const rad = (angle * Math.PI) / 180
+    // The top-left corner after the turn; drawSvgPath's origin is that corner, y pointing down.
+    const dx = -w / 2
+    const dy = h / 2
+    const corner = displayedToUser(
+      this.frame,
+      cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+      cy + dx * Math.sin(rad) + dy * Math.cos(rad),
+    )
+    const k = r * 0.5523
+    const path = `M ${r} 0 L ${w - r} 0 C ${w - r + k} 0 ${w} ${r - k} ${w} ${r} L ${w} ${h - r} C ${w} ${h - r + k} ${w - r + k} ${h} ${w - r} ${h} L ${r} ${h} C ${r - k} ${h} 0 ${h - r + k} 0 ${h - r} L 0 ${r} C 0 ${r - k} ${r - k} 0 ${r} 0 Z`
+    this.page.drawSvgPath(path, {
+      x: corner.x,
+      y: corner.y,
+      rotate: degrees(this.frame.rotation + angle),
+      color: o.fill,
+      opacity: o.fillOpacity,
+      borderColor: o.stroke,
+      borderWidth: o.strokeWidth,
+      borderOpacity: 1,
     })
   }
 
@@ -292,10 +346,14 @@ class DisplayedPage {
 }
 
 type CueItem = Extract<StampItem, { kind: 'cue' }>
+type CueNoteItem = Extract<StampItem, { kind: 'cue-note' }>
 
 interface PlacedCue {
   layout: CueTagLayout
   colour: ReturnType<typeof rgb>
+  numberInk: ReturnType<typeof rgb>
+  /** The note's colour, when the cue has one. */
+  noteColour: ReturnType<typeof rgb> | null
 }
 
 /**
@@ -303,7 +361,12 @@ interface PlacedCue {
  * footer. Underlines and connectors go down first, under the annotations as on screen; the opaque
  * tags go on last. Print never fills the trigger words: the script stays as it was, underlined.
  */
-function layoutCues(pageWidth: number, pageHeight: number, items: CueItem[]): PlacedCue[] {
+function layoutCues(
+  pageWidth: number,
+  pageHeight: number,
+  items: CueItem[],
+  notes: ReadonlyMap<string, CueNoteItem>,
+): PlacedCue[] {
   const extent = items.find((c) => c.textExtent)?.textExtent ?? null
   const inputs: CueTagInput[] = items.map((c) => ({
     id: c.id,
@@ -316,6 +379,7 @@ function layoutCues(pageWidth: number, pageHeight: number, items: CueItem[]): Pl
     triggerBoxes: c.triggerBoxes,
     anchorX: c.x,
     sortKey: c.sortKey,
+    note: toWinAnsi(notes.get(c.id)?.text ?? ''),
   }))
   const layouts = layoutCueTags({
     pageWidth,
@@ -326,8 +390,12 @@ function layoutCues(pageWidth: number, pageHeight: number, items: CueItem[]): Pl
   return layouts.map((layout, i) => ({
     layout,
     colour: colourOf((items[i] as CueItem).colour),
+    numberInk: colourOf((items[i] as CueItem).numberInk),
+    noteColour: noteColourOf(notes.get((items[i] as CueItem).id)),
   }))
 }
+
+const noteColourOf = (note: CueNoteItem | undefined) => (note ? colourOf(note.colour) : null)
 
 function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
   for (const u of t.underlines) d.line(u.x1, u.y, u.x2, u.y, colour, UNDERLINE_WIDTH)
@@ -338,7 +406,12 @@ function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeo
   }
 }
 
-function drawTag(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
+function drawTag(
+  d: DisplayedPage,
+  t: CueTagLayout,
+  colour: ReturnType<typeof rgb>,
+  numberInk: ReturnType<typeof rgb>,
+) {
   const { tag } = t
   // An opaque white pill outlined in the department colour: the script never shows through.
   d.roundedRect(tag.x, tag.y, tag.w, tag.h, TAG_RADIUS, {
@@ -348,7 +421,14 @@ function drawTag(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rg
     dash: t.dash ? [3, 2] : undefined,
   })
   if (t.lead) d.centredText(t.lead, t.leadX, t.centreY, TAG_FONT_SIZE, colour)
-  d.centredText(t.number, t.numberX, t.centreY, TAG_FONT_SIZE, INK, true)
+  d.centredText(t.number, t.numberX, t.centreY, TAG_FONT_SIZE, numberInk, true)
+}
+
+/** The cue's note: one line of 7 pt text in the department colour, under the tag. */
+function drawNote(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
+  if (!t.note) return
+  const { box, text } = t.note
+  d.centredText(text, box.x, box.y + box.h / 2, NOTE_FONT_SIZE, colour)
 }
 
 function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'annotation' }>) {
@@ -385,26 +465,43 @@ function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'anno
       const textWidth = Math.max(...lines.map((l) => helveticaWidth(l, item.fontSize)))
       const w = textWidth + PAD * 2 + 3
       const h = lines.length * lineHeight + PAD * 2
-      // The anchor is the note's top-left corner.
-      d.rect(x, y - h, w, h, { fill: WHITE, fillOpacity: 0.92, stroke: colour, strokeWidth: 1.25 })
-      d.rect(x, y - h, 3, h, { fill: colour })
+      // The anchor is the note's top-left corner: a tinted block with a bar on its left and no outline.
+      d.rect(x, y - h, w, h, { fill: colourOf(mixIntoWhite(item.colour, NOTE_TINT)) })
+      d.rect(x, y - h, NOTE_BAR_WIDTH, h, { fill: colour })
       for (const [i, line] of lines.entries()) {
-        d.centredText(line, x + PAD + 3, y - PAD - lineHeight * (i + 0.5), item.fontSize, INK)
+        d.centredText(
+          line,
+          x + PAD + 3,
+          y - PAD - lineHeight * (i + 0.5),
+          item.fontSize,
+          PAGE_INK_RGB,
+        )
       }
       return
     }
     case 'stamp': {
       const text = toWinAnsi(item.text)
-      const w = helveticaWidth(text, item.fontSize) + PAD * 3
+      const w = stampTextWidth(text, item.fontSize) + PAD * 3
       const h = item.fontSize + PAD * 2
-      // A stamp sits centred on the point it was placed at.
-      d.rect(x - w / 2, y - h / 2, w, h, {
+      // A stamp sits centred on the point it was placed at, turned -3deg about that centre.
+      d.turnedRoundedRect(x, y, w, h, 3, STAMP_ANGLE, {
         fill: WHITE,
-        fillOpacity: 0.85,
+        fillOpacity: STAMP_FILL_OPACITY,
         stroke: colour,
         strokeWidth: sw,
       })
-      d.centredText(text, x - w / 2 + PAD * 1.5, y, item.fontSize, colour)
+      const rad = (STAMP_ANGLE * Math.PI) / 180
+      const ox = -w / 2 + PAD * 1.5
+      const oy = -item.fontSize * BASELINE_DROP
+      d.text(
+        text,
+        x + ox * Math.cos(rad) - oy * Math.sin(rad),
+        y + ox * Math.sin(rad) + oy * Math.cos(rad),
+        item.fontSize,
+        colour,
+        true,
+        { extraTurn: STAMP_ANGLE, tracking: STAMP_TRACKING * item.fontSize },
+      )
       return
     }
     default: {
@@ -428,26 +525,54 @@ function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'anno
   }
 }
 
+/** The paper sizes in points, portrait. */
+export const PAPER_POINTS: Record<PaperSize, { width: number; height: number }> = {
+  A4: { width: 595.28, height: 841.89 },
+  Letter: { width: 612, height: 792 },
+}
+/** A page this close to the paper's size (each side) is left as it is. */
+const FIT_TOLERANCE = 0.03
+
+export interface StampOptions {
+  /** Zero-based indices of the pages to keep; the output has just these, in page order. */
+  pages?: readonly number[]
+  /** Fit every page to this paper, centred and scaled to fit, the sheet turned to match the page. */
+  paper?: PaperSize
+}
+
 /**
- * The script PDF with its markup drawn on: cue tags, annotations, and a footer on every page.
- * Pages are only drawn on, so sizes, boxes, rotation and the invisible text layer are untouched.
- * Item coordinates are displayed page space, relative to each page's visible box; items for
- * pages the PDF does not have are skipped.
+ * The script PDF with its markup drawn on: cue tags (and their notes), annotations, and a footer
+ * on every page. Item coordinates are displayed page space, relative to each page's visible box;
+ * items for pages the PDF does not have, or that `pages` leaves out, are skipped.
+ *
+ * Without options pages are only drawn on, so sizes, boxes, rotation and the invisible text layer
+ * are untouched. `pages` copies the chosen pages into a fresh document, so the rest of the script
+ * is not carried along. `paper` then wraps each stamped page that is not already within 3% of the
+ * paper in a page of that paper, scaled to fit and centred; the wrapped page is a form XObject, so
+ * its text still reads, and the footer scales with the page.
  */
 export async function stampScript(
   pdf: Uint8Array,
   items: StampItem[],
   footer: FooterInfo,
+  opts: StampOptions = {},
 ): Promise<Uint8Array> {
-  const doc = await PDFDocument.load(pdf, { updateMetadata: false })
+  const src = await PDFDocument.load(pdf, { updateMetadata: false })
+  const { doc, remap } = await subset(src, opts.pages)
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const boldFont = await doc.embedFont(StandardFonts.HelveticaBold)
   const pages = doc.getPages()
   const drawers = pages.map((page) => new DisplayedPage(page, frameOf(page), font, boldFont))
 
-  const cuesByPage = new Map<number, CueItem[]>()
+  const kept: StampItem[] = []
   for (const item of items) {
-    if (!drawers[item.pageIndex]) continue
+    const pageIndex = remap(item.pageIndex)
+    if (pageIndex !== undefined && drawers[pageIndex]) kept.push({ ...item, pageIndex })
+  }
+  const notes = new Map<string, CueNoteItem>()
+  for (const item of kept) if (item.kind === 'cue-note') notes.set(item.cueId, item)
+  const cuesByPage = new Map<number, CueItem[]>()
+  for (const item of kept) {
     if (item.kind === 'cue')
       cuesByPage.set(item.pageIndex, [...(cuesByPage.get(item.pageIndex) ?? []), item])
   }
@@ -457,23 +582,97 @@ export async function stampScript(
     const quarter = frame.rotation === 90 || frame.rotation === 270
     placed.set(
       pageIndex,
-      layoutCues(quarter ? frame.h : frame.w, quarter ? frame.w : frame.h, cues),
+      layoutCues(quarter ? frame.h : frame.w, quarter ? frame.w : frame.h, cues, notes),
     )
   }
   // Underlines and connectors first, then the annotations, then the tags, which are opaque and
-  // so sit on top of everything: the order the screen draws in.
+  // so sit on top of everything: the order the screen draws in. Notes go last: they sit in the
+  // margin, clear of the tags.
   for (const [pageIndex, cues] of placed)
     for (const { layout, colour } of cues)
       drawTrigger(drawers[pageIndex] as DisplayedPage, layout, colour)
-  for (const item of items) {
+  for (const item of kept) {
     const d = drawers[item.pageIndex]
     if (d && item.kind === 'annotation') drawAnnotation(d, item)
   }
   for (const [pageIndex, cues] of placed)
-    for (const { layout, colour } of cues)
-      drawTag(drawers[pageIndex] as DisplayedPage, layout, colour)
+    for (const { layout, colour, numberInk } of cues)
+      drawTag(drawers[pageIndex] as DisplayedPage, layout, colour, numberInk)
+  for (const [pageIndex, cues] of placed)
+    for (const { layout, noteColour } of cues)
+      if (noteColour) drawNote(drawers[pageIndex] as DisplayedPage, layout, noteColour)
 
   const line = footerText(footer)
   for (const d of drawers) d.text(line, FOOTER_LEFT, FOOTER_BOTTOM, FOOTER_SIZE, FOOTER_GREY)
+  if (opts.paper) await fitToPaper(doc, opts.paper)
   return doc.save()
+}
+
+/**
+ * The document to stamp: `src` itself, or when `pages` is given a fresh one holding copies of just
+ * those pages (pdf-lib's `removePage` leaves the orphaned objects in the file, copying does not).
+ * `remap` gives a source page's index in that document, or undefined when it was left out.
+ */
+async function subset(
+  src: PDFDocument,
+  pages: readonly number[] | undefined,
+): Promise<{ doc: PDFDocument; remap: (sourceIndex: number) => number | undefined }> {
+  if (!pages) return { doc: src, remap: (i) => i }
+  const count = src.getPageCount()
+  const keep = [...new Set(pages)].sort((a, b) => a - b)
+  if (keep.length === 0) throw new RangeError('Choose at least one page to print.')
+  const bad = keep.find((i) => !Number.isInteger(i) || i < 0 || i >= count)
+  if (bad !== undefined)
+    throw new RangeError(`Page ${bad + 1} is not in this ${count}-page script.`)
+  const doc = await PDFDocument.create({ updateMetadata: false })
+  for (const page of await doc.copyPages(src, keep)) doc.addPage(page)
+  const out = new Map(keep.map((from, to) => [from, to]))
+  return { doc, remap: (i) => out.get(i) }
+}
+
+/** Where displayed space sits in a page's user space, as a form matrix (the inverse of `displayedToUser`). */
+function toDisplayedMatrix(f: PageFrame): [number, number, number, number, number, number] {
+  switch (f.rotation) {
+    case 90:
+      return [0, -1, 1, 0, -f.by, f.bx + f.w]
+    case 180:
+      return [-1, 0, 0, -1, f.bx + f.w, f.by + f.h]
+    case 270:
+      return [0, 1, -1, 0, f.by + f.h, -f.bx]
+    default:
+      return [1, 0, 0, 1, -f.bx, -f.by]
+  }
+}
+
+/**
+ * Replaces each page that is not already within 3% of `paper` (in both directions, with the sheet
+ * turned to the page's orientation) by a page of the paper that draws the old one, scaled to fit
+ * and centred. The old page is embedded by its visible box and `/Rotate`, the frame the stamps
+ * use, so the new page is upright with no rotation of its own.
+ */
+async function fitToPaper(doc: PDFDocument, paper: PaperSize): Promise<void> {
+  const { width: pw, height: ph } = PAPER_POINTS[paper]
+  const pages = doc.getPages()
+  for (const [i, page] of pages.entries()) {
+    const frame = frameOf(page)
+    const quarter = frame.rotation === 90 || frame.rotation === 270
+    const w = quarter ? frame.h : frame.w
+    const h = quarter ? frame.w : frame.h
+    const [tw, th] = w > h ? [ph, pw] : [pw, ph]
+    if (Math.abs(w / tw - 1) <= FIT_TOLERANCE && Math.abs(h / th - 1) <= FIT_TOLERANCE) continue
+    const embedded = await doc.embedPage(
+      page,
+      { left: frame.bx, bottom: frame.by, right: frame.bx + frame.w, top: frame.by + frame.h },
+      toDisplayedMatrix(frame),
+    )
+    const scale = Math.min(tw / w, th / h)
+    const sheet = doc.insertPage(i, [tw, th])
+    sheet.drawPage(embedded, {
+      x: (tw - w * scale) / 2,
+      y: (th - h * scale) / 2,
+      xScale: scale,
+      yScale: scale,
+    })
+    doc.removePage(i + 1)
+  }
 }

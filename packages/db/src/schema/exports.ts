@@ -1,4 +1,4 @@
-import type { LayerRef } from '@binder/shared'
+import type { LayerRef, PrintOptions } from '@binder/shared'
 import { index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 import { shows } from './tenancy'
 
@@ -26,6 +26,8 @@ export const exportRecords = pgTable(
     privateTo: text('private_to'),
     fileKey: text('file_key').notNull(),
     changelog: jsonb('changelog').$type<unknown>(),
+    /** What a script print chose beyond the layers (pages, paper, includes); null for older records and non-script files. */
+    options: jsonb('options').$type<PrintOptions>(),
     createdBy: text('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })

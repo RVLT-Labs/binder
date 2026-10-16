@@ -52,3 +52,20 @@ test('pressing a handle reports which, and a handle is as big on screen at any z
   fireEvent.pointerDown(se, { button: 0 })
   expect(onHandleDown).toHaveBeenCalledWith('se', expect.anything())
 })
+
+test('handles are white squares with a red stroke from the tokens', () => {
+  const { container } = render(
+    // biome-ignore lint/a11y/noSvgWithoutTitle: a test harness for overlay shapes
+    <svg>
+      <Handles
+        annotation={{ type: 'line', anchor: { x: 0, y: 0 }, geometry: { dx: 10, dy: 10 } }}
+        zoom={1}
+        onHandleDown={() => {}}
+      />
+    </svg>,
+  )
+  for (const h of container.querySelectorAll('[data-handle]')) {
+    expect(h.getAttribute('stroke')).toBe('var(--red)')
+    expect(h.getAttribute('fill')).toBe('var(--page)')
+  }
+})

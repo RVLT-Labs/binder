@@ -12,7 +12,7 @@ export const hasInk = (canvas: Locator) =>
 
 /**
  * Uploads a PDF to the show through the dialog, as an owner or editor, and returns the document's
- * row in the list once processing finishes (`readyTimeout` ms).
+ * row in the Documents screen's list once processing finishes (`readyTimeout` ms).
  */
 export async function uploadAndWaitReady(
   page: Page,
@@ -30,12 +30,30 @@ export async function uploadAndWaitReady(
   await dialog.getByRole('button', { name: 'Upload', exact: true }).click()
   await expect(dialog).toBeHidden({ timeout: 30_000 })
 
-  // The list follows the synced version row through processing to ready.
+  // The show's page lists only scripts that are ready (the mockup's Scripts card); a version still
+  // being processed is a row on the Documents screen, so follow it there.
+  await railLink(page, 'Docs').click()
+
+  // The list follows the synced version row through processing to ready. A row carries its
+  // version's status on `.version-status[data-status]`; its words are for people (Processing, v1 current).
   const row = page
     .getByRole('list', { name: 'Documents' })
     .getByRole('listitem')
     .filter({ hasText: title })
-  await expect(row).toContainText(/queued|processing|ready/, { timeout: 20_000 })
-  await expect(row).toContainText('ready', { timeout: readyTimeout })
+  const status = row.locator('.version-status')
+  await expect(status).toHaveAttribute('data-status', /queued|processing|ready/, {
+    timeout: 20_000,
+  })
+  await expect(status).toHaveAttribute('data-status', 'ready', { timeout: readyTimeout })
   return row
 }
+
+/** A destination in the app shell's rail (Script, Cues, Docs, Activity, Exports). */
+export const railLink = (page: Page, name: string) =>
+  page.getByRole('navigation', { name: 'Binder' }).getByRole('link', { name, exact: true })
+
+/** The show's title in the top bar's breadcrumbs, a link back to the show on every screen inside it. */
+export const showCrumb = (page: Page, title: string) =>
+  page
+    .getByRole('navigation', { name: 'Breadcrumb' })
+    .getByRole('link', { name: title, exact: true })

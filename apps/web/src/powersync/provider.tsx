@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { forgetSessionUser } from '../auth/session'
 import { clearBlobCache } from '../blobs/fetchBlob'
 import { clearOtherOutboxes } from '../exports/outbox'
+import { clearOtherOfflinePrefs } from '../offline/keepOffline/store'
 import { ApiConnector } from './connector'
 import { createPowerSync } from './db'
 import { installDevHooks } from './devHooks'
@@ -54,6 +55,8 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
           await clearBlobCache()
           // Exports another user left waiting to upload go too (see clearOtherOutboxes).
           await clearOtherOutboxes(userId)
+          // And the previous user's keep-offline switches: the cache they drove was wiped above.
+          await clearOtherOfflinePrefs(userId)
           // Cached history, review and version-anchor answers belong to the previous user.
           queryClient.clear()
         })

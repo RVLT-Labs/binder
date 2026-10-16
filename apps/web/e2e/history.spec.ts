@@ -90,14 +90,18 @@ const markerBox = (page: Page, id: string) => marker(page, id).locator('.cue-tag
 const cueEditor = (page: Page) => page.getByRole('region', { name: 'Cue editor' })
 const annotationEditor = (page: Page) => page.getByRole('region', { name: 'Annotation editor' })
 
-/** Selects the cue's marker and opens the History disclosure under its editor. */
+/** The context panel's tabs: Cue (the editor), Layers, History and Review. */
+const panelTab = (page: Page, name: string) => page.getByRole('tab', { name, exact: true })
+/** The History tab's content: the selected row's change log. */
+const historyRegion = (page: Page) => page.getByRole('region', { name: 'History' })
+
+/** Selects the cue's marker and opens the panel's History tab. */
 async function openCueHistory(page: Page, id: string) {
   await expect(marker(page, id)).toBeVisible(SYNC)
   await markerBox(page, id).click()
   await expect(marker(page, id)).toHaveAttribute('data-selected', 'true')
-  const history = cueEditor(page).getByRole('region', { name: 'History' })
-  await history.getByRole('button', { name: 'History', exact: true }).click()
-  return history
+  await panelTab(page, 'History').click()
+  return historyRegion(page)
 }
 
 const localClock = (iso: string) => {
@@ -124,7 +128,8 @@ test("the activity feed shows A's batch summary and B's revert from row history 
       await uploaded(a.page)
       await expect.poll(() => cueLabel(b.page, id), SYNC).toBe('Fly in')
 
-      // The feed reads the newest batch as "<label> <summary>, <HH:mm>" in local time.
+      // The feed reads the newest batch as a sentence ("<label> <summary>") with its time, HH:mm in
+      // local time, in its own element.
       const feed = await a.context.newPage()
       await feed.goto(`/shows/${sharedShow.id}/activity`)
       await expect(feed.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible({
@@ -135,9 +140,10 @@ test("the activity feed shows A's batch summary and B's revert from row history 
         return (await res.json()) as { groups: Array<{ at: string; summary: string }> }
       }, sharedShow.id)
       expect(newest.groups[0]?.summary).toBe('relabelled 1 LX cue')
-      const sentence = `${users.owner.name} relabelled 1 LX cue, ${localClock(newest.groups[0].at)}`
+      const sentence = `${users.owner.name} relabelled 1 LX cue`
       const first = feed.locator('.activity-row').first()
-      await expect(first).toHaveText(`${sentence}Revert`)
+      await expect(first.locator('.activity-text')).toHaveText(sentence)
+      await expect(first.locator('time')).toHaveText(localClock(newest.groups[0].at))
       await expect(first.getByRole('button', { name: 'Revert' })).toBeEnabled()
 
       // The filters become the route's parameters.
@@ -147,8 +153,14 @@ test("the activity feed shows A's batch summary and B's revert from row history 
           r.url().includes(`layer=${encodeURIComponent(`department:${departments.LX}`)}`) &&
           r.url().includes('kind=human'),
       )
-      await feed.getByLabel('Layer').selectOption({ label: 'LX' })
-      await feed.getByLabel('Changes by').selectOption('human')
+      await feed
+        .getByRole('radiogroup', { name: 'Layer' })
+        .getByRole('radio', { name: 'LX' })
+        .click()
+      await feed
+        .getByRole('radiogroup', { name: 'Changes by' })
+        .getByRole('radio', { name: 'People', exact: true })
+        .click()
       await request
       await expect(feed.locator('.activity-row').first()).toContainText(sentence)
 
@@ -277,8 +289,8 @@ test("an annotation's History tab lists its text edit and reverts it", async ({ 
       await expect.poll(() => annotationText(a.page, id)).toBe('Bring up house lights')
       await uploaded(a.page)
 
-      const history = editor.getByRole('region', { name: 'History' })
-      await history.getByRole('button', { name: 'History', exact: true }).click()
+      await panelTab(a.page, 'History').click()
+      const history = historyRegion(a.page)
       const entries = history.getByRole('list', { name: 'Changes' }).locator('> li')
       await expect(entries.first()).toContainText('Text edited', SYNC)
       await expect(entries.last()).toContainText('Placed on p.1')
@@ -310,12 +322,14 @@ test('offline, the History tab says it needs a connection and undo still works',
       await expect(history.getByText('History needs a connection.')).toBeVisible()
       await expect(list).toHaveCount(0)
 
-      // Personal undo is a local write: it works with no connection.
+      // Personal undo is a local write: it works with no connection. (The editor is the Cue tab.)
+      await panelTab(a.page, 'Cue').click()
       await cueEditor(a.page).getByLabel('Label').fill('Blackout late')
       await cueEditor(a.page).getByLabel('Label').press('Enter')
       await expect.poll(() => cueLabel(a.page, id)).toBe('Blackout late')
       await a.page.getByRole('button', { name: 'Undo', exact: true }).click()
       await expect.poll(() => cueLabel(a.page, id)).toBe('Blackout')
+      await panelTab(a.page, 'History').click()
       await expect(history.getByText('History needs a connection.')).toBeVisible()
 
       await a.context.setOffline(false)
@@ -363,14 +377,20 @@ test('the activity feed loads older groups with nextBefore as its end scrolls in
     await page.goto(`/shows/${sharedShow.id}/activity`)
     const rows = page.locator('.activity-row')
     await expect(rows).toHaveCount(40, { timeout: 30_000 })
-    await expect(rows.first()).toContainText(`${users.owner.name} moved 1 LX cue, 09:`)
+    await expect(rows.first().locator('.activity-text')).toHaveText(
+      `${users.owner.name} moved 1 LX cue`,
+    )
+    await expect(rows.first().locator('time')).toHaveText(/^09:/)
     // The end of the list is far below the fold: nothing more has been asked for.
     expect(requested).toEqual([''])
 
     await page.locator('.activity-end').scrollIntoViewIfNeeded()
     await expect(rows).toHaveCount(42)
     expect(requested).toEqual(['', '500'])
-    await expect(rows.last()).toContainText(`${users.owner.name} moved 1 LX cue, 09:`)
+    await expect(rows.last().locator('.activity-text')).toHaveText(
+      `${users.owner.name} moved 1 LX cue`,
+    )
+    await expect(rows.last().locator('time')).toHaveText(/^09:/)
   } finally {
     await context.close()
   }

@@ -99,3 +99,15 @@ export async function clickAt(page: Page, pageIndex: number, x: number, y: numbe
   const p = await clientPoint(page, pageIndex, x, y)
   await page.mouse.click(p.x, p.y)
 }
+
+/**
+ * Zooms the viewer out to at most `percent` per cent. The docked context panel leaves the page
+ * wider than the old side columns did, so at the fit-width zoom the lower part of a page can fall
+ * below a short window; a test that draws or clicks low on a page zooms out first.
+ */
+export async function zoomOutTo(page: Page, percent = 67) {
+  const level = page.getByRole('toolbar', { name: 'Viewer' }).getByLabel('Zoom level')
+  while (Number.parseInt((await level.textContent()) ?? '0', 10) > percent) {
+    await page.getByRole('button', { name: 'Zoom out' }).click()
+  }
+}

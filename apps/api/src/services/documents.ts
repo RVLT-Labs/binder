@@ -116,7 +116,8 @@ export async function setCurrentVersion(
 }
 
 /** Spec 4.3: snapping is on for text-bearing kinds and off for scores and blocking. */
-const defaultSnapToText = (kind: DocumentKind): boolean => kind === 'libretto' || kind === 'other'
+export const defaultSnapToText = (kind: DocumentKind): boolean =>
+  kind === 'libretto' || kind === 'other'
 
 /** Editor or above on an unarchived show. Call before reading an upload body so refusals cost nothing. */
 export async function assertShowAcceptsUploads(
@@ -134,25 +135,28 @@ function assertDeclaredSize(declaredSize: number | undefined): void {
   if (declaredSize !== undefined && declaredSize > MAX_UPLOAD_BYTES) throw payloadTooLarge()
 }
 
-/** Store the PDF, run `writeRows` in a transaction, and remove the blob again if that fails. */
+/** Store the PDF, run `writeRows` (given the stored byte size) in a transaction, and remove the blob again if that fails. */
 async function storeThenWrite<T>(
   db: Executor,
   blobs: BlobStore,
   key: string,
   file: Readable,
-  writeRows: (tx: Executor) => Promise<T>,
+  writeRows: (tx: Executor, size: number) => Promise<T>,
 ): Promise<T> {
-  await blobs.put(key, file, 'application/pdf')
+  const { size } = await blobs.put(key, file, 'application/pdf')
   try {
-    return await db.transaction(writeRows)
+    return await db.transaction((tx) => writeRows(tx, size))
   } catch (err) {
     await blobs.delete(key).catch(() => {})
     throw err
   }
 }
 
-/** The version row exists and is durable; a failed enqueue marks it failed so a retry can find it. */
-async function enqueueProcessing(
+/**
+ * The version row exists and is durable; a failed enqueue marks it failed so a retry can find it.
+ * Internal (not in the services barrel): `retryVersion` uses it too.
+ */
+export async function enqueueProcessing(
   db: Executor,
   jobs: JobQueue,
   version: DocumentVersion,
@@ -164,7 +168,7 @@ async function enqueueProcessing(
     console.error(`could not enqueue processing for version ${version.id}`, err)
     const [failed] = await db
       .update(documentVersions)
-      .set({ status: 'failed', error: 'Could not queue processing' })
+      .set({ status: 'failed', error: 'Could not queue processing', failureCode: 'enqueue_failed' })
       .where(eq(documentVersions.id, version.id))
       .returning()
     return failed
@@ -198,7 +202,7 @@ export async function createDocument(
   const versionId = newId()
   const key = originalBlobKey(input.showId, documentId, versionId)
 
-  const created = await storeThenWrite(db, blobs, key, input.file, async (tx) => {
+  const created = await storeThenWrite(db, blobs, key, input.file, async (tx, size) => {
     await assertShowAcceptsUploads(tx, actor, input.showId)
     const [document] = await tx
       .insert(documents)
@@ -222,6 +226,7 @@ export async function createDocument(
         documentId,
         versionNumber: 1,
         originalKey: key,
+        originalSizeBytes: size,
         uploadedBy: actor.userId,
         updatedBy: actor.userId,
       })
@@ -300,7 +305,7 @@ export async function addDocumentVersion(
   const versionId = newId()
   const key = originalBlobKey(document.showId, document.id, versionId)
 
-  const version = await storeThenWrite(db, blobs, key, input.file, async (tx) => {
+  const version = await storeThenWrite(db, blobs, key, input.file, async (tx, size) => {
     await assertShowAcceptsUploads(tx, actor, document.showId)
     // Serialise concurrent uploads to this document so max + 1 cannot collide.
     const locked = await tx
@@ -322,6 +327,7 @@ export async function addDocumentVersion(
         versionNumber: Number(next),
         label: input.label,
         originalKey: key,
+        originalSizeBytes: size,
         uploadedBy: actor.userId,
         updatedBy: actor.userId,
       })

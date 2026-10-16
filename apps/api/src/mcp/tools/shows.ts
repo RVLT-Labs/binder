@@ -6,8 +6,10 @@ import {
   createOrganisation,
   createShow,
   getShow,
+  latestChangePerShow,
   listOrganisations,
   listShows,
+  presenceSummary,
   requireShowRole,
   updateShow,
 } from '../../services'
@@ -77,13 +79,37 @@ export function registerShowTools(server: McpServer, mcp: McpContext): void {
       description:
         'Lists the shows you can reach with this token, split into active and archived, each with ' +
         'its id, title, status and your role (owner, editor or viewer). Start here: the show id ' +
-        'is what list_documents and the other show tools take. Paginated over active then archived.',
+        'is what list_documents and the other show tools take. Paginated over active then archived. ' +
+        'inNow lists the people who have the show open right now (name and departments, empty ' +
+        'when nobody): check it before a bulk edit, since you would be changing the binder under ' +
+        'them. lastChange is the newest change anyone made (who, a one-line sentence, when), or ' +
+        'null when nothing has changed.',
       inputSchema: z.object({ ...pageArgs }),
       annotations: READ,
     },
     guarded(async (args, ctx) => {
-      const { active, archived } = await listShows(db, mcp.actor(ctx))
-      const page = paginate([...active, ...archived].map(summary), args)
+      const actor = mcp.actor(ctx)
+      const { active, archived } = await listShows(db, actor)
+      const [changes, presence] = await Promise.all([
+        latestChangePerShow(db, actor),
+        presenceSummary(db, mcp.deps.presence, actor),
+      ])
+      const page = paginate(
+        [...active, ...archived].map((s) => ({
+          ...summary(s),
+          // archived shows carry neither, as on the cards
+          inNow:
+            s.status === 'archived'
+              ? []
+              : (presence.shows[s.id]?.people ?? []).map((p) => ({
+                  userId: p.userId,
+                  name: p.name,
+                  departments: p.departments,
+                })),
+          lastChange: changes[s.id] ?? null,
+        })),
+        args,
+      )
       return jsonResult({
         active: page.items.filter((s) => s.status !== 'archived'),
         archived: page.items.filter((s) => s.status === 'archived'),

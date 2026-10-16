@@ -52,7 +52,7 @@ test('a cue created offline uploads on reconnect and reaches the other user', as
   try {
     const a = await open(browser, 'owner', contexts)
     const b = await open(browser, 'sndEditor', contexts)
-    await expect(a.page.getByLabel('Sync status')).toHaveText('Connected', { timeout: 20_000 })
+    await expect(a.page.getByLabel('Sync status')).toHaveText('Synced', { timeout: 20_000 })
 
     const id = randomUUID()
     await a.context.setOffline(true)
@@ -64,7 +64,11 @@ test('a cue created offline uploads on reconnect and reaches the other user', as
       label: 'Offline sunrise',
     })
     expect(await cueCount(a.page, id)).toBe(1)
-    await expect(a.page.getByLabel('Sync status')).toHaveText('Offline · 1 pending')
+    await expect(a.page.getByLabel('Sync status')).toHaveText('Offline')
+    await expect(a.page.getByLabel('Sync status')).toHaveAttribute('data-pending', '1')
+    await expect(a.page.getByRole('status').filter({ hasText: 'waiting to sync' })).toContainText(
+      '1 waiting to sync',
+    )
     // Long enough for an upload attempt and retry: B must still not have it.
     await b.page.waitForTimeout(3_000)
     expect(await cueCount(b.page, id)).toBe(0)
@@ -80,7 +84,7 @@ test('a cue created offline uploads on reconnect and reaches the other user', as
       id,
     )
     expect(row).toEqual({ label: 'Offline sunrise', major: 21, department_id: departments.LX })
-    await expect(a.page.getByLabel('Sync status')).toHaveText('Connected', { timeout: 10_000 })
+    await expect(a.page.getByLabel('Sync status')).toHaveText('Synced', { timeout: 10_000 })
   } finally {
     for (const context of contexts) await context.close()
   }

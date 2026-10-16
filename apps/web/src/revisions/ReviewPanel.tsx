@@ -2,18 +2,21 @@ import {
   type Anchor,
   type LayerRef,
   layerKey,
+  PERSONAL_LAYER_COLOUR,
   parseLayerKey,
   type ReviewItem,
 } from '@binder/shared'
 import { usePowerSync } from '@powersync/react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { pushNotice } from '../components/noticeStore'
 import { useMarkupSession } from '../markup/MarkupSession'
 import { startRelocate } from '../markup/relocate'
 import { select } from '../markup/selection'
 import { setTool, startRebind } from '../markup/tools'
 import { useOnline } from '../offline/useOnline'
+import { Note, SECTION_LABEL, StatusPill, Swatch } from '../panel/fields'
 import { type ReviewAction as ApiAction, reviewKey, useResolveItem, useReview } from './api'
 import { ReviewThumb } from './ReviewThumb'
 import { type ReviewAction, reviewItemActions } from './reviewActions'
@@ -23,10 +26,7 @@ export interface ReviewPanelProps {
   documentId: string
   /** Version number by id, for captions. */
   versionNumbers: ReadonlyMap<string, number>
-  onClose: () => void
 }
-
-const STATUS_LABEL = { ok: 'Placed', approximate: 'Approximate', unresolved: 'Not found' } as const
 
 /** Items grouped by layer, in the order the server sent them. */
 function byLayer(items: readonly ReviewItem[]): Array<{ layer: string; items: ReviewItem[] }> {
@@ -46,7 +46,7 @@ function byLayer(items: readonly ReviewItem[]): Array<{ layer: string; items: Re
  * example placed by an offline client after the switch) wait in a collapsed section. Needs the
  * server: the "before" positions are in the change log.
  */
-export function ReviewPanel({ documentId, versionNumbers, onClose }: ReviewPanelProps) {
+export function ReviewPanel({ documentId, versionNumbers }: ReviewPanelProps) {
   const session = useMarkupSession()
   const db = usePowerSync()
   const online = useOnline()
@@ -130,48 +130,75 @@ export function ReviewPanel({ documentId, versionNumbers, onClose }: ReviewPanel
 
   const data = review.data
   return (
-    <section className="review-panel" aria-label="Revision review">
-      <header className="review-header">
-        <h2 ref={heading} tabIndex={-1}>
+    <section className="review-panel @container flex flex-col gap-3.5" aria-label="Revision review">
+      <div className="grid gap-1.5">
+        <h2
+          ref={heading}
+          tabIndex={-1}
+          className="m-0 font-sans text-[13px] font-semibold text-ink outline-none focus-visible:ring-2 focus-visible:ring-red"
+        >
           Review revision
         </h2>
-        <button type="button" onClick={onClose}>
-          Close review
-        </button>
-      </header>
+        {data && data.pending.length > 0 && (
+          <Note>
+            Binder moved every cue to the new version; these{' '}
+            <span className="font-mono tabular-nums">{data.pending.length}</span> need a look.
+            Everything else is <StatusPill status="ok" className="h-4 align-middle" />.
+          </Note>
+        )}
+      </div>
       {!online ? (
-        <p role="status" className="muted">
+        <p role="status" className="m-0 text-[12.5px] text-muted">
           Review needs a connection. Your cues and notes are safe; the count above still works.
         </p>
       ) : review.isPending ? (
-        <p role="status">Loading the review…</p>
+        <p role="status" className="m-0 text-[12.5px] text-muted">
+          Loading the review…
+        </p>
       ) : review.isError || !data ? (
-        <p role="alert">Could not load the review: {review.error?.message ?? 'unknown error'}</p>
+        <p role="alert" className="m-0 text-[12.5px] text-t-out">
+          Could not load the review: {review.error?.message ?? 'unknown error'}
+        </p>
       ) : (
         <>
           {hint && (
-            <p role="status" className="review-hint">
+            <p
+              role="status"
+              className="review-hint m-0 rounded-[8px] border-l-2 border-blue bg-blue-soft px-2.5 py-2 text-[12.5px] text-ink"
+            >
               {hint}
             </p>
           )}
           {data.pending.length === 0 ? (
-            <p role="status">Nothing to review: every item is placed.</p>
+            <p role="status" className="m-0 text-[12.5px] text-muted">
+              Nothing to review: every item is placed.
+            </p>
           ) : (
-            byLayer(data.pending).map((group) => (
-              <LayerGroup
-                key={group.layer}
-                group={group}
-                section="pending"
-                versionNumbers={versionNumbers}
-                whyCantEdit={whyCantEdit}
-                onAction={run}
-                busy={resolve.isPending}
-              />
-            ))
+            <div className="grid gap-3.5 [&>section:first-of-type_li:first-child]:border-t-0">
+              <div className={SECTION_LABEL}>
+                Pending <span className="text-faint">· on the current version</span>
+              </div>
+              {byLayer(data.pending).map((group) => (
+                <LayerGroup
+                  key={group.layer}
+                  group={group}
+                  section="pending"
+                  versionNumbers={versionNumbers}
+                  whyCantEdit={whyCantEdit}
+                  onAction={run}
+                  busy={resolve.isPending}
+                />
+              ))}
+            </div>
           )}
           {data.olderVersions.length > 0 && (
-            <details className="review-older">
-              <summary>On an older version ({data.olderVersions.length})</summary>
+            <details className="review-older grid gap-3.5 [&>section:first-of-type_li:first-child]:border-t-0">
+              <summary
+                className={`${SECTION_LABEL} cursor-pointer list-none max-md:min-h-11 [&::-webkit-details-marker]:hidden`}
+              >
+                On an older version{' '}
+                <span className="text-faint">· {data.olderVersions.length}</span>
+              </summary>
               {byLayer(data.olderVersions).map((group) => (
                 <LayerGroup
                   key={group.layer}
@@ -185,13 +212,15 @@ export function ReviewPanel({ documentId, versionNumbers, onClose }: ReviewPanel
               ))}
             </details>
           )}
-          <button
+          <Button
             type="button"
-            className="review-refresh"
+            variant="line"
+            size="sm"
+            className="review-refresh self-start"
             onClick={() => void queryClient.invalidateQueries({ queryKey: reviewKey(documentId) })}
           >
             Refresh
-          </button>
+          </Button>
         </>
       )}
     </section>
@@ -216,15 +245,14 @@ function LayerGroup({
   const session = useMarkupSession()
   const layer = parseLayerKey(group.layer)
   const name = layer ? session.layerName(layer) : group.layer
-  const colour = layer ? session.layerColour(layer) : '#6B7280'
+  const colour = layer ? session.layerColour(layer) : PERSONAL_LAYER_COLOUR
   return (
     <section className="review-group" aria-label={`${name} layer`} data-layer={layerKeyOf(layer)}>
-      <h3>
-        <span className="layer-swatch" style={{ background: colour }} aria-hidden="true" />
-        {name}
-        <span className="muted"> ({group.items.length})</span>
+      {/* each item carries its own layer swatch and code (the mockup); the group is for readers */}
+      <h3 className="sr-only">
+        {name} ({group.items.length})
       </h3>
-      <ul>
+      <ul className="m-0 list-none p-0">
         {group.items.map((item) => (
           <ReviewRow
             key={`${item.table}:${item.rowId}`}
@@ -249,6 +277,26 @@ function caption(anchor: Anchor, versionNumbers: ReadonlyMap<string, number>): s
   return `${n ? `v${n}` : 'version'} · p.${anchor.pageIndex + 1}`
 }
 
+/**
+ * The item's head as the mockup draws it: the layer's swatch and "LX 41" in the layer's colour,
+ * the number in mono. `title` is `LX 12 · Fly out` for a cue and `note · first words` for an
+ * annotation: what follows the first " · " is the label, which goes under it.
+ */
+function itemHead(item: ReviewItem): { head: string; label: string } {
+  const [head = '', ...rest] = item.title.split(' · ')
+  return { head, label: rest.join(' · ') }
+}
+
+function Title({ head, table }: { head: string; table: ReviewItem['table'] }) {
+  const m = table === 'cues' ? /^(.*\S)\s+(\S+)$/.exec(head) : null
+  if (!m) return <span>{head}</span>
+  return (
+    <span>
+      {m[1]} <span className="font-mono tabular-nums">{m[2]}</span>
+    </span>
+  )
+}
+
 function ReviewRow({
   item,
   section,
@@ -271,48 +319,71 @@ function ReviewRow({
     hasPrevious: item.previous !== null,
     whyCantEdit: reason,
   })
-  const status = STATUS_LABEL[item.anchor.status]
+  const quote = item.anchor.text?.quote
+  const { head, label } = itemHead(item)
   return (
-    <li className="review-item" data-review-item={item.rowId} data-status={item.anchor.status}>
-      <div className="review-item-head">
-        <strong>{item.title}</strong>
-        <span className="badge" data-status={item.anchor.status}>
-          {status}
-        </span>
+    <li
+      className="review-item grid grid-cols-[84px_84px_1fr] gap-x-3 gap-y-2 border-t border-line py-2.5 text-[13px] @[380px]:grid-cols-[1fr_84px_84px_auto] @[380px]:items-center"
+      data-review-item={item.rowId}
+      data-status={item.anchor.status}
+    >
+      <div className="grid min-w-0 gap-0.5 col-span-full @[380px]:col-auto">
+        <div
+          className="review-item-head flex flex-wrap items-center gap-x-1.5 gap-y-1 font-semibold"
+          style={{ color: colour }}
+        >
+          <Swatch colour={colour} />
+          <Title head={head} table={item.table} />
+          <StatusPill status={item.anchor.status} />
+        </div>
+        <p className="m-0 text-[12.5px] leading-snug text-muted">
+          {label && <>{label} · </>}
+          {quote && <>“{quote.length > 48 ? `${quote.slice(0, 47)}…` : quote}” · </>}
+          {item.previous
+            ? `was p.${item.previous.pageIndex + 1}, now p.${item.anchor.pageIndex + 1}`
+            : 'not moved by a revision'}
+        </p>
       </div>
-      <div className="review-thumbs">
-        <figure aria-label="Old position">
-          {item.previous ? (
-            <ReviewThumb anchor={item.previous} colour={colour} />
-          ) : (
-            <span className="review-thumb review-thumb-missing">No earlier position</span>
-          )}
-          <figcaption>
-            Was {item.previous ? caption(item.previous, versionNumbers) : 'not moved by a revision'}
-          </figcaption>
-        </figure>
-        <figure aria-label="New position">
-          <ReviewThumb anchor={item.anchor} colour={colour} />
-          <figcaption>Now {caption(item.anchor, versionNumbers)}</figcaption>
-        </figure>
-      </div>
-      <div className="review-actions">
-        {actions.map((a) => (
-          <button
+      <figure aria-label="Old position" className="m-0 grid w-[84px] gap-0.5">
+        {item.previous ? (
+          <ReviewThumb anchor={item.previous} colour={colour} />
+        ) : (
+          <span className="review-thumb review-thumb-missing grid h-12 w-[84px] place-items-center rounded-[4px] border border-dashed border-line-2 bg-card px-1 text-center text-[11px] leading-tight text-faint">
+            No earlier position
+          </span>
+        )}
+        <figcaption className="text-[11px] leading-tight text-faint">
+          Was {item.previous ? caption(item.previous, versionNumbers) : 'not moved by a revision'}
+        </figcaption>
+      </figure>
+      <figure aria-label="New position" className="m-0 grid w-[84px] gap-0.5">
+        <ReviewThumb anchor={item.anchor} colour={colour} />
+        <figcaption className="text-[11px] leading-tight text-faint">
+          Now {caption(item.anchor, versionNumbers)}
+        </figcaption>
+      </figure>
+      <div className="review-actions col-span-full flex flex-wrap gap-1 @[380px]:col-auto @[380px]:flex-col">
+        {actions.map((a, i) => (
+          <Button
             key={a.kind}
             type="button"
+            size="sm"
+            variant={i === 0 ? 'primary' : i === 1 ? 'line' : 'ghost'}
+            className={i > 1 ? 'text-muted hover:text-ink' : undefined}
             disabled={a.disabled !== null || busy}
             title={a.disabled ?? undefined}
+            // the mockup's word is the short one; the name still says what it does
+            aria-label={a.kind === 'revert' ? a.label : undefined}
             onClick={() => onAction(item, a)}
           >
-            {a.label}
-          </button>
+            {a.kind === 'revert' ? 'Revert' : a.label}
+          </Button>
         ))}
       </div>
       {[...new Set(actions.map((a) => a.disabled).filter((r) => r !== null))].map((why) => (
-        <p key={why} className="muted review-reason">
+        <Note key={why} className="review-reason col-span-full">
           {why}
-        </p>
+        </Note>
       ))}
     </li>
   )

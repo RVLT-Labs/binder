@@ -127,6 +127,21 @@ describe('POST /api/shows/:showId/documents', () => {
     expect(created.every((r) => r.userId === editor.id)).toBe(true)
   })
 
+  test('upload records original_size_bytes', async () => {
+    const { app, deps, editor, show } = await setupShow()
+    const res = await postDocument(app, editor.cookie, show.id, libretto)
+    const { document, version } = await res.json()
+    expect(version.originalSizeBytes).toBe(librettoBytes().length)
+    const [row] = await deps.db
+      .select({ size: documentVersions.originalSizeBytes })
+      .from(documentVersions)
+      .where(eq(documentVersions.id, version.id))
+    expect(row.size).toBe(librettoBytes().length)
+
+    const next = await postVersion(app, editor.cookie, show.id, document.id, { label: 'Rev 2' })
+    expect((await next.json()).version.originalSizeBytes).toBe(librettoBytes().length)
+  })
+
   test('viewer upload is 403 and writes nothing; non-PDF is 400', async () => {
     const { app, deps, jobs, editor, viewer, show } = await setupShow()
     const forbidden = await postDocument(app, viewer.cookie, show.id, libretto)

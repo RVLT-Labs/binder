@@ -22,7 +22,11 @@ export class DiskBlobStore implements BlobStore {
     return path
   }
 
-  async put(key: string, body: Readable | Uint8Array, contentType: string): Promise<void> {
+  async put(
+    key: string,
+    body: Readable | Uint8Array,
+    contentType: string,
+  ): Promise<{ size: number }> {
     const path = this.localPath(key)
     await mkdir(dirname(path), { recursive: true })
     const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`
@@ -35,6 +39,7 @@ export class DiskBlobStore implements BlobStore {
       throw err
     }
     await writeFile(`${path}.meta.json`, JSON.stringify({ contentType }))
+    return { size: (await stat(path)).size }
   }
 
   async get(key: string) {

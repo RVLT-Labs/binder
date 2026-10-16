@@ -1,0 +1,85 @@
+/* Page objects drawn in SVG: keyboard focus and selection. Colours come from the tokens. */
+.cue-marker,
+.annotation-shape {
+  outline: none;
+}
+
+/* Keyboard focus is a 2 pt red ring: the tag body (or the shape) takes the red stroke. */
+.cue-marker:focus-visible .cue-tag-body {
+  stroke: var(--red);
+  stroke-width: 2;
+}
+.annotation-shape:focus-visible .annotation-rect,
+.annotation-shape:focus-visible .annotation-ellipse,
+.annotation-shape:focus-visible .annotation-line,
+.annotation-shape:focus-visible .annotation-note,
+.annotation-shape:focus-visible .annotation-stamp,
+.annotation-shape:focus-visible .annotation-highlight {
+  stroke: var(--red);
+  stroke-width: 2;
+}
+
+/* Search hits on the page: a yellow wash, and a stronger orange for the one looked at. The page is
+   white in every theme, so these are fixed (never a theme token or a department's colour). */
+.search-hit {
+  fill: color-mix(in srgb, var(--page-hit) 55%, transparent);
+}
+.search-hit-active {
+  fill: color-mix(in srgb, var(--page-hit-active) 45%, transparent);
+  stroke: var(--page-hit-active);
+  stroke-width: 1;
+}
+
+/* The cue tag that follows the pointer while it is dragged: the page's own paper and the department's ink. */
+.cue-drag-ghost {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+  transform: translate(4px, -50%);
+  padding: 0 4px;
+  border: 1.5px dashed;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--page) 85%, transparent);
+  font:
+    600 12px Helvetica,
+    Arial,
+    sans-serif;
+}
+
+/* Presence (spec 3.9): avatars are the peer's colour, never a department's. */
+.presence-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 1.375rem;
+  height: 1.375rem;
+  padding: 0 0.2rem;
+  border: 2px solid var(--page);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--page-ink) 30%, transparent);
+}
+.presence-more {
+  background: var(--page);
+  color: var(--page-ink);
+}
+/* Avatars sit over a thumbnail or a page and never take the pointer from it. */
+.thumbnail-presence,
+.page-presence {
+  position: absolute;
+  display: flex;
+  gap: 2px;
+  pointer-events: none;
+}
+.thumbnail-presence {
+  top: 0.25rem;
+  right: 0.25rem;
+}
+.page-presence {
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+}

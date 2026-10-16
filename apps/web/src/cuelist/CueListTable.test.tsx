@@ -31,7 +31,13 @@ const numberField = (c: HTMLElement) =>
 test('a valid number is saved as parsed; "abc" shows the error and writes nothing', () => {
   const onEdit = vi.fn()
   const { container, queryByRole, getByRole } = render(
-    <CueListTable rows={[row()]} readOnly={null} onEdit={onEdit} onOpen={() => {}} />,
+    <CueListTable
+      rows={[row()]}
+      selectedId={null}
+      readOnly={null}
+      onEdit={onEdit}
+      onSelect={() => {}}
+    />,
   )
   const input = numberField(container)
   fireEvent.focus(input)
@@ -49,7 +55,13 @@ test('a valid number is saved as parsed; "abc" shows the error and writes nothin
 test('an unchanged number writes nothing', () => {
   const onEdit = vi.fn()
   const { container } = render(
-    <CueListTable rows={[row()]} readOnly={null} onEdit={onEdit} onOpen={() => {}} />,
+    <CueListTable
+      rows={[row()]}
+      selectedId={null}
+      readOnly={null}
+      onEdit={onEdit}
+      onSelect={() => {}}
+    />,
   )
   const input = numberField(container)
   fireEvent.focus(input)
@@ -59,7 +71,13 @@ test('an unchanged number writes nothing', () => {
 
 test('a read-only list disables every field', () => {
   const { container } = render(
-    <CueListTable rows={[row()]} readOnly="archived" onEdit={() => {}} onOpen={() => {}} />,
+    <CueListTable
+      rows={[row()]}
+      selectedId={null}
+      readOnly="archived"
+      onEdit={() => {}}
+      onSelect={() => {}}
+    />,
   )
   for (const el of container.querySelectorAll('input, select')) {
     expect((el as HTMLInputElement).disabled).toBe(true)
@@ -69,39 +87,108 @@ test('a read-only list disables every field', () => {
 test('duplicate and anchor flags show as badges', () => {
   const { getByText } = render(
     <CueListTable
-      rows={[row({ flags: ['duplicate', 'older-version'] })]}
+      rows={[row({ flags: ['duplicate', 'approximate', 'older-version'] })]}
+      selectedId={null}
       readOnly={null}
       onEdit={() => {}}
-      onOpen={() => {}}
+      onSelect={() => {}}
     />,
   )
-  expect(getByText('Duplicate')).toBeTruthy()
-  expect(getByText('Older version')).toBeTruthy()
+  expect(getByText('duplicate')).toBeTruthy()
+  expect(getByText('approx.')).toBeTruthy()
+  expect(getByText('older version')).toBeTruthy()
 })
 
-test('a click on a placed row opens it; a click in a field or on an unplaced row does not', () => {
-  const onOpen = vi.fn()
+test('a click on a row selects it; a click in a field does not', () => {
+  const onSelect = vi.fn()
   const { container } = render(
     <CueListTable
       rows={[row(), row({ id: 'c2', placed: false, anchor: null, page: '—' })]}
+      selectedId={null}
       readOnly={null}
       onEdit={() => {}}
-      onOpen={onOpen}
+      onSelect={onSelect}
     />,
   )
   fireEvent.click(numberField(container))
-  expect(onOpen).not.toHaveBeenCalled()
+  expect(onSelect).not.toHaveBeenCalled()
   fireEvent.click(container.querySelector('tr[data-cue-id="c1"] .cue-trigger') as HTMLElement)
-  expect(onOpen).toHaveBeenCalledTimes(1)
-  expect(onOpen.mock.calls[0]?.[0].id).toBe('c1')
+  expect(onSelect).toHaveBeenCalledTimes(1)
+  expect(onSelect.mock.calls[0]?.[0].id).toBe('c1')
+  // the page cell is text now: "Show on page" lives in the panel
+  fireEvent.click(container.querySelector('tr[data-cue-id="c1"] .cue-page') as HTMLElement)
+  expect(onSelect).toHaveBeenCalledTimes(2)
+  expect(container.querySelector('.cue-page button')).toBeNull()
+  // an unplaced cue can be selected too (its panel says it is not on a page)
   fireEvent.click(container.querySelector('tr[data-cue-id="c2"] .cue-trigger') as HTMLElement)
-  expect(onOpen).toHaveBeenCalledTimes(1)
+  expect(onSelect.mock.calls[2]?.[0].id).toBe('c2')
+})
+
+test('Enter or Space on a focused row selects it; Enter inside a field only commits that field', () => {
+  const onSelect = vi.fn()
+  const { container } = render(
+    <CueListTable
+      rows={[row()]}
+      selectedId={null}
+      readOnly={null}
+      onEdit={() => {}}
+      onSelect={onSelect}
+    />,
+  )
+  const tr = container.querySelector('tr[data-cue-id="c1"]') as HTMLElement
+  expect(tr.tabIndex).toBe(0)
+  fireEvent.keyDown(numberField(container), { key: 'Enter' })
+  expect(onSelect).not.toHaveBeenCalled()
+  fireEvent.keyDown(tr, { key: 'Enter' })
+  fireEvent.keyDown(tr, { key: ' ' })
+  expect(onSelect).toHaveBeenCalledTimes(2)
+})
+
+test('the selected row carries the red outline and fill, and says it is current', () => {
+  const { container } = render(
+    <CueListTable
+      rows={[row(), row({ id: 'c2' })]}
+      selectedId="c2"
+      readOnly={null}
+      onEdit={() => {}}
+      onSelect={() => {}}
+    />,
+  )
+  const [a, b] = [...container.querySelectorAll('tr[data-cue-id]')] as HTMLElement[]
+  expect(a?.getAttribute('aria-current')).toBeNull()
+  expect(b?.getAttribute('aria-current')).toBe('true')
+  expect(b?.getAttribute('data-selected')).toBe('true')
+  expect(b?.className).toContain('outline-red')
+})
+
+test('the number is mono and tabular, the trigger mono, the page right-aligned, and the type is Go, Standby or Warn', () => {
+  const { container } = render(
+    <CueListTable
+      rows={[row()]}
+      selectedId={null}
+      readOnly={null}
+      onEdit={() => {}}
+      onSelect={() => {}}
+    />,
+  )
+  expect(numberField(container).className).toContain('font-mono')
+  expect(numberField(container).className).toContain('tabular-nums')
+  expect(container.querySelector('.cue-trigger')?.className).toContain('font-mono')
+  expect(container.querySelector('.cue-page')?.className).toContain('text-right')
+  const type = within(container).getByLabelText('Type, row 1') as HTMLSelectElement
+  expect([...type.options].map((o) => o.text)).toEqual(['Go', 'Standby', 'Warn'])
 })
 
 test('the number error clears when the stored value is typed back, and on Escape', () => {
   const onEdit = vi.fn()
   const { container, queryByRole } = render(
-    <CueListTable rows={[row()]} readOnly={null} onEdit={onEdit} onOpen={() => {}} />,
+    <CueListTable
+      rows={[row()]}
+      selectedId={null}
+      readOnly={null}
+      onEdit={onEdit}
+      onSelect={() => {}}
+    />,
   )
   const input = numberField(container)
 

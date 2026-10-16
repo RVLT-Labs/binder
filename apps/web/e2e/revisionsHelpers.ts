@@ -50,7 +50,12 @@ export async function signInAsOwner(): Promise<string> {
   return signIn(users.owner.email, password)
 }
 
-async function upload(cookie: string, path: string, file: string, fields: Record<string, string>) {
+export async function upload(
+  cookie: string,
+  path: string,
+  file: string,
+  fields: Record<string, string>,
+) {
   const form = new FormData()
   for (const [k, v] of Object.entries(fields)) form.append(k, v)
   form.append('file', new Blob([readFileSync(file)], { type: 'application/pdf' }), basename(file))
@@ -110,10 +115,14 @@ export async function waitForVersion(
  * A fresh show owned by the run's owner, with the LX editor and the viewer as members and the short
  * libretto uploaded and ready. The spec archives it when it is done.
  */
-export async function createRevisionShow(titlePrefix: string): Promise<RevisionShow> {
+export async function createRevisionShow(
+  titlePrefix: string,
+  /** The whole title, when a spec needs a particular one (the default is the prefix and a timestamp). */
+  fullTitle?: string,
+): Promise<RevisionShow> {
   const { users } = readRun()
   const owner = await signInAsOwner()
-  const title = `${titlePrefix} ${Date.now()}`
+  const title = fullTitle ?? `${titlePrefix} ${Date.now()}`
   const { organisations } = await call<{ organisations: { id: string }[] }>(
     owner,
     'GET',

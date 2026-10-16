@@ -35,6 +35,12 @@ test('put, get, exists, delete round-trip with content type', async () => {
   expect(await store.get(key)).toBeNull()
 })
 
+test('put returns the stored size, for bytes and for a stream', async () => {
+  expect(await store.put('shows/s1/size-bytes.bin', new Uint8Array(7), 'x')).toEqual({ size: 7 })
+  const streamed = Readable.from([Buffer.from('ab'), Buffer.from('cde')])
+  expect(await store.put('shows/s1/size-stream.bin', streamed, 'x')).toEqual({ size: 5 })
+})
+
 test('put accepts a stream', async () => {
   const key = 'shows/s1/stream.bin'
   await store.put(

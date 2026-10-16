@@ -1,0 +1,298 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ----------------------------------------------------------------------------
+ * Binder tokens. Chrome tokens are RVLT Flow's generated theme (espresso dark by
+ * default, .light = Paper, opt-in) from ~/rvltflow/gearflow/src/app/globals.css,
+ * minus Flow-only tokens Binder has no use for (warehouse display, gaff tape,
+ * wordmark font, accordion keyframes). The page and department tokens are Binder's own (DESIGN.md 4.2-4.3).
+ * Tailwind v4: direct hex / var() aliases, mapped to utilities in @theme inline.
+ * -------------------------------------------------------------------------- */
+
+:root {
+  /* === primitives: dark "espresso" (default) === */
+  --paper: #141210;
+  --paper-2: #1a1613;
+  --card: #211c17;
+  --elev: #2a241d;
+  --ink: #f5efe2;
+  --ink-2: #cdc4b2;
+  --muted: #9e9483;
+  --faint: #6e665a;
+  --line: #332c24;
+  --line-2: #473e32;
+  --red: #e0363d;
+  --red-700: #b21f26;
+  --red-soft: rgba(224, 54, 61, 0.16);
+  --ok: #4fd888;
+  --warn: #eba53a;
+  --rep: #b6ac9a;
+  --t-out: #f26f73;
+  --ok-soft: rgba(62, 207, 122, 0.14);
+  --warn-soft: rgba(235, 165, 58, 0.15);
+  --rep-soft: rgba(158, 148, 131, 0.14);
+  --muted-soft: rgba(158, 148, 131, 0.18);
+  --out-soft: rgba(224, 54, 61, 0.18);
+  --amber: #eba53a;
+  --blue: #5b8def;
+  --green: #3ecf7a;
+  --purple: #9b82e6;
+  --dark: #0e0c0a;
+  --coral: #ef7e55;
+  --teal: #3fc8be;
+  --pink: #e875ac;
+  --lime: #afc44e;
+  --blue-soft: rgba(91, 141, 239, 0.15);
+  --amber-soft: rgba(235, 165, 58, 0.15);
+  --green-soft: rgba(62, 207, 122, 0.14);
+  --purple-soft: rgba(155, 130, 230, 0.15);
+  --coral-soft: rgba(239, 126, 85, 0.15);
+  --teal-soft: rgba(63, 200, 190, 0.15);
+  --scrim: rgba(14, 12, 10, 0.66);
+  --scrim-strong: rgba(10, 8, 6, 0.76);
+  --select: rgba(224, 54, 61, 0.2);
+  --link: #5b8def;
+  --sh-card: 0 3px 0 #0c0a08;
+  --sh-hover: 0 7px 0 #0c0a08;
+  --lit: inset 0 1px 0 rgba(255, 253, 248, 0.14);
+  --sh-stk: 2px 4px 0 rgba(0, 0, 0, 0.5);
+  /* the mockups' dialog and overlay sheet: a hard drop and a soft cast */
+  --sh-dialog: 0 6px 0 #0c0a08, 0 30px 60px rgba(0, 0, 0, 0.45);
+  /* === the page (DESIGN 4.2): the PDF ground and its ink, the same in every theme === */
+  --page: #ffffff;
+  --page-ink: #1a1715;
+  /* Search hits on the page: a highlighter yellow, and a stronger orange for the one looked at. Fixed, like
+     the page itself, and never a department's colour. */
+  --page-hit: #ffd21f;
+  --page-hit-active: #e8710a;
+  /* The script screen's stage (DESIGN 6.2): the dark the page sits on, in every theme. */
+  --stage: #0e0c0a;
+  /* === department defaults (DESIGN 4.3): ink on white paper. Stored per department;
+     these seed new ones. Chrome uses the module hues (--amber, --blue ...) instead. === */
+  --dept-lx: #c9811f;
+  --dept-snd: #2f6bd6;
+  --dept-tm: #7a5cd0;
+  --dept-sm: #1c8b83;
+  --dept-vid: #c2487e;
+  --dept-stg: #cc5e2e;
+  --dept-fly: #6e8c12;
+  --dept-personal: #6b7280;
+  /* === radius === */
+  --radius: 0.875rem;
+  --r: 14px;
+  --r-lg: 20px;
+  /* === shadcn semantic aliases + brand constants (restyle primitives through these) === */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover: var(--card);
+  --popover-foreground: var(--ink);
+  --primary: var(--red);
+  --primary-foreground: #fff;
+  --secondary: var(--paper-2);
+  --secondary-foreground: var(--ink);
+  --muted-foreground: var(--muted);
+  --accent: var(--elev);
+  --accent-foreground: var(--ink);
+  --destructive: var(--red);
+  --destructive-foreground: #fff;
+  --input: var(--border);
+  --ring: var(--red);
+  --cream: #f5efe2;
+  --cream-ink: #1d1a15;
+  --sh-halo: 0 3px 0 var(--red-700), 0 0 28px rgba(224, 54, 61, 0.5);
+  --sh-cream: 0 3px 0 rgba(0, 0, 0, 0.25);
+  --sh-cream-press: 0 1px 0 rgba(0, 0, 0, 0.25);
+  /* === sidebar (app shell rail) — references semantic vars so it follows .light ===
+     The RVLT theme.json omits these; the app shell (shadcn sidebar) needs them.
+     var() resolves at the consuming element, so .light overrides flow through. */
+  --sidebar: var(--paper-2);
+  --sidebar-foreground: var(--ink-2);
+  --sidebar-primary: var(--red);
+  --sidebar-primary-foreground: #fff;
+  --sidebar-accent: var(--elev);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--red);
+  /* === theme-dependent aliases: 2px outline = --line-2 on dark === */
+  --border: var(--line-2);
+}
+
+.light {
+  /* === primitives: light "Paper" (opt-in) === */
+  --paper: #f4eee1;
+  --paper-2: #ede4d2;
+  --card: #fffdf8;
+  --elev: #fffdf8;
+  --ink: #1d1a15;
+  --ink-2: #4b4539;
+  --muted: #7d7565;
+  --faint: #a89e89;
+  --line: #e4dac3;
+  --line-2: #d8ccb0;
+  --red: #c12229;
+  --red-700: #9c1b21;
+  --red-soft: #fbe7e3;
+  --ok: #2ea65c;
+  --warn: #c98a14;
+  --rep: #8a8270;
+  --t-out: #9c1b21;
+  --ok-soft: #e7f5ec;
+  --warn-soft: #fbf0d6;
+  --rep-soft: #efe9dc;
+  --muted-soft: rgba(125, 117, 101, 0.18);
+  --out-soft: #fbe7e3;
+  --amber: #e79a2b;
+  --blue: #2f6bd6;
+  --green: #2ea65c;
+  --purple: #7a5cd0;
+  --dark: #241f1a;
+  --coral: #cc5e2e;
+  --teal: #1c8b83;
+  --pink: #c2487e;
+  --lime: #6e8c12;
+  --blue-soft: #e2ecfb;
+  --amber-soft: #fbf0d6;
+  --green-soft: #e7f5ec;
+  --purple-soft: #ece6fa;
+  --coral-soft: #fbe6db;
+  --teal-soft: #dbf1ef;
+  --scrim: rgba(40, 30, 15, 0.45);
+  --scrim-strong: rgba(40, 30, 15, 0.6);
+  --select: rgba(193, 34, 41, 0.16);
+  --link: #2f6bd6;
+  --sh-card: 0 3px 0 var(--line-2);
+  --sh-hover: 0 7px 0 var(--line-2);
+  --lit: inset 0 1px 0 rgba(255, 253, 248, 0.14);
+  --sh-stk: 2px 4px 0 rgba(40, 30, 15, 0.13);
+  --sh-dialog: 0 6px 0 var(--line-2), 0 30px 60px rgba(40, 30, 15, 0.25);
+  /* === theme-dependent aliases: 2px outline = --ink on light === */
+  --border: var(--ink);
+}
+
+@theme inline {
+  /* brand palette → bg-paper, text-ink, border-line-2, text-ok, bg-ok-soft, bg-red… */
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-card: var(--card);
+  --color-elev: var(--elev);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-red: var(--red);
+  --color-red-700: var(--red-700);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-rep: var(--rep);
+  --color-t-out: var(--t-out);
+  --color-amber: var(--amber);
+  --color-blue: var(--blue);
+  --color-green: var(--green);
+  --color-purple: var(--purple);
+  --color-coral: var(--coral);
+  --color-teal: var(--teal);
+  --color-pink: var(--pink);
+  --color-lime: var(--lime);
+  --color-cream: var(--cream);
+  --color-cream-ink: var(--cream-ink);
+  --color-dark: var(--dark);
+  --color-link: var(--link);
+  --color-red-soft: var(--red-soft);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn-soft: var(--warn-soft);
+  --color-rep-soft: var(--rep-soft);
+  --color-muted-soft: var(--muted-soft);
+  --color-out-soft: var(--out-soft);
+  --color-blue-soft: var(--blue-soft);
+  --color-amber-soft: var(--amber-soft);
+  --color-green-soft: var(--green-soft);
+  --color-purple-soft: var(--purple-soft);
+  --color-coral-soft: var(--coral-soft);
+  --color-teal-soft: var(--teal-soft);
+  --color-scrim: var(--scrim);
+  --color-scrim-strong: var(--scrim-strong);
+  --color-select: var(--select);
+  /* the page and department defaults → bg-page, text-page-ink, bg-dept-lx… */
+  --color-page: var(--page);
+  --color-page-ink: var(--page-ink);
+  --color-stage: var(--stage);
+  --color-dept-lx: var(--dept-lx);
+  --color-dept-snd: var(--dept-snd);
+  --color-dept-tm: var(--dept-tm);
+  --color-dept-sm: var(--dept-sm);
+  --color-dept-vid: var(--dept-vid);
+  --color-dept-stg: var(--dept-stg);
+  --color-dept-fly: var(--dept-fly);
+  --color-dept-personal: var(--dept-personal);
+  /* offset block shadows → shadow-card, shadow-hover, shadow-stk */
+  --shadow-card: var(--sh-card);
+  --shadow-hover: var(--sh-hover);
+  --shadow-stk: var(--sh-stk);
+  /* the red button's sticker (hard drop plus the top highlight), its pressed state, and dialogs */
+  --shadow-sticker: var(--sh-stk), var(--lit);
+  --shadow-lit: var(--lit);
+  --shadow-dialog: var(--sh-dialog);
+  /* shadcn role utilities → bg-primary, text-foreground, border-border, ring-ring… */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  /* sidebar (app shell rail) → bg-sidebar, text-sidebar-foreground, border-sidebar-border… */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* app functional type ramp (§5.5) → text-page-title, text-ui-text, text-table-cell… */
+  --text-page-title: 1.5rem;
+  --text-section-header: 1.125rem;
+  --text-card-title: 0.9375rem;
+  --text-reading-body: 1rem;
+  --text-ui-text: 0.875rem;
+  --text-table-cell: 0.84375rem;
+  --text-caption: 0.75rem;
+  --text-badge: 0.6875rem;
+  --text-button: 0.875rem;
+  /* fonts */
+  --font-display: "Archivo", sans-serif;
+  --font-sans: "Hanken Grotesk", system-ui, sans-serif;
+  --font-hand: "Kalam", cursive;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+  /* radius */
+  --radius: 0.875rem;
+}
+
+/* The mockups' type roles (_head.html .t-over, .t-title). */
+@utility t-over {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+@utility t-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: var(--ink);
+}

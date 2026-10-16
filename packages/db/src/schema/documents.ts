@@ -1,4 +1,4 @@
-import type { DocumentKind, OcrMode, PageStatus, VersionStatus } from '@binder/shared'
+import type { DocumentKind, FailureCode, OcrMode, PageStatus, VersionStatus } from '@binder/shared'
 import {
   boolean,
   index,
@@ -54,6 +54,12 @@ export const documentVersions = pgTable(
     uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
     status: text('status').$type<VersionStatus>().notNull().default('queued'),
     error: text('error'),
+    // Bytes of the uploaded original; null for versions uploaded before it was captured.
+    originalSizeBytes: integer('original_size_bytes'),
+    // Set only when status is 'failed'. `error` keeps the technical detail.
+    failureCode: text('failure_code').$type<FailureCode>(),
+    // Median scan resolution; set only for failure_code 'low_resolution'.
+    failureDpi: integer('failure_dpi'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()

@@ -111,8 +111,9 @@ async function open(
   return page
 }
 
+/** The panel's Review tab carries the count as a pill: "Review 4". */
 const toReview = (page: Page, n: number) =>
-  expect(page.getByRole('button', { name: `${n} to review`, exact: true })).toBeVisible({
+  expect(page.getByRole('tab', { name: `Review ${n}`, exact: true })).toBeVisible({
     timeout: 30_000,
   })
 
@@ -121,8 +122,8 @@ const item = (page: Page, text: string) =>
   reviewPanel(page).locator('li[data-review-item]').filter({ hasText: text })
 
 async function openReview(page: Page) {
-  const button = page.getByRole('button', { name: /to review$/ })
-  if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click()
+  const tab = page.getByRole('tab', { name: /^Review/ })
+  if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click()
   await expect(reviewPanel(page)).toBeVisible()
 }
 
@@ -135,9 +136,15 @@ test('uploading a revision re-anchors, the header counts items to review, accept
     const owner = await open(browser, 'owner', contexts)
     const lx = await open(browser, 'lxEditor', contexts)
     // Nothing is moved yet, so there is nothing to review and no revision to compare.
-    await expect(owner.getByRole('button', { name: /to review$/ })).toHaveCount(0)
+    // The Review tab is there but carries no count pill.
+    const reviewTab = owner.getByRole('tab', { name: 'Review', exact: true })
+    await expect(reviewTab).toBeVisible()
+    await expect(reviewTab).toHaveText('Review')
+    await expect(reviewTab.locator('span')).toHaveCount(0)
 
-    await owner.getByRole('button', { name: 'Upload revision' }).click()
+    // Upload revision lives in the top bar's "…" menu now.
+    await owner.getByRole('button', { name: 'Document options' }).click()
+    await owner.getByRole('menuitem', { name: 'Upload revision' }).click()
     const dialog = owner.getByRole('dialog', { name: 'Upload revision' })
     await dialog.getByLabel('PDF file').setInputFiles(FIXTURES.revisedShortCutPdf)
     await dialog.getByLabel('Version label').fill('V2 cuts')
@@ -292,22 +299,35 @@ test('compare shows the cut lines as removed', async ({ browser }) => {
     await expect(changes.getByRole('status')).toContainText(/\d+ removed, \d+ added/, {
       timeout: 60_000,
     })
-    const removed = changes.locator('button[data-op="removed"]')
-    await expect.poll(() => removed.count()).toBeGreaterThanOrEqual(10)
-    // The cut lines are listed as removed and none of them as added.
-    await expect(removed.filter({ hasText: 'Two and twenty' })).toHaveCount(1)
+    // The status counts the cut lines; the cards are the changes ("p.2 — 4 lines cut", "p.3 — 17
+    // lines added"): cuts and additions are separate cards.
+    const removedCount = Number(
+      /(\d+) removed/.exec((await changes.getByRole('status').textContent()) ?? '')?.[1],
+    )
+    expect(removedCount).toBeGreaterThanOrEqual(10)
+    const cuts = changes.getByRole('button', { name: /lines? cut/ })
+    expect(await cuts.count()).toBeGreaterThanOrEqual(1)
     await expect(
-      changes.locator('button[data-op="added"]').filter({ hasText: 'Two and twenty' }),
-    ).toHaveCount(0)
+      changes.getByRole('button', { name: /^p\.\d+(–\d+)? — \d+ lines? added/ }).first(),
+    ).toBeVisible()
 
-    // Choosing a change takes both sides to it: the old page has the removed line tinted.
-    await removed.filter({ hasText: 'Two and twenty' }).click()
+    // Choosing a cut takes both sides to it: the old page has the removed lines tinted, the new
+    // page none, and the old caption counts them against all the cut lines.
+    await cuts.first().click()
     const oldPane = page.getByRole('region', { name: /^Old · v1/ })
     const newPane = page.getByRole('region', { name: /^New · v2/ })
     await expect(oldPane.locator('.compare-tint[data-op="removed"]').first()).toBeVisible({
       timeout: 30_000,
     })
+    await expect(
+      oldPane.getByText(new RegExp(`of the ${removedCount} cut lines are on this page`)),
+    ).toBeVisible()
+    await expect(oldPane.locator('.compare-tint[data-op="added"]')).toHaveCount(0)
     await expect(newPane.locator('.compare-tint[data-op="removed"]')).toHaveCount(0)
+    // ...and it is the right lines: "Two and twenty" is the first of the ones the revision cut.
+    await expect(
+      oldPane.locator('.compare-tint[data-op="removed"][aria-label*="Two and twenty"]'),
+    ).toHaveCount(1)
   } finally {
     for (const c of contexts) await c.close()
   }

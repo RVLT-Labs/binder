@@ -63,9 +63,10 @@ test('after a cold offline reload, the switcher shows v1 from cached blobs with 
   await expect(page.getByRole('button', { name: 'Make available offline' })).toBeVisible({
     timeout: 30_000,
   })
-  await expect(page.getByRole('list', { name: 'Documents' })).toContainText('v2 ready', {
-    timeout: 30_000,
-  })
+  // The row's words say "v2 current" once v2 is ready and the cues have moved to it.
+  await expect(
+    page.getByRole('list', { name: 'Documents' }).locator('.version-status[data-status="ready"]'),
+  ).toContainText('v2 current', { timeout: 30_000 })
   await page.getByRole('button', { name: 'Make available offline' }).click()
   await expect(page.getByText('Available offline (14 files)')).toBeVisible({ timeout: 120_000 })
 
@@ -101,15 +102,28 @@ test('after a cold offline reload, the switcher shows v1 from cached blobs with 
   await expect(changes.getByRole('status')).toContainText(/\d+ removed, \d+ added/, {
     timeout: 60_000,
   })
-  const removed = changes.locator('button[data-op="removed"]')
-  expect(await removed.count()).toBeGreaterThanOrEqual(10)
-  await removed.filter({ hasText: 'Two and twenty' }).click()
+  const removedCount = Number(
+    /(\d+) removed/.exec((await changes.getByRole('status').textContent()) ?? '')?.[1],
+  )
+  expect(removedCount).toBeGreaterThanOrEqual(10)
+  const cuts = changes.getByRole('button', { name: /lines? cut/ })
+  expect(await cuts.count()).toBeGreaterThanOrEqual(1)
+  await cuts.first().click()
+  const oldPane = page.getByRole('region', { name: /^Old · v1/ })
+  const newPane = page.getByRole('region', { name: /^New · v2/ })
+  await expect(oldPane.locator('.compare-tint[data-op="removed"]').first()).toBeVisible({
+    timeout: 30_000,
+  })
+  // The same as online: the caption counts the cut lines on this page against all of them, the line
+  // the revision cut is the one tinted, and neither side wears the other's tint.
   await expect(
-    page
-      .getByRole('region', { name: /^Old · v1/ })
-      .locator('.compare-tint[data-op="removed"]')
-      .first(),
-  ).toBeVisible({ timeout: 30_000 })
+    oldPane.getByText(new RegExp(`of the ${removedCount} cut lines are on this page`)),
+  ).toBeVisible()
+  await expect(
+    oldPane.locator('.compare-tint[data-op="removed"][aria-label*="Two and twenty"]'),
+  ).toHaveCount(1)
+  await expect(oldPane.locator('.compare-tint[data-op="added"]')).toHaveCount(0)
+  await expect(newPane.locator('.compare-tint[data-op="removed"]')).toHaveCount(0)
 
   // Back online: the late cue is listed as on an older version, and Re-anchor moves it to v2.
   await context.setOffline(false)
@@ -117,7 +131,7 @@ test('after a cold offline reload, the switcher shows v1 from cached blobs with 
   await page.goto(`${docPath}?review=true`)
   const panel = page.getByRole('region', { name: 'Revision review' })
   const older = panel.locator('details.review-older')
-  await expect(older.locator('summary')).toHaveText('On an older version (1)', { timeout: 60_000 })
+  await expect(older.locator('summary')).toHaveText('On an older version · 1', { timeout: 60_000 })
   await older.locator('summary').click()
   const row = older.locator('li[data-review-item]')
   await expect(row.getByRole('button', { name: 'Accept' })).toHaveCount(0)

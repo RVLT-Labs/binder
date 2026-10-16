@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { blobUrl, isBlobCached } from '../blobs/fetchBlob'
 import { useOnline } from '../offline/useOnline'
 
@@ -25,19 +26,64 @@ export function DownloadAgain({ fileKey, filename }: { fileKey: string; filename
   const available = online || (cached?.url === url && cached.cached)
   if (available) {
     return (
-      <a href={url} download={filename}>
-        Download again
-      </a>
+      <Button asChild variant="line" size="sm" className={BG}>
+        <a href={url} download={filename}>
+          Download again
+        </a>
+      </Button>
     )
   }
   return (
-    <span className="export-unavailable">
-      <button type="button" disabled aria-describedby={`${fileKey}-why`}>
+    <span className="export-unavailable inline-flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="line"
+        size="sm"
+        className={BG}
+        disabled
+        aria-describedby={`${fileKey}-why`}
+      >
         Download again
-      </button>{' '}
-      <span id={`${fileKey}-why`} className="muted">
+      </Button>
+      <span id={`${fileKey}-why`} className="text-[12px] text-muted">
         Available when online
       </span>
     </span>
   )
 }
+
+/**
+ * "Download again" for an export still waiting to upload: the file is held on this device, so it
+ * is saved from there and needs no network.
+ */
+export function DownloadLocal({
+  bytes,
+  contentType,
+  filename,
+}: {
+  bytes: Uint8Array
+  contentType: string
+  filename: string
+}) {
+  // Made in the effect, so React's dev double-run (revoke, then run again) leaves a live URL.
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    const made = URL.createObjectURL(new Blob([bytes as BlobPart], { type: contentType }))
+    setUrl(made)
+    return () => {
+      URL.revokeObjectURL(made)
+      setUrl(null)
+    }
+  }, [bytes, contentType])
+  if (!url) return null
+  return (
+    <Button asChild variant="line" size="sm" className={BG}>
+      <a href={url} download={filename}>
+        Download again
+      </a>
+    </Button>
+  )
+}
+
+/** The exports mockup draws its outlined buttons on the elevated fill (`.dx-ex .btn`). */
+const BG = 'bg-elev'

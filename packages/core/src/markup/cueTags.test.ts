@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'vitest'
 import {
   type CueTagInput,
+  type CueTagLayout,
   DEFAULT_MARGIN,
   LEADER_GUTTER,
   LEADER_STEP,
   layoutCueTags,
+  NOTE_COLUMN_INSET,
+  NOTE_FONT_SIZE,
+  NOTE_HEIGHT,
+  NOTE_MIN_COLUMN,
   TAG_EDGE,
   TAG_FONT_SIZE,
   TAG_GAP,
@@ -502,5 +507,105 @@ describe('trigger underline and connector', () => {
     // 2 points beyond the pill's reach is out of reach: it jogs.
     const lower = [{ x: 300, y: 490, w: 40, h: 13 }]
     expect(one(cue('a', { triggerBoxes: lower })).leader).toHaveLength(4)
+  })
+})
+
+describe('cue notes', () => {
+  const NOTE = 'Ride the pad under the dialogue'
+
+  test('a note sits in a 9 pt block directly under its tag, flush with the tag on the left', () => {
+    expect([NOTE_FONT_SIZE, NOTE_HEIGHT, NOTE_MIN_COLUMN, NOTE_COLUMN_INSET]).toEqual([7, 9, 40, 8])
+    const t = one(cue('a', { note: 'Ride the pad' }))
+    if (!t.note) throw new Error('no note')
+    expect(t.note.text).toBe('Ride the pad')
+    expect(t.note.box.x).toBe(t.tag.x)
+    expect(t.note.box.y).toBe(t.tag.y - NOTE_HEIGHT)
+    expect(t.note.box.h).toBe(NOTE_HEIGHT)
+    expect(t.note.box.w).toBeCloseTo(helveticaWidth('Ride the pad', NOTE_FONT_SIZE))
+  })
+
+  test('on the right the note ends where the tag does', () => {
+    const t = one(cue('a', { side: 'right', note: 'Ride the pad' }))
+    if (!t.note) throw new Error('no note')
+    expect(t.note.box.x + t.note.box.w).toBeCloseTo(WIDTH - TAG_EDGE)
+    expect(t.note.box.y).toBe(t.tag.y - NOTE_HEIGHT)
+  })
+
+  test('is cut with an ellipsis to the column: the margin between the page edge and the text, less 8', () => {
+    // minX 100: a column of 92 pt.
+    const t = one(cue('a', { note: NOTE.repeat(3) }), { minX: 100, maxX: 450 })
+    if (!t.note) throw new Error('no note')
+    expect(t.note.text.endsWith('…')).toBe(true)
+    expect(t.note.text.length).toBeLessThan(NOTE.length * 3)
+    expect(t.note.box.w).toBeLessThanOrEqual(92 + 1e-9)
+    // It is the longest cut that fits: one more character would not.
+    const longer = NOTE.repeat(3).slice(0, t.note.text.length)
+    expect(helveticaWidth(`${longer}…`, NOTE_FONT_SIZE)).toBeGreaterThan(92)
+    // On the right the column is the margin right of the text block.
+    const r = one(cue('b', { side: 'right', note: NOTE.repeat(3) }), { minX: 150, maxX: 508 })
+    expect(r.note?.box.w).toBeLessThanOrEqual(92 + 1e-9)
+    // A note that fits is not touched.
+    expect(one(cue('c', { note: 'Go' })).note?.text).toBe('Go')
+  })
+
+  test('is not drawn when the column is narrower than 40 pt', () => {
+    expect(one(cue('a', { note: NOTE }), { minX: 36, maxX: 450 }).note).toBeNull()
+    expect(one(cue('b', { note: NOTE }), { minX: 47.9, maxX: 450 }).note).toBeNull()
+    expect(one(cue('c', { note: NOTE }), { minX: 48, maxX: 450 }).note).not.toBeNull()
+    expect(
+      one(cue('d', { side: 'right', note: NOTE }), { minX: 150, maxX: WIDTH - 36 }).note,
+    ).toBeNull()
+    // A page with no word layer assumes the 56 pt default margin.
+    expect(one(cue('e', { note: NOTE }), null).note).not.toBeNull()
+  })
+
+  test('a cue with no note, or an empty one, has none and moves nothing', () => {
+    const plain = one(cue('a'))
+    expect(plain.note).toBeNull()
+    expect(one(cue('b', { note: '' })).note).toBeNull()
+    expect(one(cue('c', { note: NOTE })).tag).toEqual(plain.tag)
+  })
+
+  test('a tag with a note counts as tag height + 9 in the stack: stacked tags never overlap a note', () => {
+    const [a, b, c] = layout([
+      cue('a', { y: 500, note: NOTE }),
+      cue('b', { y: 500, note: NOTE, sortKey: { department: 0, major: 11, minor: 0 } }),
+      cue('c', { y: 495, sortKey: { department: 0, major: 12, minor: 0 } }),
+    ]) as [CueTagLayout, CueTagLayout, CueTagLayout]
+    const noteA = a.note as NonNullable<CueTagLayout['note']>
+    // b starts 2 pt under a's note, not under a's tag.
+    expect(b.tag.y + b.tag.h).toBeCloseTo(noteA.box.y - TAG_GAP)
+    expect(a.centreY - b.centreY).toBe(TAG_HEIGHT + NOTE_HEIGHT + TAG_GAP)
+    const noteB = b.note as NonNullable<CueTagLayout['note']>
+    expect(c.tag.y + c.tag.h).toBeCloseTo(noteB.box.y - TAG_GAP)
+    // No tag or note box touches another.
+    const boxes = [a.tag, noteA.box, b.tag, noteB.box, c.tag]
+    for (const [i, p] of boxes.entries())
+      for (const q of boxes.slice(i + 1))
+        expect(p.y >= q.y + q.h || q.y >= p.y + p.h || p.x >= q.x + q.w || q.x >= p.x + p.w).toBe(
+          true,
+        )
+  })
+
+  test('tags well apart stay on their own lines, and a note-less tag below a noted one clears it', () => {
+    const [a, b] = layout([cue('a', { y: 500, note: NOTE }), cue('b', { y: 460 })]) as [
+      CueTagLayout,
+      CueTagLayout,
+    ]
+    expect(b.centreY).toBe(460)
+    const [c, d] = layout([
+      cue('c', { y: 500, note: NOTE }),
+      cue('d', { y: 480, sortKey: { department: 0, major: 11, minor: 0 } }),
+    ]) as [CueTagLayout, CueTagLayout]
+    // 20 pt apart would clear a bare tag, but not a noted one (23 pt).
+    expect(d.centreY).toBe(c.centreY - (TAG_HEIGHT + NOTE_HEIGHT + TAG_GAP))
+    expect(a.note).not.toBeNull()
+  })
+
+  test('the stack held above the footer keeps the note of the lowest tag above it too', () => {
+    const [t] = layout([cue('a', { y: 3, note: NOTE })], WIDE, { minY: 19, maxY: 800 }) as [
+      CueTagLayout,
+    ]
+    expect(t.note?.box.y).toBeGreaterThanOrEqual(19)
   })
 })

@@ -84,7 +84,7 @@ test('a go marker is an opaque white pill in the margin: the code in colour, the
     6 + helveticaWidth('LX', 9) + 3 + helveticaBoldWidth('10.5', 9) + 6,
   )
   // Opaque white, outlined 1 pt in the department colour, solid.
-  expect(body.getAttribute('fill')).toBe('#fff')
+  expect(body.getAttribute('fill')).toBe('var(--page)')
   expect(body.getAttribute('fill-opacity')).toBeNull()
   expect(body.getAttribute('stroke')).toBe('#F5A623')
   expect(body.getAttribute('stroke-width')).toBe('1')
@@ -94,7 +94,7 @@ test('a go marker is an opaque white pill in the margin: the code in colour, the
   const [lead, number] = [...g.querySelectorAll('text')]
   expect([lead?.textContent, number?.textContent]).toEqual(['LX', '10.5'])
   expect(lead?.getAttribute('fill')).toBe('#F5A623')
-  expect(number?.getAttribute('fill')).toBe('#111827')
+  expect(number?.getAttribute('fill')).toBe('var(--page-ink)')
   expect(number?.getAttribute('font-weight')).toBe('700')
   expect(lead?.getAttribute('font-weight')).toBeNull()
   expect(g.querySelector('.cue-marker-selection')).toBeNull()
@@ -115,12 +115,19 @@ test('standby is a dashed 1 pt outline with the SB prefix, warn a solid 1.5 pt o
   const g = container.querySelector('[data-cue-id="c1"]') as SVGGElement
   expect(g.getAttribute('data-cue-label')).toBe('SB LX 10.5')
   const body = g.querySelector('rect.cue-tag-body') as SVGRectElement
-  expect(body.getAttribute('fill')).toBe('#fff')
+  expect(body.getAttribute('fill')).toBe('var(--page)')
   expect(body.getAttribute('stroke-dasharray')).not.toBeNull()
   expect(body.getAttribute('stroke-width')).toBe('1')
   expect([...g.querySelectorAll('text')].map((t) => t.textContent)).toEqual(['SB LX', '10.5'])
   expect(g.getAttribute('data-selected')).toBe('true')
-  expect(g.querySelector('.cue-marker-selection')).not.toBeNull()
+  const sel = g.querySelector('.cue-marker-selection') as SVGRectElement
+  // The mockup's .sel: a solid 2 px red outline 3 pt out from the tag (2 px offset + half the stroke).
+  expect(sel.getAttribute('stroke')).toBe('var(--red)')
+  expect(sel.getAttribute('stroke-width')).toBe('2')
+  expect(sel.getAttribute('stroke-dasharray')).toBeNull()
+  expect(sel.getAttribute('vector-effect')).toBe('non-scaling-stroke')
+  expect(Number(sel.getAttribute('x'))).toBe(Number(body.getAttribute('x')) - 3)
+  expect(Number(sel.getAttribute('width'))).toBe(Number(body.getAttribute('width')) + 6)
   expect(g.querySelector('title')?.textContent).toBe('SB LX 10.5')
   const warn = render(
     <svg aria-label="Page 1 markup">

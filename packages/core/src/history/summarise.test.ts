@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { actorLabel, type SummaryRow, summariseBatch } from './summarise'
+import { actorLabel, cardSentence, type SummaryRow, summariseBatch } from './summarise'
 
 const cue = (
   op: SummaryRow['op'],
@@ -94,14 +94,222 @@ describe('summariseBatch', () => {
     expect(summariseBatch([row('departments', 'update'), row('departments', 'update')])).toBe(
       'updated 2 departments',
     )
-    expect(summariseBatch([row('documents', 'insert')])).toBe('added 1 document')
     expect(summariseBatch([row('shows', 'update')])).toBe('updated 1 show')
-    expect(summariseBatch([row('document_versions', 'insert'), row('shows', 'update')])).toBe(
-      'added 1 document_version; updated 1 show',
+    // a membership is a member to a person, and no table name leaks with its underscore
+    expect(summariseBatch([row('show_memberships', 'insert')])).toBe('added 1 member')
+    expect(summariseBatch([row('stamp_sets', 'update')])).toBe('updated 1 stamp set')
+  })
+
+  test('an upload reads as "uploaded", with the nouns document and revision', () => {
+    const doc = (op: SummaryRow['op']): SummaryRow => ({
+      table: 'documents',
+      op,
+      before: op === 'insert' ? null : { title: 'a' },
+      after: op === 'delete' ? null : { title: 'b' },
+      departmentCode: null,
+    })
+    const version = (n: number, op: SummaryRow['op'] = 'insert'): SummaryRow => ({
+      table: 'document_versions',
+      op,
+      before: op === 'insert' ? null : { label: 'a' },
+      after: op === 'delete' ? null : { versionNumber: n, label: 'b' },
+      departmentCode: null,
+    })
+    expect(summariseBatch([doc('insert')])).toBe('uploaded 1 document')
+    expect(summariseBatch([doc('insert'), doc('insert')])).toBe('uploaded 2 documents')
+    expect(summariseBatch([version(2)])).toBe('uploaded 1 revision')
+    expect(summariseBatch([version(2), version(3)])).toBe('uploaded 2 revisions')
+    expect(summariseBatch([doc('update')])).toBe('updated 1 document')
+    expect(summariseBatch([version(2, 'update')])).toBe('updated 1 revision')
+    expect(summariseBatch([version(2), { ...doc('update'), table: 'shows' }])).toBe(
+      'uploaded 1 revision; updated 1 show',
     )
   })
 
+  test('uploads count a first version once with its document', () => {
+    const docInsert: SummaryRow = {
+      table: 'documents',
+      op: 'insert',
+      before: null,
+      after: { title: 'Libretto' },
+      departmentCode: null,
+    }
+    const v1: SummaryRow = {
+      table: 'document_versions',
+      op: 'insert',
+      before: null,
+      after: { versionNumber: 1 },
+      departmentCode: null,
+    }
+    expect(summariseBatch([docInsert, v1])).toBe('uploaded 1 document')
+    // A version 1 on its own (no document insert in the batch) is still an upload.
+    expect(summariseBatch([v1])).toBe('uploaded 1 revision')
+  })
+
+  describe('processing controls', () => {
+    const cancel: SummaryRow = {
+      table: 'document_versions',
+      op: 'update',
+      before: { status: 'processing', failureCode: null },
+      after: { status: 'failed', failureCode: 'cancelled' },
+      departmentCode: null,
+    }
+    const retry: SummaryRow = {
+      table: 'document_versions',
+      op: 'update',
+      before: { status: 'failed', failureCode: 'timeout' },
+      after: { status: 'queued', failureCode: null },
+      departmentCode: null,
+    }
+    const removeVersion: SummaryRow = {
+      table: 'document_versions',
+      op: 'delete',
+      before: { versionNumber: 1, status: 'failed', failureCode: 'unreadable' },
+      after: null,
+      departmentCode: null,
+    }
+    const removeDocument: SummaryRow = {
+      table: 'documents',
+      op: 'delete',
+      before: { title: 'Libretto' },
+      after: null,
+      departmentCode: null,
+    }
+
+    test('cancelled, retried and removed read "1 upload"', () => {
+      expect(summariseBatch([cancel])).toBe('cancelled 1 upload')
+      expect(summariseBatch([retry])).toBe('retried 1 upload')
+      expect(summariseBatch([removeVersion])).toBe('removed 1 upload')
+      expect(summariseBatch([cancel, cancel])).toBe('cancelled 2 uploads')
+    })
+
+    test("removing an only version counts the document's own version once", () => {
+      expect(summariseBatch([removeVersion, removeDocument])).toBe('removed 1 upload')
+    })
+
+    test('other updates to a version are still "updated"', () => {
+      const relabelled: SummaryRow = {
+        ...cancel,
+        before: { label: 'a' },
+        after: { label: 'b' },
+      }
+      expect(summariseBatch([relabelled])).toBe('updated 1 revision')
+    })
+
+    test('the new verbs join other clauses without repeating the noun', () => {
+      const uploaded: SummaryRow = {
+        table: 'document_versions',
+        op: 'insert',
+        before: null,
+        after: { versionNumber: 2 },
+        departmentCode: null,
+      }
+      expect(summariseBatch([uploaded, cancel])).toBe('uploaded 1 revision and cancelled 1')
+    })
+  })
+
   test('an empty batch is an empty sentence', () => expect(summariseBatch([])).toBe(''))
+})
+
+describe('cardSentence', () => {
+  const upload = (
+    table: 'documents' | 'document_versions',
+    versionNumber?: number,
+  ): SummaryRow => ({
+    table,
+    op: 'insert',
+    before: null,
+    after: versionNumber === undefined ? { title: 'Libretto' } : { versionNumber },
+    departmentCode: null,
+  })
+
+  test('one department group leads with the code', () => {
+    expect(cardSentence([relabel('LX'), relabel('LX'), relabel('LX')])).toBe('LX relabelled 3 cues')
+    expect(cardSentence([...moves(3, 'LX'), relabel('LX')])).toBe(
+      'LX moved 3 cues and relabelled 1',
+    )
+    expect(cardSentence(placed(1, 'SND'))).toBe('SND placed 1 cue')
+  })
+
+  test('annotations lead with the code too, and a cue without a code has none', () => {
+    const note: SummaryRow = {
+      table: 'annotations',
+      op: 'insert',
+      before: null,
+      after: { type: 'note' },
+      departmentCode: 'LX',
+    }
+    expect(cardSentence([note, note])).toBe('LX added 2 annotations')
+    expect(cardSentence(added(2, null))).toBe('added 2 cues')
+  })
+
+  test('revision insert', () => {
+    expect(cardSentence([upload('document_versions', 2)])).toBe('revision uploaded')
+    expect(cardSentence([upload('document_versions', 2), upload('document_versions', 3)])).toBe(
+      '2 revisions uploaded',
+    )
+  })
+
+  test('document insert, with its first version counted once', () => {
+    expect(cardSentence([upload('documents'), upload('document_versions', 1)])).toBe(
+      'document uploaded',
+    )
+    expect(cardSentence([upload('documents'), upload('documents')])).toBe('2 documents uploaded')
+  })
+
+  test('mixed groups falls back to summariseBatch', () => {
+    const mixed = [...moves(2, 'LX'), ...placed(1, 'SND')]
+    expect(cardSentence(mixed)).toBe(summariseBatch(mixed))
+    expect(cardSentence(mixed)).toBe('moved 2 LX cues; placed 1 SND cue')
+    const withRevision = [upload('document_versions', 2), relabel('LX')]
+    expect(cardSentence(withRevision)).toBe('uploaded 1 revision; relabelled 1 LX cue')
+  })
+
+  test('cancelled, retried and removed read "upload cancelled" and so on', () => {
+    const version = (
+      op: SummaryRow['op'],
+      before: Record<string, unknown> | null,
+      after: Record<string, unknown> | null,
+    ): SummaryRow => ({ table: 'document_versions', op, before, after, departmentCode: null })
+    const cancel = version(
+      'update',
+      { status: 'queued', failureCode: null },
+      { status: 'failed', failureCode: 'cancelled' },
+    )
+    const retry = version(
+      'update',
+      { status: 'failed', failureCode: 'unknown' },
+      { status: 'queued', failureCode: null },
+    )
+    const remove = version('delete', { versionNumber: 2, status: 'failed' }, null)
+    expect(cardSentence([cancel])).toBe('upload cancelled')
+    expect(cardSentence([cancel, cancel])).toBe('2 uploads cancelled')
+    expect(cardSentence([retry])).toBe('upload retried')
+    expect(cardSentence([remove])).toBe('upload removed')
+    const removeDocument: SummaryRow = {
+      table: 'documents',
+      op: 'delete',
+      before: { title: 'Libretto' },
+      after: null,
+      departmentCode: null,
+    }
+    expect(cardSentence([remove, removeDocument])).toBe('upload removed')
+    // Mixed verbs fall back to the feed sentence.
+    expect(cardSentence([cancel, retry])).toBe('cancelled 1 upload and retried 1')
+  })
+
+  test('an update to a document is not an upload and falls back', () => {
+    const row: SummaryRow = {
+      table: 'documents',
+      op: 'update',
+      before: { title: 'a' },
+      after: { title: 'b' },
+      departmentCode: null,
+    }
+    expect(cardSentence([row])).toBe('updated 1 document')
+  })
+
+  test('an empty batch is an empty sentence', () => expect(cardSentence([])).toBe(''))
 })
 
 describe('actorLabel', () => {

@@ -6,6 +6,13 @@ export interface SignOutDeps {
   clearLocalData: () => Promise<void>
   /** Deletes the signed-in user's exports still waiting to upload. */
   clearOutbox: () => Promise<void>
+  /** Deletes the signed-in user's keep-offline preferences: the next sign-in starts with every show Off. */
+  clearOfflinePrefs: () => Promise<void>
+  /**
+   * Stops the keep-offline runner: aborts its fetches, discards late responses and resolves once
+   * nothing can write to the cache. Runs before `clearLocalData` (which empties the blob cache).
+   */
+  stopOfflineRunner: () => Promise<void>
   clearCache: () => void
   toLogin: () => Promise<void>
   /** How many local changes are still queued for upload (`ps_crud`); signing out would discard them. */
@@ -44,8 +51,11 @@ export async function signOutAndClear(deps: SignOutDeps): Promise<void> {
     })
     return
   }
+  // First, so a download in flight cannot repopulate the cache that `clearLocalData` empties.
+  await deps.stopOfflineRunner().catch((err) => console.error('could not stop keep-offline', err))
   // The files are the user's own and leave with them; a storage error must not strand the sign-out.
   await deps.clearOutbox().catch((err) => console.error('could not clear the export outbox', err))
+  await deps.clearOfflinePrefs().catch((err) => console.error('could not clear keep-offline', err))
   await deps.clearLocalData()
   deps.clearCache()
   await deps.toLogin()

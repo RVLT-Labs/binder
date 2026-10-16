@@ -3,7 +3,7 @@ import { CLIENT_INFO_META_KEY, type ServerContext } from '@modelcontextprotocol/
 import type { AppDeps } from '../app'
 import { actorFor, type Principal } from './auth'
 
-export type McpDeps = Pick<AppDeps, 'db' | 'blobs' | 'jobs'>
+export type McpDeps = Pick<AppDeps, 'db' | 'blobs' | 'jobs' | 'presence'>
 
 /** What every tool and resource handler needs: the services' dependencies and the caller. */
 export interface McpContext {

@@ -2,7 +2,9 @@ import { actorLabel } from '@binder/core'
 import type { HistoryEntry } from '@binder/shared'
 import { useQuery, useStatus } from '@powersync/react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef } from 'react'
+import { PersonAvatar } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import { useMarkupSession } from '../markup/MarkupSession'
 import { type DepartmentRow, useDepartments } from '../markup/useDepartments'
 import { useOnline } from '../offline/useOnline'
@@ -24,31 +26,19 @@ export interface HistoryPanelProps {
   currentNumber?: { major: number; minor: number }
   /** The row's own department: the fallback for entries that name no department layer. */
   departmentId: string | null
+  /** Show only the latest this many changes and no "Show older changes" (the cue list's Cue tab). */
+  limit?: number
 }
 
 /**
- * A disclosure under an editor: "History" opens the row's change log with who changed what and when,
- * and "Revert this change" on each entry. Offline it says history needs a connection.
+ * The panel's History tab for one row: its change log with who changed what and when, and "Revert
+ * this change" on each entry (the mockup's `.hist-row`). Offline it says history needs a connection.
  */
 export function HistoryPanel(props: HistoryPanelProps) {
-  const [open, setOpen] = useState(false)
   const online = useOnline()
-  const ids = useId()
-  const panelId = `${ids}-panel`
   return (
-    <section className="history" aria-label="History">
-      <button
-        type="button"
-        className="history-toggle"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen(!open)}
-      >
-        History
-      </button>
-      <div id={panelId} hidden={!open}>
-        {open && (online ? <HistoryList {...props} /> : <NeedsConnection />)}
-      </div>
+    <section className="history flex flex-col" aria-label="History">
+      {online ? <HistoryList {...props} /> : <NeedsConnection />}
     </section>
   )
 }
@@ -130,6 +120,7 @@ function HistoryList({
   whyCantRevert,
   currentNumber,
   departmentId,
+  limit,
 }: HistoryPanelProps) {
   const query = useRowHistory(showId, rowId)
   const departments = useDepartments(showId)
@@ -146,7 +137,10 @@ function HistoryList({
     void queryClient.invalidateQueries({ queryKey: [...historyKey(showId), 'row', rowId] })
   }, [rowStamp, uploading, queryClient, showId, rowId])
 
-  const entries = useMemo(() => query.data?.pages.flatMap((p) => p.entries) ?? [], [query.data])
+  const entries = useMemo(() => {
+    const all = query.data?.pages.flatMap((p) => p.entries) ?? []
+    return limit === undefined ? all : all.slice(0, limit)
+  }, [query.data, limit])
   const numbers = useMemo(
     () => (table === 'cues' ? numbersAfter(entries, currentNumber) : []),
     [table, entries, currentNumber],
@@ -166,58 +160,83 @@ function HistoryList({
     }
   }
 
-  if (query.isPending) return <p className="muted">Loading history…</p>
+  if (query.isPending) return <p className="m-0 text-[12.5px] text-muted">Loading history…</p>
   if (query.isError) {
     return (
-      <p role="alert" className="field-error">
+      <p role="alert" className="m-0 text-[12.5px] text-t-out">
         Could not load history.{' '}
-        <button type="button" onClick={() => void query.refetch()}>
+        <button
+          type="button"
+          className="font-semibold underline"
+          onClick={() => void query.refetch()}
+        >
           Try again
         </button>
       </p>
     )
   }
-  if (entries.length === 0) return <p className="muted">No changes recorded yet.</p>
+  if (entries.length === 0) {
+    return <p className="m-0 text-[12.5px] text-muted">No changes recorded yet.</p>
+  }
 
   return (
     <>
       {whyCantRevert && (
-        <p id={reasonId} className="muted">
+        <p id={reasonId} className="m-0 mb-2 text-[12.5px] text-muted">
           {whyCantRevert}
         </p>
       )}
-      <ol className="history-list" aria-label="Changes">
-        {entries.map((entry, index) => (
-          <li key={entry.seq} className="history-entry" data-seq={entry.seq}>
-            <p className="history-meta">
-              <strong>{actorLabel(entry.userName, entry.agent)}</strong>{' '}
-              <time dateTime={entry.serverTs}>{formatWhen(entry.serverTs)}</time>
-            </p>
-            <ul className="history-lines">
-              {formatChange(entry, contextFor(entry, index)).map((line, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: lines are a fixed list per entry
-                <li key={`${i}:${line}`}>{line}</li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              disabled={whyCantRevert !== null || pending}
-              aria-describedby={whyCantRevert ? reasonId : undefined}
-              onClick={() => revert({ seq: entry.seq })}
+      <ol className="history-list m-0 grid list-none gap-0 p-0" aria-label="Changes">
+        {entries.map((entry, index) => {
+          const actor = actorLabel(entry.userName, entry.agent)
+          return (
+            <li
+              key={entry.seq}
+              className="history-entry grid grid-cols-[22px_1fr_auto] items-start gap-2 border-t border-line py-2 text-[12.5px] first:border-t-0"
+              data-seq={entry.seq}
             >
-              Revert this change
-            </button>
-          </li>
-        ))}
+              <PersonAvatar
+                name={entry.userName ?? 'Binder'}
+                className="size-[22px] text-[9px] [&>span]:text-[9px]"
+              />
+              <div className="min-w-0">
+                <p className="history-meta m-0">
+                  <strong className="font-semibold text-ink">{actor}</strong>{' '}
+                  <span className="history-lines text-ink-2">
+                    {formatChange(entry, contextFor(entry, index)).join('; ')}
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  className="mt-0.5 rounded-[6px] text-[11.5px] font-medium text-blue hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red disabled:cursor-not-allowed disabled:opacity-45 disabled:no-underline max-md:min-h-11"
+                  disabled={whyCantRevert !== null || pending}
+                  aria-describedby={whyCantRevert ? reasonId : undefined}
+                  onClick={() => revert({ seq: entry.seq })}
+                >
+                  Revert this change
+                </button>
+              </div>
+              <time
+                dateTime={entry.serverTs}
+                className="font-mono text-[11px] text-faint tabular-nums"
+              >
+                {formatWhen(entry.serverTs)}
+              </time>
+            </li>
+          )
+        })}
       </ol>
-      {query.hasNextPage && (
-        <button
+      {query.hasNextPage && limit === undefined && (
+        <Button
           type="button"
+          variant="line"
+          size="sm"
+          className="mt-2 self-start"
           disabled={query.isFetchingNextPage}
           onClick={() => void query.fetchNextPage()}
         >
           Show older changes
-        </button>
+        </Button>
       )}
       {dialog}
     </>
