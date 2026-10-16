@@ -11,6 +11,28 @@ const mono = 'font-mono tabular-nums'
 const files = (n: number) => (n === 1 ? 'file' : 'files')
 
 /**
+ * What a screen reader hears, which is deliberately not the visible line: the runner reports after
+ * every stored file, so a live region carrying the moving count would be re-announced hundreds of
+ * times. This changes only with the state, never with a count.
+ */
+function announcement(status: ShowStatus | undefined): string {
+  switch (status?.state) {
+    case 'working':
+      return 'Updating files…'
+    case 'offline':
+      return 'Waiting for a connection'
+    case 'paused':
+      return 'Paused while data saver is on'
+    case 'full':
+      return 'Storage is full'
+    case 'failed':
+      return 'Some files couldn’t be saved'
+    default:
+      return ''
+  }
+}
+
+/**
  * What keep-offline is doing, in words (the state is never the colour alone). Null when there is
  * nothing to say: all cached is the card's own line, which this sits under.
  */
@@ -27,7 +49,7 @@ function StatusLine({ status }: { status: ShowStatus }) {
             max={Math.max(total, 1)}
             className="h-2 w-full appearance-none overflow-hidden rounded-full [&::-moz-progress-bar]:bg-ink-2 [&::-webkit-progress-bar]:bg-paper-2 [&::-webkit-progress-value]:bg-ink-2"
           />
-          <p role="status" className="m-0">
+          <p className="m-0">
             Updating {n} {files(missing)}…
           </p>
         </>
@@ -35,13 +57,13 @@ function StatusLine({ status }: { status: ShowStatus }) {
     case 'offline':
       // Being offline is a state, not an error (DESIGN §11).
       return (
-        <p role="status" className="m-0">
+        <p className="m-0">
           Waiting for a connection. {n} {files(missing)} to fetch.
         </p>
       )
     case 'paused':
       return (
-        <p role="status" className="m-0">
+        <p className="m-0">
           Paused while data saver is on. {n} {files(missing)} to fetch.
         </p>
       )
@@ -51,7 +73,7 @@ function StatusLine({ status }: { status: ShowStatus }) {
           <Badge status="warn" className="self-start">
             Storage full
           </Badge>
-          <p role="status" className="m-0">
+          <p className="m-0">
             Storage is full. Binder couldn’t save {n} {files(missing)}. Free some space on this
             device.
           </p>
@@ -59,7 +81,7 @@ function StatusLine({ status }: { status: ShowStatus }) {
       )
     case 'failed':
       return (
-        <p role="status" className="m-0">
+        <p className="m-0">
           <span className={mono}>{failed}</span> {files(failed)} couldn’t be saved. Binder will try
           again.
         </p>
@@ -102,6 +124,11 @@ export function KeepOfflineSwitch({
   const line = on && status ? <StatusLine status={status} /> : null
   return (
     <div className={cn('flex flex-col', className)}>
+      {/* One live region that is always mounted (one that appears already filled is often not
+          announced), so it hears each change of state; the visible line below is not live. */}
+      <div role="status" className="sr-only">
+        {on ? announcement(status) : ''}
+      </div>
       <div className="flex min-h-[33px] items-center gap-2.5">
         <label
           htmlFor={id}
@@ -125,7 +152,10 @@ export function KeepOfflineSwitch({
         />
       </div>
       {line && (
-        <div className="mt-2.5 flex flex-col gap-2 text-[13px] leading-[1.5] text-muted">
+        <div
+          data-keep-offline-line
+          className="mt-2.5 flex flex-col gap-2 text-[13px] leading-[1.5] text-muted"
+        >
           {line}
         </div>
       )}

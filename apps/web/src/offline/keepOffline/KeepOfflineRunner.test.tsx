@@ -4,6 +4,7 @@ import type { KeepOfflineRunner as Runner, RunnerInput, ShowStatus } from './run
 
 const h = vi.hoisted(() => ({
   db: { getAll: async () => [] },
+  asked: [] as string[],
   empty: { data: [] as unknown[], isLoading: false },
   hasSynced: false,
   queries: new Map<string, { data: unknown[]; isLoading: boolean }>(),
@@ -20,7 +21,10 @@ const setQuery = (sql: string, data: unknown[], isLoading = false) =>
 vi.mock('@powersync/react', () => ({
   usePowerSync: () => h.db,
   useStatus: () => ({ hasSynced: h.hasSynced }),
-  useQuery: (sql: string) => h.queries.get(sql) ?? h.empty,
+  useQuery: (sql: string) => {
+    h.asked.push(sql)
+    return h.queries.get(sql) ?? h.empty
+  },
 }))
 vi.mock('./store', () => ({
   useOfflinePrefs: () => h.prefs,
@@ -64,7 +68,7 @@ vi.mock('./runner', () => ({
 
 import { blobCacheChanged } from '../cacheStatus'
 import { setActiveRunner } from './active'
-import { KeepOfflineRunner, VERSIONS_SQL } from './KeepOfflineRunner'
+import { KeepOfflineRunner, PAGES_SQL, VERSIONS_SQL } from './KeepOfflineRunner'
 import { useKeepOfflineStatus } from './status'
 
 const current = () =>
@@ -77,6 +81,7 @@ beforeEach(() => {
   h.prefs = { userId: 'u1', prefs: new Map([['s1', { on: true, enabledAt: '2026-01-01' }]]) }
   h.loadFails = false
   h.runners.length = 0
+  h.asked.length = 0
   vi.clearAllMocks()
 })
 afterEach(() => vi.restoreAllMocks())
@@ -100,6 +105,22 @@ test('passes localShows = null until the first sync has landed, so an empty tabl
   expect(lastUpdate()?.localShows).toEqual(new Set(['s1', 's2']))
 })
 
+test('synced, with an earlier [] answer still standing while the query refetches: no prune', async () => {
+  // The shows query answered [] before the first sync and keeps that answer (isLoading false)
+  // while it refetches; hasSynced flips to true in the meantime.
+  setQuery(SHOWS, [])
+  const view = render(<KeepOfflineRunner userId="u1" />)
+  await act(async () => {})
+  h.hasSynced = true
+  view.rerender(<KeepOfflineRunner userId="u1" />)
+  expect(lastUpdate()).toEqual({ enabled: ['s1'], localShows: null })
+  for (const call of vi.mocked(current().update).mock.calls) expect(call[0].localShows).toBeNull()
+  // The refetch lands.
+  setQuery(SHOWS, [{ id: 's1' }])
+  view.rerender(<KeepOfflineRunner userId="u1" />)
+  expect(lastUpdate()?.localShows).toEqual(new Set(['s1']))
+})
+
 test('loads the preferences before it updates the runner, and survives a failed load', async () => {
   h.prefs = { userId: null, prefs: new Map() }
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -120,18 +141,34 @@ test('does not call notifySync until the sync queries have loaded', () => {
   expect(current().notifySync).toHaveBeenCalledOnce()
 })
 
-test("the signature changes with an enabled show's ready versions, not with another show's", () => {
+test('the signature follows the ready versions, not the preferences', () => {
   const rows = [{ id: 'v1', show_id: 's1', searchable_key: 'k1' }]
   setQuery(VERSIONS_SQL, rows)
   const view = render(<KeepOfflineRunner userId="u1" />)
   const sig = () => vi.mocked(current().notifySync).mock.calls.map((c) => c[0])
   expect(sig()).toHaveLength(1)
-  setQuery(VERSIONS_SQL, [...rows, { id: 'v9', show_id: 'other', searchable_key: 'k9' }])
+  // Switching another show on is not a sync change.
+  h.prefs = {
+    ...h.prefs,
+    prefs: new Map([...h.prefs.prefs, ['s2', { on: true, enabledAt: '2026-01-02' }]]),
+  }
   view.rerender(<KeepOfflineRunner userId="u1" />)
   expect(new Set(sig()).size).toBe(1)
+  // A new ready version is.
   setQuery(VERSIONS_SQL, [...rows, { id: 'v2', show_id: 's1', searchable_key: 'k2' }])
   view.rerender(<KeepOfflineRunner userId="u1" />)
   expect(new Set(sig()).size).toBe(2)
+})
+
+test('the app-wide sync queries are not watched while no show is On', () => {
+  h.prefs = { userId: 'u1', prefs: new Map() }
+  const view = render(<KeepOfflineRunner userId="u1" />)
+  expect(h.asked).not.toContain(PAGES_SQL)
+  expect(h.asked).not.toContain(VERSIONS_SQL)
+  expect(current().notifySync).not.toHaveBeenCalled()
+  h.prefs = { userId: 'u1', prefs: new Map([['s1', { on: true, enabledAt: '2026-01-01' }]]) }
+  view.rerender(<KeepOfflineRunner userId="u1" />)
+  expect(h.asked).toContain(PAGES_SQL)
 })
 
 test('registers the runner for sign-out, and unregisters and stops it on unmount', async () => {

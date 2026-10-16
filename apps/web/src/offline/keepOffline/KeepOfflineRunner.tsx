@@ -40,8 +40,6 @@ export function KeepOfflineRunner({ userId }: { userId: string }) {
   const { userId: loadedFor, prefs } = useOfflinePrefs()
   const hasSynced = useStatus().hasSynced === true
   const shows = useQuery<{ id: string }>(SHOWS_SQL)
-  const versions = useQuery<VersionRow>(VERSIONS_SQL)
-  const pages = useQuery<PageSummaryRow>(PAGES_SQL)
   const [runner, setRunner] = useState<Runner | null>(null)
 
   // The preferences live in IndexedDB; the switch and the runner read the in-memory mirror.
@@ -79,9 +77,15 @@ export function KeepOfflineRunner({ userId }: { userId: string }) {
 
   const mine = loadedFor === userId
   // Until the first sync has landed the local `shows` table may simply be empty, which must not
-  // look like "every show was removed" (that prunes preferences and cached files).
+  // look like "every show was removed" (a prune deletes files and preferences for good). A watched
+  // query that answered [] before the sync keeps isLoading=false and that stale answer while it
+  // refetches, so `synced` and `answered` are not enough: an empty list is never trusted either.
+  // (A device with no shows and leftover preferences is negligible: the next non-empty list prunes.)
   const localShows = useMemo<ReadonlySet<string> | null>(
-    () => (hasSynced && !shows.isLoading ? new Set(shows.data.map((s) => s.id)) : null),
+    () =>
+      hasSynced && !shows.isLoading && shows.data.length > 0
+        ? new Set(shows.data.map((s) => s.id))
+        : null,
     [hasSynced, shows.isLoading, shows.data],
   )
   useEffect(() => {
@@ -89,16 +93,27 @@ export function KeepOfflineRunner({ userId }: { userId: string }) {
     runner.update({ enabled: [...prefs.keys()], localShows })
   }, [runner, mine, prefs, localShows])
 
-  // What the runner fetches depends on the enabled shows' ready versions and their pages' files.
-  // The signature is only made once both queries have answered: a signature taken from an empty,
-  // still-loading table would make the first real answer look like a change.
+  // The sync watcher only exists while some show is On: with none, nothing needs the app-wide
+  // queries, which re-run on every page row that syncs.
+  return runner && mine && prefs.size > 0 ? <SyncWatcher runner={runner} /> : null
+}
+
+/**
+ * Tells the runner when the ready versions or their pages' files change. The signature covers every
+ * local show, never the preferences, so switching a show on or off (or the preferences loading) is
+ * not a "change" that schedules a no-op pass. It is made only once both queries have answered: a
+ * signature from an empty, still-loading table would make the first real answer look like a change.
+ * Mounted fresh when the first show goes On, so it never starts from a stale answer.
+ */
+function SyncWatcher({ runner }: { runner: Runner }) {
+  const versions = useQuery<VersionRow>(VERSIONS_SQL)
+  const pages = useQuery<PageSummaryRow>(PAGES_SQL)
   const loaded = !versions.isLoading && !pages.isLoading
   const signature = useMemo(() => {
     if (!loaded) return null
     const readyIds = new Set<string>()
     const parts: string[] = []
     for (const v of versions.data) {
-      if (!prefs.has(v.show_id)) continue
       readyIds.add(v.id)
       parts.push(`v:${v.id}:${v.searchable_key ?? ''}`)
     }
@@ -108,10 +123,9 @@ export function KeepOfflineRunner({ userId }: { userId: string }) {
       }
     }
     return parts.join('|')
-  }, [loaded, versions.data, pages.data, prefs])
+  }, [loaded, versions.data, pages.data])
   useEffect(() => {
-    if (runner && signature !== null) runner.notifySync(signature)
+    if (signature !== null) runner.notifySync(signature)
   }, [runner, signature])
-
   return null
 }
