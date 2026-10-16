@@ -102,9 +102,13 @@ test('after a cold offline reload, the switcher shows v1 from cached blobs with 
   await expect(changes.getByRole('status')).toContainText(/\d+ removed, \d+ added/, {
     timeout: 60_000,
   })
-  const removed = changes.locator('button[data-op="removed"]')
-  expect(await removed.count()).toBeGreaterThanOrEqual(10)
-  await removed.filter({ hasText: 'Two and twenty' }).click()
+  const removedCount = Number(
+    /(\d+) removed/.exec((await changes.getByRole('status').textContent()) ?? '')?.[1],
+  )
+  expect(removedCount).toBeGreaterThanOrEqual(10)
+  const cuts = changes.getByRole('button', { name: /lines? cut/ })
+  expect(await cuts.count()).toBeGreaterThanOrEqual(1)
+  await cuts.first().click()
   await expect(
     page
       .getByRole('region', { name: /^Old · v1/ })

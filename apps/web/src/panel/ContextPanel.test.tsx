@@ -19,7 +19,7 @@ function setWidth(width: number) {
   })
 }
 
-// jsdom has none of these; vaul and Radix read them.
+// jsdom has none of these; Radix reads them.
 beforeEach(() => {
   vi.stubGlobal(
     'ResizeObserver',
@@ -234,7 +234,9 @@ test('phone draws nothing until opened, then a dialog with the same tabs', () =>
       .map((t) => t.textContent),
   ).toEqual(['Cue', 'Layers', 'History', 'Review 4'])
   // no scrim: nothing but the drawer is added to the page
-  expect(document.querySelector('[data-vaul-overlay]')).toBeNull()
+  expect(
+    document.querySelector('[data-state][class*="scrim"], [data-radix-dialog-overlay]'),
+  ).toBeNull()
   // the mockup's sheet: radius 20 20 0 0, a 2 px top outline, over the tab bar
   expect(dialog.className).toContain('rounded-t-[20px]')
   expect(dialog.className).toContain('border-t-2')

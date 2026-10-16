@@ -22,8 +22,8 @@ export interface ChangeListProps {
 
 /**
  * The compare screen's change list (the mockup's panel body): "Libretto v1 → v2 / Changes · 3", a
- * card for each change that sits together in the text ("p.9–10 — 16 lines cut"), and under each
- * card its lines, so a single line can be chosen too. The chosen one is the card with the red bar.
+ * card for each change that sits together in the text ("p.9–10 — 16 lines cut"). The chosen one is the
+ * card with the red bar; choosing a card takes both sides to its first line.
  */
 export function ChangeList({
   docTitle,
@@ -85,33 +85,6 @@ export function ChangeList({
                     <span className="text-[13px] font-semibold text-ink">{hunk.title}</span>
                     <span className="text-[12px] text-muted">{hunk.meta}</span>
                   </button>
-                  <ol className="m-0 mt-1.5 flex list-none flex-col gap-px p-0">
-                    {hunk.changes.map((c) => (
-                      <li key={c.index}>
-                        <button
-                          type="button"
-                          className="compare-change flex min-h-7 w-full items-baseline gap-2 rounded-[6px] px-1.5 py-1 text-left text-[12px] text-ink-2 hover:bg-elev focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red aria-[current=true]:bg-elev aria-[current=true]:text-ink max-md:min-h-11 max-md:items-center"
-                          data-op={c.op}
-                          aria-current={active === c.index ? 'true' : undefined}
-                          onClick={() => onChoose(c)}
-                        >
-                          <span
-                            className={cn(
-                              'compare-op font-mono font-bold',
-                              c.op === 'removed' ? 'text-t-out' : 'text-ok',
-                            )}
-                            aria-hidden="true"
-                          >
-                            {c.op === 'removed' ? '−' : '+'}
-                          </span>
-                          <span className="sr-only">
-                            {c.op === 'removed' ? 'Removed: ' : 'Added: '}
-                          </span>
-                          <span className="min-w-0 truncate">{c.text}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ol>
                 </li>
               )
             })}

@@ -48,7 +48,7 @@ test('the panel names the versions and counts the changes, with the removed and 
   expect(within(nav).getByRole('status').textContent).toBe('2 removed, 1 added')
 })
 
-test('each hunk is a card with its title and pages, and every line is a button with its op', () => {
+test('each hunk is a compact card with its title and pages, and no list of its lines', () => {
   render(
     <ChangeList
       docTitle="Libretto"
@@ -61,13 +61,12 @@ test('each hunk is a card with its title and pages, and every line is a button w
   )
   expect(screen.getByRole('button', { name: /^p\.9 — 2 lines cut/ })).toBeTruthy()
   expect(screen.getByText('v1 p.9')).toBeTruthy()
-  const cut = document.querySelectorAll('button.compare-change[data-op="removed"]')
-  expect(cut).toHaveLength(2)
-  expect(cut[0].textContent).toContain('Two and twenty')
-  expect(document.querySelectorAll('button.compare-change[data-op="added"]')).toHaveLength(1)
+  expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  expect(document.querySelectorAll('button')).toHaveLength(2)
+  expect(screen.queryByText('Two and twenty')).toBeNull()
 })
 
-test('choosing a line or a card reports its first change; the active line and its card are marked', () => {
+test('choosing a card reports its first change; the chosen card is marked', () => {
   const onChoose = vi.fn()
   render(
     <ChangeList
@@ -79,21 +78,18 @@ test('choosing a line or a card reports its first change; the active line and it
       onChoose={onChoose}
     />,
   )
-  const lines = document.querySelectorAll<HTMLElement>('button.compare-change')
-  expect(lines[1].getAttribute('aria-current')).toBe('true')
-  expect(lines[0].getAttribute('aria-current')).toBeNull()
-  const card = screen.getByRole('button', { name: /^p\.9 — 2 lines cut/ }).closest('li')
-  expect(card?.getAttribute('data-active')).toBe('true')
+  const cut = screen.getByRole('button', { name: /^p\.9 — 2 lines cut/ })
+  expect(cut.closest('li')?.getAttribute('data-active')).toBe('true')
   expect(
     screen
       .getByRole('button', { name: /^p\.12 — 1 line added/ })
       .closest('li')
       ?.getAttribute('data-active'),
   ).toBeNull()
-  fireEvent.click(lines[1])
-  expect(onChoose).toHaveBeenLastCalledWith(hunks[0].changes[1])
   fireEvent.click(screen.getByRole('button', { name: /^p\.12 — 1 line added/ }))
   expect(onChoose).toHaveBeenLastCalledWith(hunks[1].changes[0])
+  fireEvent.click(cut)
+  expect(onChoose).toHaveBeenLastCalledWith(hunks[0].changes[0])
 })
 
 test('while it works, when it cannot, and when nothing differs, it says so', () => {

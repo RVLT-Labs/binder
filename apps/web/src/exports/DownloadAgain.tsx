@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { blobUrl, isBlobCached } from '../blobs/fetchBlob'
 import { useOnline } from '../offline/useOnline'
@@ -65,11 +65,17 @@ export function DownloadLocal({
   contentType: string
   filename: string
 }) {
-  const url = useMemo(
-    () => URL.createObjectURL(new Blob([bytes as BlobPart], { type: contentType })),
-    [bytes, contentType],
-  )
-  useEffect(() => () => URL.revokeObjectURL(url), [url])
+  // Made in the effect, so React's dev double-run (revoke, then run again) leaves a live URL.
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    const made = URL.createObjectURL(new Blob([bytes as BlobPart], { type: contentType }))
+    setUrl(made)
+    return () => {
+      URL.revokeObjectURL(made)
+      setUrl(null)
+    }
+  }, [bytes, contentType])
+  if (!url) return null
   return (
     <Button asChild variant="line" size="sm" className={BG}>
       <a href={url} download={filename}>

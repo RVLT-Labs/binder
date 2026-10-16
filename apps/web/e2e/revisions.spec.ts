@@ -297,21 +297,30 @@ test('compare shows the cut lines as removed', async ({ browser }) => {
     await expect(changes.getByRole('status')).toContainText(/\d+ removed, \d+ added/, {
       timeout: 60_000,
     })
-    const removed = changes.locator('button[data-op="removed"]')
-    await expect.poll(() => removed.count()).toBeGreaterThanOrEqual(10)
-    // The cut lines are listed as removed and none of them as added.
-    await expect(removed.filter({ hasText: 'Two and twenty' })).toHaveCount(1)
+    // The status counts the cut lines; the cards are the changes ("p.2 — 4 lines cut", "p.3 — 17
+    // lines added"): cuts and additions are separate cards.
+    const removedCount = Number(
+      /(\d+) removed/.exec((await changes.getByRole('status').textContent()) ?? '')?.[1],
+    )
+    expect(removedCount).toBeGreaterThanOrEqual(10)
+    const cuts = changes.getByRole('button', { name: /lines? cut/ })
+    expect(await cuts.count()).toBeGreaterThanOrEqual(1)
     await expect(
-      changes.locator('button[data-op="added"]').filter({ hasText: 'Two and twenty' }),
-    ).toHaveCount(0)
+      changes.getByRole('button', { name: /^p\.\d+(–\d+)? — \d+ lines? added/ }).first(),
+    ).toBeVisible()
 
-    // Choosing a change takes both sides to it: the old page has the removed line tinted.
-    await removed.filter({ hasText: 'Two and twenty' }).click()
+    // Choosing a cut takes both sides to it: the old page has the removed lines tinted, the new
+    // page none, and the old caption counts them against all the cut lines.
+    await cuts.first().click()
     const oldPane = page.getByRole('region', { name: /^Old · v1/ })
     const newPane = page.getByRole('region', { name: /^New · v2/ })
     await expect(oldPane.locator('.compare-tint[data-op="removed"]').first()).toBeVisible({
       timeout: 30_000,
     })
+    await expect(
+      oldPane.getByText(new RegExp(`of the ${removedCount} cut lines are on this page`)),
+    ).toBeVisible()
+    await expect(oldPane.locator('.compare-tint[data-op="added"]')).toHaveCount(0)
     await expect(newPane.locator('.compare-tint[data-op="removed"]')).toHaveCount(0)
   } finally {
     for (const c of contexts) await c.close()
