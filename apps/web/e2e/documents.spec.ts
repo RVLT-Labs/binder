@@ -43,7 +43,7 @@ test('uploading a 72 dpi scan shows "couldn’t read text" with the dpi copy and
   await expect(status).toHaveAttribute('data-status', 'failed', { timeout: 60_000 })
   await expect(status).toHaveText('couldn’t read text')
   await expect(row).toContainText(
-    'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan.',
+    'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan. Or remove this upload, then upload the file again as a new document with Text recognition set to Never, and mark it up by position.',
   )
   await expect(row.getByRole('button', { name: 'Try again' })).toBeVisible()
 

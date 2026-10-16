@@ -5,7 +5,7 @@ test('describeFailure low_resolution interpolates the dpi (72)', () => {
   const f = describeFailure('low_resolution', { dpi: 72 })
   expect(f.title).toBe('couldn’t read text')
   expect(f.message).toBe(
-    'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan.',
+    'Scanned at 72 dpi, so there is no text to search or anchor to. Try a 300 dpi scan. Or remove this upload, then upload the file again as a new document with Text recognition set to Never, and mark it up by position.',
   )
 })
 
@@ -84,4 +84,15 @@ test('formatBytes edges: bytes, rounding up a unit, whole numbers, bad input', (
   expect(formatBytes(1_500_000_000)).toBe('1.5 GB')
   expect(formatBytes(-5)).toBe('0 B')
   expect(formatBytes(Number.NaN)).toBe('0 B')
+})
+
+test('no_text and low_resolution name the way through: remove and upload again with text recognition off', () => {
+  for (const code of ['no_text', 'low_resolution'] as const) {
+    const { message, retryable } = describeFailure(code, { dpi: 72 })
+    expect(retryable).toBe(false)
+    expect(message).toMatch(/remove this upload/i)
+    expect(message).toMatch(/new document/)
+    expect(message).toMatch(/Text recognition set to Never/)
+    expect(message).toMatch(/by position/)
+  }
 })

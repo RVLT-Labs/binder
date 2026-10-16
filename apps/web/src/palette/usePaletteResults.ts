@@ -11,7 +11,7 @@ import { useLayers } from '../markup/useLayers'
 import { useDocumentSearch } from '../search/useDocumentSearch'
 import { type MatchableCue, type MatchableDepartment, matchCues, parseCueQuery } from './matchCues'
 import { paletteOpener, usePaletteHost } from './paletteState'
-import { useCanRenumber } from './useCanRenumber'
+import { useRenumber } from './useCanRenumber'
 
 export type PaletteIcon = 'cue' | 'page' | 'search' | 'print' | 'cues' | 'eye' | 'eye-off'
 
@@ -357,7 +357,7 @@ export function usePaletteResults(
     }
     return ids
   }, [departments, layers.state.hidden])
-  const canRenumber = useCanRenumber(showId)
+  const { can: canRenumber, search: renumberSearch } = useRenumber(showId)
 
   const store = layers.store
   const env: PaletteEnv = {
@@ -396,7 +396,7 @@ export function usePaletteResults(
       void navigate({
         to: '/shows/$showId/cues',
         params: { showId },
-        search: { renumber: true },
+        search: renumberSearch,
       }),
     setLayerHidden: (departmentId, hidden) =>
       store.setHidden(layerKey({ kind: 'department', id: departmentId }), hidden),

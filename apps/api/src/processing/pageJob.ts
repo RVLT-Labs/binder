@@ -41,10 +41,7 @@ export async function finishVersionIfDone(
           eq(documentVersions.id, versionId),
           eq(documentVersions.status, 'processing'),
           exists(
-            tx
-              .select({ one: sql`1` })
-              .from(pages)
-              .where(eq(pages.documentVersionId, versionId)),
+            tx.select({ one: sql`1` }).from(pages).where(eq(pages.documentVersionId, versionId)),
           ),
           notExists(
             tx
