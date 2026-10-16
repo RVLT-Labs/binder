@@ -97,6 +97,9 @@ export async function processPage(deps: ProcessingDeps, pageId: string): Promise
     .where(eq(pages.id, pageId))
   if (!row) return
   const { page, version } = row
+  // Pages only run while their version does. A cancelled version is failed, so a page job queued
+  // before the cancel does no work and cannot bring the version back.
+  if (version.status !== 'processing') return
 
   if (page.status === 'queued') {
     const stillQueued = and(eq(pages.id, pageId), eq(pages.status, 'queued'))

@@ -7,15 +7,23 @@ import { promisify } from 'node:util'
 import { changeLog, documents, documentVersions, pages, syncAppliedChunks } from '@binder/db'
 import { getTestDb } from '@binder/db/testing'
 import { FIXTURES } from '@binder/fixtures'
-import type { OcrMode, WordLayer } from '@binder/shared'
+import { type DocumentKind, newId, type OcrMode, type WordLayer } from '@binder/shared'
 import { asc, eq, sql } from 'drizzle-orm'
 import { PgBoss } from 'pg-boss'
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
+import { searchableBlobKey } from '../src/blob/keys'
 import { processDocumentVersion } from '../src/processing/documentJob'
 import { describeOcrFailure, OCRMYPDF_TIMEOUT_MS, runOcrmypdf } from '../src/processing/ocrmypdf'
 import { processPage } from '../src/processing/pageJob'
-import { pdfInfo, renderPageImage, renderThumbnail } from '../src/processing/poppler'
 import {
+  countTextChars,
+  imageStats,
+  pdfInfo,
+  renderPageImage,
+  renderThumbnail,
+} from '../src/processing/poppler'
+import {
+  classifyJobFailure,
   createJobQueue,
   DOCUMENT_DEAD_QUEUE,
   DOCUMENT_JOB_EXPIRE_SECONDS,
@@ -36,6 +44,7 @@ import type { ProcessingDeps } from '../src/processing/types'
 import { addDocumentVersion, createDocument } from '../src/services'
 import { setupShow } from './documentHelpers'
 import { RecordingJobs } from './helpers'
+import { writeBlankScanPdf } from './scanHelpers'
 import { findMissingTools, skipWithoutTools } from './tools'
 
 const run = promisify(execFile)
@@ -73,14 +82,28 @@ afterAll(async () => {
   await rm(work, { recursive: true, force: true })
 })
 
-async function upload(pdf: string, ocrMode?: OcrMode) {
+async function upload(
+  pdf: string,
+  ocrMode?: OcrMode,
+  opts: { kind?: DocumentKind; snapToText?: boolean | null } = {},
+) {
   return createDocument(s.deps.db, s.deps.blobs, s.jobs, s.ownerActor, {
     showId: s.show.id,
-    kind: 'libretto',
+    kind: opts.kind ?? 'libretto',
     title: basename(pdf),
     ocrMode,
+    snapToText: opts.snapToText,
     file: createReadStream(pdf),
   })
+}
+
+/** Marks a version cancelled the way the cancel service will: failed, code cancelled. */
+async function cancelDirectly(versionId: string, deletePages = true) {
+  await s.deps.db
+    .update(documentVersions)
+    .set({ status: 'failed', error: 'Cancelled', failureCode: 'cancelled' })
+    .where(eq(documentVersions.id, versionId))
+  if (deletePages) await s.deps.db.delete(pages).where(eq(pages.documentVersionId, versionId))
 }
 
 function processingDeps(): ProcessingDeps & { jobs: RecordingJobs } {
@@ -357,6 +380,7 @@ describe.skipIf(skip)('processing pipeline', () => {
     )
     expect(done.version.error).toMatch(/ocrmypdf exit 8: EncryptedPdfError/)
     expect(done.version.error).toMatch(/pdfinfo exit 1: .*Incorrect password/)
+    expect(done.version).toMatchObject({ failureCode: 'password_protected', failureDpi: null })
     expect(done.pages).toHaveLength(0)
     expect(done.enqueuedPages).toHaveLength(0)
     // The failed upload stays where it was: the document keeps its version, nothing new is current.
@@ -374,6 +398,7 @@ describe.skipIf(skip)('processing pipeline', () => {
     expect(done.version.error).toMatch(
       /^This file could not be read as a PDF\. \(.*pdfinfo exit 1: /,
     )
+    expect(done.version.failureCode).toBe('unreadable')
     expect(done.pages).toHaveLength(0)
   }, 120_000)
 
@@ -544,6 +569,7 @@ describe.skipIf(skip)('dead letters', () => {
     expect(failed.version).toMatchObject({
       status: 'failed',
       error: 'Processing failed after retries: ocrmypdf timed out after 1800s: killed',
+      failureCode: 'timeout',
       updatedBy: 'system',
     })
 
@@ -552,9 +578,21 @@ describe.skipIf(skip)('dead letters', () => {
       data: { versionId: timedOut.version.id },
       sourceOutput: { value: { message: 'job timed out' } },
     })
-    expect((await load(timedOut.version.id)).version.error).toBe(
-      'Processing timed out after retries.',
-    )
+    expect((await load(timedOut.version.id)).version).toMatchObject({
+      error: 'Processing timed out after retries.',
+      failureCode: 'timeout',
+    })
+
+    // Any other dead letter is `unknown`; the message stays as the technical detail.
+    const other = await upload(await textOnlyPdf())
+    await handleDocumentDeadLetter(deps, {
+      data: { versionId: other.version.id },
+      sourceOutput: { message: 'blob original.pdf is missing' },
+    })
+    expect((await load(other.version.id)).version).toMatchObject({
+      error: 'Processing failed after retries: blob original.pdf is missing',
+      failureCode: 'unknown',
+    })
 
     // A version that reached ready is never failed by a late dead letter.
     const ready = await upload(await textOnlyPdf())
@@ -565,6 +603,253 @@ describe.skipIf(skip)('dead letters', () => {
     })
     expect((await load(ready.version.id)).version).toMatchObject({ status: 'ready', error: null })
   }, 60_000)
+})
+
+describe.skipIf(skip)('processing detection and guards', () => {
+  test('imageStats reads the scan resolution and countTextChars the text layer', async () => {
+    const stats = await imageStats(FIXTURES.scanPdf)
+    expect(stats.pages.size).toBe(8)
+    expect(stats.medianPpi).toBe(150)
+    const blank = join(work, 'stats-72.pdf')
+    writeBlankScanPdf(blank, 72)
+    expect((await imageStats(blank)).medianPpi).toBe(72)
+    expect(await imageStats(await textOnlyPdf())).toEqual({ pages: new Set(), medianPpi: null })
+
+    expect(await countTextChars(FIXTURES.librettoPdf)).toBeGreaterThan(1000)
+    expect(await countTextChars(blank)).toBe(0)
+  }, 60_000)
+
+  test('a text-anchored scan with no text and 72 dpi fails low_resolution with failure_dpi 72', async () => {
+    const scan = join(work, 'blank-72.pdf')
+    writeBlankScanPdf(scan, 72)
+    const { version } = await upload(scan)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const done = await processAll(version.id)
+    expect(done.version).toMatchObject({
+      status: 'failed',
+      failureCode: 'low_resolution',
+      failureDpi: 72,
+      searchableKey: null,
+    })
+    expect(done.version.error).toMatch(/^No text could be read/)
+    expect(done.pages).toHaveLength(0)
+    expect(done.enqueuedPages).toHaveLength(0)
+  }, 120_000)
+
+  test('no text at 300 dpi fails no_text', async () => {
+    const scan = join(work, 'blank-300.pdf')
+    writeBlankScanPdf(scan, 300)
+    const { version } = await upload(scan)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const done = await processAll(version.id)
+    expect(done.version).toMatchObject({
+      status: 'failed',
+      failureCode: 'no_text',
+      failureDpi: null,
+    })
+  }, 120_000)
+
+  test('a document with no images and no text fails no_text (an all-blank PDF)', async () => {
+    const blank = join(work, 'blank-vector.pdf')
+    // One page with no content; qpdf rebuilds the cross-reference table the hand-written file lacks.
+    const raw = join(work, 'blank-vector-raw.pdf')
+    await writeFile(
+      raw,
+      '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj\ntrailer<</Root 1 0 R/Size 4>>\n%%EOF\n',
+    )
+    // qpdf exits 3 for "succeeded with warnings".
+    await run('qpdf', [raw, blank]).catch((err: { code?: number }) => {
+      if (err.code !== 3) throw err
+    })
+    const { version } = await upload(blank)
+    const done = await processAll(version.id)
+    expect(done.version).toMatchObject({ status: 'failed', failureCode: 'no_text' })
+  }, 60_000)
+
+  test('a score with no text becomes ready', async () => {
+    const scan = join(work, 'blank-score.pdf')
+    writeBlankScanPdf(scan, 72)
+    const { version } = await upload(scan, undefined, { kind: 'score' })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const done = await processAll(version.id)
+    expect(done.version).toMatchObject({ status: 'ready', failureCode: null })
+    expect(done.pages).toHaveLength(1)
+  }, 120_000)
+
+  test('a score the user set to snap to text is checked like a script', async () => {
+    const scan = join(work, 'blank-score-snap.pdf')
+    writeBlankScanPdf(scan, 72)
+    const { version } = await upload(scan, undefined, { kind: 'score', snapToText: true })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const done = await processAll(version.id)
+    expect(done.version).toMatchObject({ status: 'failed', failureCode: 'low_resolution' })
+  }, 120_000)
+
+  test('a libretto the user set not to snap to text is not checked', async () => {
+    const scan = join(work, 'blank-libretto-nosnap.pdf')
+    writeBlankScanPdf(scan, 72)
+    const { version } = await upload(scan, undefined, { snapToText: false })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect((await processAll(version.id)).version.status).toBe('ready')
+  }, 120_000)
+
+  test('ocrMode never is not checked', async () => {
+    const scan = join(work, 'blank-never.pdf')
+    writeBlankScanPdf(scan, 72)
+    const { version } = await upload(scan, 'never')
+    const done = await processAll(version.id)
+    expect(done.version).toMatchObject({ status: 'ready', failureCode: null })
+  }, 60_000)
+
+  test('a cancelled version is not resurrected by the document job', async () => {
+    const { version } = await upload(await textOnlyPdf())
+    await cancelDirectly(version.id)
+    const deps = processingDeps()
+    await processDocumentVersion(deps, version.id)
+    const after = await load(version.id)
+    expect(after.version).toMatchObject({
+      status: 'failed',
+      failureCode: 'cancelled',
+      error: 'Cancelled',
+      searchableKey: null,
+    })
+    expect(after.pages).toHaveLength(0)
+    expect(deps.jobs.enqueuedPages).toHaveLength(0)
+  }, 60_000)
+
+  test('a cancel that lands while the job works discards its work and its searchable blob', async () => {
+    const { version } = await upload(await textOnlyPdf())
+    const put = s.deps.blobs.put.bind(s.deps.blobs)
+    // The cancel commits right after the job wrote the searchable PDF, before its final transaction.
+    vi.spyOn(s.deps.blobs, 'put').mockImplementation(async (key, body, type) => {
+      const result = await put(key, body, type)
+      if (key === searchableBlobKey(version.showId, version.documentId, version.id))
+        await cancelDirectly(version.id, false)
+      return result
+    })
+    const deps = processingDeps()
+    await processDocumentVersion(deps, version.id)
+    vi.restoreAllMocks()
+    const after = await load(version.id)
+    expect(after.version).toMatchObject({
+      status: 'failed',
+      failureCode: 'cancelled',
+      searchableKey: null,
+    })
+    expect(after.pages).toHaveLength(0)
+    expect(deps.jobs.enqueuedPages).toHaveLength(0)
+    const key = searchableBlobKey(version.showId, version.documentId, version.id)
+    expect(await s.deps.blobs.exists(key)).toBe(false)
+  }, 60_000)
+
+  test('a cancelled version is not made ready by late page jobs', async () => {
+    const { version } = await upload(await textOnlyPdf())
+    const deps = processingDeps()
+    await processDocumentVersion(deps, version.id)
+    expect(deps.jobs.enqueuedPages.length).toBeGreaterThan(0)
+    // Cancelled with its page rows still in place, the worst case for the page jobs.
+    await cancelDirectly(version.id, false)
+
+    await mapLimit(deps.jobs.enqueuedPages, 4, (id) => processPage(deps, id))
+    const after = await load(version.id)
+    expect(after.version).toMatchObject({ status: 'failed', failureCode: 'cancelled' })
+    expect(after.pages.every((p) => p.status === 'queued' && p.thumbKey === null)).toBe(true)
+  }, 60_000)
+})
+
+describe.skipIf(skip)('enqueue failure', () => {
+  test('an enqueue failure gives enqueue_failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const failing = {
+      enqueueDocumentProcess: async () => {
+        throw new Error('queue is down')
+      },
+      enqueuePageProcess: async () => {},
+      enqueueReanchor: async () => {},
+    }
+    const { version } = await createDocument(s.deps.db, s.deps.blobs, failing, s.ownerActor, {
+      showId: s.show.id,
+      kind: 'libretto',
+      title: 'queue down',
+      file: createReadStream(FIXTURES.librettoPdf),
+    })
+    expect(version).toMatchObject({
+      status: 'failed',
+      error: 'Could not queue processing',
+      failureCode: 'enqueue_failed',
+    })
+    expect((await load(version.id)).version.failureCode).toBe('enqueue_failed')
+  })
+})
+
+describe('classifyJobFailure', () => {
+  const SAMPLES: Array<[string, string]> = [
+    [
+      'This PDF is password-protected. Remove the password and upload it again. (pdfinfo exit 1)',
+      'password_protected',
+    ],
+    ['This file could not be read as a PDF. (pdfinfo exit 1: Syntax Error)', 'unreadable'],
+    ['This file could not be read as a PDF. (pdfinfo timed out after 120s)', 'unreadable'],
+    ['Processing timed out after retries.', 'timeout'],
+    ['Processing failed after retries: ocrmypdf timed out after 1800s: killed', 'timeout'],
+    ['Page processing timed out after retries.', 'timeout'],
+    ['Could not queue processing', 'enqueue_failed'],
+    ['Could not queue processing again', 'unknown'],
+    ['Processing failed after retries: blob original.pdf is missing', 'unknown'],
+    ['Processing failed after retries.', 'unknown'],
+    ['', 'unknown'],
+  ]
+
+  test.each(SAMPLES)('%s gives %s', (error, code) => {
+    expect(classifyJobFailure(error)).toBe(code)
+  })
+
+  test('agrees with the 0016 migration backfill on the same strings', async () => {
+    const { readFileSync } = await import('node:fs')
+    const migration = readFileSync(
+      join(__dirname, '../../../packages/db/drizzle/0016_version_processing_controls.sql'),
+      'utf8',
+    )
+    const backfill = migration.slice(migration.indexOf('UPDATE "document_versions"'))
+    const docs = await setupShow()
+    const { document } = await createDocument(
+      docs.deps.db,
+      docs.deps.blobs,
+      docs.jobs,
+      docs.ownerActor,
+      {
+        showId: docs.show.id,
+        kind: 'libretto',
+        title: 'backfill',
+        file: createReadStream(FIXTURES.librettoPdf),
+      },
+    )
+    const [template] = await docs.deps.db
+      .select()
+      .from(documentVersions)
+      .where(eq(documentVersions.documentId, document.id))
+    if (!template) throw new Error('no template version')
+    const ids = SAMPLES.map(() => newId())
+    await docs.deps.db.insert(documentVersions).values(
+      SAMPLES.map(([error], i) => ({
+        ...template,
+        id: ids[i] as string,
+        versionNumber: 100 + i,
+        status: 'failed' as const,
+        error,
+        failureCode: null,
+      })),
+    )
+    await docs.deps.db.execute(sql.raw(backfill))
+    const rows = await docs.deps.db
+      .select({ id: documentVersions.id, code: documentVersions.failureCode })
+      .from(documentVersions)
+      .where(eq(documentVersions.documentId, document.id))
+    for (const [i, [error]] of SAMPLES.entries()) {
+      const code = rows.find((r) => r.id === ids[i])?.code
+      expect(code, `backfill for ${JSON.stringify(error)}`).toBe(classifyJobFailure(error))
+    }
+  })
 })
 
 describe.skipIf(skip)('tool wrappers', () => {
