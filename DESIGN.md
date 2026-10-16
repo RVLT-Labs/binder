@@ -9,7 +9,7 @@ Binder is a sibling of RVLT Flow and inherits **RVLT Flow's `DESIGN.md` v1.1.1**
 - what Binder adds that Flow has no need for (the script page, cue markup, calling mode, the cue editor), and
 - where Binder deliberately differs, each with the reason.
 
-When this document is silent, Flow's is the answer. When a mockup and Flow's registry disagree on a component's shape or size (buttons are the main case: the mockups drew small rounded rectangles, the registry has pills), **the registry wins**: Binder must sit beside Flow as one family.
+When this document is silent, Flow's is the answer. **The approved mockups are the binding standard for how every screen looks** (Jayden, 2026-10-16: "make sure the designs are fully compliant with the mockups"): where a mockup and Flow's registry or this document disagree on a component's shape, size, colour, copy or placement, the mockup wins. Buttons are drawn as the mockups draw them (10 px radius, 30 px tall at desktop, 44 px on phones), not as the registry's pills, and red appears where the mockups put it. The only exceptions are the floors (11 px text, 44 px phone targets), accessible names the tests rely on, and details that need data Binder does not have yet; each is listed in the decisions log.
 
 ## 1. Product context
 
@@ -193,7 +193,9 @@ Lockups: in the app header, the tile and "Binder" in Archivo 800 with a "by RVLT
 | 2026-10-15 | Cue tags are Binder's own pills with underlines, not Cuelist's barred tags | Jayden: "I don't wanna exactly mimic Cuelist" |
 | 2026-10-15 | Fully mobile: tab bar inside a show, bottom sheet, cards for tables | Jayden: "I want the app's design to be fully mobile friendly" |
 | 2026-10-16 | Rings B as the app icon | Jayden's pick from six concepts |
-| 2026-10-16 | Registry components win over mockup shapes (pill buttons) | Binder sits beside Flow as one family |
+| 2026-10-16 | ~~Registry components win over mockup shapes (pill buttons)~~ superseded the same day | — |
+| 2026-10-16 | Mockups are the binding visual standard: their button shape, red usage, copy and layout win over the registry and over the one-red-per-view rule | Jayden: "make sure the designs are fully compliant with the mockups" |
 | 2026-10-16 | New department defaults retuned for ink on paper; red refused in the picker | Red is RVLT's alert colour and the M1 SM default was red |
-| 2026-10-16 | Inactive phone tab labels use `--muted`, not `--faint` | ~3:1 contrast is too low in a dark venue |
+| 2026-10-16 | Inactive phone tab labels use `--muted`, not `--faint` | ~3:1 contrast is too low in a dark venue (an accessibility floor, kept under the mockup rule) |
+| 2026-10-16 | Rail labels 11 px (mockup 10 px) | the 11 px floor |
 | 2026-10-16 | Fonts self-hosted | the installed app must render correctly offline |
