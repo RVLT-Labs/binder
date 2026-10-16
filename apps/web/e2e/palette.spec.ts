@@ -115,3 +115,29 @@ test('while it is open, c and ] place and select nothing', async ({ browser }) =
     await expect(page.locator('[data-cue-id][data-selected="true"]')).toHaveCount(0)
   })
 })
+
+test('"In the script" opens Find on that text, once: closing it and pressing / opens it empty', async ({
+  browser,
+}) => {
+  await withUsers(browser, ['owner'], async ([a]) => {
+    const { page } = a
+    await page.keyboard.press('Control+k')
+    const palette = page.getByRole('dialog', { name: 'Command palette' })
+    await palette.getByRole('combobox').fill('pirate')
+    const row = palette.getByRole('option', { name: /contain/ })
+    await expect(row).toContainText('pirate')
+    await row.click()
+    await expect(palette).toBeHidden()
+    const find = page.getByRole('searchbox', { name: 'Search document' })
+    await expect(find).toHaveValue('pirate')
+    await expect(page.getByRole('status').filter({ hasText: /result/ })).toBeVisible()
+
+    await find.press('Escape')
+    await expect(find).toBeHidden()
+    await page.keyboard.press('/')
+    await expect(find).toBeVisible()
+    await expect(find).toHaveValue('')
+    await expect(find).toBeFocused()
+    await expect(page.getByRole('list', { name: 'Search results' })).toHaveCount(0)
+  })
+})

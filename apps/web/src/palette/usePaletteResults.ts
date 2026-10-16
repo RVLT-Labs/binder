@@ -3,6 +3,7 @@ import { deptChrome, layerKey, type NumberFormat } from '@binder/shared'
 import { useQuery } from '@powersync/react'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
+import { modLabel } from '@/lib/modKey'
 import { parseAnchor } from '../markup/rows'
 import { useDepartments } from '../markup/useDepartments'
 import { useLayers } from '../markup/useLayers'
@@ -87,6 +88,21 @@ const CUES = 8
 /** Shortest text worth searching the script for. */
 export const MIN_SCRIPT_QUERY = 2
 
+/**
+ * The text "In the script" searches for. A cue-shaped query ("lx 12") searches its number ("12"),
+ * since a script has no "lx 12" in it; "lx" alone has no number and searches nothing. Words search as
+ * typed. Null when there is too little to search for.
+ */
+export function scriptQueryOf(
+  query: string,
+  departments: readonly MatchableDepartment[],
+): string | null {
+  const q = query.trim()
+  const parsed = parseCueQuery(q, departments)
+  const text = parsed ? parsed.prefix : q
+  return text.length >= MIN_SCRIPT_QUERY ? text : null
+}
+
 /** "p12", "page 12", "p. 12": a page, said as one. */
 const PAGE_WORDS = /^p(?:age)?\.?\s*(\d+)$/
 
@@ -146,8 +162,10 @@ export function buildPaletteResults(input: PaletteInput, env: PaletteEnv): Palet
       ) === parsed.prefix
     const matches = matchCues(query, cues, visible)
     const exactMatches = matches.filter(exact)
-    goTo.push(...exactMatches.slice(0, GO_TO_CUES).map((c) => cueResult(c, false)))
-    found.push(...matches.filter((c) => !exactMatches.includes(c)).map((c) => cueResult(c, true)))
+    // Exact matches past the few Go to has room for join the rest under Cues, in reading order.
+    const direct = exactMatches.slice(0, GO_TO_CUES)
+    goTo.push(...direct.map((c) => cueResult(c, false)))
+    found.push(...matches.filter((c) => !direct.includes(c)).map((c) => cueResult(c, true)))
   } else if (query.length >= MIN_SCRIPT_QUERY) {
     const words = query.toLowerCase().split(/\s+/)
     const sorted = [...cues]
@@ -177,25 +195,21 @@ export function buildPaletteResults(input: PaletteInput, env: PaletteEnv): Palet
   }
 
   const script: Result[] = []
-  if (
-    doc &&
-    input.scriptLines !== null &&
-    input.scriptLines > 0 &&
-    query.length >= MIN_SCRIPT_QUERY
-  ) {
+  const scriptText = scriptQueryOf(query, visible)
+  if (doc && scriptText !== null && input.scriptLines !== null && input.scriptLines > 0) {
     const n = input.scriptLines
     script.push({
       id: 'script',
-      label: `${n} ${n === 1 ? 'line contains' : 'lines contain'} “${query}”`,
+      label: `${n} ${n === 1 ? 'line contains' : 'lines contain'} “${scriptText}”`,
       detail: 'search',
       icon: 'search',
       parts: [
         { text: String(n), mono: true },
         { text: ` ${n === 1 ? 'line contains' : 'lines contain'} “`, joined: true },
-        { text: query, mono: true, joined: true },
+        { text: scriptText, mono: true, joined: true },
         { text: '”', joined: true },
       ],
-      run: () => env.searchScript(query),
+      run: () => env.searchScript(scriptText),
     })
   }
 
@@ -204,7 +218,7 @@ export function buildPaletteResults(input: PaletteInput, env: PaletteEnv): Palet
     actions.push({
       id: 'action:print',
       label: 'Print…',
-      hint: '⌘P',
+      hint: modLabel('P'),
       icon: 'print',
       parts: [{ text: 'Print…' }],
       run: env.print,
@@ -298,11 +312,14 @@ export function usePaletteResults(
 
   // The script: lines of the open document that contain the text, once the search has answered.
   const { search } = useDocumentSearch(document?.versionId ?? '')
-  const text = query.trim()
+  const text = scriptQueryOf(
+    query,
+    departments.filter((d) => !d.hidden),
+  )
   const [lines, setLines] = useState<{ query: string; count: number } | null>(null)
-  const searchable = enabled && document !== null && text.length >= MIN_SCRIPT_QUERY
+  const searchable = enabled && document !== null && text !== null
   useEffect(() => {
-    if (!searchable) {
+    if (!searchable || text === null) {
       setLines(null)
       return
     }

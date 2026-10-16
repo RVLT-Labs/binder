@@ -13,10 +13,11 @@ import {
 } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
-import { closeModal, modalIsOpen, openModal, restoreFocus } from '@/lib/modalDialog'
+import { closeModal, modalIsOpen, openModal } from '@/lib/modalDialog'
 import { cn } from '@/lib/utils'
 import {
   closePalette,
+  dismissPalette,
   isPaletteOpen,
   openPalette,
   paletteOpener,
@@ -61,7 +62,8 @@ export function CommandPalette({ showId }: { showId: string }) {
       // Another dialog (Print, Renumber) is its own context; the palette does not stack on it.
       if (!isPaletteOpen() && modalIsOpen()) return
       e.preventDefault()
-      if (isPaletteOpen()) closePalette()
+      if (e.repeat) return
+      if (isPaletteOpen()) dismissPalette()
       else openPalette()
     }
     window.addEventListener('keydown', onKeyDown)
@@ -112,9 +114,8 @@ function PaletteBody({ showId }: { showId: string }) {
   }, [])
 
   function dismiss() {
-    closePalette()
-    if (ran.current) return
-    restoreFocus(paletteOpener())
+    if (ran.current) closePalette()
+    else dismissPalette()
   }
 
   function run(result: Result) {

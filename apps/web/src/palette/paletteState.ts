@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { restoreFocus } from '@/lib/modalDialog'
 
 /**
  * Whether the command palette is open, and who opened it. A module store rather than React state
@@ -34,10 +35,17 @@ export function closePalette(): void {
   emit()
 }
 
-export const isPaletteOpen = (): boolean => open
-
 /** The control that had focus when the palette opened, if it is still on the page. */
 export const paletteOpener = (): HTMLElement | null => (opener?.isConnected ? opener : null)
+
+/** Closes the palette as Escape does: focus goes back to the control that opened it. */
+export function dismissPalette(): void {
+  const back = paletteOpener()
+  closePalette()
+  restoreFocus(back)
+}
+
+export const isPaletteOpen = (): boolean => open
 
 export const usePaletteOpen = (): boolean => useSyncExternalStore(subscribe, () => open)
 

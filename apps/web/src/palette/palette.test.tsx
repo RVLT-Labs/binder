@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { modLabel } from '@/lib/modKey'
 import { installDialogPolyfill, pressEscapeIn } from '../test/dialog'
 import { CommandPalette } from './CommandPalette'
 import { matchCues, parseCueQuery } from './matchCues'
@@ -10,6 +11,7 @@ import {
   type PaletteDepartment,
   type PaletteEnv,
   type PaletteInput,
+  scriptQueryOf,
 } from './usePaletteResults'
 
 const LX: PaletteDepartment = {
@@ -185,6 +187,41 @@ describe('buildPaletteResults', () => {
     expect(outside.script).toEqual([])
   })
 
+  it('a cue-shaped query searches the script for its number, "lx 12" as "12"', () => {
+    const e = env()
+    const found = buildPaletteResults(input({ query: 'lx 12', scriptLines: 3 }), e)
+    expect(labels(found.script)).toEqual(['3 lines contain “12”'])
+    found.script[0].run()
+    expect(e.searchScript).toHaveBeenCalledWith('12')
+    const bare = buildPaletteResults(input({ query: '12', scriptLines: 3 }), env())
+    expect(labels(bare.script)).toEqual(['3 lines contain “12”'])
+  })
+
+  it('"lx" alone has no number, so it searches nothing; one character is too little', () => {
+    expect(scriptQueryOf('lx', DEPARTMENTS)).toBeNull()
+    expect(scriptQueryOf('lx 1', DEPARTMENTS)).toBeNull()
+    expect(scriptQueryOf('lx 12', DEPARTMENTS)).toBe('12')
+    expect(scriptQueryOf(' wind ', DEPARTMENTS)).toBe('wind')
+    expect(scriptQueryOf('', DEPARTMENTS)).toBeNull()
+    expect(buildPaletteResults(input({ query: 'lx', scriptLines: 3 }), env()).script).toEqual([])
+  })
+
+  it("exact matches beyond Go to's three go to Cues, in reading order", () => {
+    const codes = ['A', 'B', 'C', 'D', 'E']
+    const departments: PaletteDepartment[] = codes.map((code) => ({
+      ...LX,
+      id: code.toLowerCase(),
+      code,
+    }))
+    const cues = codes.map((code, i) => cue(code.toLowerCase(), 12, 0, `Cue ${code}`, 4 - i))
+    const groups = buildPaletteResults(input({ query: '12', cues, departments }), env())
+    const cueRows = (rs: Array<{ id: string; label: string }>) =>
+      labels(rs.filter((r) => r.id.startsWith('cue:')))
+    // reading order is page order: E (page 1), D, C, B, A (page 5)
+    expect(cueRows(groups.goTo)).toEqual(['E 12 · Cue E', 'D 12 · Cue D', 'C 12 · Cue C'])
+    expect(labels(groups.cues)).toEqual(['B 12 · Cue B', 'A 12 · Cue A'])
+  })
+
   it('words also find cues by their label, under Cues', () => {
     const groups = buildPaletteResults(input({ query: 'deck wash' }), env())
     expect(groups.goTo).toEqual([])
@@ -199,7 +236,7 @@ describe('buildPaletteResults', () => {
       'Hide LX layer',
       'Hide SND layer',
     ])
-    expect(actions[0].hint).toBe('⌘P')
+    expect(actions[0].hint).toBe(modLabel('P'))
     expect(labels(actions)).not.toContain('Switch to calling mode')
   })
 
@@ -383,6 +420,21 @@ describe('CommandPalette', () => {
     expect((state.e as PaletteEnv).goToCue).toHaveBeenCalledWith(
       expect.objectContaining({ major: 120 }),
     )
+  })
+
+  it('⌘K while it is open closes it and focus goes back, as Escape does; a held key does nothing', () => {
+    render(<Page />)
+    const opener = screen.getByRole('button', { name: 'before' })
+    opener.focus()
+    key(document.body, 'k', { metaKey: true, repeat: true })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    key(document.body, 'k', { metaKey: true })
+    expect(document.activeElement).toBe(input$())
+    key(input$(), 'k', { metaKey: true, repeat: true })
+    expect(palette()).toBeTruthy()
+    key(input$(), 'k', { metaKey: true })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(opener)
   })
 
   it('Escape closes it and focus goes back to the control that opened it', () => {

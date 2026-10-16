@@ -43,6 +43,7 @@ export function PaletteDocumentHostRegistration({
       if (e.defaultPrevented || modalIsOpen() || isPaletteOpen()) return
       // The browser would print the app's chrome; Binder's own Print is what ⌘P means here.
       e.preventDefault()
+      if (e.repeat) return
       latest.current.onPrint(
         document.activeElement instanceof HTMLElement ? document.activeElement : null,
       )

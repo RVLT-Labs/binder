@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Kbd } from '@/components/ui/kbd'
+import { modLabel } from '@/lib/modKey'
 import { cn } from '@/lib/utils'
 
 export interface StatusBarProps {
@@ -22,7 +23,6 @@ const KEYS: Array<[key: string, does: string]> = [
   ['c', 'place'],
   [']', 'next cue'],
   ['g', 'go to page'],
-  ['⌘K', 'anything'],
 ]
 
 /**
@@ -102,7 +102,7 @@ export function StatusBar({
         {children}
         <span className="hidden items-center gap-3 min-[1025px]:flex">
           <span aria-hidden className="h-[18px] w-px bg-line" />
-          {KEYS.map(([key, does]) => (
+          {[...KEYS, [modLabel('K'), 'anything'] as const].map(([key, does]) => (
             <span key={key} className="flex items-center gap-1.5 whitespace-nowrap">
               <Kbd>{key}</Kbd>
               {does}

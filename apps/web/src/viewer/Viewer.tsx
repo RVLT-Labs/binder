@@ -259,6 +259,8 @@ export function Viewer({
 
   const closeFind = useCallback(() => {
     setFindOpen(false)
+    // A search the palette asked for was this card's to run once: opening it again starts empty.
+    setFindSeed(null)
     setHits([])
     setActiveHit(null)
     const back = findOpener.current
