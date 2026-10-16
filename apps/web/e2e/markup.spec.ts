@@ -265,7 +265,7 @@ test("an owner sets SND to the right and an SND cue's tag renders in the right m
     // Everyone's markers come from the show's settings, which the owner changes on the settings page.
     const settings = await a.context.newPage()
     await settings.goto(`/shows/${sharedShow.id}/settings`)
-    const sndSide = settings.getByRole('group', { name: 'SND', exact: true })
+    const sndSide = settings.getByRole('radiogroup', { name: 'SND marker side' })
     await expect(sndSide.getByRole('radio', { name: 'Left' })).toBeChecked({ timeout: 20_000 })
     let id = ''
     try {

@@ -171,6 +171,14 @@ export const BackIcon = icon('back', <path d="M15 5l-7 7 7 7" />)
 export const ChevronRightIcon = icon('chev', <path d="M9 5l7 7-7 7" />)
 export const ChevronDownIcon = icon('down', <path d="M6 9l6 6 6-6" />)
 export const CheckIcon = icon('check', <path d="M5 12.5l4.5 4.5L19 7.5" />)
+export const PlusIcon = icon('plus', <path d="M12 5v14M5 12h14" />)
+export const CopyIcon = icon(
+  'copy',
+  <>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V6a2 2 0 012-2h9" />
+  </>,
+)
 export const CloseIcon = icon('x', <path d="M6 6l12 12M18 6L6 18" />)
 export const SettingsIcon = icon(
   'gear',

@@ -1,22 +1,15 @@
 import { act, fireEvent, render, within } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { MarkerSideEditor } from './MarkerSideEditor'
+import { MarkerSideControl, useMarkerSides } from './MarkerSideEditor'
 
 let settings: string | null
-const departments = [
-  { id: 'd-lx', show_id: 's1', code: 'LX', name: 'Lighting', hidden: 0, sort_order: 0 },
-  { id: 'd-snd', show_id: 's1', code: 'SND', name: 'Sound', hidden: 0, sort_order: 10 },
-  { id: 'd-old', show_id: 's1', code: 'OLD', name: 'Old', hidden: 1, sort_order: 20 },
-]
 const db = {
   execute: vi.fn(async (_sql: string, _params: unknown[]) => {}),
   getOptional: vi.fn(async () => ({ settings })),
 }
 vi.mock('@powersync/react', () => ({
   usePowerSync: () => db,
-  useQuery: (sql: string) => ({
-    data: sql.includes('FROM departments') ? departments : [{ settings }],
-  }),
+  useQuery: () => ({ data: [{ settings }] }),
 }))
 
 beforeEach(() => {
@@ -24,21 +17,43 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-const group = (r: ReturnType<typeof render>, code: string) => r.getByRole('group', { name: code })
+/** The departments table's marker side cells, wired to the show's settings. */
+function Cells({ ids }: { ids: Array<{ id: string; code: string }> }) {
+  const sides = useMarkerSides('s1')
+  return (
+    <>
+      {ids.map((d) => (
+        <MarkerSideControl
+          key={d.id}
+          code={d.code}
+          side={sides.sideOf(d.id)}
+          onChange={(side) => void sides.setSide(d.id, side)}
+        />
+      ))}
+    </>
+  )
+}
+const DEPARTMENTS = [
+  { id: 'd-lx', code: 'LX' },
+  { id: 'd-snd', code: 'SND' },
+]
 
-test('an owner sees every visible department, left unless the show says right', () => {
+const group = (r: ReturnType<typeof render>, code: string) =>
+  r.getByRole('radiogroup', { name: `${code} marker side` })
+const checked = (el: HTMLElement) => el.getAttribute('aria-checked') === 'true'
+
+test('each department is a Left / Right segmented control, left unless the show says right', () => {
   settings = '{"markerSides":{"d-snd":"right"}}'
-  const r = render(<MarkerSideEditor showId="s1" editable />)
-  expect(r.queryByRole('group', { name: 'OLD' })).toBeNull()
+  const r = render(<Cells ids={DEPARTMENTS} />)
   const lx = within(group(r, 'LX'))
-  expect((lx.getByRole('radio', { name: 'Left' }) as HTMLInputElement).checked).toBe(true)
-  expect((lx.getByRole('radio', { name: 'Right' }) as HTMLInputElement).checked).toBe(false)
+  expect(checked(lx.getByRole('radio', { name: 'Left' }))).toBe(true)
+  expect(checked(lx.getByRole('radio', { name: 'Right' }))).toBe(false)
   const snd = within(group(r, 'SND'))
-  expect((snd.getByRole('radio', { name: 'Right' }) as HTMLInputElement).checked).toBe(true)
+  expect(checked(snd.getByRole('radio', { name: 'Right' }))).toBe(true)
 })
 
 test('the owner picks a side; it is saved through the show update and other settings survive', async () => {
-  const r = render(<MarkerSideEditor showId="s1" editable />)
+  const r = render(<Cells ids={DEPARTMENTS} />)
   await act(async () => {
     fireEvent.click(within(group(r, 'SND')).getByRole('radio', { name: 'Right' }))
   })
@@ -52,7 +67,7 @@ test('the owner picks a side; it is saved through the show update and other sett
 })
 
 test('the latest settings are read just before writing, so another key or side is not overwritten', async () => {
-  const r = render(<MarkerSideEditor showId="s1" editable />)
+  const r = render(<Cells ids={DEPARTMENTS} />)
   // Another device changed settings after this render.
   settings = '{"paperSize":"Letter","markerSides":{"d-lx":"right"}}'
   await act(async () => {
@@ -62,12 +77,4 @@ test('the latest settings are read just before writing, so another key or side i
     paperSize: 'Letter',
     markerSides: { 'd-lx': 'right', 'd-snd': 'right' },
   })
-})
-
-test('a non-owner reads the sides and cannot change them', () => {
-  settings = '{"markerSides":{"d-snd":"right"}}'
-  const r = render(<MarkerSideEditor showId="s1" editable={false} />)
-  expect(r.queryAllByRole('radio')).toHaveLength(0)
-  const items = within(r.getByRole('list', { name: 'Tag sides' })).getAllByRole('listitem')
-  expect(items.map((i) => i.textContent)).toEqual(['LX: left', 'SND: right'])
 })

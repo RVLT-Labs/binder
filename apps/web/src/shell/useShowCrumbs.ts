@@ -70,7 +70,8 @@ export function useShowCrumbs(showId: string, showTitle: string | undefined): Cr
   }
   const label = (leaf && LEAF_LABELS[leaf]) || 'Show'
   const viaMore = leaf === '/shows/$showId/exports' || leaf === '/shows/$showId/settings'
-  return viaMore
-    ? [shows(false), show(false), more, { label }]
-    : [shows(false), show(false), { label }]
+  // the phone's title is the mockup's "Show settings"; the trail says "Settings"
+  const current: Crumb =
+    leaf === '/shows/$showId/settings' ? { label, phoneLabel: 'Show settings' } : { label }
+  return viaMore ? [shows(false), show(false), more, current] : [shows(false), show(false), current]
 }
