@@ -72,3 +72,12 @@ test('the toggle flips the sheet', () => {
   act(() => result.current.toggle())
   expect(result.current.open).toBe(false)
 })
+
+test('it says who opened the panel: a selection, or a choice', () => {
+  const { result } = setup()
+  act(() => select('cues', 'c1'))
+  expect(result.current.openedBy()).toBe('selection')
+  act(() => result.current.onOpenChange(false))
+  act(() => result.current.openTab('layers'))
+  expect(result.current.openedBy()).toBe('choice')
+})

@@ -8,8 +8,10 @@ import { Segmented } from '@/components/ui/segmented'
 import { cn } from '@/lib/utils'
 import { pushNotice } from '../components/noticeStore'
 import { relativeTime } from '../history/relative'
+import { useNow } from '../history/useNow'
 import { Field, FieldError, Note, SelectField, StatusPill, Swatch } from '../panel/fields'
 import type { Database } from '../powersync/schema'
+import { usePresencePeers } from '../presence/PresenceProvider'
 import { useBreakpoint } from '../shell/useBreakpoint'
 import { CommitInput, leaveFieldOnEscape } from './CommitInput'
 import { useMarkupSession } from './MarkupSession'
@@ -43,6 +45,9 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
   const session = useMarkupSession()
   const db = usePowerSync()
   const phone = useBreakpoint() === 'phone'
+  // who else is here, by name, for "edited by"; and the clock that keeps its time counting
+  const { peers } = usePresencePeers()
+  const now = useNow()
   const { data } = useQuery<CueRow>('SELECT * FROM cues WHERE id = ?', [cueId])
   const [numberError, setNumberError] = useState<string | null>(null)
   const ids = useId()
@@ -135,9 +140,11 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
       </p>
     </Field>
   )
-  const edited =
-    row.updated_at &&
-    `edited by ${row.updated_by && row.updated_by === session.userId ? 'you' : 'a teammate'} · ${relativeTime(row.updated_at)}`
+  const editor =
+    row.updated_by && row.updated_by === session.userId
+      ? 'you'
+      : (peers.find((p) => p.userId === row.updated_by)?.name ?? 'a teammate')
+  const edited = row.updated_at && `edited by ${editor} · ${relativeTime(row.updated_at, now)}`
 
   return (
     // Escape in a field (a choice here; text fields cancel their draft first) leaves the field and

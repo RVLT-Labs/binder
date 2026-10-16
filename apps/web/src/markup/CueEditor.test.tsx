@@ -18,8 +18,13 @@ vi.mock('@powersync/react', () => ({
   usePowerSync: () => ({}),
   useQuery: () => ({ data: [row] }),
 }))
+const h = vi.hoisted(() => ({ peers: [] as Array<{ userId: string; name: string }> }))
+vi.mock('../presence/PresenceProvider', () => ({
+  usePresencePeers: () => ({ peers: h.peers, connected: true }),
+}))
 vi.mock('./MarkupSession', () => ({
   useMarkupSession: () => ({
+    userId: 'me',
     departments: [{ id: 'lx', code: 'LX', name: 'Lighting', number_format: 'decimal' }],
     editable: [{ kind: 'department', id: 'lx' }],
     whyCantEdit: () => null,
@@ -135,4 +140,20 @@ test('Escape in the Number field clears a stale error as it restores the stored 
   expect(number.value).toBe('10')
   expect(queryByRole('alert')).toBeNull()
   expect(updateCue).not.toHaveBeenCalled()
+})
+
+test('"edited by" names the person from presence, says you for yourself, and a teammate otherwise', () => {
+  row.updated_at = new Date().toISOString()
+  row.updated_by = 'u2'
+  const { container, rerender } = render(<CueEditor cueId="c1" />)
+  expect(container.textContent).toContain('edited by a teammate · just now')
+  h.peers = [{ userId: 'u2', name: 'Oli' }]
+  rerender(<CueEditor cueId="c2" />)
+  expect(container.textContent).toContain('edited by Oli · just now')
+  row.updated_by = 'me'
+  rerender(<CueEditor cueId="c3" />)
+  expect(container.textContent).toContain('edited by you')
+  delete row.updated_at
+  delete row.updated_by
+  h.peers = []
 })

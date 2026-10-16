@@ -25,8 +25,8 @@ export interface ListPage {
 export interface PageListHandle {
   /** Scrolls so the top of page `index` (zero-based) is at the top of the list. */
   scrollToPage(index: number): void
-  /** Scrolls so a point `top` CSS pixels below the top of page `index` sits a third of the way down the view. */
-  scrollToPoint(index: number, top: number): void
+  /** Scrolls so a point `top` CSS pixels below the top of page `index` sits `at` (a third by default) of the way down the view. */
+  scrollToPoint(index: number, top: number, at?: number): void
   /** The page under the middle of the view, and the point of it there (displayed points, y up). */
   visibleCentre(): { pageIndex: number; y: number } | null
 }
@@ -118,10 +118,11 @@ export function PageList({
     ref,
     () => ({
       scrollToPage: (index) => virtualizer.scrollToIndex(index, { align: 'start' }),
-      scrollToPoint: (index, top) => {
+      scrollToPoint: (index, top, at = 1 / 3) => {
         const view = scroller.current?.clientHeight ?? 0
-        const at = slotStart(heightBefore[index], index, zoom) + SLOT_PADDING_TOP + top - view / 3
-        virtualizer.scrollToOffset(Math.max(0, at))
+        const offset =
+          slotStart(heightBefore[index], index, zoom) + SLOT_PADDING_TOP + top - view * at
+        virtualizer.scrollToOffset(Math.max(0, offset))
       },
       visibleCentre: () => {
         const el = scroller.current

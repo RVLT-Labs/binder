@@ -43,7 +43,10 @@ test('it is off, with the reason, when cues cannot be placed', () => {
   render(<PlaceCueButton />)
   const button = screen.getByRole('button', { name: 'Place cue' }) as HTMLButtonElement
   expect(button.disabled).toBe(true)
-  expect(button.title).toBe('This show is archived, so its markup is read-only.')
+  // the reason is text on the screen (touch has no hover), and the button is described by it
+  const reason = screen.getByText('This show is archived, so its markup is read-only.')
+  expect(button.getAttribute('aria-describedby')).toBe(reason.id)
+  expect(button.getAttribute('title')).toBeNull()
   fireEvent.click(button)
   expect(placeCue).not.toHaveBeenCalled()
 })

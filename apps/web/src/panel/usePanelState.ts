@@ -12,6 +12,8 @@ export interface PanelState {
   openTab: (tab: PanelTabId) => void
   /** The tablet's top bar toggle. */
   toggle: () => void
+  /** Who opened the panel now: a selection (the tag gets focus back) or a choice (the opener does). */
+  openedBy: () => 'selection' | 'choice'
   /** The sheet or drawer asked to close (Escape, a drag, Done). Closing what a selection opened deselects. */
   onOpenChange: (open: boolean) => void
 }
@@ -79,5 +81,6 @@ export function usePanelState({
     if (!next && openedBy.current === 'selection') clearSelection()
   }, [])
 
-  return { tab, setTab, open, openTab, toggle, onOpenChange }
+  const getOpenedBy = useCallback(() => openedBy.current, [])
+  return { tab, setTab, open, openTab, toggle, openedBy: getOpenedBy, onOpenChange }
 }

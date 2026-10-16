@@ -31,14 +31,24 @@ export interface ContextPanelProps {
   returnFocusTo?: HTMLElement | null | (() => HTMLElement | null)
   /** The tablet and phone dialogs' accessible name; the docked panel's landmark name. */
   label?: string
+  /**
+   * Phone only: draw a Done button (44 px) at the end of the tab row, for a tab that has none of its
+   * own (the editors carry one beside Delete). It closes the drawer like a drag does.
+   */
+  showDone?: boolean
 }
 
 /**
  * Escape in a text field of the panel belongs to the field (it throws the draft away and leaves
- * it); only an Escape from anywhere else closes the sheet.
+ * it); only an Escape from anywhere else closes the sheet. A select has no draft: it is blurred
+ * here, because the event is handled (so the editor's own handler skips it) and a second Escape,
+ * from the sheet itself, closes.
  */
 const keepOpenInFields = (e: KeyboardEvent) => {
-  if (isEditableTarget(document.activeElement)) e.preventDefault()
+  const at = document.activeElement
+  if (!isEditableTarget(at)) return
+  e.preventDefault()
+  if (at instanceof HTMLSelectElement) at.blur()
 }
 
 const resolve = (to: ContextPanelProps['returnFocusTo']) => (typeof to === 'function' ? to() : to)
@@ -59,7 +69,14 @@ function Pill({ n }: { n: number }) {
   )
 }
 
-function Body({ tabs, value, onValueChange, wide }: ContextPanelProps & { wide: boolean }) {
+function Body({
+  tabs,
+  value,
+  onValueChange,
+  wide,
+  showDone,
+  onOpenChange,
+}: ContextPanelProps & { wide: boolean }) {
   return (
     <TabsPrimitive.Root
       value={value}
@@ -70,22 +87,33 @@ function Body({ tabs, value, onValueChange, wide }: ContextPanelProps & { wide: 
       className="flex min-h-0 flex-1 flex-col"
       data-wide={wide || undefined}
     >
-      <TabsPrimitive.List
-        aria-label="Panel"
-        className="flex shrink-0 gap-0.5 border-b border-line px-2.5 pt-2 md:max-[1024px]:pt-2.5"
-      >
-        {tabs.map((tab) => (
-          <TabsPrimitive.Trigger key={tab.id} value={tab.id} className={TAB}>
-            {tab.label}
-            {tab.badge ? (
-              <>
-                {/* the space is for the accessible name: "Review 4", not "Review4" */}{' '}
-                <Pill n={tab.badge} />
-              </>
-            ) : null}
-          </TabsPrimitive.Trigger>
-        ))}
-      </TabsPrimitive.List>
+      <div className="flex shrink-0 items-end justify-between border-b border-line">
+        <TabsPrimitive.List
+          aria-label="Panel"
+          className="flex min-w-0 gap-0.5 px-2.5 pt-2 md:max-[1024px]:pt-2.5"
+        >
+          {tabs.map((tab) => (
+            <TabsPrimitive.Trigger key={tab.id} value={tab.id} className={TAB}>
+              {tab.label}
+              {tab.badge ? (
+                <>
+                  {/* the space is for the accessible name: "Review 4", not "Review4" */}{' '}
+                  <Pill n={tab.badge} />
+                </>
+              ) : null}
+            </TabsPrimitive.Trigger>
+          ))}
+        </TabsPrimitive.List>
+        {showDone && (
+          <button
+            type="button"
+            className="mr-2 inline-flex min-h-11 shrink-0 items-center rounded-[8px] px-3 font-sans text-[14px] font-semibold text-ink hover:bg-elev focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red"
+            onClick={() => onOpenChange(false)}
+          >
+            Done
+          </button>
+        )}
+      </div>
       {tabs.map((tab) => (
         <TabsPrimitive.Content
           key={tab.id}

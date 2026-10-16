@@ -40,6 +40,19 @@ import { ThumbnailRail } from './ThumbnailRail'
 import { usePdfDocument } from './usePdfDocument'
 import { ViewerToolbar } from './ViewerToolbar'
 
+/** The width of a classic scrollbar here (0 where scrollbars overlay the content). */
+let measuredScrollbar: number | null = null
+function scrollbarWidth(): number {
+  if (measuredScrollbar !== null) return measuredScrollbar
+  const probe = document.createElement('div')
+  probe.style.cssText =
+    'position:absolute;top:-9999px;width:100px;height:100px;overflow:scroll;visibility:hidden'
+  document.body.append(probe)
+  measuredScrollbar = probe.offsetWidth - probe.clientWidth
+  probe.remove()
+  return measuredScrollbar
+}
+
 /** How long the view rests on a page before the URL follows it. */
 const URL_SETTLE_MS = 250
 
@@ -87,7 +100,7 @@ export interface ViewerProps {
 
 export interface ViewerHandle {
   /** Scrolls a point of a page (displayed y, in points) into view. */
-  scrollToPoint(pageIndex: number, y: number): void
+  scrollToPoint(pageIndex: number, y: number, at?: number): void
   /** Focuses the toolbar's page input. */
   focusPageInput(): void
   /** Opens the Find card (if it is closed) and focuses its search box. */
@@ -149,19 +162,46 @@ export function Viewer({
     : breakpoint === 'tablet'
       ? TABLET_PAGE_GUTTER
       : PAGE_GUTTER
+  /** The zoom is the fit-width one (opening, Fit width), so a change of stage width re-fits it. */
+  const fitted = useRef(true)
   const fit = useCallback(() => {
     const stage = area.current
     // Desktop keeps room for a classic scrollbar. A tablet or phone has overlay ones (the mockups
     // fill the width to the gutters); a classic one on a narrow desktop window is measured.
-    const list = stage?.querySelector<HTMLElement>('.page-list')
-    const room =
-      breakpoint === 'desktop' ? SCROLLBAR_ROOM : list ? list.offsetWidth - list.clientWidth : 0
+    const room = breakpoint === 'desktop' ? SCROLLBAR_ROOM : scrollbarWidth()
     return fitWidthZoom((stage?.clientWidth ?? 0) - fitAllowance(gutter, room), widest)
   }, [widest, gutter, breakpoint])
+  /** A zoom the user chose: it stays when the stage changes width. */
+  const zoomTo = useCallback((next: number | ((z: number | null) => number)) => {
+    fitted.current = false
+    setZoom(next)
+  }, [])
+  /** Fit width: the zoom follows the stage from here on. */
+  const fitWidth = useCallback(() => {
+    fitted.current = true
+    setZoom(fit())
+  }, [fit])
   // Open at fit width, measured before the first paint so pages never render at a throwaway zoom.
   useLayoutEffect(() => {
     if (zoom === null) setZoom(fit())
   }, [zoom, fit])
+  // The stage changes width without a window resize (the Review tab widens the docked panel from
+  // 300 to 420 px, a sheet or the thumbnails open): a page still at fit width follows it.
+  const hasZoom = zoom !== null
+  useEffect(() => {
+    const stage = area.current
+    if (!hasZoom || !stage) return
+    if (fitted.current) setZoom(fit())
+    if (typeof ResizeObserver === 'undefined') return
+    let width = stage.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (stage.clientWidth === width) return
+      width = stage.clientWidth
+      if (fitted.current) setZoom(fit())
+    })
+    observer.observe(stage)
+    return () => observer.disconnect()
+  }, [hasZoom, fit])
 
   useEffect(() => {
     const timer = setTimeout(() => onPageChange(current + 1), URL_SETTLE_MS)
@@ -181,10 +221,10 @@ export function Viewer({
   useImperativeHandle(
     ref,
     () => ({
-      scrollToPoint(pageIndex, y) {
+      scrollToPoint(pageIndex, y, at) {
         const page = pages[pageIndex]
         if (!page || zoom === null) return
-        if (list.current) list.current.scrollToPoint(pageIndex, (page.height - y) * zoom)
+        if (list.current) list.current.scrollToPoint(pageIndex, (page.height - y) * zoom, at)
         else goTo(pageIndex)
       },
       focusPageInput: () => pageInput.current?.focus(),
@@ -269,17 +309,17 @@ export function Viewer({
     e.preventDefault()
     if (action === 'nextPage') goTo(current + 1)
     else if (action === 'prevPage') goTo(current - 1)
-    else if (action === 'zoomIn') setZoom(zoomIn(zoom))
-    else if (action === 'zoomOut') setZoom(zoomOut(zoom))
-    else setZoom(fit())
+    else if (action === 'zoomIn') zoomTo(zoomIn(zoom))
+    else if (action === 'zoomOut') zoomTo(zoomOut(zoom))
+    else fitWidth()
   }
 
   const controls = (
     <ViewerToolbar
       zoom={zoom ?? 1}
-      onZoomIn={() => setZoom((z) => zoomIn(z ?? 1))}
-      onZoomOut={() => setZoom((z) => zoomOut(z ?? 1))}
-      onFitWidth={() => setZoom(fit())}
+      onZoomIn={() => zoomTo((z) => zoomIn(z ?? 1))}
+      onZoomOut={() => zoomTo((z) => zoomOut(z ?? 1))}
+      onFitWidth={fitWidth}
       pageNumber={current + 1}
       pageCount={pages.length}
       onGoToPage={(n) => goTo(n - 1)}
@@ -334,7 +374,9 @@ export function Viewer({
           {!phone && tools}
           {findOpen && (
             <SearchPanel
-              className="absolute top-3 right-6 z-20 w-[min(20rem,calc(100%-2rem))] max-md:right-4"
+              // At tablet width the context sheet (360 px) can be open over the stage's right edge:
+              // the card sits left of it, never behind it.
+              className="absolute top-3 right-6 z-20 w-[min(20rem,calc(100%-2rem))] max-md:right-4 md:max-[1024px]:right-[calc(360px+1.5rem)]"
               inputRef={searchInput}
               search={documentSearch.search}
               loading={documentSearch.loading}

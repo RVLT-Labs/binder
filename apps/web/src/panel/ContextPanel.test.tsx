@@ -338,3 +338,69 @@ test('c typed in a panel text field is not a place-cue shortcut: the gate is isE
   expect(placeCue).toHaveBeenCalledTimes(1)
   window.removeEventListener('keydown', onKey)
 })
+
+test('Escape in a select blurs it and keeps the sheet; a second Escape closes it', () => {
+  setWidth(834)
+  const onOpenChange = vi.fn()
+  render(
+    <ContextPanel
+      tabs={[
+        {
+          id: 'cue',
+          label: 'Cue',
+          content: (
+            <select aria-label="Layer">
+              <option>LX</option>
+            </select>
+          ),
+        },
+      ]}
+      value="cue"
+      onValueChange={() => {}}
+      open
+      onOpenChange={onOpenChange}
+    />,
+  )
+  const select = screen.getByLabelText('Layer')
+  select.focus()
+  fireEvent.keyDown(select, { key: 'Escape' })
+  expect(onOpenChange).not.toHaveBeenCalled()
+  expect(document.activeElement).not.toBe(select)
+  fireEvent.keyDown(document.body, { key: 'Escape' })
+  expect(onOpenChange).toHaveBeenCalledWith(false)
+})
+
+test('phone: showDone draws a 44 px Done in the tab row for every tab, and it closes the drawer', () => {
+  setWidth(390)
+  const onOpenChange = vi.fn()
+  render(
+    <ContextPanel
+      tabs={tabs()}
+      value="layers"
+      onValueChange={() => {}}
+      open
+      onOpenChange={onOpenChange}
+      showDone
+    />,
+  )
+  const done = screen.getByRole('button', { name: 'Done' })
+  expect(done.className).toContain('min-h-11')
+  // not a child of the tablist: a tablist holds tabs
+  expect(done.closest('[role="tablist"]')).toBeNull()
+  fireEvent.click(done)
+  expect(onOpenChange).toHaveBeenCalledWith(false)
+})
+
+test('without showDone there is no Done of the panel', () => {
+  setWidth(390)
+  render(
+    <ContextPanel
+      tabs={tabs()}
+      value="cue"
+      onValueChange={() => {}}
+      open
+      onOpenChange={() => {}}
+    />,
+  )
+  expect(screen.queryByRole('button', { name: 'Done' })).toBeNull()
+})

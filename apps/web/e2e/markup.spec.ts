@@ -700,6 +700,16 @@ test('on a phone the page fills the width, Place cue opens the drawer, and Done 
         return (tag?.y ?? 1e9) + (tag?.height ?? 0)
       })
       .toBeLessThan(box?.y ?? 0)
+    // Opening "More fields" grows the drawer over where the tag was: the page follows it up.
+    await drawer.getByText('More fields').click()
+    await expect
+      .poll(async () => {
+        const tag = await marker(page, id).locator('rect.cue-tag-body').boundingBox()
+        const sheetBox = await drawer.boundingBox()
+        return (sheetBox?.y ?? 0) - ((tag?.y ?? 1e9) + (tag?.height ?? 0))
+      })
+      .toBeGreaterThan(0)
+    await drawer.getByText('More fields').click()
 
     // Edit the label in the drawer, then Done: it closes, and the tag has the focus.
     await drawer.getByLabel('Label').fill('Phone cue')
@@ -734,6 +744,137 @@ test('on a phone the page fills the width, Place cue opens the drawer, and Done 
         await window.__binder?.db.execute('DELETE FROM cues WHERE id = ?', [cueId])
       }, id)
     }
+    await context.close()
+  }
+})
+
+test('opening the Review tab widens the panel to 420 and the page re-fits: no sideways scroll, a chosen zoom stays', async ({
+  browser,
+}) => {
+  await withUsers(browser, ['owner'], async ([a]) => {
+    const pages = a.page.getByRole('region', { name: 'Pages' })
+    const sheet = a.page.locator('.page-sheet').first()
+    const stage = a.page.locator('.viewer-pages')
+    const inside = async () => {
+      const [s, st] = await Promise.all([sheet.boundingBox(), stage.boundingBox()])
+      return (s?.x ?? 0) + (s?.width ?? 0) <= (st?.x ?? 0) + (st?.width ?? 0)
+    }
+    const noSideways = () => pages.evaluate((el) => el.scrollWidth <= el.clientWidth)
+    expect(await noSideways()).toBe(true)
+    const narrow = (await sheet.boundingBox())?.width ?? 0
+
+    await a.page.getByRole('tab', { name: /^Review/ }).click()
+    await expect.poll(noSideways).toBe(true)
+    await expect.poll(inside).toBe(true)
+    // the stage lost 120 px: the page is narrower, not scrolled under the panel
+    await expect.poll(async () => (await sheet.boundingBox())?.width ?? 0).toBeLessThan(narrow - 90)
+
+    // back to the Cue tab: the page grows into the room again
+    await a.page.getByRole('tab', { name: 'Cue' }).click()
+    await expect
+      .poll(async () => (await sheet.boundingBox())?.width ?? 0)
+      .toBeGreaterThan(narrow - 2)
+
+    // a zoom the user chose is theirs: widening the panel leaves it alone
+    await a.page.getByRole('button', { name: 'Zoom out' }).click()
+    const level = a.page.getByRole('toolbar', { name: 'Viewer' }).getByLabel('Zoom level')
+    const chosen = await level.textContent()
+    await a.page.getByRole('tab', { name: /^Review/ }).click()
+    await a.page.waitForTimeout(500)
+    await expect(level).toHaveText(chosen ?? '')
+  })
+})
+
+test('on a tablet the Find card opens beside the sheet, not behind it', async ({ browser }) => {
+  const { sharedShow, libretto, departments } = readRun()
+  const context = await browser.newContext({
+    storageState: storageStateFor('owner'),
+    viewport: { width: 834, height: 1194 },
+  })
+  const page = await context.newPage()
+  const id = randomUUID()
+  try {
+    await page.goto(`/shows/${sharedShow.id}/docs/${libretto.documentId}`)
+    await expect(page.locator('[data-page-index="0"] .markup-surface')).toBeVisible({
+      timeout: 30_000,
+    })
+    await page.evaluate(
+      async ({ id, show, doc, ver, dept }) => {
+        const now = new Date().toISOString()
+        const anchor = JSON.stringify({
+          documentId: doc,
+          documentVersionId: ver,
+          pageIndex: 0,
+          x: 120,
+          y: 600,
+          status: 'ok',
+        })
+        await window.__binder?.db.execute(
+          `INSERT INTO cues (id, show_id, department_id, major, minor, label, anchor, type, notes, colour, payload, created_at, updated_at, updated_by) VALUES (?, ?, ?, 77, 0, 'Find test', ?, 'go', '', NULL, '{}', ?, ?, NULL)`,
+          [id, show, dept, anchor, now, now],
+        )
+      },
+      {
+        id,
+        show: sharedShow.id,
+        doc: libretto.documentId,
+        ver: libretto.versionId,
+        dept: departments.LX,
+      },
+    )
+    await marker(page, id).locator('rect.cue-tag-body').click()
+    const sheet = page.getByRole('dialog', { name: 'Context panel' })
+    await expect(sheet).toBeVisible()
+    // `/` with the cue selected (focus is on its tag): the box must be where it can be seen
+    await page.keyboard.press('/')
+    const box = page.getByRole('searchbox', { name: 'Search document' })
+    await expect(box).toBeFocused()
+    await expect(box).toBeInViewport({ ratio: 1 })
+    expect(
+      await box.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === el
+      }),
+    ).toBe(true)
+    const [boxRect, sheetRect] = await Promise.all([box.boundingBox(), sheet.boundingBox()])
+    expect((boxRect?.x ?? 0) + (boxRect?.width ?? 0)).toBeLessThanOrEqual(sheetRect?.x ?? 0)
+  } finally {
+    await page.evaluate(async (cueId) => {
+      await window.__binder?.db.execute('DELETE FROM cues WHERE id = ?', [cueId])
+    }, id)
+    await context.close()
+  }
+})
+
+test('on a phone a drawer opened from the menu has a Done, and focus goes back to the menu button', async ({
+  browser,
+}) => {
+  const { sharedShow, libretto } = readRun()
+  const context = await browser.newContext({
+    storageState: storageStateFor('owner'),
+    viewport: { width: 390, height: 844 },
+  })
+  const page = await context.newPage()
+  try {
+    await page.goto(`/shows/${sharedShow.id}/docs/${libretto.documentId}`)
+    await expect(page.locator('[data-page-index="0"] .markup-surface')).toBeVisible({
+      timeout: 30_000,
+    })
+    const menu = page.getByRole('button', { name: 'Document options' })
+    await menu.click()
+    await page.getByRole('button', { name: 'Layers', exact: true }).click()
+    const drawer = page.getByRole('dialog', { name: 'Context panel' })
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByRole('tab', { name: 'Layers' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    const done = drawer.getByRole('button', { name: 'Done' })
+    expect((await done.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+    await done.click()
+    await expect(drawer).toHaveCount(0)
+    await expect(menu).toBeFocused()
+  } finally {
     await context.close()
   }
 })

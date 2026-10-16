@@ -469,6 +469,7 @@ function ScriptPanel({
     if (!phone || !panel.open || !selectedId || !selectedTable) return
     let frame = 0
     let tries = 0
+    let observer: ResizeObserver | undefined
     const check = () => {
       const tag = selectedTag({ table: selectedTable, id: selectedId })
       const sheet = document.querySelector<HTMLElement>('[data-panel="drawer"]')
@@ -476,18 +477,32 @@ function ScriptPanel({
         if (tries++ < 30) frame = requestAnimationFrame(check)
         return
       }
+      if (!observer && typeof ResizeObserver !== 'undefined') {
+        // "More fields" or the tall Review tab can grow the drawer over a tag that was clear of it
+        observer = new ResizeObserver(check)
+        observer.observe(sheet)
+      }
       // the drawer slides in: its height is final, its position is not yet
       const top = window.innerHeight - sheet.offsetHeight
-      if (tag.getBoundingClientRect().bottom <= top - 8) return
+      const stage = document.querySelector('.viewer-pages')?.getBoundingClientRect().top ?? 0
+      const at = tag.getBoundingClientRect()
+      if (at.bottom <= top - 8 && at.top >= stage) return
       const { view, viewer } = latest.current
       const row =
         selectedTable === 'cues'
           ? view.ordered.find((c) => c.id === selectedId)
           : [...view.annotationsByPage.values()].flat().find((a) => a.id === selectedId)
-      if (row) viewer.current?.scrollToPoint(row.anchor.pageIndex, row.anchor.y)
+      // put it in the middle of what the drawer leaves of the stage
+      const stageEl = document.querySelector('.viewer-pages')?.getBoundingClientRect()
+      const band = Math.max(0, top - (stageEl?.top ?? 0))
+      const fraction = stageEl && stageEl.height > 0 ? band / 2 / stageEl.height : 1 / 3
+      if (row) viewer.current?.scrollToPoint(row.anchor.pageIndex, row.anchor.y, fraction)
     }
     frame = requestAnimationFrame(check)
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+    }
   }, [phone, panel.open, selectedId, selectedTable])
   const done = phone
     ? () => {
@@ -510,7 +525,9 @@ function ScriptPanel({
           )}
           {!selection && (
             <Note>
-              Select a cue or an annotation on the page to edit it, or press c to place one.
+              {phone
+                ? 'Select a cue or an annotation on the page to edit it. Close this and tap Place cue to add a cue.'
+                : 'Select a cue or an annotation on the page to edit it, or press c to place one.'}
             </Note>
           )}
           {/* the phone's sheet is the mockup's: Layers is its own tab there */}
@@ -560,12 +577,16 @@ function ScriptPanel({
       onValueChange={(id) => panel.setTab(id as PanelTabId)}
       open={panel.open}
       onOpenChange={panel.onOpenChange}
+      showDone={phone && !(panel.tab === 'cue' && selection)}
       returnFocusTo={() => {
-        // Closed from inside the panel (Done, Escape) or with focus gone: back to the tag. Closed by
-        // a control outside it (the tablet's toggle), that control keeps the focus it has.
+        // Closed from inside the panel (Done, Escape) or with focus gone: back to the tag that
+        // opened it, or to the menu button when a menu row did. Closed by a control outside it (the
+        // tablet's toggle), that control keeps the focus it has.
         const at = document.activeElement
         const inside = !at || at === document.body || at.closest('[data-panel]') !== null
-        return inside ? selectedTag(lastSelection.current) : null
+        if (!inside) return null
+        if (panel.openedBy() === 'selection') return selectedTag(lastSelection.current)
+        return document.querySelector<HTMLElement>('button[aria-label="Document options"]')
       }}
     />
   )

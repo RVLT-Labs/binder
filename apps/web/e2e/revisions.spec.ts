@@ -136,7 +136,11 @@ test('uploading a revision re-anchors, the header counts items to review, accept
     const owner = await open(browser, 'owner', contexts)
     const lx = await open(browser, 'lxEditor', contexts)
     // Nothing is moved yet, so there is nothing to review and no revision to compare.
-    await expect(owner.getByRole('tab', { name: 'Review', exact: true })).toBeVisible()
+    // The Review tab is there but carries no count pill.
+    const reviewTab = owner.getByRole('tab', { name: 'Review', exact: true })
+    await expect(reviewTab).toBeVisible()
+    await expect(reviewTab).toHaveText('Review')
+    await expect(reviewTab.locator('span')).toHaveCount(0)
 
     await owner.getByRole('button', { name: 'Upload revision' }).click()
     const dialog = owner.getByRole('dialog', { name: 'Upload revision' })
