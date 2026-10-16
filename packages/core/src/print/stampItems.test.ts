@@ -6,7 +6,7 @@ import {
   PERSONAL_LAYER_COLOUR,
   type WordLayer,
 } from '@binder/shared'
-import { expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { buildStampItems, type StampItem } from './stampItems'
 
 const departments = [
@@ -265,4 +265,71 @@ test("a cue carries its page's text block, so tags stay out of it", () => {
     { minX: 50, maxX: 570 },
     null,
   ])
+})
+
+describe('include filters', () => {
+  const cues = [
+    cue('go', { type: 'go' }),
+    cue('sb', { type: 'standby', major: 11 }),
+    cue('w', { type: 'warn', major: 12 }),
+  ]
+  const input = { ...base, layers: [dept('d-lx')], cues, annotations: [annotation('r')] }
+  const cueIds = (items: StampItem[]) => items.flatMap((i) => (i.kind === 'cue' ? [i.id] : []))
+
+  test('everything is included by default', () => {
+    const items = buildStampItems(input)
+    expect(cueIds(items)).toEqual(['go', 'sb', 'w'])
+    expect(annotations(items)).toHaveLength(1)
+    expect(buildStampItems({ ...input, include: {} })).toEqual(items)
+  })
+
+  test('standbyWarn false keeps only go cues', () => {
+    const items = buildStampItems({ ...input, include: { standbyWarn: false } })
+    expect(cueIds(items)).toEqual(['go'])
+    expect(annotations(items)).toHaveLength(1)
+  })
+
+  test('annotations false emits no annotation items', () => {
+    const items = buildStampItems({ ...input, include: { annotations: false } })
+    expect(annotations(items)).toHaveLength(0)
+    expect(cueIds(items)).toEqual(['go', 'sb', 'w'])
+  })
+})
+
+describe('cue notes', () => {
+  const noted = [
+    cue('a', { notes: 'Ride the pad  under the  dialogue', anchor: anchor({ pageIndex: 2 }) }),
+    cue('b', { notes: '   ', major: 11 }),
+    cue('c', { notes: '', major: 12 }),
+    cue('d', { notes: 'Late', type: 'standby', major: 13, departmentId: 'd-tm' }),
+  ]
+  const input = { ...base, layers: [dept('d-lx'), dept('d-tm')], cues: noted, annotations: [] }
+  const noteItems = (items: StampItem[]) => items.filter((i) => i.kind === 'cue-note')
+
+  test('a cue with a non-empty note gets one cue-note item in its department colour', () => {
+    expect(noteItems(buildStampItems(input))).toEqual([
+      {
+        kind: 'cue-note',
+        cueId: 'a',
+        pageIndex: 2,
+        text: 'Ride the pad under the dialogue',
+        colour: '#F5A623',
+      },
+      { kind: 'cue-note', cueId: 'd', pageIndex: 0, text: 'Late', colour: '#9B51E0' },
+    ])
+  })
+
+  test('cueNotes false emits none', () => {
+    expect(noteItems(buildStampItems({ ...input, include: { cueNotes: false } }))).toEqual([])
+  })
+
+  test('a filtered-out cue brings no note', () => {
+    const items = buildStampItems({ ...input, include: { standbyWarn: false } })
+    expect(noteItems(items).map((i) => (i.kind === 'cue-note' ? i.cueId : ''))).toEqual(['a'])
+    expect(
+      noteItems(buildStampItems({ ...input, layers: [dept('d-tm')] })).map((i) =>
+        i.kind === 'cue-note' ? i.cueId : '',
+      ),
+    ).toEqual(['d'])
+  })
 })

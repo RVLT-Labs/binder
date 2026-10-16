@@ -1,6 +1,6 @@
 import { degrees, PDFDocument, PDFName, PDFNumber } from 'pdf-lib'
 import { describe, expect, test } from 'vitest'
-import { pdfContent } from '../../test/pdfTexts'
+import { pdfContent, pdfTexts } from '../../test/pdfTexts'
 import type { StampItem } from './stampItems'
 import { displayedToUser, frameOf, stampScript } from './stampScript'
 
@@ -139,7 +139,7 @@ async function stampedContent(items: Parameters<typeof stampScript>[1]): Promise
   return c
 }
 
-const cueItem = (number: string): StampItem => ({
+const cueItem = (number: string): Extract<StampItem, { kind: 'cue' }> => ({
   kind: 'cue',
   id: 'n',
   pageIndex: 0,
@@ -219,4 +219,316 @@ test('a printed stamp is turned 3 degrees, in bold, with letter spacing', async 
   // Letter spacing .06em of 12 pt, in the bold face.
   expect(content).toMatch(/0\.72 Tc/)
   expect(content).toMatch(/\/Helvetica-Bold[-\d]* 12 Tf/)
+})
+
+/** `[x, y]` of every drawn string, from the Tm before its Tj, page content in drawing order. */
+function drawnText(content: string): Array<{ text: string; x: number; y: number; size: number }> {
+  const out: Array<{ text: string; x: number; y: number; size: number }> = []
+  let size = 0
+  for (const m of content.matchAll(
+    /\/\S+ ([\d.]+) Tf|[-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ ([-\d.]+) ([-\d.]+) Tm|<([0-9A-Fa-f\s]*)>\s*Tj/g,
+  )) {
+    if (m[1]) size = Number(m[1])
+    else if (m[2]) out.push({ text: '', x: Number(m[2]), y: Number(m[3]), size })
+    else if (m[4] !== undefined)
+      (out.at(-1) as { text: string }).text = Buffer.from(m[4].replace(/\s+/g, ''), 'hex').toString(
+        'latin1',
+      )
+  }
+  return out
+}
+
+const noteItem = (cueId: string, text: string): StampItem => ({
+  kind: 'cue-note',
+  cueId,
+  pageIndex: 0,
+  text,
+  colour: '#F5A623',
+})
+
+describe('cue notes', () => {
+  const stampedText = async (items: StampItem[]) => drawnText(await stampedContent(items))
+  const withId = (id: string, y: number, over: Partial<Extract<StampItem, { kind: 'cue' }>> = {}) =>
+    ({ ...cueItem('1'), id, y, ...over }) as StampItem
+  const at = (drawn: Awaited<ReturnType<typeof stampedText>>, text: string) =>
+    drawn.find((d) => d.text === text)
+
+  test('a note prints under its tag in 7 pt Helvetica in the department colour', async () => {
+    const content = await stampedContent([withId('a', 200), noteItem('a', 'Ride the pad')])
+    const drawn = drawnText(content)
+    const number = at(drawn, '1')
+    const note = at(drawn, 'Ride the pad')
+    if (!number || !note) throw new Error('missing text')
+    expect(note.size).toBe(7)
+    // Level with the tag's left edge (4 pt in), and below its number.
+    expect(note.x).toBeCloseTo(4)
+    expect(note.y).toBeLessThan(number.y - 7)
+    expect(note.y).toBeGreaterThan(200 - 7 - 9)
+    // The colour set before the note's Tj is the department's amber.
+    const before = content.slice(
+      0,
+      content.indexOf(`<${Buffer.from('Ride the pad').toString('hex')}`),
+    )
+    const m = [...before.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) rg/g)].at(-1) as RegExpMatchArray
+    expect([m[1], m[2], m[3]].map((v) => Math.round(Number(v) * 255))).toEqual([0xf5, 0xa6, 0x23])
+  })
+
+  test('two stacked tags with notes do not overlap', async () => {
+    const drawn = await stampedText([
+      withId('a', 200, { number: '10' }),
+      noteItem('a', 'first note'),
+      withId('b', 200, { number: '11', sortKey: { department: 0, major: 11, minor: 0 } }),
+      noteItem('b', 'second note'),
+    ])
+    const [first, number2, note1, note2] = [
+      at(drawn, '10'),
+      at(drawn, '11'),
+      at(drawn, 'first note'),
+      at(drawn, 'second note'),
+    ]
+    if (!first || !number2 || !note1 || !note2) throw new Error('missing text')
+    // The second tag's top (its number's centre + 7) is below the first note's block (bottom
+    // = first tag's bottom - 9); the notes are 23 pt apart, one block each.
+    expect(note1.y - note2.y).toBeCloseTo(14 + 9 + 2)
+    expect(first.y - number2.y).toBeCloseTo(14 + 9 + 2)
+    expect(note1.y).toBeGreaterThan(number2.y + 7)
+  })
+
+  test('a 36 pt margin draws no note', async () => {
+    const narrow = { textExtent: { minX: 36, maxX: 300 } }
+    const drawn = await stampedText([withId('a', 200, narrow), noteItem('a', 'Ride the pad')])
+    expect(at(drawn, 'Ride the pad')).toBeUndefined()
+    expect(at(drawn, '1')).toBeDefined()
+  })
+
+  test('a note with no cue item, or on a page the PDF lacks, draws nothing', async () => {
+    const drawn = await stampedText([
+      noteItem('missing', 'orphan'),
+      { ...noteItem('a', 'far'), pageIndex: 9 },
+      withId('a', 200),
+    ])
+    expect(drawn.map((d) => d.text)).not.toContain('orphan')
+    expect(drawn.map((d) => d.text)).not.toContain('far')
+  })
+
+  test('no note items, as when cue notes are off, draws no note', async () => {
+    const drawn = await stampedText([withId('a', 200)])
+    expect(drawn.filter((d) => d.size === 7).map((d) => d.text)).toEqual([
+      expect.stringContaining('Pirates'),
+    ])
+  })
+})
+
+describe('page subset', () => {
+  const tag = (pageIndex: number, number: string): StampItem => ({
+    ...cueItem(number),
+    id: `c${pageIndex}`,
+    pageIndex,
+    y: 200,
+  })
+  const fourPages = async () => {
+    const src = await PDFDocument.create()
+    for (const size of [
+      [300, 400],
+      [400, 300],
+      [500, 500],
+      [250, 350],
+    ] as Array<[number, number]>)
+      src.addPage(size)
+    src.getPage(1).setRotation(degrees(90))
+    return src.save()
+  }
+
+  test('pages [1, 2] outputs exactly 2 pages, each with its footer, stamped tags on the right pages', async () => {
+    const out = await stampScript(
+      await fourPages(),
+      [tag(0, '10'), tag(1, '11'), tag(2, '12'), tag(3, '13')],
+      footer,
+      { pages: [1, 2] },
+    )
+    const doc = await PDFDocument.load(out)
+    expect(doc.getPageCount()).toBe(2)
+    // The kept pages keep their own sizes and rotation.
+    expect(doc.getPage(0).getSize()).toEqual({ width: 400, height: 300 })
+    expect(doc.getPage(0).getRotation().angle).toBe(90)
+    expect(doc.getPage(1).getSize()).toEqual({ width: 500, height: 500 })
+    const texts = await pdfTexts(out)
+    const line = 'Pirates · Libretto v2 · LX · Binder v3 · 2026-10-15 14:02'
+    expect(texts).toEqual([
+      expect.arrayContaining(['LX', '11', line.replace('·', '·')]),
+      expect.arrayContaining(['LX', '12', line.replace('·', '·')]),
+    ])
+    expect(texts[0]).not.toContain('10')
+    expect(texts[0]).not.toContain('12')
+    expect(texts[1]).not.toContain('13')
+  })
+
+  test('pages come out in page order and are de-duplicated', async () => {
+    const out = await stampScript(await fourPages(), [], footer, { pages: [3, 0, 3] })
+    const doc = await PDFDocument.load(out)
+    expect(doc.getPages().map((p) => p.getSize().width)).toEqual([300, 250])
+  })
+
+  test('a subset keeps a rotation the page inherits from the page tree', async () => {
+    const src = await PDFDocument.create()
+    src.addPage([300, 400])
+    src.addPage([300, 400])
+    src.catalog.Pages().set(PDFName.of('Rotate'), PDFNumber.of(90))
+    const out = await stampScript(await src.save(), [], footer, { pages: [1] })
+    const doc = await PDFDocument.load(out)
+    expect(doc.getPageCount()).toBe(1)
+    expect(frameOf(doc.getPage(0)).rotation).toBe(90)
+  })
+
+  test('a page outside the script, or an empty list, is an error', async () => {
+    await expect(stampScript(await fourPages(), [], footer, { pages: [4] })).rejects.toThrow(
+      /page/i,
+    )
+    await expect(stampScript(await fourPages(), [], footer, { pages: [] })).rejects.toThrow(/page/i)
+  })
+
+  test('leaving pages out drops the dead objects: the subset is smaller than the whole', async () => {
+    const src = await PDFDocument.create()
+    for (let i = 0; i < 30; i++) src.addPage([300, 400]).drawText(`page ${i} ${'x'.repeat(400)}`)
+    const bytes = await src.save()
+    const all = await stampScript(bytes, [], footer)
+    const some = await stampScript(bytes, [], footer, { pages: [0, 1] })
+    expect(some.byteLength).toBeLessThan(all.byteLength / 4)
+  })
+})
+
+describe('paper fit', () => {
+  const A4 = { w: 595.28, h: 841.89 }
+  const LETTER = { w: 612, h: 792 }
+
+  const single = async (size: [number, number], rotation = 0) => {
+    const src = await PDFDocument.create()
+    const page = src.addPage(size)
+    page.setRotation(degrees(rotation))
+    return src.save()
+  }
+  /** The matrix the page's first `Do` is drawn under: every `cm` before it, composed. */
+  const placed = async (pdf: Uint8Array) => {
+    const content = ((await pdfContent(pdf))[0] as string).replace(/\r/g, '')
+    const before = content.slice(0, content.indexOf(' Do'))
+    let m = [1, 0, 0, 1, 0, 0]
+    for (const c of before.matchAll(
+      /([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) cm/g,
+    )) {
+      const [a, b, cc, d, e, f] = c.slice(1, 7).map(Number) as [
+        number,
+        number,
+        number,
+        number,
+        number,
+        number,
+      ]
+      const [A, B, C, D, E, F] = m as [number, number, number, number, number, number]
+      // CTM' = new x CTM, in the row-vector convention PDF uses.
+      m = [
+        a * A + b * C,
+        a * B + b * D,
+        cc * A + d * C,
+        cc * B + d * D,
+        e * A + f * C + E,
+        e * B + f * D + F,
+      ]
+    }
+    return m
+  }
+
+  test('paper Letter on an A4 page yields a 612×792 media box with content scaled inside', async () => {
+    const out = await stampScript(await single([A4.w, A4.h]), [], footer, { paper: 'Letter' })
+    const doc = await PDFDocument.load(out)
+    expect(doc.getPageCount()).toBe(1)
+    expect(doc.getPage(0).getMediaBox()).toEqual({ x: 0, y: 0, width: 612, height: 792 })
+    expect(doc.getPage(0).getRotation().angle).toBe(0)
+    // Height is the tight side: 792 / 841.89; the page is centred across.
+    const scale = 792 / A4.h
+    const [a, , , d, e, f] = await placed(out)
+    expect(a).toBeCloseTo(scale, 4)
+    expect(d).toBeCloseTo(scale, 4)
+    expect(e).toBeCloseTo((612 - A4.w * scale) / 2, 2)
+    expect(f).toBeCloseTo(0, 2)
+  })
+
+  test('paper A4 on a Letter page fits the width and centres vertically', async () => {
+    const out = await stampScript(await single([LETTER.w, LETTER.h]), [], footer, { paper: 'A4' })
+    const doc = await PDFDocument.load(out)
+    const box = doc.getPage(0).getMediaBox()
+    expect([box.width, box.height].map((v) => Math.round(v * 100) / 100)).toEqual([A4.w, A4.h])
+    const scale = A4.w / LETTER.w
+    const [a, , , d, e, f] = await placed(out)
+    expect(a).toBeCloseTo(scale, 4)
+    expect(d).toBeCloseTo(scale, 4)
+    expect(e).toBeCloseTo(0, 2)
+    expect(f).toBeCloseTo((A4.h - LETTER.h * scale) / 2, 2)
+  })
+
+  test('a landscape page fits a landscape sheet: the paper swaps per page', async () => {
+    const out = await stampScript(await single([A4.h, A4.w]), [], footer, { paper: 'Letter' })
+    const doc = await PDFDocument.load(out)
+    expect(doc.getPage(0).getMediaBox()).toMatchObject({ width: 792, height: 612 })
+  })
+
+  test('a rotated page lands upright: a 90 degree page fits by its displayed size', async () => {
+    // Unrotated 595x842 with /Rotate 90 displays 842 wide, 595 tall: landscape.
+    const out = await stampScript(await single([A4.w, A4.h], 90), [], footer, { paper: 'Letter' })
+    const doc = await PDFDocument.load(out)
+    expect(doc.getPage(0).getMediaBox()).toMatchObject({ width: 792, height: 612 })
+    expect(doc.getPage(0).getRotation().angle).toBe(0)
+  })
+
+  test('a page already within 3% of the paper is not resized', async () => {
+    // 1 % under A4 each way; and exactly Letter for paper Letter.
+    const cases: Array<[[number, number], 'A4' | 'Letter']> = [
+      [[A4.w * 0.99, A4.h * 1.01], 'A4'],
+      [[LETTER.w, LETTER.h], 'Letter'],
+      [[A4.h * 1.02, A4.w], 'A4'],
+    ]
+    for (const [size, paper] of cases) {
+      const out = await stampScript(await single(size), [], footer, { paper })
+      const doc = await PDFDocument.load(out)
+      const box = doc.getPage(0).getMediaBox()
+      expect([box.width, box.height]).toEqual(size)
+      expect(((await pdfContent(out))[0] as string).includes(' Do')).toBe(false)
+    }
+    // 5 % off is resized.
+    const off = await stampScript(await single([LETTER.w, LETTER.h]), [], footer, { paper: 'A4' })
+    expect(((await pdfContent(off))[0] as string).includes(' Do')).toBe(true)
+  })
+
+  test('only the pages that need it are resized; the stamps and footer scale with the page', async () => {
+    const src = await PDFDocument.create()
+    src.addPage([LETTER.w, LETTER.h])
+    src.addPage([A4.w, A4.h])
+    const out = await stampScript(
+      await src.save(),
+      [
+        { ...cueItem('5'), pageIndex: 0 },
+        { ...cueItem('6'), pageIndex: 1 },
+      ],
+      footer,
+      { paper: 'Letter' },
+    )
+    const doc = await PDFDocument.load(out)
+    // Letter -> Letter: untouched (cue and footer drawn straight on it); A4 -> Letter: embedded.
+    expect(doc.getPage(0).getSize()).toEqual({ width: 612, height: 792 })
+    expect(doc.getPage(1).getMediaBox()).toEqual({ x: 0, y: 0, width: 612, height: 792 })
+    const [c0, c1] = await pdfContent(out)
+    expect(c0).not.toContain(' Do')
+    expect(c1).toContain(' Do')
+    expect((await pdfTexts(out))[0]).toContain('5')
+  })
+
+  test('paper and a page subset together fit only the pages kept', async () => {
+    const src = await PDFDocument.create()
+    src.addPage([A4.w, A4.h])
+    src.addPage([A4.w, A4.h])
+    src.addPage([A4.w, A4.h])
+    const out = await stampScript(await src.save(), [], footer, { pages: [2], paper: 'Letter' })
+    const doc = await PDFDocument.load(out)
+    expect(doc.getPageCount()).toBe(1)
+    expect(doc.getPage(0).getMediaBox()).toMatchObject({ width: 612, height: 792 })
+  })
 })
