@@ -117,3 +117,40 @@ test('standby and warn add one dashed tag per department, on the same side', () 
   const plain = draw({ standbyWarn: false }).container
   expect(plain.querySelectorAll('[data-kind="standby"]')).toHaveLength(0)
 })
+
+test('standby and warn give every department its own dashed tag, however many there are', () => {
+  const many = Array.from({ length: 7 }, (_, i) => ({
+    id: `d${i}`,
+    code: `D${i}`,
+    colour: '#C9811F',
+  }))
+  const side = (id: string) => (Number(id.slice(1)) % 2 === 0 ? 'left' : 'right')
+  const { container } = draw({
+    departments: many,
+    sideOf: side,
+    standbyWarn: true,
+    paper: 'Letter',
+  })
+  const height = previewSize('Letter').height
+  for (const d of many) {
+    const dashed = container.querySelectorAll(
+      `[data-tag][data-dept="${d.id}"][data-kind="standby"]`,
+    )
+    expect(dashed).toHaveLength(1)
+    expect(dashed[0]?.getAttribute('data-side')).toBe(side(d.id))
+  }
+  // Every tag stays on the page, and no two tags on one side overlap.
+  const boxes = [...container.querySelectorAll('[data-tag]')].map((el) => ({
+    side: el.getAttribute('data-side'),
+    y: Number(el.querySelector('rect')?.getAttribute('y')),
+  }))
+  for (const b of boxes) expect(b.y + 9).toBeLessThanOrEqual(height)
+  for (const side of ['left', 'right']) {
+    const ys = boxes
+      .filter((b) => b.side === side)
+      .map((b) => b.y)
+      .sort((a, b) => a - b)
+    for (let i = 1; i < ys.length; i++)
+      expect((ys[i] as number) - (ys[i - 1] as number)).toBeGreaterThanOrEqual(9)
+  }
+})

@@ -350,3 +350,26 @@ test('the print options travel in the meta the upload sends', async () => {
   await flushOutbox('u1', { store })
   expect(JSON.parse(sent?.get('meta') as string).options).toEqual(p.meta.options)
 })
+
+test('an unsafe legacy name that is sanitised and still refused with 400: one sanitised post, entry dropped, notice names the original file', async () => {
+  const store = memoryStore()
+  const original = 'Pirates: A/B - Libretto v2 - LX .pdf'
+  const p = pending('u1', { filename: original })
+  await enqueueExport(p, store)
+  const sent: string[] = []
+  const post = vi.fn(async (q: PendingExport) => {
+    sent.push(q.meta.filename)
+    return reply(400, { message: 'the server did not like it' })
+  })
+  expect(await flushOutbox('u1', { store, post })).toEqual({ sent: 0, kept: 0, dropped: 1 })
+  expect(sent).toEqual(['Pirates- A-B - Libretto v2 - LX.pdf'])
+  expect(store.entries.size).toBe(0)
+  const notices = getNotices()
+  expect(notices).toHaveLength(1)
+  expect(notices[0]?.kind).toBe('error')
+  expect(notices[0]?.message).toContain(original)
+  expect(notices[0]?.message).toContain('the server did not like it')
+  // A later flush (reconnect, the retry timer) finds nothing: no second attempt.
+  expect(await flushOutbox('u1', { store, post })).toEqual({ sent: 0, kept: 0, dropped: 0 })
+  expect(post).toHaveBeenCalledTimes(1)
+})

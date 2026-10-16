@@ -155,12 +155,19 @@ test("the sheet has the mockup's sections: Layers, Pages, Paper, Include, the pr
 test('range input shows the error and disables Download when invalid', async () => {
   await openDialog()
   fireEvent.click(screen.getByRole('radio', { name: 'Range' }))
-  // Nothing typed yet: Download waits, with no scolding.
+  // Nothing typed yet: Download waits and says why, with no scolding.
   expect(download().disabled).toBe(true)
   expect(rangeInput().getAttribute('aria-invalid')).not.toBe('true')
+  const hint = screen.getByText('Enter a page range')
+  expect(download().getAttribute('aria-describedby')).toBe(hint.id)
+  expect(screen.queryByRole('alert')).toBeNull()
   type(rangeInput(), '1-99')
   expect(rangeInput().getAttribute('aria-invalid')).toBe('true')
   expect(screen.getByText('This script has 43 pages.')).toBeTruthy()
+  // The hint gives way to the error, and the error is announced as it appears.
+  expect(screen.queryByText('Enter a page range')).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe('This script has 43 pages.')
+  expect(download().getAttribute('aria-describedby')).toBe(screen.getByRole('alert').id)
   expect(rangeInput().getAttribute('aria-describedby')).toBe(
     screen.getByText('This script has 43 pages.').id,
   )
@@ -208,6 +215,8 @@ test('an invalid file name disables Download with the reason', async () => {
     screen.getByText(`File names can't contain / \\ : * ? " < > |`).id,
   )
   expect(download().disabled).toBe(true)
+  expect(screen.getByRole('alert').id).toBe(fileName().getAttribute('aria-describedby'))
+  expect(download().getAttribute('aria-describedby')).toBe(screen.getByRole('alert').id)
   type(fileName(), '')
   expect(screen.getByText('Give the file a name.')).toBeTruthy()
   expect(download().disabled).toBe(true)
@@ -310,4 +319,13 @@ test('the preview follows the layers, the paper and the standby toggle', async (
   const a4Height = Number(preview().getAttribute('height'))
   fireEvent.click(screen.getByRole('radio', { name: 'Letter' }))
   expect(Number(preview().getAttribute('height'))).toBeLessThan(a4Height)
+})
+
+test('the Include checkboxes have ids without spaces, each tied to its label', async () => {
+  const dialog = await openDialog()
+  for (const name of ['Cue notes', 'Standby and warn tags', 'Annotations']) {
+    const box = within(dialog).getByRole('checkbox', { name })
+    expect(box.id).not.toMatch(/\s/)
+    expect(dialog.querySelector(`label[for="${box.id}"]`)?.textContent).toBe(name)
+  }
 })

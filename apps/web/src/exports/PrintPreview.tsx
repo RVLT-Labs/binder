@@ -15,8 +15,12 @@ export function previewSize(paper: PaperSize): { width: number; height: number }
 /** The tag slots down the page (`y` of the pill's top), and which department owns each: the mockup's. */
 const SLOT_YS = [52, 62, 100, 120, 148, 166, 176]
 const SLOT_RANKS = [0, 1, 1, 0, 2, 1, 0]
-/** Where each department's one dashed standby / warn pill goes: clear of every solid slot. */
-const STANDBY_YS = [80, 134, 192, 206, 220, 232]
+/**
+ * Where each department's one dashed standby / warn pill goes: eight places in the gaps between the
+ * solid slots, a pill and 3 px apart, all inside the shortest page. A ninth department or more
+ * wraps round and shares a place with an earlier one (on a busy show the sample is only a hint).
+ */
+const STANDBY_YS = [74, 86, 134, 192, 204, 216, 228, 240]
 const TAG = { width: 28, height: 9, inset: 6, leader: 14 }
 const TEXT_LINES = 19
 
@@ -66,8 +70,7 @@ export function PrintPreview({ paper, departments, sideOf, standbyWarn }: PrintP
   })
   if (standbyWarn) {
     departments.forEach((dept, k) => {
-      const y = STANDBY_YS[k]
-      if (y !== undefined) tags.push({ dept, y, kind: 'standby' })
+      tags.push({ dept, y: STANDBY_YS[k % STANDBY_YS.length] as number, kind: 'standby' })
     })
   }
   return (
