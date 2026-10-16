@@ -1,4 +1,9 @@
-import type { LayerRef } from '@binder/shared'
+import {
+  type LayerRef,
+  type PrintOptions,
+  sanitizeExportFilename,
+  validateExportFilename,
+} from '@binder/shared'
 import { clear, createStore, del, set, values } from 'idb-keyval'
 import { pushNotice } from '../components/noticeStore'
 
@@ -18,6 +23,8 @@ export interface PendingExport {
     filename: string
     layerSelection: LayerRef[]
     createdAt: string
+    /** What a script print was asked for. Absent on entries queued before print options existed. */
+    options?: PrintOptions
   }
   bytes: Uint8Array
   contentType: string
@@ -136,6 +143,16 @@ export async function clearOtherOutboxes(keepUserId: string): Promise<void> {
   changed()
 }
 
+/**
+ * The entry as it should be sent. A script PDF queued by older code could carry a name the server
+ * now refuses (a space before `.pdf` after a cut, a leading dot), so that name is made safe first.
+ * The file on the user's device keeps the name it was downloaded with; only the record's differs.
+ */
+function forUpload(p: PendingExport): PendingExport {
+  if (p.meta.kind !== 'pdf-script' || validateExportFilename(p.meta.filename).ok) return p
+  return { ...p, meta: { ...p.meta, filename: sanitizeExportFilename(p.meta.filename) } }
+}
+
 /** Uploads one entry as `POST /api/shows/:showId/exports`: the `meta` field, then the file. */
 export function postExport(p: PendingExport): Promise<Response> {
   const form = new FormData()
@@ -220,7 +237,7 @@ export function flushOutbox(
           }
           let res: Response
           try {
-            res = await post(p)
+            res = await post(forUpload(p))
           } catch (err) {
             total.kept++
             // fetch rejects with a TypeError when there is no network. Anything else is a bug or a

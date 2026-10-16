@@ -266,3 +266,87 @@ test("clearOtherOutboxes empties every other user's outbox and leaves the owner'
   expect((await pendingExports('new-user')).map((p) => p.id)).toEqual([mine.id])
   await clearOutbox('new-user')
 })
+
+test('a script PDF queued by older code with an unsafe name is sanitised before it is sent, and the upload succeeds', async () => {
+  const store = memoryStore()
+  // Older code cut a long name at 196 characters, which can leave a space before ".pdf".
+  const legacy = pending('u1', { filename: 'Pirates: A/B - Libretto v2 - LX .pdf' })
+  await enqueueExport(legacy, store)
+  const sentNames: string[] = []
+  let sentForm: FormData | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init: RequestInit) => {
+      sentForm = init.body as FormData
+      sentNames.push(JSON.parse(sentForm.get('meta') as string).filename)
+      return new Response('{}', { status: 201 })
+    }),
+  )
+  expect(await flushOutbox('u1', { store })).toEqual({ sent: 1, kept: 0, dropped: 0 })
+  expect(sentNames).toEqual(['Pirates- A-B - Libretto v2 - LX.pdf'])
+  expect(((sentForm as FormData).get('file') as File).name).toBe(
+    'Pirates- A-B - Libretto v2 - LX.pdf',
+  )
+})
+
+test('a name that is already valid is sent as it is, and other kinds of export are never renamed', async () => {
+  const store = memoryStore()
+  const fine = pending('u1', { filename: 'songs-libretto-v2-LX.pdf' })
+  const sheet = pending('u1', { filename: 'Show - SND cue list.xlsx' })
+  sheet.meta.kind = 'xlsx-cuesheet'
+  const spaced = pending('u1', { filename: 'Show - cues .csv' })
+  spaced.meta.kind = 'csv-cuesheet'
+  for (const p of [fine, sheet, spaced]) await enqueueExport(p, store)
+  const names: string[] = []
+  const post = vi.fn(async (p: PendingExport) => {
+    names.push(p.meta.filename)
+    return reply(201)
+  })
+  await flushOutbox('u1', { store, post })
+  expect(names).toEqual([
+    'songs-libretto-v2-LX.pdf',
+    'Show - SND cue list.xlsx',
+    'Show - cues .csv',
+  ])
+})
+
+test('a 400 that remains after sanitising shows a notice and the entry is not retried', async () => {
+  const store = memoryStore()
+  const p = pending('u1', { filename: 'Show - Libretto v1 - LX.pdf' })
+  await enqueueExport(p, store)
+  const post = vi.fn(async () =>
+    reply(400, { message: 'File names can\'t contain / \\ : * ? " < > |' }),
+  )
+  expect(await flushOutbox('u1', { store, post })).toEqual({ sent: 0, kept: 0, dropped: 1 })
+  expect(store.entries.size).toBe(0)
+  const notices = getNotices()
+  expect(notices).toHaveLength(1)
+  expect(notices[0]?.message).toContain('Show - Libretto v1 - LX.pdf')
+  expect(notices[0]?.message).toContain('could not record it')
+  // Another flush, and the one after a reconnect, find nothing to send: it is never retried.
+  expect(await flushOutbox('u1', { store, post })).toEqual({ sent: 0, kept: 0, dropped: 0 })
+  expect(post).toHaveBeenCalledTimes(1)
+})
+
+test('the print options travel in the meta the upload sends', async () => {
+  const store = memoryStore()
+  const p = pending('u1')
+  p.meta.options = {
+    pages: '2-3',
+    paper: 'Letter',
+    includeStandbyWarn: false,
+    includeAnnotations: true,
+    includeCueNotes: true,
+  }
+  await enqueueExport(p, store)
+  let sent: FormData | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init: RequestInit) => {
+      sent = init.body as FormData
+      return new Response('{}', { status: 201 })
+    }),
+  )
+  await flushOutbox('u1', { store })
+  expect(JSON.parse(sent?.get('meta') as string).options).toEqual(p.meta.options)
+})
