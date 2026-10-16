@@ -286,9 +286,14 @@ test("editing a note's text and colour shows for both users", async ({ browser }
       await expect
         .poll(async () => (await localAnnotation(b.page, id))?.style.colour, { timeout: 10_000 })
         .toBe('#cc0000')
-      await expect(shape(b.page, id).locator('rect.annotation-note')).toHaveAttribute(
-        'stroke',
+      // A note's colour is its left bar, and its block is that colour mixed 12 % into white.
+      await expect(shape(b.page, id).locator('rect.annotation-note-bar')).toHaveAttribute(
+        'fill',
         '#cc0000',
+      )
+      await expect(shape(b.page, id).locator('rect.annotation-note')).toHaveAttribute(
+        'fill',
+        '#f9e0e0',
       )
 
       // Escape in the field throws a draft away; the note keeps its text and stays selected.

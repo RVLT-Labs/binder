@@ -13,7 +13,7 @@ import type { CueType, NumberFormat } from '@binder/shared'
 import type { KeyboardEvent, PointerEventHandler } from 'react'
 import { SvgText } from './SvgText'
 
-/** The mockup's `.sel`: a 2 px red outline, 2 px clear of the tag, 4 px radius (stroke centre 3 out). */
+/** The mockup's `.sel`: a 2 screen-px red outline (non-scaling), 2 px clear of the tag, 4 px radius (stroke centre 3 out). */
 const SELECTION_WIDTH = 2
 const SELECTION_OFFSET = 3
 const SELECTION_RADIUS = 6
@@ -212,6 +212,7 @@ export function CueMarker({
           fill="none"
           stroke="var(--red)"
           strokeWidth={SELECTION_WIDTH}
+          vectorEffect="non-scaling-stroke"
           pointerEvents="none"
         />
       )}

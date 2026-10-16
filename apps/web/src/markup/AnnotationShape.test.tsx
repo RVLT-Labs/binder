@@ -217,3 +217,44 @@ test('toShapeAnnotation reads a local row: parsed anchor, JSON geometry and styl
     toShapeAnnotation({ ...shape, geometry: 'oops', style: null, anchor } as never).geometry,
   ).toEqual({})
 })
+
+test('a note is a tinted block with a 2 pt left bar in its colour, no outline, text in page ink', () => {
+  const { container } = shape(
+    base({ type: 'note', text: 'ride the pad', anchor: { pageIndex: 1, x: 100, y: 200 } }),
+  )
+  const body = container.querySelector('rect.annotation-note') as SVGRectElement
+  // #F5A623 mixed 12 % into white.
+  expect(body.getAttribute('fill')).toBe('#fef4e5')
+  expect(body.getAttribute('stroke')).toBeNull()
+  expect(body.getAttribute('fill-opacity')).toBeNull()
+  const bar = container.querySelector('rect.annotation-note-bar') as SVGRectElement
+  expect(bar.getAttribute('width')).toBe('2')
+  expect(bar.getAttribute('fill')).toBe('#F5A623')
+  expect(bar.getAttribute('x')).toBe(body.getAttribute('x'))
+  expect(container.querySelector('text')?.getAttribute('fill')).toBe('var(--page-ink)')
+})
+
+test('a stamp is bold, letter-spaced and turned 3 degrees about its centre, 1.5 border, 80 % fill', () => {
+  const { container } = shape(
+    base({ type: 'stamp', text: 'FAST PACE', anchor: { pageIndex: 1, x: 100, y: 200 } }),
+  )
+  const turn = container.querySelector('rect.annotation-stamp')?.parentElement
+  expect(turn?.getAttribute('transform')).toBe('rotate(3 100 200)')
+  const rect = container.querySelector('rect.annotation-stamp') as SVGRectElement
+  expect(rect.getAttribute('rx')).toBe('3')
+  expect(rect.getAttribute('stroke-width')).toBe('1.5')
+  expect(rect.getAttribute('fill-opacity')).toBe('0.8')
+  const text = container.querySelector('text') as SVGTextElement
+  expect(text.getAttribute('font-weight')).toBe('800')
+  expect(text.getAttribute('letter-spacing')).toBe('0.06em')
+})
+
+test('a selected shape gets a 2 px red ring that does not scale with the page', () => {
+  const { container } = shape(base({}), { selected: true })
+  const ring = container.querySelector('.annotation-selection') as SVGRectElement
+  expect(ring.getAttribute('stroke')).toBe('var(--red)')
+  expect(ring.getAttribute('stroke-width')).toBe('2')
+  expect(ring.getAttribute('vector-effect')).toBe('non-scaling-stroke')
+  expect(ring.getAttribute('stroke-dasharray')).toBeNull()
+  expect(Number(ring.getAttribute('x'))).toBe(100 - 3)
+})

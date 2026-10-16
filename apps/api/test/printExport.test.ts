@@ -519,9 +519,11 @@ describe.skipIf(skip)('print stamping with poppler', () => {
     expect(gap.xMin).toBeGreaterThan(note.xMin)
     expect(Math.abs(gap.yMin - note.yMin)).toBeLessThan(2)
     const text = (await pdftotext(out, 1)).replace(/\s+/g, ' ')
-    for (const s of ['second paragraph', 'Blackout', 'an unbound', 'SB LX 10', 'W LX 11']) {
+    for (const s of ['second paragraph', 'an unbound', 'SB LX 10', 'W LX 11']) {
       expect(text).toContain(s)
     }
+    // The stamp is turned 3 degrees and letter-spaced (R23), so poppler may break its word: compare without spaces.
+    expect(text.replace(/ /g, '')).toContain('Blackout')
     // A highlight's colour lands where its word box says (120 from the left, 400 up on a 595 tall
     // page), at 35% over white.
     const { height } = (await pageSizes(src))[1] as PageInfo

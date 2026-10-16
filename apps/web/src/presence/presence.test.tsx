@@ -91,6 +91,7 @@ describe('PeerOutline', () => {
     expect(rect.getAttribute('stroke')).toBe('#e6194b')
     expect(rect.getAttribute('stroke-width')).toBe('2')
     expect(rect.getAttribute('fill')).toBe('none')
+    expect(rect.getAttribute('rx')).toBe('6')
     expect(rect.getAttribute('pointer-events')).toBe('none')
     // Beyond the marker's own 2 pt selection box on every side.
     expect(Number(rect.getAttribute('x'))).toBeLessThan(10 - 2)

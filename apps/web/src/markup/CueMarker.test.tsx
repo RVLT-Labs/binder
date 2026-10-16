@@ -125,6 +125,7 @@ test('standby is a dashed 1 pt outline with the SB prefix, warn a solid 1.5 pt o
   expect(sel.getAttribute('stroke')).toBe('var(--red)')
   expect(sel.getAttribute('stroke-width')).toBe('2')
   expect(sel.getAttribute('stroke-dasharray')).toBeNull()
+  expect(sel.getAttribute('vector-effect')).toBe('non-scaling-stroke')
   expect(Number(sel.getAttribute('x'))).toBe(Number(body.getAttribute('x')) - 3)
   expect(Number(sel.getAttribute('width'))).toBe(Number(body.getAttribute('width')) + 6)
   expect(g.querySelector('title')?.textContent).toBe('SB LX 10.5')

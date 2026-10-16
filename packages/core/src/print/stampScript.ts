@@ -13,6 +13,7 @@ import {
   pushGraphicsState,
   rgb,
   StandardFonts,
+  setCharacterSpacing,
   setDashPattern,
   setFillingColor,
   setLineWidth,
@@ -20,9 +21,16 @@ import {
   stroke as strokePath,
 } from 'pdf-lib'
 import {
+  mixIntoWhite,
+  NOTE_BAR_WIDTH,
   NOTE_LINE_HEIGHT,
   NOTE_MAX_WIDTH,
+  NOTE_TINT,
   ANNOTATION_PAD as PAD,
+  STAMP_ANGLE,
+  STAMP_FILL_OPACITY,
+  STAMP_TRACKING,
+  stampTextWidth,
   UNBOUND_FONT,
   unboundSnippet,
   wrapText,
@@ -47,7 +55,7 @@ const FOOTER_BOTTOM = 12
 /** The footer's top edge: tags never go below it, so none ends up under the footer text. */
 const FOOTER_TOP = FOOTER_BOTTOM + FOOTER_SIZE
 const FOOTER_GREY = rgb(0.45, 0.45, 0.45)
-const INK = rgb(0.067, 0.094, 0.153)
+const PAGE_INK_RGB = rgb(0x1a / 255, 0x17 / 255, 0x15 / 255)
 const WHITE = rgb(1, 1, 1)
 /** Helvetica's cap height is about 0.72 em: centring a line on y puts its baseline this far below. */
 const BASELINE_DROP = 0.36
@@ -140,17 +148,61 @@ class DisplayedPage {
     size: number,
     colour: ReturnType<typeof rgb>,
     bold = false,
+    o: { extraTurn?: number; tracking?: number } = {},
   ) {
     const text = toWinAnsi(s)
     if (!text) return
     const p = displayedToUser(this.frame, x, y)
+    if (o.tracking) this.page.pushOperators(pushGraphicsState(), setCharacterSpacing(o.tracking))
     this.page.drawText(text, {
       x: p.x,
       y: p.y,
       size,
       font: bold ? this.boldFont : this.font,
       color: colour,
-      rotate: this.turn,
+      rotate: degrees(this.frame.rotation + (o.extraTurn ?? 0)),
+    })
+    if (o.tracking) this.page.pushOperators(popGraphicsState())
+  }
+
+  /**
+   * A rounded rectangle turned `angle` degrees counter-clockwise about its centre (displayed
+   * space), filled and outlined, the fill at `fillOpacity`.
+   */
+  turnedRoundedRect(
+    cx: number,
+    cy: number,
+    w: number,
+    h: number,
+    r: number,
+    angle: number,
+    o: {
+      fill: ReturnType<typeof rgb>
+      fillOpacity: number
+      stroke: ReturnType<typeof rgb>
+      strokeWidth: number
+    },
+  ) {
+    const rad = (angle * Math.PI) / 180
+    // The top-left corner after the turn; drawSvgPath's origin is that corner, y pointing down.
+    const dx = -w / 2
+    const dy = h / 2
+    const corner = displayedToUser(
+      this.frame,
+      cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+      cy + dx * Math.sin(rad) + dy * Math.cos(rad),
+    )
+    const k = r * 0.5523
+    const path = `M ${r} 0 L ${w - r} 0 C ${w - r + k} 0 ${w} ${r - k} ${w} ${r} L ${w} ${h - r} C ${w} ${h - r + k} ${w - r + k} ${h} ${w - r} ${h} L ${r} ${h} C ${r - k} ${h} 0 ${h - r + k} 0 ${h - r} L 0 ${r} C 0 ${r - k} ${r - k} 0 ${r} 0 Z`
+    this.page.drawSvgPath(path, {
+      x: corner.x,
+      y: corner.y,
+      rotate: degrees(this.frame.rotation + angle),
+      color: o.fill,
+      opacity: o.fillOpacity,
+      borderColor: o.stroke,
+      borderWidth: o.strokeWidth,
+      borderOpacity: 1,
     })
   }
 
@@ -392,26 +444,43 @@ function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'anno
       const textWidth = Math.max(...lines.map((l) => helveticaWidth(l, item.fontSize)))
       const w = textWidth + PAD * 2 + 3
       const h = lines.length * lineHeight + PAD * 2
-      // The anchor is the note's top-left corner.
-      d.rect(x, y - h, w, h, { fill: WHITE, fillOpacity: 0.92, stroke: colour, strokeWidth: 1.25 })
-      d.rect(x, y - h, 3, h, { fill: colour })
+      // The anchor is the note's top-left corner: a tinted block with a bar on its left and no outline.
+      d.rect(x, y - h, w, h, { fill: colourOf(mixIntoWhite(item.colour, NOTE_TINT)) })
+      d.rect(x, y - h, NOTE_BAR_WIDTH, h, { fill: colour })
       for (const [i, line] of lines.entries()) {
-        d.centredText(line, x + PAD + 3, y - PAD - lineHeight * (i + 0.5), item.fontSize, INK)
+        d.centredText(
+          line,
+          x + PAD + 3,
+          y - PAD - lineHeight * (i + 0.5),
+          item.fontSize,
+          PAGE_INK_RGB,
+        )
       }
       return
     }
     case 'stamp': {
       const text = toWinAnsi(item.text)
-      const w = helveticaWidth(text, item.fontSize) + PAD * 3
+      const w = stampTextWidth(text, item.fontSize) + PAD * 3
       const h = item.fontSize + PAD * 2
-      // A stamp sits centred on the point it was placed at.
-      d.rect(x - w / 2, y - h / 2, w, h, {
+      // A stamp sits centred on the point it was placed at, turned -3deg about that centre.
+      d.turnedRoundedRect(x, y, w, h, 3, STAMP_ANGLE, {
         fill: WHITE,
-        fillOpacity: 0.85,
+        fillOpacity: STAMP_FILL_OPACITY,
         stroke: colour,
         strokeWidth: sw,
       })
-      d.centredText(text, x - w / 2 + PAD * 1.5, y, item.fontSize, colour)
+      const rad = (STAMP_ANGLE * Math.PI) / 180
+      const ox = -w / 2 + PAD * 1.5
+      const oy = -item.fontSize * BASELINE_DROP
+      d.text(
+        text,
+        x + ox * Math.cos(rad) - oy * Math.sin(rad),
+        y + ox * Math.sin(rad) + oy * Math.cos(rad),
+        item.fontSize,
+        colour,
+        true,
+        { extraTurn: STAMP_ANGLE, tracking: STAMP_TRACKING * item.fontSize },
+      )
       return
     }
     default: {

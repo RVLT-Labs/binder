@@ -1,5 +1,7 @@
 import { degrees, PDFDocument, PDFName, PDFNumber } from 'pdf-lib'
 import { describe, expect, test } from 'vitest'
+import { pdfContent } from '../../test/pdfTexts'
+import type { StampItem } from './stampItems'
 import { displayedToUser, frameOf, stampScript } from './stampScript'
 
 const footer = {
@@ -127,4 +129,94 @@ describe('frameOf', () => {
     page.node.delete(PDFName.of('CropBox'))
     expect(frameOf(page)).toEqual({ bx: 50, by: 50, w: 300, h: 400, rotation: 0 })
   })
+})
+
+async function stampedContent(items: Parameters<typeof stampScript>[1]): Promise<string> {
+  const src = await PDFDocument.create()
+  src.addPage([400, 400])
+  const out = await stampScript(await src.save(), items, footer)
+  const c = ((await pdfContent(out))[0] as string).replace(/\r/g, '')
+  return c
+}
+
+const cueItem = (number: string): StampItem => ({
+  kind: 'cue',
+  id: 'n',
+  pageIndex: 0,
+  x: 40,
+  y: 200,
+  type: 'go',
+  lead: 'LX',
+  typeWord: '',
+  number,
+  numberInk: '#1A1715',
+  colour: '#F5A623',
+  side: 'left',
+  sortKey: { department: 0, major: 1, minor: 0 },
+  triggerBoxes: [],
+  textExtent: null,
+})
+
+const annotationItem = (type: 'note' | 'stamp', text: string): StampItem => ({
+  kind: 'annotation',
+  pageIndex: 0,
+  x: 200,
+  y: 200,
+  type,
+  geometry: {},
+  text,
+  colour: '#2563EB',
+  strokeWidth: 1.5,
+  fontSize: type === 'stamp' ? 12 : 10,
+  wordBoxes: [],
+})
+
+test('the tag number is drawn in the page ink #1A1715, not the department colour', async () => {
+  const content = await stampedContent([cueItem('77')])
+  // The colour set (rg) before the number's Tj, and before the lead's.
+  const colourBefore = (hexText: string) => {
+    const at = content.indexOf(`<${hexText}>`)
+    const before = content.slice(0, at)
+    const m = [...before.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) rg/g)].at(-1) as RegExpMatchArray
+    return [m[1], m[2], m[3]].map((v) => Math.round(Number(v) * 255))
+  }
+  expect(colourBefore('3737')).toEqual([0x1a, 0x17, 0x15])
+})
+
+test('a printed note is a tinted block with a left bar and no outline, text in page ink', async () => {
+  const content = await stampedContent([annotationItem('note', 'ride the pad')])
+  // Two filled rectangles (tint, bar); no stroked or fill-and-stroke operator.
+  expect(content.match(/\nh\nf\n/g)?.length).toBe(2)
+  expect(content).not.toMatch(/\n(S|B|b|s)\n/)
+  const rgs = [...content.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) rg/g)].map((m) =>
+    [m[1], m[2], m[3]].map((v) => Math.round(Number(v) * 255)),
+  )
+  // Tint: 12 % of #2563EB into white; bar: the colour itself; text: the page ink.
+  expect(rgs).toContainEqual([
+    255 - Math.round((255 - 0x25) * 0.12),
+    255 - Math.round((255 - 0x63) * 0.12),
+    255 - Math.round((255 - 0xeb) * 0.12),
+  ])
+  expect(rgs).toContainEqual([0x25, 0x63, 0xeb])
+  expect(rgs).toContainEqual([0x1a, 0x17, 0x15])
+})
+
+test('a printed stamp is turned 3 degrees, in bold, with letter spacing', async () => {
+  const content = await stampedContent([annotationItem('stamp', 'FAST PACE')])
+  // The box's matrix (cm) and the text's (Tm) both carry the 3 degree turn.
+  const turned = (op: string) =>
+    [
+      ...content.matchAll(
+        new RegExp(`([-\\d.]+) ([-\\d.]+) ([-\\d.]+) ([-\\d.]+) [-\\d.]+ [-\\d.]+ ${op}`, 'g'),
+      ),
+    ].some(
+      (m) =>
+        Math.abs(Number(m[1]) - Math.cos(Math.PI / 60)) < 1e-4 &&
+        Math.abs(Number(m[2]) - Math.sin(Math.PI / 60)) < 1e-4,
+    )
+  expect(turned('cm')).toBe(true)
+  expect(turned('Tm')).toBe(true)
+  // Letter spacing .06em of 12 pt, in the bold face.
+  expect(content).toMatch(/0\.72 Tc/)
+  expect(content).toMatch(/\/Helvetica-Bold[-\d]* 12 Tf/)
 })
