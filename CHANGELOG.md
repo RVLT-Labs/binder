@@ -15,6 +15,14 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   Playwright under a machine-wide lock so two sessions or worktrees never test each other's code.
 
 ### Fixed
+- Re-anchoring after a script revision: a cue anchored to one copy of a repeated line (a chorus line, a refrain) was
+  moved onto another copy with status `ok` when its own copy was cut, so it never reached the review list. It is now
+  `approximate` and appears in the review. When the copies sit in near-identical surroundings, a few extra cues
+  can be flagged; that is the safe direction.
+- `revert_change` and `revert_batch` check the caller's rights before reporting that a row changed, so a caller who
+  may not edit a layer gets `forbidden` and learns nothing about it (it used to get a `conflict` naming the columns).
+- `renumber_cues` reports collisions with cues it does not touch (unplaced, or in another document) as `flagged`
+  entries with reason `duplicate`; it used to return an empty list while both cues were marked duplicate.
 - OCR on the production toolchain (Debian 12's OCRmyPDF 14): a scanned PDF with owner restrictions (no copying or
   editing, but opens without a password) is now OCRd instead of being copied through unread. A page whose text
   matrix holds a tiny number such as 6.1e-17 (typical of rotated text) no longer loses its text: in that rare
@@ -24,14 +32,8 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   script exports no longer fail on it. The original upload is kept untouched.
 
 ### Changed
+- The agent skill (`skills/binder`) and the specs and records it draws on describe the fixed behaviour above.
 - DESIGN.md's Calling-mode row now says the page's width (not its height) is capped at 0.9 times the stage height.
-
-### In flight (not on `main` yet)
-- Branch `claude/elated-raman-df22cf`: stop re-anchoring from moving a cue to another occurrence of its line
-  without a review flag. When it merges, update rule 14 of `skills/binder/SKILL.md`.
-- Branch `claude/friendly-moser-470c38`: `revert_change` checks rights before reporting drift, and
-  `renumber_cues` reports collisions with untouched cues. When it merges, update the renumber paragraphs in
-  `skills/binder/references/placing-cues.md`, `tools.md` and `workflows.md`.
 
 ### Known issues
 Listed in full, with their fixes, in `docs/superpowers/records/2026-10-16-ui-restyle-rulings.md` under "Known
