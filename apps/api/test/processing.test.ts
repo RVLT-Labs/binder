@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createReadStream, existsSync, readdirSync, readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -18,6 +18,7 @@ import { KILL_GRACE_MS, runTool, ToolError } from '../src/processing/exec'
 import { describeOcrFailure, OCRMYPDF_TIMEOUT_MS, runOcrmypdf } from '../src/processing/ocrmypdf'
 import { processPage } from '../src/processing/pageJob'
 import {
+  contentSyntaxErrors,
   countTextChars,
   imageStats,
   pdfInfo,
@@ -46,7 +47,7 @@ import type { ProcessingDeps } from '../src/processing/types'
 import { addDocumentVersion, createDocument } from '../src/services'
 import { setupShow } from './documentHelpers'
 import { RecordingJobs } from './helpers'
-import { writeBlankScanPdf } from './scanHelpers'
+import { writeBlankScanPdf, writeTextPdf } from './scanHelpers'
 import { findMissingTools, skipWithoutTools } from './tools'
 
 const run = promisify(execFile)
@@ -1057,6 +1058,96 @@ describe.skipIf(skip)('tool wrappers', () => {
     expect(await readFile(output, 'utf8')).toBe('%PDF-1.7\nthis is not a pdf\n')
     expect(describeOcrFailure(result)).toMatch(/^ocrmypdf exit 2: \S/)
   }, 60_000)
+
+  // Stand-in ocrmypdf scripts take the real argument order: flags, then input, then output last.
+  const ARGS = 'in=; out=; for a in "$@"; do in=$out; out=$a; done'
+
+  test('runOcrmypdf retries an owner-restricted PDF on a decrypted copy when OCRmyPDF refuses it', async () => {
+    // Releases before 17 refuse any encrypted input with exit 8 (Debian 12's 14.0, Ubuntu 24.04's 15.2).
+    const ownerOnly = join(work, 'owner-only-retry.pdf')
+    await run('qpdf', ['--encrypt', '', 'owner', '256', '--', FIXTURES.mixedPdf, ownerOnly])
+    const calls = join(work, 'owner-retry-calls.txt')
+    vi.stubEnv('CALLS', calls)
+    await standInOcrmypdf(
+      `${ARGS}\necho "$in" >> "$CALLS"\n` +
+        'if qpdf --is-encrypted "$in"; then echo "EncryptedPdfError: Input PDF is encrypted." >&2; exit 8; fi\n' +
+        'cp "$in" "$out"',
+    )
+    const output = join(work, 'owner-only-retry-out.pdf')
+    const result = await runOcrmypdf(ownerOnly, output, { mode: 'auto' })
+
+    expect(result).toMatchObject({ ocrApplied: true, exitCode: 0 })
+    const tried = (await readFile(calls, 'utf8')).trim().split('\n')
+    expect(tried).toHaveLength(2)
+    expect(tried[0]).toBe(ownerOnly)
+    expect(tried[1]).not.toBe(ownerOnly)
+    expect(await readdir(work)).not.toContain('owner-only-retry-out.pdf.decrypted.pdf')
+    // The searchable PDF is the readable copy, not the encrypted original.
+    await expect(run('qpdf', ['--is-encrypted', output])).rejects.toMatchObject({ code: 2 })
+    expect(await countTextChars(output)).toBeGreaterThan(0)
+  }, 60_000)
+
+  test('runOcrmypdf keeps the refusal when the encrypted PDF cannot be decrypted without a password', async () => {
+    const locked = join(work, 'locked-retry.pdf')
+    await run('qpdf', ['--encrypt', 'user', 'owner', '256', '--', FIXTURES.mixedPdf, locked])
+    await standInOcrmypdf('echo "EncryptedPdfError: Input PDF is encrypted." >&2\nexit 8')
+    const output = join(work, 'locked-retry-out.pdf')
+    const result = await runOcrmypdf(locked, output, { mode: 'auto' })
+    expect(result).toMatchObject({ ocrApplied: false, exitCode: 8 })
+    expect(describeOcrFailure(result)).toMatch(/^ocrmypdf exit 8: EncryptedPdfError/)
+    expect((await readFile(output)).equals(await readFile(locked))).toBe(true)
+  }, 60_000)
+
+  describe('when --redo-ocr writes exponent numbers into the page text', () => {
+    // Older OCRmyPDF (14.0, 15.2) re-serialises content streams with 6.1E-17 where the PDF said
+    // 0.000000000000000061: poppler then reads "E-17" as an unknown operator and loses the text.
+    const text = (matrix: string) => `BT /F1 24 Tf ${matrix} Tm (ROTATED) Tj ET`
+    const damagedMatrix = '6.12E-17 1 -1 6.12E-17 60 40'
+
+    async function standIn(damaged: string, calls: string) {
+      vi.stubEnv('DAMAGED', damaged)
+      vi.stubEnv('CALLS', calls)
+      await standInOcrmypdf(
+        `${ARGS}\necho "$1" >> "$CALLS"\n` +
+          'if [ "$1" = "--redo-ocr" ]; then cp "$DAMAGED" "$out"; else cp "$in" "$out"; fi',
+      )
+    }
+
+    test('the run is repeated with --skip-text and the untouched pages win', async () => {
+      const input = join(work, 'redo-source.pdf')
+      const damaged = join(work, 'redo-damaged.pdf')
+      writeTextPdf(input, text('1 0 0 1 60 40'))
+      writeTextPdf(damaged, text(damagedMatrix))
+      const calls = join(work, 'redo-calls.txt')
+      await standIn(damaged, calls)
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const output = join(work, 'redo-out.pdf')
+      const result = await runOcrmypdf(input, output, { mode: 'auto' })
+      expect(result).toMatchObject({ ocrApplied: true, exitCode: 0 })
+      expect((await readFile(calls, 'utf8')).trim().split('\n')).toEqual([
+        '--redo-ocr',
+        '--skip-text',
+      ])
+      expect((await readFile(output)).equals(await readFile(input))).toBe(true)
+      expect(await contentSyntaxErrors(output)).toBe(0)
+      expect(await contentSyntaxErrors(damaged)).toBeGreaterThan(0)
+    }, 60_000)
+
+    test('an input that already had such errors is not retried', async () => {
+      const input = join(work, 'redo-bad-source.pdf')
+      const damaged = join(work, 'redo-bad-damaged.pdf')
+      writeTextPdf(input, text(damagedMatrix))
+      writeTextPdf(damaged, text(damagedMatrix))
+      const calls = join(work, 'redo-bad-calls.txt')
+      await standIn(damaged, calls)
+
+      const output = join(work, 'redo-bad-out.pdf')
+      const result = await runOcrmypdf(input, output, { mode: 'auto' })
+      expect(result).toMatchObject({ ocrApplied: true, exitCode: 0 })
+      expect((await readFile(calls, 'utf8')).trim().split('\n')).toEqual(['--redo-ocr'])
+    }, 60_000)
+  })
 
   test('runOcrmypdf falls back to a copy when ocrmypdf cannot be started', async () => {
     const output = join(work, 'no-ocrmypdf.pdf')

@@ -97,6 +97,16 @@ export async function countTextChars(pdf: string): Promise<number> {
   return stdout.replace(/\s/g, '').length
 }
 
+/**
+ * How many content-stream syntax errors poppler reports reading every page's text (`Syntax Error`
+ * lines on stderr); 0 for a clean PDF. Poppler carries on past them, so the text it can read is
+ * what the user gets, and a page that loses text after OCR shows up here.
+ */
+export async function contentSyntaxErrors(pdf: string): Promise<number> {
+  const { stderr } = await poppler('pdftotext', ['-enc', 'UTF-8', pdf, '-'])
+  return (stderr.match(/^Syntax Error/gm) ?? []).length
+}
+
 const pageArgs = (pageIndex: number) => ['-f', String(pageIndex + 1), '-l', String(pageIndex + 1)]
 
 /**

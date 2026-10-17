@@ -14,6 +14,11 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 - `scripts/e2e-locked.sh`, exposed as `pnpm e2e`, `pnpm e2e:offline` and `pnpm e2e:all` at the repo root: runs
   Playwright under a machine-wide lock so two sessions or worktrees never test each other's code.
 
+### Fixed
+- OCR on the production toolchain (Debian 12's OCRmyPDF 14): a scanned PDF with owner restrictions (no copying or
+  editing, but opens without a password) is now OCRd instead of being copied through unread, and a page whose text
+  matrix holds a tiny number such as 6.1e-17 (typical of rotated text) no longer loses its text.
+
 ### Changed
 - DESIGN.md's Calling-mode row now says the page's width (not its height) is capped at 0.9 times the stage height.
 
