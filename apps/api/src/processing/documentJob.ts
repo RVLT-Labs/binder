@@ -108,6 +108,10 @@ async function runDocumentJob(deps: ProcessingDeps, versionId: string): Promise<
       errors.push(describeOcrFailure(ocr))
       console.warn(`OCR fell back to a copy for version ${versionId}:\n${ocr.stderr}`)
     }
+    if (ocr.note) {
+      errors.push(ocr.note)
+      console.warn(`OCR for version ${versionId}: ${ocr.note}`)
+    }
 
     const info = await readPages(searchable)
     if ('unreadable' in info) {

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createReadStream, existsSync, readdirSync, readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -9,6 +9,7 @@ import { getTestDb } from '@binder/db/testing'
 import { FIXTURES } from '@binder/fixtures'
 import { type DocumentKind, newId, type OcrMode, type WordLayer } from '@binder/shared'
 import { asc, eq, sql } from 'drizzle-orm'
+import { PDFDocument } from 'pdf-lib'
 import { PgBoss } from 'pg-boss'
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
 import { searchableBlobKey } from '../src/blob/keys'
@@ -18,9 +19,12 @@ import { KILL_GRACE_MS, runTool, ToolError } from '../src/processing/exec'
 import { describeOcrFailure, OCRMYPDF_TIMEOUT_MS, runOcrmypdf } from '../src/processing/ocrmypdf'
 import { processPage } from '../src/processing/pageJob'
 import {
+  contentSyntaxErrors,
   countTextChars,
   imageStats,
+  POPPLER_TIMEOUT_MS,
   pdfInfo,
+  popplerTimeout,
   renderPageImage,
   renderThumbnail,
 } from '../src/processing/poppler'
@@ -46,7 +50,7 @@ import type { ProcessingDeps } from '../src/processing/types'
 import { addDocumentVersion, createDocument } from '../src/services'
 import { setupShow } from './documentHelpers'
 import { RecordingJobs } from './helpers'
-import { writeBlankScanPdf } from './scanHelpers'
+import { writeBlankScanPdf, writeTextPdf } from './scanHelpers'
 import { findMissingTools, skipWithoutTools } from './tools'
 
 const run = promisify(execFile)
@@ -360,7 +364,9 @@ describe.skipIf(skip)('processing pipeline', () => {
   test('mixed pdf: page 2 is landscape and ROTATED sits top-left in displayed space; page 4 is OCRd', async () => {
     const { version } = await upload(FIXTURES.mixedPdf)
     const done = await processAll(version.id)
-    expect(done.version).toMatchObject({ status: 'ready', pageCount: 4, error: null })
+    expect(done.version).toMatchObject({ status: 'ready', pageCount: 4 })
+    // OCRmyPDF before 17 damages the rotated page, and the version says it fell back to --skip-text.
+    expect(done.version.error ?? '').toMatch(/^$|--skip-text/)
     const [p1, p2, p3, p4] = done.pages
     if (!p1 || !p2 || !p3 || !p4) throw new Error('expected four pages')
 
@@ -385,7 +391,8 @@ describe.skipIf(skip)('processing pipeline', () => {
 
   test('owner-restricted pdf: OCRmyPDF refusing it (exit 8) falls back to a copy and pages still process', async () => {
     // Opens without a password but carries owner restrictions. OCRmyPDF 17.13 actually OCRs these
-    // (next test), so a stand-in ocrmypdf on PATH plays an OCRmyPDF that refuses them with exit 8.
+    // (next test) and older releases refuse them with exit 8, so a stand-in ocrmypdf on PATH plays
+    // one that keeps refusing, even the decrypted retry, to reach the plain-copy fallback.
     const ownerOnly = join(work, 'owner-only.pdf')
     await run('qpdf', ['--encrypt', '', 'owner', '256', '--', FIXTURES.mixedPdf, ownerOnly])
     const bin = join(work, 'refusing-ocrmypdf')
@@ -406,9 +413,11 @@ describe.skipIf(skip)('processing pipeline', () => {
     expect(done.pages.map((p) => [p.status, p.ocrApplied])).toEqual(
       Array.from({ length: 4 }, () => ['ready', false]),
     )
-    expect((await blobBytes(done.version.searchableKey)).equals(await readFile(ownerOnly))).toBe(
-      true,
-    )
+    // The copy is the unrestricted one; the upload itself is untouched.
+    const searchable = join(work, 'owner-only-searchable.pdf')
+    await writeFile(searchable, await blobBytes(done.version.searchableKey))
+    await expect(run('qpdf', ['--is-encrypted', searchable])).rejects.toMatchObject({ code: 2 })
+    expect(await countTextChars(searchable)).toBeGreaterThan(0)
     expect((await wordLayer(done.pages[0] as { wordsKey: string })).words.map((w) => w.t)).toEqual([
       'PAGE',
       'ONE',
@@ -416,12 +425,36 @@ describe.skipIf(skip)('processing pipeline', () => {
     ])
   }, 120_000)
 
+  test('restricted vector-text pdf: the searchable copy is unrestricted, so pdf-lib (the export) can load it', async () => {
+    // Real restrictions with an empty user password: it opens, but copying, editing and printing are
+    // off. A script with no images never reaches OCRmyPDF (spec 5.1), so this is the plain-copy path.
+    const restricted = join(work, 'restricted-script.pdf')
+    await run('qpdf', [
+      ...['--encrypt', '', 'owner', '256', '--extract=n', '--modify=none', '--print=none'],
+      ...['--', FIXTURES.librettoShortPdf, restricted],
+    ])
+    await expect(PDFDocument.load(await readFile(restricted))).rejects.toThrow(/encrypted/)
+
+    const { version } = await upload(restricted)
+    const done = await processAll(version.id)
+    expect(done.version).toMatchObject({ status: 'ready', pageCount: 3, error: null })
+    expect(done.pages.map((p) => p.ocrApplied)).toEqual([false, false, false])
+    const searchable = join(work, 'restricted-script-searchable.pdf')
+    const bytes = await blobBytes(done.version.searchableKey)
+    await writeFile(searchable, bytes)
+    await expect(run('qpdf', ['--is-encrypted', searchable])).rejects.toMatchObject({ code: 2 })
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(3)
+    // The original upload is kept exactly as it was.
+    expect(await blobBytes(version.originalKey)).toEqual(await readFile(restricted))
+  }, 120_000)
+
   test('owner-restricted pdf with the installed OCRmyPDF: processed and OCRd like any other', async () => {
     const ownerOnly = join(work, 'owner-only-real.pdf')
     await run('qpdf', ['--encrypt', '', 'owner', '256', '--', FIXTURES.mixedPdf, ownerOnly])
     const { version } = await upload(ownerOnly)
     const done = await processAll(version.id)
-    expect(done.version).toMatchObject({ status: 'ready', pageCount: 4, error: null })
+    expect(done.version).toMatchObject({ status: 'ready', pageCount: 4 })
+    expect(done.version.error ?? '').toMatch(/^$|--skip-text/) // see the mixed pdf test
     expect(done.pages.map((p) => [p.status, p.ocrApplied])).toEqual([
       ['ready', false],
       ['ready', false],
@@ -1057,6 +1090,266 @@ describe.skipIf(skip)('tool wrappers', () => {
     expect(await readFile(output, 'utf8')).toBe('%PDF-1.7\nthis is not a pdf\n')
     expect(describeOcrFailure(result)).toMatch(/^ocrmypdf exit 2: \S/)
   }, 60_000)
+
+  // Stand-in ocrmypdf scripts take the real argument order: flags, then input, then output last.
+  const ARGS = 'in=; out=; for a in "$@"; do in=$out; out=$a; done'
+
+  /** A fresh empty directory, so a test can assert exactly what runOcrmypdf left in it. */
+  async function emptyDir(name: string): Promise<string> {
+    const dir = join(work, `${name}-${Math.random().toString(36).slice(2)}`)
+    await mkdir(dir, { recursive: true })
+    return dir
+  }
+
+  /** `from` with owner restrictions and an empty user password: it opens, but forbids everything. */
+  async function restrict(name: string, from: string): Promise<string> {
+    const out = join(work, name)
+    await run('qpdf', [
+      ...['--encrypt', '', 'owner', '256', '--extract=n', '--modify=none', '--print=none'],
+      ...['--', from, out],
+    ])
+    return out
+  }
+
+  const isEncrypted = (pdf: string) =>
+    run('qpdf', ['--is-encrypted', pdf]).then(
+      () => true,
+      () => false,
+    )
+
+  /** A one-page PDF saying `text`; `damaged` adds the exponent number OCRmyPDF 14 and 15 write. */
+  async function textPdf(name: string, text: string, damaged = false): Promise<string> {
+    const path = join(work, `${name}-${Math.random().toString(36).slice(2)}.pdf`)
+    writeTextPdf(
+      path,
+      `BT /F1 24 Tf 1 0 0 1 60 40 Tm (${text}) Tj ET${damaged ? ' 6.12E-17 w' : ''}`,
+    )
+    return path
+  }
+
+  const sameBytes = async (a: string, b: string) => (await readFile(a)).equals(await readFile(b))
+
+  test('runOcrmypdf retries an owner-restricted PDF on a decrypted copy when OCRmyPDF refuses it', async () => {
+    // Releases before 17 refuse any encrypted input with exit 8 (Debian 12's 14.0, Ubuntu 24.04's 15.2).
+    const ownerOnly = await restrict('owner-only-retry.pdf', FIXTURES.mixedPdf)
+    const calls = join(work, 'owner-retry-calls.txt')
+    vi.stubEnv('CALLS', calls)
+    await standInOcrmypdf(
+      `${ARGS}\necho "$in" >> "$CALLS"\n` +
+        'if qpdf --is-encrypted "$in"; then echo "EncryptedPdfError: Input PDF is encrypted." >&2; exit 8; fi\n' +
+        'cp "$in" "$out"',
+    )
+    const dir = await emptyDir('owner-retry')
+    const output = join(dir, 'out.pdf')
+    const result = await runOcrmypdf(ownerOnly, output, { mode: 'auto' })
+
+    expect(result).toMatchObject({ ocrApplied: true, exitCode: 0 })
+    const tried = (await readFile(calls, 'utf8')).trim().split('\n')
+    expect(tried).toHaveLength(2)
+    expect(tried[0]).toBe(ownerOnly)
+    expect(tried[1]).not.toBe(ownerOnly)
+    expect(await readdir(dir)).toEqual(['out.pdf'])
+    expect(await isEncrypted(output)).toBe(false)
+    expect(await countTextChars(output)).toBeGreaterThan(0)
+  }, 60_000)
+
+  test('runOcrmypdf keeps the refusal when the encrypted PDF cannot be decrypted without a password', async () => {
+    const locked = join(work, 'locked-retry.pdf')
+    await run('qpdf', ['--encrypt', 'user', 'owner', '256', '--', FIXTURES.mixedPdf, locked])
+    await standInOcrmypdf('echo "EncryptedPdfError: Input PDF is encrypted." >&2\nexit 8')
+    const output = join(work, 'locked-retry-out.pdf')
+    const result = await runOcrmypdf(locked, output, { mode: 'auto' })
+    expect(result).toMatchObject({ ocrApplied: false, exitCode: 8 })
+    expect(describeOcrFailure(result)).toMatch(/^ocrmypdf exit 8: EncryptedPdfError/)
+    // It needs a real password, so it stays as uploaded and the pipeline's pdfinfo rejects it.
+    expect(await sameBytes(output, locked)).toBe(true)
+  }, 60_000)
+
+  test('a refused owner-restricted PDF falls back to its decrypted copy and leaves no scratch file', async () => {
+    const ownerOnly = await restrict('owner-only-refused.pdf', FIXTURES.mixedPdf)
+    await standInOcrmypdf('echo "EncryptedPdfError: Input PDF is encrypted." >&2\nexit 8')
+    const dir = await emptyDir('owner-refused')
+    const output = join(dir, 'out.pdf')
+    const result = await runOcrmypdf(ownerOnly, output, { mode: 'auto' })
+    expect(result).toMatchObject({ ocrApplied: false, exitCode: 8 })
+    expect(await readdir(dir)).toEqual(['out.pdf'])
+    expect(await isEncrypted(output)).toBe(false)
+    expect(await countTextChars(output)).toBeGreaterThan(0)
+  }, 60_000)
+
+  test('ocr mode never still hands back an unrestricted copy of a restricted PDF', async () => {
+    const ownerOnly = await restrict('owner-only-never.pdf', FIXTURES.librettoShortPdf)
+    expect(await isEncrypted(ownerOnly)).toBe(true)
+    const output = join(work, 'owner-only-never-out.pdf')
+    expect(await runOcrmypdf(ownerOnly, output, { mode: 'never' })).toMatchObject({
+      ocrApplied: false,
+    })
+    expect(await isEncrypted(output)).toBe(false)
+    await expect(PDFDocument.load(await readFile(output))).resolves.toBeDefined()
+    expect(await countTextChars(output)).toBeGreaterThan(0)
+  }, 60_000)
+
+  test('an encrypted PDF that cannot be decrypted is kept as it is, with a warning, and does not throw', async () => {
+    const locked = join(work, 'locked-never.pdf')
+    await run('qpdf', [
+      '--encrypt',
+      'user',
+      'owner',
+      '256',
+      '--',
+      FIXTURES.librettoShortPdf,
+      locked,
+    ])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const output = join(work, 'locked-never-out.pdf')
+    await runOcrmypdf(locked, output, { mode: 'never' })
+    expect(await sameBytes(output, locked)).toBe(true)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/stays encrypted and exports will refuse/),
+    )
+  }, 60_000)
+
+  test('a poppler call is bounded by the remaining budget but never lifted above its own cap', () => {
+    expect(popplerTimeout()).toBe(POPPLER_TIMEOUT_MS)
+    expect(popplerTimeout(30 * 60 * 1000)).toBe(POPPLER_TIMEOUT_MS)
+    expect(popplerTimeout(500)).toBe(500)
+  })
+
+  test('a cancel during the decrypt step aborts, writes nothing and leaves no scratch file', async () => {
+    const ownerOnly = await restrict('owner-only-cancel.pdf', FIXTURES.mixedPdf)
+    const bin = await standInOcrmypdf('echo "EncryptedPdfError" >&2\nexit 8')
+    const started = join(work, `qpdf-started-${Math.random().toString(36).slice(2)}`)
+    vi.stubEnv('STARTED', started)
+    // A qpdf that hangs, ahead of the real one on PATH.
+    await writeFile(join(bin, 'qpdf'), '#!/bin/sh\ntouch "$STARTED"\nsleep 300\n', { mode: 0o755 })
+    const dir = await emptyDir('owner-cancel')
+    const output = join(dir, 'out.pdf')
+    const controller = new AbortController()
+    const job = runOcrmypdf(ownerOnly, output, { mode: 'auto', signal: controller.signal })
+    const settled = job.then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect(await until(() => existsSync(started), 20_000)).toBe(true)
+    const cancelledAt = Date.now()
+    controller.abort()
+    expect(await settled).toMatchObject({ name: 'ToolError', aborted: true })
+    expect(Date.now() - cancelledAt).toBeLessThan(4000)
+    expect(await readdir(dir)).toEqual([])
+  }, 60_000)
+
+  describe('when --redo-ocr writes exponent numbers into the page text', () => {
+    // Older OCRmyPDF (14.0, 15.2) re-serialises content streams with 6.1E-17 where the PDF said
+    // 0.000000000000000061: poppler then reads "E-17" as an unknown operator and loses the text.
+
+    /**
+     * An ocrmypdf whose `--redo-ocr` run writes `redo` and whose other (`--skip-text`) run runs
+     * `skipBody`, logging the flag of each run to the returned file.
+     */
+    async function standIn(redo: string, skipBody: string, extraEnv: Record<string, string> = {}) {
+      const calls = join(work, `calls-${Math.random().toString(36).slice(2)}.txt`)
+      vi.stubEnv('CALLS', calls)
+      vi.stubEnv('REDO', redo)
+      for (const [k, v] of Object.entries(extraEnv)) vi.stubEnv(k, v)
+      await standInOcrmypdf(
+        `${ARGS}\necho "$1" >> "$CALLS"\n` +
+          `if [ "$1" = "--redo-ocr" ]; then cp "$REDO" "$out"; else ${skipBody}; fi`,
+      )
+      return async () => (await readFile(calls, 'utf8')).trim().split('\n')
+    }
+
+    const run2 = async (input: string) => {
+      const dir = await emptyDir('redo')
+      const output = join(dir, 'out.pdf')
+      const result = await runOcrmypdf(input, output, { mode: 'auto' })
+      return { dir, output, result }
+    }
+
+    test('--skip-text wins when it found at least as much text', async () => {
+      const input = await textPdf('source', 'SOURCE TEXT')
+      const redo = await textPdf('redo', 'SOURCE TEXT', true)
+      expect(await contentSyntaxErrors(redo)).toBeGreaterThan(0)
+      const calls = await standIn(redo, 'cp "$in" "$out"')
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const { dir, output, result } = await run2(input)
+      expect(result).toMatchObject({ ocrApplied: true, exitCode: 0 })
+      expect(result.note).toMatch(
+        /damaged the text of some pages; OCR was repeated with --skip-text/,
+      )
+      expect(await calls()).toEqual(['--redo-ocr', '--skip-text'])
+      expect(await sameBytes(output, input)).toBe(true)
+      expect(await readdir(dir)).toEqual(['out.pdf'])
+    }, 60_000)
+
+    test('--skip-text finding less text keeps the --redo-ocr output', async () => {
+      // A page that is a scan under a vector-text overlay: --redo-ocr reads the body, --skip-text
+      // leaves it, so the damaged --redo-ocr output still holds more.
+      const input = await textPdf('source', 'OVERLAY')
+      const redo = await textPdf('redo', 'OVERLAY AND THE SCANNED BODY TEXT', true)
+      const skip = await textPdf('skip', 'OVERLAY')
+      const calls = await standIn(redo, 'cp "$SKIP" "$out"', { SKIP: skip })
+
+      const { dir, output, result } = await run2(input)
+      expect(result).toMatchObject({ ocrApplied: true, exitCode: 0 })
+      expect(result.note).toMatch(/--skip-text retry found less text.*--redo-ocr output was kept/)
+      expect(await calls()).toEqual(['--redo-ocr', '--skip-text'])
+      expect(await sameBytes(output, redo)).toBe(true)
+      expect(await readdir(dir)).toEqual(['out.pdf'])
+    }, 60_000)
+
+    test('a failed --skip-text keeps the --redo-ocr output instead of copying the input over it', async () => {
+      const input = await textPdf('source', 'SOURCE TEXT')
+      const redo = await textPdf('redo', 'SOURCE TEXT AND OCR', true)
+      await standIn(redo, 'echo "boom" >&2; exit 15')
+
+      const { dir, output, result } = await run2(input)
+      expect(result).toMatchObject({ ocrApplied: true, exitCode: 0 })
+      expect(result.note).toMatch(
+        /--skip-text retry failed \(exit 15: boom\).*--redo-ocr output was kept/,
+      )
+      expect(await sameBytes(output, redo)).toBe(true)
+      expect(await readdir(dir)).toEqual(['out.pdf'])
+    }, 60_000)
+
+    test('a --skip-text that runs out of time keeps the --redo-ocr output', async () => {
+      const input = await textPdf('source', 'SOURCE TEXT')
+      const redo = await textPdf('redo', 'SOURCE TEXT AND OCR', true)
+      await standIn(redo, 'sleep 300')
+      ocrOverride.timeoutMs = 4000 // the whole budget: the checks and the --redo-ocr run use some
+
+      const { dir, output, result } = await run2(input)
+      expect(result).toMatchObject({ ocrApplied: true, exitCode: 0 })
+      expect(result.note).toMatch(
+        /--skip-text retry failed \(timed out\).*--redo-ocr output was kept/,
+      )
+      expect(await sameBytes(output, redo)).toBe(true)
+      expect(await readdir(dir)).toEqual(['out.pdf'])
+    }, 60_000)
+
+    test('output with less text than its input counts as damaged even without syntax errors', async () => {
+      const input = await textPdf('source', 'SOURCE WITH A LONGER TEXT')
+      const redo = await textPdf('redo', 'HI')
+      const calls = await standIn(redo, 'cp "$in" "$out"')
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const { output, result } = await run2(input)
+      expect(await calls()).toEqual(['--redo-ocr', '--skip-text'])
+      expect(result.note).toMatch(/--skip-text/)
+      expect(await sameBytes(output, input)).toBe(true)
+    }, 60_000)
+
+    test('an input that already had such errors is not retried', async () => {
+      const input = await textPdf('source', 'SOURCE TEXT', true)
+      const redo = await textPdf('redo', 'SOURCE TEXT', true)
+      const calls = await standIn(redo, 'cp "$in" "$out"')
+
+      const { result } = await run2(input)
+      expect(result).toMatchObject({ ocrApplied: true, exitCode: 0 })
+      expect(result.note).toBeUndefined()
+      expect(await calls()).toEqual(['--redo-ocr'])
+    }, 60_000)
+  })
 
   test('runOcrmypdf falls back to a copy when ocrmypdf cannot be started', async () => {
     const output = join(work, 'no-ocrmypdf.pdf')

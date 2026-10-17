@@ -1,9 +1,16 @@
 import { runTool } from './exec'
 
-const POPPLER_TIMEOUT_MS = 2 * 60 * 1000
+export const POPPLER_TIMEOUT_MS = 2 * 60 * 1000
 
-const poppler = (command: string, args: string[]) =>
-  runTool(command, args, { timeoutMs: POPPLER_TIMEOUT_MS })
+/** A caller's remaining budget bounds a poppler call; it never lifts the cap above POPPLER_TIMEOUT_MS. */
+export const popplerTimeout = (requestedMs?: number): number =>
+  Math.min(POPPLER_TIMEOUT_MS, requestedMs ?? POPPLER_TIMEOUT_MS)
+
+const poppler = (
+  command: string,
+  args: string[],
+  opts: { timeoutMs?: number; signal?: AbortSignal } = {},
+) => runTool(command, args, { timeoutMs: popplerTimeout(opts.timeoutMs), signal: opts.signal })
 
 /** pdfinfo ran cleanly but its output lacks what we need: a deterministic, unreadable PDF. */
 export class PdfInfoParseError extends Error {
@@ -92,9 +99,26 @@ export async function imageStats(pdf: string): Promise<ImageStats> {
 }
 
 /** The number of non-whitespace characters in the PDF's text layer, over every page (`pdftotext`). */
-export async function countTextChars(pdf: string): Promise<number> {
-  const { stdout } = await poppler('pdftotext', ['-enc', 'UTF-8', pdf, '-'])
+export async function countTextChars(
+  pdf: string,
+  opts: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<number> {
+  const { stdout } = await poppler('pdftotext', ['-enc', 'UTF-8', pdf, '-'], opts)
   return stdout.replace(/\s/g, '').length
+}
+
+/**
+ * How many content-stream syntax errors poppler reports reading every page's text (`Syntax Error`
+ * lines on stderr); 0 for a clean PDF. Poppler carries on past them, so the text it can read is
+ * what the user gets, and a page that loses text after OCR shows up here. The text itself goes to
+ * /dev/null, so only stderr is buffered.
+ */
+export async function contentSyntaxErrors(
+  pdf: string,
+  opts: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<number> {
+  const { stderr } = await poppler('pdftotext', [pdf, '/dev/null'], opts)
+  return (stderr.match(/^Syntax Error/gm) ?? []).length
 }
 
 const pageArgs = (pageIndex: number) => ['-f', String(pageIndex + 1), '-l', String(pageIndex + 1)]
