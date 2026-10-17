@@ -145,7 +145,13 @@ async function unrestrict(pdf: string, signal: AbortSignal | undefined): Promise
     await qpdf(['--decrypt', '--replace-input', pdf])
   } catch (err) {
     if (err instanceof ToolError && err.aborted) throw err
-    if (!(err instanceof ToolError) || err.exitCode !== QPDF_WARNINGS) return
+    if (err instanceof ToolError && err.exitCode === QPDF_WARNINGS) return
+    // Not fatal: a real password is rejected by pdfinfo next. Anything else is worth a log line,
+    // because the stored copy stays encrypted and pdf-lib (the marked-script export) refuses it.
+    const why = err instanceof ToolError ? firstLine(err.stderr) || err.message : String(err)
+    console.warn(
+      `Could not decrypt the encrypted searchable PDF ${pdf}; it stays encrypted and exports will refuse it: ${why}`,
+    )
   }
 }
 

@@ -22,7 +22,9 @@ import {
   contentSyntaxErrors,
   countTextChars,
   imageStats,
+  POPPLER_TIMEOUT_MS,
   pdfInfo,
+  popplerTimeout,
   renderPageImage,
   renderThumbnail,
 } from '../src/processing/poppler'
@@ -1186,6 +1188,32 @@ describe.skipIf(skip)('tool wrappers', () => {
     await expect(PDFDocument.load(await readFile(output))).resolves.toBeDefined()
     expect(await countTextChars(output)).toBeGreaterThan(0)
   }, 60_000)
+
+  test('an encrypted PDF that cannot be decrypted is kept as it is, with a warning, and does not throw', async () => {
+    const locked = join(work, 'locked-never.pdf')
+    await run('qpdf', [
+      '--encrypt',
+      'user',
+      'owner',
+      '256',
+      '--',
+      FIXTURES.librettoShortPdf,
+      locked,
+    ])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const output = join(work, 'locked-never-out.pdf')
+    await runOcrmypdf(locked, output, { mode: 'never' })
+    expect(await sameBytes(output, locked)).toBe(true)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/stays encrypted and exports will refuse/),
+    )
+  }, 60_000)
+
+  test('a poppler call is bounded by the remaining budget but never lifted above its own cap', () => {
+    expect(popplerTimeout()).toBe(POPPLER_TIMEOUT_MS)
+    expect(popplerTimeout(30 * 60 * 1000)).toBe(POPPLER_TIMEOUT_MS)
+    expect(popplerTimeout(500)).toBe(500)
+  })
 
   test('a cancel during the decrypt step aborts, writes nothing and leaves no scratch file', async () => {
     const ownerOnly = await restrict('owner-only-cancel.pdf', FIXTURES.mixedPdf)

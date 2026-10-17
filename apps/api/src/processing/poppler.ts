@@ -1,13 +1,16 @@
 import { runTool } from './exec'
 
-const POPPLER_TIMEOUT_MS = 2 * 60 * 1000
+export const POPPLER_TIMEOUT_MS = 2 * 60 * 1000
+
+/** A caller's remaining budget bounds a poppler call; it never lifts the cap above POPPLER_TIMEOUT_MS. */
+export const popplerTimeout = (requestedMs?: number): number =>
+  Math.min(POPPLER_TIMEOUT_MS, requestedMs ?? POPPLER_TIMEOUT_MS)
 
 const poppler = (
   command: string,
   args: string[],
   opts: { timeoutMs?: number; signal?: AbortSignal } = {},
-) =>
-  runTool(command, args, { timeoutMs: opts.timeoutMs ?? POPPLER_TIMEOUT_MS, signal: opts.signal })
+) => runTool(command, args, { timeoutMs: popplerTimeout(opts.timeoutMs), signal: opts.signal })
 
 /** pdfinfo ran cleanly but its output lacks what we need: a deterministic, unreadable PDF. */
 export class PdfInfoParseError extends Error {
