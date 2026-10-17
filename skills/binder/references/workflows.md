@@ -94,7 +94,7 @@ The user supplies a CSV with the columns of Binder's own cue sheet (`Cue, Type, 
    ```
 3. Propose a fix per collision and wait: usually `update_cue {cueId, number: "12.5"}` for the newcomer, or a renumber of the whole layer.
 4. Point fix: `update_cue {cueId: "01a146d6-57da-7e94-8d5a-45a4f72a3791", number: "11.5"}` → `{"display":"11.5","duplicate":false}`.
-5. Whole layer, only on request (it is not confirm-gated, so the user's yes to the plan is the gate): `renumber_cues {showId, department: "LX", documentId}` → `{"changed":4,"flagged":[]}`. It numbers placed cues `10, 11, 12…` in script order and leaves unplaced cues and the `0` range alone, without avoiding their numbers, so an unplaced cue can now share a number with a placed one. `flagged` stays `[]` even then, so re-run step 2 to see `duplicate: true` on both cues, and fix those with `update_cue`.
+5. Whole layer, only on request (it is not confirm-gated, so the user's yes to the plan is the gate): `renumber_cues {showId, department: "LX", documentId}` → `{"changed":4,"flagged":[]}`. It numbers placed cues `10, 11, 12…` in script order and leaves unplaced cues and the `0` range alone, without avoiding their numbers, so an unplaced cue can now share a number with a placed one. `flagged` then lists both cues with `"reason":"duplicate"` (an empty `flagged` means no collision). Re-run step 2 to see the numbers, and fix them with `update_cue`.
 6. `get_activity {showId, limit: 1}` gives the renumber's `batchId`; keep it so `revert_batch` can undo the whole renumber if the user changes their mind.
 
 ## 5. Handle a new script revision
@@ -115,7 +115,7 @@ The user supplies a CSV with the columns of Binder's own cue sheet (`Cue, Type, 
    - line moved → re-place by quote: `get_cue`, then `delete_cues` and `place_cue_at_text` with the old `number`, `label`, `type` and `notes` (then `update_cue {colour}` if it had one; the id and history are new), or `update_annotation` with a new anchor
    - line cut → ask; delete, or leave it and tell the user
    - on an older version → `"action":"reanchor"` (or `"revert"` to put the run's move back)
-7. Cues the run moved with status `ok` are not in the review. From step 4's removed lines, `list_cues {showId, documentId}` and check any cue whose `anchor.text.quote` matches a removed line: it may have jumped to another occurrence. Verified case: SND 20 on the second `Pour, O pour the pirate sherry` moved to the first with status `ok` when the second was cut.
+7. Cues the run moved with status `ok` are not in the review, but a cue whose copy of a repeated line was cut is now `approximate` and is in the review. Still check, from step 4's removed lines, `list_cues {showId, documentId}` for any cue whose `anchor.text.quote` matches a removed line. Verified case: SND 20 on the second `Pour, O pour the pirate sherry` is `approximate` on the first when the second is cut.
 8. `get_reanchor_review` again until `pending` and `olderVersions` are empty, then report.
 9. If the run as a whole was wrong (wrong file uploaded), `get_activity {showId, limit: 5}` gives the `reanchor:<v2>` batch. Call `revert_batch {showId, batchId, userId}` without `confirm`; a run that moved more than 10 rows answers `CONFIRMATION_REQUIRED` with its summary. Show it, and on the user's yes call again with `confirm: true`: every anchor is restored and v1 is current again (recipe 7 rules apply).
 
@@ -150,7 +150,7 @@ The user supplies a CSV with the columns of Binder's own cue sheet (`Cue, Type, 
 3. Revert:
    - one row: `revert_change {seq}` → `{"batchId":"01a146d8-a12b-…","reverted":1,"skipped":[]}`
    - a batch: `revert_batch {showId, batchId, userId}`. More than 10 rows answers `{"code":"CONFIRMATION_REQUIRED","summary":"Reverting this batch changes 11 rows and deletes 0."}`: show the summary to the user, and only on their yes call again with `confirm: true` → `{"batchId":"01a146d7-8430-…","reverted":11,"skipped":[],"rows":11,"deletes":0}`.
-4. A `conflict: cues <id> has changed since (label, notes); revert with force to overwrite` means someone edited the row after the change you are undoing. Do not add `force` on your own: tell the user which columns moved and ask.
+4. A `conflict: cues <id> has changed since (label, notes); revert with force to overwrite` means someone edited the row after the change you are undoing. Do not add `force` on your own: tell the user which columns moved and ask. You only get this conflict for rows you may edit; if you get `forbidden: you cannot edit this layer` instead, tell the user whose layer it is rather than retrying.
 5. Verify with `get_cue` / `list_cues`, and `get_activity {showId, limit: 1}`: the revert is a new batch worded like any edit (`relabelled 1 LX cue and edited 1`), with nothing marking it as a revert, so quote the `batchId` the revert returned when you report; that batch can itself be reverted if the undo was wrong.
 6. Never undo by hand-editing values back: a revert keeps the log honest and reversible.
 

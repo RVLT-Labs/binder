@@ -352,12 +352,18 @@ Renumbers one department's cues anchored in one document by script order. Hints:
 | `showId` | string | with `department` | |
 | `blockSize` | integer 2..1000 | no | Default 10. |
 
-Order: cues on the current version first (page, then top to bottom), then cues left on an older version; the first takes `blockSize`, the rest consecutive integers, minors reset to 0. Unplaced cues, cues with major 0 (line checks) and cues in other documents are untouched, and the renumbering does **not** avoid their numbers (an unplaced `12` can end up duplicated by a renumbered placed cue). Returns `{changed, flagged: [{cueId, reason: "spilled" | "overflow"}]}`; `flagged` is only non-empty when script items group cues (not in this milestone), so expect `[]`.
+Order: cues on the current version first (page, then top to bottom), then cues left on an older version; the first takes `blockSize`, the rest consecutive integers, minors reset to 0. Unplaced cues, cues with major 0 (line checks) and cues in other documents are untouched, and the renumbering does **not** avoid their numbers (an unplaced `12` can end up duplicated by a renumbered placed cue). Returns `{changed, flagged: [{cueId, reason: "spilled" | "overflow" | "duplicate"}]}`. `duplicate` lists every cue (renumbered or left alone: unplaced, in another document, or already in the cue list) that shares a number with a cue this renumbering governs, both sides of each collision, in the same department only, and again on a re-run that changes nothing. `spilled` and `overflow` appear only when script items group cues (not in this milestone). `flagged: []` means no collision. The result lists cue ids only, so call `list_cues` for the numbers.
 
 Errors: `invalid: give either departmentId, or department with showId`, `invalid: department needs showId`, `not_found: Department not found`, `not_found: Document not found`.
 
 ```json
 {"changed":4,"flagged":[]}
+```
+
+With a collision (an unplaced `12` and a renumbered cue that landed on `12`):
+
+```json
+{"changed":4,"flagged":[{"cueId":"01a146d5-8f94-765d-a313-a98c33023402","reason":"duplicate"},{"cueId":"01a146d6-57b4-72f6-b192-3815be8762c4","reason":"duplicate"}]}
 ```
 
 ## Annotations
@@ -624,7 +630,7 @@ Returns `{groups: [{batchId, userId, label, summary, at, fromSeq, toSeq, count, 
 
 ### `revert_change`
 
-Writes one log row's old values back as a new logged change. Hints: write, destructive. Rights are the owning service's: edit rights on the layer for cues and annotations, editor for documents, owner for departments and shows. `force: true` is **not confirm-gated: ask the user first**, since it overwrites someone's later edit.
+Writes one log row's old values back as a new logged change. Hints: write, destructive. Rights are the owning service's: edit rights on the layer for cues and annotations, editor for documents, owner for departments and shows. The rights check runs before any conflict check, so a caller without rights gets `forbidden: you cannot edit this layer` (or `forbidden: Forbidden`) and never learns whether the row changed. `force: true` is **not confirm-gated: ask the user first**, since it overwrites someone's later edit.
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
@@ -645,7 +651,7 @@ Reverts every row one user wrote in one batch, newest first, all or nothing. Hin
 | `force` | boolean | no | |
 | `confirm` | boolean | no | |
 
-Returns `{batchId, reverted, skipped, rows, deletes}`. A re-anchoring run (`batchId` `reanchor:<versionId>`) is reverted as one document operation by any editor. The gate is decided by a dry run that does all the work and rolls it back, so a `conflict` or `forbidden` surfaces **before** any `CONFIRMATION_REQUIRED`. Errors as `revert_change`, plus `not_found: Batch not found`.
+Returns `{batchId, reverted, skipped, rows, deletes}`. A re-anchoring run (`batchId` `reanchor:<versionId>`) is reverted as one document operation by any editor. The gate is decided by a dry run that does all the work and rolls it back, so `forbidden` and `conflict` surface **before** any `CONFIRMATION_REQUIRED`, rights first. Errors as `revert_change`, plus `not_found: Batch not found`.
 
 ```json
 {"code":"CONFIRMATION_REQUIRED","summary":"Reverting this batch changes 11 rows and deletes 0."}

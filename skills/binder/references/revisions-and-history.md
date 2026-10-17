@@ -22,7 +22,8 @@ For every cue and annotation anchored on the old version (other members' persona
 
 | The mark has | Result | Status |
 |---|---|---|
-| a quote found exactly once in the new text | moved to that line; `x` kept relative to the line's left edge; word indices rebound | `ok` |
+| a quote found exactly once in the new text, and it was also unique in the old text, or the surviving copy's surrounding words match the copy the mark was on | moved to that line; `x` kept relative to the line's left edge; word indices rebound | `ok` |
+| a quote found exactly once now but several times before, and the surviving copy does not clearly match the one the mark was on, or the mark's own copy was cut | moved to the surviving match | `approximate` |
 | a quote found once with the forgiving match (case, punctuation, line-end hyphen) | the same | `approximate` |
 | a quote found several times | the occurrence nearest the old relative position in the document | `approximate` |
 | a quote found nowhere, or no quote; page counts equal | same page and position; words unbound (`wordStart: -1`) | `approximate` |
@@ -34,7 +35,7 @@ Re-anchoring never deletes a mark. The old anchor is kept in the log as `before`
 Two consequences to warn the user about:
 
 - A cue whose line was **cut** keeps its page and position with status `approximate`; it needs a decision.
-- A cue whose line was cut while the **same words survive once elsewhere** moves there with status `ok` and does not appear in the review. Verified: a cue on the second `Pour, O pour the pirate sherry` moved to the first when the second was cut. After a revision, read `compare_versions` and check cues near every removed line, not only the review list.
+- A cue whose line was cut while the **same words survive once elsewhere** moves there with status `approximate` and appears in the review. `previous` shows the old position; `accept` keeps it on the surviving copy and `revert` puts it back. Verified: a cue on the second `Pour, O pour the pirate sherry` is flagged when the second is cut, while a cue on the first stays `ok`. When the copies sit in near-identical surroundings the flag can also appear although the cue's own line survived. After a revision, still read `compare_versions` and check cues near every removed line.
 
 ## The review list
 
@@ -106,12 +107,12 @@ Reverting writes the old values back as a **new** logged change in a new batch, 
 
 - cues and annotations: inserts (deleted again), updates (old columns restored), deletes (recreated with the same id);
 - departments, documents and shows: updates only (`invalid: a insert on departments cannot be reverted`); a document's `currentVersionId` change only as part of its whole batch.
-- Rights are the owning service's: edit rights on the layer for cues and annotations, editor on the show for documents, owner for departments and shows.
-- **Conflict rule:** if any column the change wrote has changed since (compared with the row's `after`), the call is `conflict: cues <id> has changed since (label, notes); revert with force to overwrite` and nothing is written. `force: true` overwrites anyway (ungated: ask first). A revert of a revert is therefore a conflict too: revert the newer batch instead.
+- Rights are the owning service's: edit rights on the layer for cues and annotations, editor on the show for documents, owner for departments and shows. The rights check runs before any conflict or existence check, so a row you may not write is `forbidden` in every case below, including a gone or recreated row, and you never learn whether it changed.
+- **Conflict rule:** for a row you may write, if any column the change wrote has changed since (compared with the row's `after`), the call is `conflict: cues <id> has changed since (label, notes); revert with force to overwrite` and nothing is written. `force: true` overwrites anyway (ungated: ask first). A revert of a revert is therefore a conflict too: revert the newer batch instead.
 - Reverting the same `seq` twice (verified): an **update** answers the conflict above, and only with `force` is it skipped as `already-reverted`; an **insert** whose row is already gone is skipped `already-reverted` with no `force` needed; a **delete** whose row is back is `conflict: cues <id>: row exists again` unless `force`, which skips it. A row that is gone when an update is reverted is `conflict … no longer exists` for a single revert and `row-gone` in a batch.
 - Returns `{batchId, reverted, skipped}`.
 
-`revert_batch {showId, batchId, userId, force?, confirm?}` reverts every row one user wrote in one batch, newest first, all or nothing: one conflict or one layer you cannot edit refuses the whole call. It first does the work as a dry run; when that would change or delete more than 10 rows it returns `CONFIRMATION_REQUIRED` with `Reverting this batch changes 11 rows and deletes 0.` until called with `confirm: true`. Returns `{batchId, reverted, skipped, rows, deletes}`.
+`revert_batch {showId, batchId, userId, force?, confirm?}` reverts every row one user wrote in one batch, newest first, all or nothing: one conflict or one layer you cannot edit refuses the whole call. Rights are checked before conflicts row by row, so an earlier row you can edit may report its `conflict` before a later row you cannot edit reports `forbidden`. It first does the work as a dry run; when that would change or delete more than 10 rows it returns `CONFIRMATION_REQUIRED` with `Reverting this batch changes 11 rows and deletes 0.` until called with `confirm: true`. Returns `{batchId, reverted, skipped, rows, deletes}`.
 
 A re-anchoring run (`batchId` starting `reanchor:`) is reverted as one document operation: any editor may, it restores the previous anchors and the previous current version, including other members' personal annotations that the run moved (counted, never named). Rows changed since the run are a conflict unless `force`, and forcing over a layer you cannot edit is `forbidden`.
 
@@ -120,6 +121,6 @@ Limits of revert:
 - Document and version lifecycle events (upload, cancel, retry, remove) are not revertable. `remove_version` is permanent.
 - Membership changes are not revertable through these tools; use `add_show_member` / `update_show_member` again.
 - Reverting an insert deletes the row; a cue someone has since edited is protected by the conflict rule, so read the conflict message and ask before forcing.
-- A revert runs as you: it needs your rights on every row's layer, so an SND-scoped editor cannot revert an LX change. (Today the conflict check runs before the rights check, so such an attempt can return `conflict` naming the drifted columns instead of `forbidden`.)
+- A revert runs as you: it needs your rights on every row's layer, so an SND-scoped editor cannot revert an LX change. The rights check runs before any conflict check, for `revert_change` and for ordinary `revert_batch` batches, so such an attempt is `forbidden` (never a `conflict` that names columns), with or without `force`. A `reanchor:` run is the exception: it still reports a count of drifted rows as a `conflict` before it reports `forbidden`.
 
 Safe undo recipe: [workflows.md](workflows.md#7-undo-a-mistake-safely).

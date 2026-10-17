@@ -29,8 +29,8 @@ Tool errors never carry a stack trace or the row of another show. The full code 
 | `unauthenticated` (HTTP 401) | No valid token on the request. | Stop. Ask the user to check the token in the client configuration. Never ask them to paste a token into the chat. |
 | `forbidden: token scope does not include this show` | The token is scoped to other shows. | The user needs a token with that show in scope, or `*`. You cannot widen it. |
 | `forbidden: token scope does not allow creating organisations or shows` | Scoped token on `create_show` / `create_organisation`. | Same. |
-| `forbidden: Forbidden` | Role too low (owner-only tool, or editor-only upload/control as a viewer). | Tell the user what role is needed; do not retry. |
-| `forbidden: you cannot edit this layer` | Editor outside their department scope, viewer on a department layer, or a move into a layer you cannot edit. | Report which layer; an owner can widen the scope with `update_show_member`. |
+| `forbidden: Forbidden` | Role too low (owner-only tool, or editor-only upload/control as a viewer; also a revert of a department or show edit as a non-owner, or of a document edit as a viewer). | Tell the user what role is needed; do not retry. |
+| `forbidden: you cannot edit this layer` | Editor outside their department scope, viewer on a department layer, a move into a layer you cannot edit, or a revert of a row on such a layer. | Report which layer; an owner can widen the scope with `update_show_member`. |
 | `forbidden: show is archived` | Every write on an archived show. | Only an owner can unarchive with `update_show {status}`; ask before doing that. |
 | `forbidden: a personal annotation goes on your own personal layer` | You named someone else's personal layer. | Use `personal`. |
 | `forbidden: an export can only include your own personal layer` | Same, in `layers`. | Drop it. |
@@ -49,7 +49,7 @@ Tool errors never carry a stack trace or the row of another show. The full code 
 | `invalid: text: a note needs text`, `a stamp needs 1 to 40 characters`, `anchor: a highlight needs anchor text`, `geometry.w: …` | Annotation rules. | Fix the fields ([annotations.md](annotations.md)). |
 | `invalid: Too many changes to compare line by line.` | More than 4000 differing lines. | Read pages or compare smaller uploads. |
 | `invalid: URL resolves to a private or reserved address`, `Only http and https URLs can be fetched`, `URLs with credentials are not accepted`, `Not a valid URL`, `Download failed with HTTP N`, `Too many redirects`, `File is not a PDF`; `payload_too_large: Download exceeds 200 MB` | `upload_document` refused the URL or the download. | Use a public https URL to a PDF under 200 MB, or the REST upload from the user's machine. |
-| `conflict: … has changed since (col, col); revert with force to overwrite` | Someone changed the row after the change you are reverting. | Show the user; only add `force: true` on their explicit say-so. |
+| `conflict: … has changed since (col, col); revert with force to overwrite` | Someone changed the row after the change you are reverting. Only callers who may edit that row are told; others get `forbidden: you cannot edit this layer`. | Show the user; only add `force: true` on their explicit say-so. |
 | `conflict: <table> <id>: row exists again` | Reverting a delete whose row was recreated (including by an earlier revert). | Nothing to do; it is already back. |
 | `conflict: A department with code X already exists` | Duplicate code. | Pick another, or `list_departments` for the existing one. |
 | `conflict: User is already a member of this show` | `add_show_member` twice. | Use `update_show_member`. |
@@ -83,7 +83,7 @@ What runs before the gate differs by tool:
 |---|---|---|
 | `add_show_member`, `update_show_member`, `remove_show_member` | owner check and membership lookup (a non-owner gets `forbidden`, never a summary) | the archived-show check (`forbidden: show is archived`), email lookup, scope validation |
 | `remove_version` | version lookup, editor check, archived check | the state checks (`conflict …`) |
-| `revert_batch` | a full dry run: rights, conflicts and `not_found` all surface first | nothing new |
+| `revert_batch` | a full dry run: rights (`forbidden`) first, then conflicts and `not_found`; all surface before the gate | nothing new |
 | `delete_cues`, `delete_annotations` | only that every id exists and is visible | the layer-rights check, so a viewer or an out-of-scope editor is asked to confirm and then gets `forbidden: you cannot edit this layer` (verified) |
 
 So a `CONFIRMATION_REQUIRED` from a delete is not proof the delete is allowed. `confirm` is per call: it does not carry over to the next call, and sending `confirm: true` on an ungated call is harmless.
