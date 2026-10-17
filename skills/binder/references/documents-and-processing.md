@@ -38,8 +38,8 @@ Either way, keep the returned `version.id` and poll.
 
 After an upload the version goes `queued` → `processing` → `ready` or `failed`. The job:
 
-1. Reads the PDF (page count and sizes). A damaged or password-protected file fails here.
-2. With `ocrMode: "auto"`, runs OCR on pages without text (ocrmypdf, up to 30 minutes) and writes a searchable PDF; OCR trouble falls back to a plain copy rather than failing. With `never`, copies the file as is.
+1. Reads the PDF (page count and sizes). A damaged file, or one that needs a password to open, fails here. A PDF that only restricts copying or editing opens without a password and is processed normally.
+2. With `ocrMode: "auto"`, runs OCR on pages without text (ocrmypdf, up to 30 minutes) and writes a searchable PDF; OCR trouble falls back to a plain copy rather than failing. With `never` (or when the PDF has no images), copies the file as it is. Binder's working copy of an owner-restricted PDF always has the restrictions removed (the original upload is kept as it was), so it can be read, searched and exported. If OCR damages a page's existing text on an older OCR toolchain, OCR is repeated in a way that leaves pages that already have text untouched, and Binder keeps whichever result has more text; the version's `error` says when this happened. The 30 minutes covers all attempts.
 3. Extracts a word layer per page (`words` and `lines` in displayed page space) and renders page images on demand.
 4. Checks there is text, but only for a **text-anchored** document (`snapToText` true, which is the default for `libretto` and `other`) with `ocrMode: "auto"`: fewer than 20 characters across the whole document fails as `no_text`, or `low_resolution` when the pages are scans under 150 dpi. If OCR was meant to run and did not (it failed or timed out) and there is no text, the failure is `timeout` or `unknown` instead, because a retry may succeed. Scores and blocking documents (`snapToText` false) and `ocrMode: "never"` skip the check: the version becomes `ready`, possibly with empty word layers.
 5. Marks pages and the version `ready`; a new version then runs re-anchoring and becomes current.
@@ -57,7 +57,7 @@ Poll `get_document {documentId}` every few seconds. The three-page fixture proce
 | `failureCode` | Title in the app | Retry helps? | What to do |
 |---|---|---|---|
 | `unreadable` | couldn't read file | no | Not a PDF Binder can open, possibly damaged. Export the script as a PDF again and upload that. |
-| `password_protected` | password protected | no | Remove the password and upload again. |
+| `password_protected` | password protected | no | The PDF needs a password to open (copy or edit restrictions alone are fine). Remove the password and upload again. |
 | `no_text` | couldn't read text | only after a settings change | No text on any page (under 20 characters after OCR). Check it is the script, or upload a clearer scan. Or `update_document {snapToText: false}` or `{ocrMode: "never"}` and `retry_version` (below), then mark it up by position. |
 | `low_resolution` | couldn't read text | only after a settings change | Scanned under 150 dpi (the message quotes the measured value: `Scanned at 96 dpi…`). Scan at 300 dpi and upload again, or the settings-change route above. |
 | `timeout` | couldn't finish | yes | Processing took too long. `retry_version`; if it keeps happening, split the PDF or upload a smaller scan. |

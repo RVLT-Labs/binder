@@ -337,7 +337,7 @@ Views on the change log:
 3. Page rows are created from the searchable PDF with dimensions from pdfjs-dist. One page job each then extracts words with pdfjs-dist `getTextContent`, converts items to word boxes in user space, groups lines by vertical overlap sorted left to right, and renders the thumbnail at 160 px wide with poppler.
 4. Processing status rolls up to the Document. Failure on a page sets that page to `failed`; the document still becomes `ready`. Failure of the OCRmyPDF step falls back to a plain copy as the searchable PDF, marks every page OCR applied false, and surfaces a retry action.
 
-Cuelist-printed scans (an image per page plus Cuelist's header, footer, and cue labels as embedded text) are the reason for `--redo-ocr` over `--skip-text`: the latter would skip those pages entirely because they contain a little text. With `--redo-ocr` the header text is kept and the body is OCR'd.
+Cuelist-printed scans (an image per page plus Cuelist's header, footer, and cue labels as embedded text) are the reason for `--redo-ocr` over `--skip-text`: the latter would skip those pages entirely because they contain a little text. With `--redo-ocr` the header text is kept and the body is OCR'd. Exception (2026-10-17): if `--redo-ocr` leaves new content-stream syntax errors or less text (OCRmyPDF 14 and 15 write exponent-form numbers that poppler cannot read), the run is repeated with `--skip-text` into a scratch file, and that result is used only if it found at least as much text.
 
 Scores go through the same path. Their text layer will be noisy around notation and useful around lyrics and titles, which is what search needs.
 

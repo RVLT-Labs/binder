@@ -318,7 +318,7 @@ Decided: cue notes print under the tag (decision 1). Not built: the written opti
   - `runTool` (`exec.ts`) uses `execFile` with a timeout. A timeout kills only the direct child with SIGTERM.
 - Real failure points today, with what is written:
   - Enqueue fails after the upload: `enqueueProcessing` sets `failed` with "Could not queue processing" (`documents.ts`).
-  - `pdfinfo` exits non-zero, or its output has no page count or sizes: `markVersionFailed` with "This PDF is password-protected…" or "This file could not be read as a PDF. (…)". This is the encrypted and corrupt case.
+  - `pdfinfo` exits non-zero, or its output has no page count or sizes: `markVersionFailed` with "This PDF is password-protected…" or "This file could not be read as a PDF. (…)". This is the password-protected and corrupt case (an owner-restricted PDF opens and is processed).
   - Dead letter after retries or expiry: "Processing timed out after retries." or "Processing failed after retries: <message>".
   - A pdfinfo or poppler timeout rethrows, is retried, then dead-letters.
   - **Not failures today:** `runOcrmypdf` falls back to a plain copy on any `ToolError`, including an OCR timeout, and the version becomes `ready` with `error` holding "ocrmypdf exit N: …". A scan with no extractable text also becomes `ready` with empty word layers. A page job failure marks only that page.

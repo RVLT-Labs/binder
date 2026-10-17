@@ -110,7 +110,7 @@ Ungated but consequential (ask the user first; the full table is in [safety.md](
 | Titles, names, labels, filenames | 200 chars (`filename` 196 before `.pdf`) |
 | Email | 254 chars |
 | `get_page` image | `maxPx` 100..1600 |
-| Uploads | 200 MB; URL fetch 60 s; OCR up to 30 min per version |
+| Uploads | 200 MB; URL fetch 60 s; OCR up to 30 min per version (retries included) |
 | Strings | no NUL characters anywhere |
 
 ## Timeouts and timing
