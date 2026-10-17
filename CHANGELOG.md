@@ -7,6 +7,21 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 
 ## [Unreleased]
 
+Nothing yet.
+
+### Known issues
+Listed in full, with their fixes, in `docs/superpowers/records/2026-10-16-ui-restyle-rulings.md` under "Known
+issues and open follow-ups". The ones worth knowing:
+- The e2e test "compare shows the cut lines as removed" (`revisions.spec.ts`) fails about one full run in three
+  on a cold dev server; it passes alone and is not a user-facing problem.
+- The offline banner takes layout space, so the document stage shifts by about 56 px when the network flaps.
+- In Calling mode the strip's page counter lags after a keypad jump until the next scroll.
+- On an archived show, the phone script keeps a disabled Place cue button whose tooltip covers script text.
+
+## 2026-10-17: fixes, license and housekeeping (`d8ecf93`)
+
+Deployed to production after a fully green CI run on `main` (`check`, `images` and the browser `e2e` suite).
+
 ### Added
 - MIT `LICENSE` (the agent skill's header already said MIT), with `"license": "MIT"` in every `package.json`.
 - `CLAUDE.md` (notes for Claude sessions), this changelog, `docs/README.md` (a map of the docs), the UI
@@ -34,15 +49,6 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 ### Changed
 - The agent skill (`skills/binder`) and the specs and records it draws on describe the fixed behaviour above.
 - DESIGN.md's Calling-mode row now says the page's width (not its height) is capped at 0.9 times the stage height.
-
-### Known issues
-Listed in full, with their fixes, in `docs/superpowers/records/2026-10-16-ui-restyle-rulings.md` under "Known
-issues and open follow-ups". The ones worth knowing:
-- The e2e test "compare shows the cut lines as removed" (`revisions.spec.ts`) fails about one full run in three
-  on a cold dev server; it passes alone and is not a user-facing problem.
-- The offline banner takes layout space, so the document stage shifts by about 56 px when the network flaps.
-- In Calling mode the strip's page counter lags after a keypad jump until the next scroll.
-- On an archived show, the phone script keeps a disabled Place cue button whose tooltip covers script text.
 
 ## 2026-10-17: agent skill (`ed5dfbb`)
 
