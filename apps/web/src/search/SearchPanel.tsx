@@ -168,7 +168,7 @@ export function SearchPanel({
             className="grid size-8 shrink-0 place-items-center rounded-[8px] text-muted hover:bg-elev hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red max-md:size-11"
             onClick={onClose}
           >
-            <CloseIcon aria-hidden className="size-4" strokeWidth={1.8} />
+            <CloseIcon aria-hidden className="size-4" />
           </button>
         )}
       </div>

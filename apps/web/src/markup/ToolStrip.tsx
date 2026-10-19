@@ -159,7 +159,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
         className={BUTTON_CLASS}
         onClick={() => setTool(t === 'select' || tool === t ? 'select' : t)}
       >
-        <Icon className={GLYPH} strokeWidth={1.8} />
+        <Icon className={GLYPH} />
         {key && <KeyHint>{key}</KeyHint>}
       </button>
     )
@@ -232,7 +232,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
               session.viewer.current?.focusSearch()
             }}
           >
-            <SearchIcon className={GLYPH} strokeWidth={1.8} />
+            <SearchIcon className={GLYPH} />
             <KeyHint>/</KeyHint>
           </button>
         </Tip>

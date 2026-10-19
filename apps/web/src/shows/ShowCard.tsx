@@ -131,7 +131,7 @@ export function ShowCard({
             focusRing,
           )}
         >
-          <Pencil className="size-4" strokeWidth={1.8} aria-hidden />
+          <Pencil className="size-4" aria-hidden />
         </button>
       </div>
 
