@@ -7,7 +7,12 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- RVLT-wide design decisions (rvlt-designlanguage v1.2.0, 2026-10-19): page titles use the new `t-page-title`
+  (24 px / 800 Archivo; `t-title` stays for dialogs), icons draw at stroke 2 instead of 1.8, key caps are 11 px
+  (the floor) instead of 10.5 px, and the opt-in Paper theme is retoned so every text pairing passes 4.5:1
+  (`--ok`/`--green`, `--warn`, `--rep`, `--blue`, `--muted`, `--faint`, `--coral`, `--teal`, `--lime`). The dark
+  theme is unchanged. Recorded in the `DESIGN.md` decisions log.
 
 ### Known issues
 Listed in full, with their fixes, in `docs/superpowers/records/2026-10-16-ui-restyle-rulings.md` under "Known

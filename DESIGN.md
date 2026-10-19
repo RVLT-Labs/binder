@@ -35,14 +35,15 @@ Binder additions:
 - **The script's own text is never restyled.** Binder draws over the PDF; it never reflows or re-fonts it.
 - **Markup type on the page** (tag lead and number, stamps, notes) is Helvetica-metric (`helveticaWidth` in core) on screen and Helvetica in print, so screen and paper measure identically. This is the one place Binder's UI fonts are not used, by design.
 - 11 px floor, sentence case everywhere, over-labels included (the mockups' `.t-over`: 11 px / 600, .02em tracking, muted; no uppercase).
+- **Page titles** (`h1`) use `t-page-title`: 24 px / 800 Archivo, -.02em — the one RVLT page title (rvlt-designlanguage v1.2.0, 2026-10-19). The mockups' `t-title` (22 px / 800) stays for dialog titles; the phone top bar keeps its own fitted title sizes.
 
 ## 4. Colour
 
 ### 4.1 Chrome
 
-Flow's espresso tokens verbatim (`--paper #141210`, `--paper-2 #1A1613`, `--card #211C17`, `--elev #2A241D`, `--ink #F5EFE2`, `--ink-2`, `--muted`, `--faint`, `--line`, `--line-2`, `--red #E0363D`, `--red-700`, status `--ok`/`--warn`, module hues, `--sh-card`, `--sh-hover`, `--sh-stk`, `--lit`). Dark is the default because Binder's working condition is the dark (tech table, FOH, a bio box). Flow's light "Paper" theme is the opt-in for daytime prep and print-adjacent review; it changes chrome only, never the page.
+Flow's espresso tokens verbatim (`--paper #141210`, `--paper-2 #1A1613`, `--card #211C17`, `--elev #2A241D`, `--ink #F5EFE2`, `--ink-2`, `--muted`, `--faint`, `--line`, `--line-2`, `--red #E0363D`, `--red-700`, status `--ok`/`--warn`, module hues, `--sh-card`, `--sh-hover`, `--sh-stk`, `--lit`). Dark is the default because Binder's working condition is the dark (tech table, FOH, a bio box). Flow's light "Paper" theme is the opt-in for daytime prep and print-adjacent review; it changes chrome only, never the page. Paper was retoned on 2026-10-19 (RVLT v1.2.0) so every text pairing passes 4.5:1: `--ok`/`--green` `#007D36`, `--warn` `#9B5F00`, `--rep` `#706857`, `--blue` `#2A65D0`, `--muted` `#665E4F`, `--faint` `#756B58`, `--coral` `#C25524`, `--teal` `#0E847C`, `--lime` `#73911B`.
 
-Red is a primary action (a view can have several, as the mockups draw them: the top bar's, and each script row's Open), live/active state ("Calling", the active phone tab, the selected cue), and alerts. **Red is never a department colour** and never decoration.
+Red is a primary action (a view can have several, as the mockups draw them: the top bar's, and each script row's Open — RVLT's rule is one red primary **per region**, and the top bar and a list's repeated row action are separate regions), live/active state ("Calling", the active phone tab, the selected cue), and alerts. **Red is never a department colour** and never decoration.
 
 ### 4.2 The page
 
@@ -127,7 +128,7 @@ Rail drops its labels (52 px). Thumbnails hide by default (toggle in the top bar
 
 ## 8. Components
 
-Binder uses the RVLT registry primitives (copied into `apps/web/src/components/ui`, shadcn convention): Button, Input, Textarea, Label, Select, Checkbox, Switch, Segmented, Tabs, Dialog, Sheet, Drawer (vaul), Popover, DropdownMenu, Tooltip, Kbd, Badge, Skeleton, Avatar. Notices are Binder's own (`Notices`, `pushNotice`), not sonner. There is no global stylesheet: styling is the three token and base files, Tailwind utilities, and `styles/markup.css` for what Tailwind cannot reach (the page's SVG objects, search hits, the drag ghost, presence avatars). Icons are lucide, 18 px in the rail, 16 px inline, stroke 1.8.
+Binder uses the RVLT registry primitives (copied into `apps/web/src/components/ui`, shadcn convention): Button, Input, Textarea, Label, Select, Checkbox, Switch, Segmented, Tabs, Dialog, Sheet, Drawer (vaul), Popover, DropdownMenu, Tooltip, Kbd, Badge, Skeleton, Avatar. Notices are Binder's own (`Notices`, `pushNotice`), not sonner. There is no global stylesheet: styling is the three token and base files, Tailwind utilities, and `styles/markup.css` for what Tailwind cannot reach (the page's SVG objects, search hits, the drag ghost, presence avatars). Icons are lucide, 18 px in the rail, 16 px inline, stroke 2 (RVLT-wide since 2026-10-19; the mockups draw 1.8).
 
 Binder-specific components (each has a mockup in the gallery):
 
@@ -173,6 +174,7 @@ Flow §9 applies. Binder specifics:
 - Name people and agents: "Oli moved LX 12 to p.2 while you were offline." "Jayden via Claude Code placed 42 LX cues."
 - Kalam appears only in greetings, the sign-in card and empty states ("the book is where you left it", "the quiet before the pad comes in"), in `--ink-2`, never red except on the shows home's empty-show card.
 - Offline is a state, not an error: "Offline. Changes are saved on this device — 3 waiting to sync."
+- **Albert** (RVLT's character, `rvlt-designlanguage/assets/albert/`) may appear where Kalam may — greetings, the sign-in card and empty states — never in Calling mode, alerts, conflicts or deletes. Binder has no mascot of its own.
 
 ## 12. Accessibility
 
@@ -234,3 +236,4 @@ Lockups: in the app header, the tile and "Binder" in Archivo 800 with a "by RVLT
 | 2026-10-16 | The print dialog's Segmented controls (pages, paper), its file name and its preview, which R19 left out as unbuilt, were built with the print options (Feature 2); the stamp picker and cue type stay inline flyouts | R19's reason (no page-range or paper choice) no longer held once the options existed; the flyout half stands |
 | 2026-10-16 | The top bar's sync word is "Offline" with no count; "N waiting to sync" lives in the OfflineBanner, a live region that stays mounted so its arrival is announced (R47) | the states mockup draws it so (R21); tests read the count from `data-pending` |
 | 2026-10-16 | Search hits on the page use fixed page colours (a yellow wash, an orange active hit), never a theme token or a department's colour | the page is white in every theme and a department colour on it means that department's own markup |
+| 2026-10-19 | RVLT-wide decisions (rvlt-designlanguage v1.2.0) adopted: page `h1` is `t-page-title` (24 px / 800), icons stroke 2, Kbd at 11 px, Paper retoned to 4.5:1, one red primary per region, Albert as RVLT's character | Jayden's RVLT-wide calls. These four depart from the mockups on purpose: the page title (22 → 24 px), icon stroke (1.8 → 2), Kbd (10.5 → 11 px, the floor) and Paper's colours; buttons stay the mockups' rounded rectangles (buttons are per product) |
