@@ -32,7 +32,7 @@ export function UndoRedoButtons({
     }
     const button: ReactNode = strip ? (
       <button type="button" className={strip.buttonClassName} {...props}>
-        <Icon className={strip.iconClassName} strokeWidth={1.8} />
+        <Icon className={strip.iconClassName} />
       </button>
     ) : (
       <Button type="button" variant="ghost" size="sm" {...props}>

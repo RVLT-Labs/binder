@@ -188,7 +188,7 @@ export function DocumentControls(props: DocumentControlsProps & { viewerOwnsPhon
             aria-pressed={thumbnails.open}
             onClick={thumbnails.onToggle}
           >
-            <PanelLeft aria-hidden strokeWidth={1.8} />
+            <PanelLeft aria-hidden />
           </Button>
         )}
         {breakpoint === 'tablet' && panel && (
@@ -201,7 +201,7 @@ export function DocumentControls(props: DocumentControlsProps & { viewerOwnsPhon
             aria-pressed={panel.open}
             onClick={panel.onToggle}
           >
-            <PanelRight aria-hidden strokeWidth={1.8} />
+            <PanelRight aria-hidden />
           </Button>
         )}
         {history}

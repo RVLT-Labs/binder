@@ -159,16 +159,16 @@ export function LayerPanel({
                   label={`Show ${code}`}
                   checked={!hidden}
                   onChange={(on) => store.setHidden(key, !on)}
-                  on={<EyeIcon className="size-3.5" strokeWidth={1.8} />}
-                  off={<EyeOffIcon className="size-3.5" strokeWidth={1.8} />}
+                  on={<EyeIcon className="size-3.5" />}
+                  off={<EyeOffIcon className="size-3.5" />}
                 />
                 <IconSwitch
                   label={`Lock ${code}`}
                   checked={locked}
                   disabled={!canEdit}
                   onChange={(on) => store.setLocked(key, on)}
-                  on={<LockIcon className="size-3.5" strokeWidth={1.8} />}
-                  off={<UnlockIcon className="size-3.5" strokeWidth={1.8} />}
+                  on={<LockIcon className="size-3.5" />}
+                  off={<UnlockIcon className="size-3.5" />}
                   lit
                 />
               </span>

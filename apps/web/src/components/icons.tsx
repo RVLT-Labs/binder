@@ -2,7 +2,7 @@ import type { SVGProps } from 'react'
 
 /**
  * Binder's icon set: the mockups' own paths (docs/superpowers/design/binder-ui-2026-10/_parts.py
- * `ICON` and `screens2_mobile.py` `MBI`), 1.8 stroke, round caps, drawn on a 24 px grid. They take
+ * `ICON` and `screens2_mobile.py` `MBI`), 2 stroke (RVLT-wide, 2026-10-19), round caps, drawn on a 24 px grid. They take
  * the same props lucide's do (`className` for the size, `strokeWidth`), so a call site swaps one for
  * the other. Decorative unless the caller gives an `aria-label`.
  */
@@ -10,7 +10,7 @@ export type IconProps = SVGProps<SVGSVGElement>
 export type IconComponent = ((props: IconProps) => React.JSX.Element) & { displayName?: string }
 
 function icon(name: string, children: React.ReactNode): IconComponent {
-  const Icon: IconComponent = ({ strokeWidth = 1.8, ...props }) => (
+  const Icon: IconComponent = ({ strokeWidth = 2, ...props }) => (
     // biome-ignore lint/a11y/noSvgWithoutTitle: decorative (aria-hidden) unless the caller names it
     <svg
       viewBox="0 0 24 24"
