@@ -22,7 +22,7 @@ function SettingsPage() {
     // The mockup's page padding is 18 32 and the shell's 28 32, so the top gives 10 back.
     <div className="flex w-full max-w-[936px] flex-col gap-[18px] md:-mt-2.5">
       <header className="flex items-baseline justify-between gap-4 max-md:flex-col max-md:gap-1">
-        <h1 className="t-title m-0 max-md:sr-only">Show settings</h1>
+        <h1 className="t-page-title m-0 max-md:sr-only">Show settings</h1>
         <p className="m-0 text-[13px] text-muted">Only the owner can change these.</p>
       </header>
       <DepartmentsSection showId={showId} departments={departments} editable={isOwner} />

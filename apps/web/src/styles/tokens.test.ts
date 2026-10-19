@@ -48,8 +48,16 @@ test('Flow component class names resolve unchanged: font-display and the cream v
 test("the mockups' type roles and button shadows are defined", () => {
   expect(tokens).toContain('@utility t-over')
   expect(tokens).toContain('@utility t-title')
+  expect(tokens).toContain('@utility t-page-title')
   expect(tokens).toContain('--shadow-sticker: var(--sh-stk), var(--lit)')
   expect(tokens).toContain('--shadow-dialog: var(--sh-dialog)')
   expect(tokens).toContain('--sh-dialog: 0 6px 0 #0c0a08, 0 30px 60px rgba(0, 0, 0, 0.45)')
   expect(tokens).toContain('--scrim-strong: rgba(10, 8, 6, 0.76)')
+})
+
+test('the Paper theme is retoned so text passes 4.5:1 (rvlt-designlanguage v1.2.0)', () => {
+  const light = tokens.slice(tokens.indexOf('.light {'))
+  for (const decl of ['--ok: #007d36', '--warn: #9b5f00', '--muted: #665e4f', '--faint: #756b58']) {
+    expect(light).toContain(decl)
+  }
 })

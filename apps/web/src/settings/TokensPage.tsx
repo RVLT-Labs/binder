@@ -119,7 +119,7 @@ export function TokensPage() {
   const list = tokens.data?.tokens ?? []
   return (
     <div className="flex w-full max-w-[876px] flex-col md:-mt-2.5">
-      <h1 className="t-title m-0 max-md:sr-only">Personal access tokens</h1>
+      <h1 className="t-page-title m-0 max-md:sr-only">Personal access tokens</h1>
       <p className="m-0 mt-1 text-[13px] text-muted max-md:mt-0">
         Tokens act as you. Changes made with one show in Activity as “via &lt;its name&gt;”.
       </p>

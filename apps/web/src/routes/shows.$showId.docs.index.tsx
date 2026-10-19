@@ -20,7 +20,7 @@ function DocumentsPage() {
       <header className="flex items-end justify-between gap-x-6 gap-y-1 md:mb-1.5">
         <div className="min-w-0 max-md:sr-only">
           <p className="t-over m-0 truncate">{shows[0]?.title}</p>
-          <h1 className="t-title m-0">Documents</h1>
+          <h1 className="t-page-title m-0">Documents</h1>
         </div>
         {summary.length > 0 && (
           <p className="m-0 text-[12px] text-muted">
