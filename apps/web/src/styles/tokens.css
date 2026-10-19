@@ -126,31 +126,31 @@
   --elev: #fffdf8;
   --ink: #1d1a15;
   --ink-2: #4b4539;
-  --muted: #7d7565;
-  --faint: #a89e89;
+  --muted: #665e4f;
+  --faint: #756b58;
   --line: #e4dac3;
   --line-2: #d8ccb0;
   --red: #c12229;
   --red-700: #9c1b21;
   --red-soft: #fbe7e3;
-  --ok: #2ea65c;
-  --warn: #c98a14;
-  --rep: #8a8270;
+  --ok: #007d36;
+  --warn: #9b5f00;
+  --rep: #706857;
   --t-out: #9c1b21;
   --ok-soft: #e7f5ec;
   --warn-soft: #fbf0d6;
   --rep-soft: #efe9dc;
-  --muted-soft: rgba(125, 117, 101, 0.18);
+  --muted-soft: rgba(102, 94, 79, 0.18);
   --out-soft: #fbe7e3;
   --amber: #e79a2b;
-  --blue: #2f6bd6;
-  --green: #2ea65c;
+  --blue: #2a65d0;
+  --green: #007d36;
   --purple: #7a5cd0;
   --dark: #241f1a;
-  --coral: #cc5e2e;
-  --teal: #1c8b83;
+  --coral: #c25524;
+  --teal: #0e847c;
   --pink: #c2487e;
-  --lime: #6e8c12;
+  --lime: #73911b;
   --blue-soft: #e2ecfb;
   --amber-soft: #fbf0d6;
   --green-soft: #e7f5ec;
@@ -160,7 +160,7 @@
   --scrim: rgba(40, 30, 15, 0.45);
   --scrim-strong: rgba(40, 30, 15, 0.6);
   --select: rgba(193, 34, 41, 0.16);
-  --link: #2f6bd6;
+  --link: #2a65d0;
   --sh-card: 0 3px 0 var(--line-2);
   --sh-hover: 0 7px 0 var(--line-2);
   --lit: inset 0 1px 0 rgba(255, 253, 248, 0.14);
@@ -281,7 +281,17 @@
   --radius: 0.875rem;
 }
 
-/* The mockups' type roles (_head.html .t-over, .t-title). */
+/* The RVLT page title (rvlt-designlanguage v1.2.0 §5.5): every app's page h1 is 24px / 800 Archivo. */
+@utility t-page-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+/* The mockups' type roles (_head.html .t-over, .t-title); t-title stays for dialog titles. */
 @utility t-over {
   font-size: 11px;
   font-weight: 600;

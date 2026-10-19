@@ -71,7 +71,7 @@ function ExportsPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-3.5 md:-my-1">
       <header>
         <p className="t-over m-0 truncate max-md:sr-only">{shows[0]?.title}</p>
-        <h1 className="t-title m-0 max-md:sr-only">Exports</h1>
+        <h1 className="t-page-title m-0 max-md:sr-only">Exports</h1>
         <p className="m-0 mt-1 text-[13px] text-muted">
           {empty
             ? 'No exports yet. Use Print in a document, or Export on a cue list, to make one.'
