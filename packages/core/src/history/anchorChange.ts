@@ -33,16 +33,38 @@ function withoutStyle(anchor: Obj, dropX: boolean): Obj {
   return out
 }
 
+/** An anchor with the bubble offset taken out. */
+function withoutTag(anchor: Obj): Obj {
+  const { tag: _tag, ...rest } = anchor
+  return rest
+}
+
+/** The mark an anchor is drawn with; an absent mark is the underline. */
+function markOf(anchor: Obj): unknown {
+  return anchor.mark ?? 'underline'
+}
+
 /**
- * What an anchor change was: `restyled` when only how the cue is marked changed (equal once the mark
- * and the caret offset are removed, and x too when either side is a line or pointer, whose x follows
- * its character offset), otherwise `moved`. The one rule the activity feed and the per-cue history
- * both read.
+ * What an anchor change was, the one rule the activity feed and the per-cue history both read:
+ *
+ * - `bubble-moved` when only the bubble's offset (`tag`) was set, changed or removed: the anchors
+ *   are equal once the tag is taken out of both.
+ * - `restyled` when the two marks differ and nothing else but the caret offset changed (equal once
+ *   the mark and the caret offset are removed, and x too when either side is a line or pointer,
+ *   whose x follows its character offset).
+ * - otherwise `moved`, which includes dragging a line's caret along its text (same mark, new offset).
  */
-export function anchorChangeKind(before: unknown, after: unknown): 'restyled' | 'moved' {
+export function anchorChangeKind(
+  before: unknown,
+  after: unknown,
+): 'restyled' | 'moved' | 'bubble-moved' {
   const a = asAnchor(before)
   const b = asAnchor(after)
   if (!a || !b) return 'moved'
+  if (jsonEqual(withoutTag(a), withoutTag(b)) && !jsonEqual(a.tag ?? null, b.tag ?? null)) {
+    return 'bubble-moved'
+  }
+  if (markOf(a) === markOf(b)) return 'moved'
   const dropX = isCaretMark(a) || isCaretMark(b)
   return jsonEqual(withoutStyle(a, dropX), withoutStyle(b, dropX)) ? 'restyled' : 'moved'
 }

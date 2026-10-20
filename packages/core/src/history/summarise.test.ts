@@ -89,7 +89,7 @@ describe('summariseBatch', () => {
         'moved 1 LX cue',
       ))
 
-    test('an offset-only change reads restyled', () =>
+    test('an offset-only change with the same mark reads moved: the caret is draggable', () =>
       expect(
         summariseBatch([
           update(
@@ -97,7 +97,7 @@ describe('summariseBatch', () => {
             { ...base, mark: 'line', text: { ...base.text, offset: 3 } },
           ),
         ]),
-      ).toBe('restyled 1 LX cue'))
+      ).toBe('moved 1 LX cue'))
 
     test('switching to a line changes x without moving the cue', () =>
       expect(
@@ -127,6 +127,48 @@ describe('summariseBatch', () => {
       expect(
         summariseBatch([update(base, { ...base, mark: 'highlight' }), ...moves(1, 'LX')]),
       ).toBe('moved 1 LX cue and restyled 1'))
+  })
+
+  describe('bubble moved', () => {
+    const base = {
+      documentId: 'd',
+      documentVersionId: 'v',
+      pageIndex: 1,
+      x: 10,
+      y: 100,
+      status: 'ok',
+      text: { quote: 'hello', wordStart: 2, wordEnd: 3 },
+    }
+    const update = (before: unknown, after: unknown) =>
+      cue('update', 'LX', { anchor: before }, { anchor: after })
+
+    test('a tag-only anchor change reads "bubble moved 1 LX cue"', () =>
+      expect(summariseBatch([update(base, { ...base, tag: { dx: 5, dy: -3 } })])).toBe(
+        'bubble moved 1 LX cue',
+      ))
+
+    test('clearing the tag reads the same', () =>
+      expect(summariseBatch([update({ ...base, tag: { dx: 5, dy: -3 } }, base)])).toBe(
+        'bubble moved 1 LX cue',
+      ))
+
+    test('a tag change that also moves the anchor reads moved', () =>
+      expect(summariseBatch([update(base, { ...base, y: 50, tag: { dx: 5, dy: -3 } })])).toBe(
+        'moved 1 LX cue',
+      ))
+
+    test('the verb sits after restyled', () =>
+      expect(
+        summariseBatch([
+          update(base, { ...base, tag: { dx: 5, dy: -3 } }),
+          update(base, { ...base, mark: 'highlight' }),
+        ]),
+      ).toBe('restyled 1 LX cue and bubble moved 1'))
+
+    test('the show card leads with the department', () =>
+      expect(cardSentence([update(base, { ...base, tag: { dx: 5, dy: -3 } })])).toBe(
+        'LX bubble moved 1 cue',
+      ))
   })
 
   test('annotations: added, moved by anchor or geometry, edited, deleted', () => {

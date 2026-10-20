@@ -192,14 +192,20 @@ describe('a restyle reads as a restyle, not a move', () => {
       lines(at({ mark: 'highlight' }, {}), at({ mark: 'pointer', x: 14 }, { offset: 1 })),
     ).toEqual(['Mark Highlight → Line with pointer'])
     expect(
-      lines(at({ mark: 'line', x: 14 }, { offset: 1 }), at({ mark: 'line', x: 20 }, { offset: 2 })),
-    ).toEqual(['Restyled'])
+      lines(
+        at({ mark: 'line', x: 14 }, { offset: 1 }),
+        at({ mark: 'pointer', x: 20 }, { offset: 2 }),
+      ),
+    ).toEqual(['Mark Line → Line with pointer'])
   })
 
-  test('only a caret offset change reads Restyled', () => {
+  test('dragging a line along its text, the same mark with a new offset, reads Moved', () => {
+    expect(
+      lines(at({ mark: 'line', x: 14 }, { offset: 1 }), at({ mark: 'line', x: 20 }, { offset: 2 })),
+    ).toEqual(['Moved on p.3'])
     expect(
       lines(at({ mark: 'pointer' }, { offset: 0 }), at({ mark: 'pointer' }, { offset: 2 })),
-    ).toEqual(['Restyled'])
+    ).toEqual(['Moved on p.3'])
   })
 
   test('anchors held as JSON text read the same', () => {
@@ -222,6 +228,48 @@ describe('a restyle reads as a restyle, not a move', () => {
       table: 'annotations',
       before: { anchor: anchor(2) },
       after: { anchor: { ...anchor(2), y: 99 } },
+    })
+    expect(formatChange(e, lx)).toEqual(['Moved on p.3'])
+  })
+})
+
+describe('a bubble moved on the page', () => {
+  const lines = (before: unknown, after: unknown) =>
+    formatChange(entryOf({ before: { anchor: before }, after: { anchor: after } }), lx)
+
+  test('setting or changing the tag reads Bubble moved', () => {
+    expect(lines(anchor(2), { ...anchor(2), tag: { dx: 5, dy: -9 } })).toEqual(['Bubble moved'])
+    expect(
+      lines({ ...anchor(2), tag: { dx: 5, dy: -9 } }, { ...anchor(2), tag: { dx: 8, dy: -9 } }),
+    ).toEqual(['Bubble moved'])
+  })
+
+  test('removing the tag reads Bubble back in the margin', () => {
+    expect(lines({ ...anchor(2), tag: { dx: 5, dy: -9 } }, anchor(2))).toEqual([
+      'Bubble back in the margin',
+    ])
+    expect(lines({ ...anchor(2), tag: { dx: 5, dy: -9 } }, { ...anchor(2), tag: null })).toEqual([
+      'Bubble back in the margin',
+    ])
+  })
+
+  test('anchors held as JSON text read the same', () => {
+    expect(
+      lines(JSON.stringify(anchor(2)), JSON.stringify({ ...anchor(2), tag: { dx: 1, dy: 1 } })),
+    ).toEqual(['Bubble moved'])
+  })
+
+  test('a tag change together with a real move still reads Moved', () => {
+    expect(lines(anchor(2), { ...anchor(2), y: 99, tag: { dx: 5, dy: -9 } })).toEqual([
+      'Moved on p.3',
+    ])
+  })
+
+  test('an annotation anchor change is never a bubble move', () => {
+    const e = entryOf({
+      table: 'annotations',
+      before: { anchor: anchor(2) },
+      after: { anchor: { ...anchor(2), tag: { dx: 1, dy: 1 } } },
     })
     expect(formatChange(e, lx)).toEqual(['Moved on p.3'])
   })

@@ -75,22 +75,38 @@ function markLabel(value: unknown): string {
   return (typeof mark === 'string' && MARK_LABELS[mark]) || (MARK_LABELS.underline as string)
 }
 
+/** Whether an anchor value (an object or its JSON text) carries a bubble offset. */
+function hasTag(value: unknown): boolean {
+  let v = value
+  if (typeof v === 'string') {
+    try {
+      v = JSON.parse(v)
+    } catch {
+      return false
+    }
+  }
+  const tag = (v as { tag?: unknown } | null)?.tag
+  return typeof tag === 'object' && tag !== null
+}
+
 /**
- * A cue's anchor change: "Restyled" with the mark change when only the mark (or caret offset)
- * differs, otherwise the move/place wording. The same rule the activity feed uses.
+ * A cue's anchor change, read through the one rule the activity feed uses: "Bubble moved" (or
+ * "Bubble back in the margin") when only the bubble's offset changed, "Restyled" or the mark change
+ * when the mark did, otherwise the move/place wording.
  */
 function cueAnchorLine(before: unknown, after: unknown): string {
-  if (
-    !anchorOf(before) ||
-    !anchorOf(after) ||
-    anchorChangeKind(before, after) !== 'restyled' ||
-    // An anchor rewritten unchanged is no restyle: it keeps the move wording it always had.
-    jsonEqual(before, after)
-  ) {
+  // An anchor rewritten unchanged is neither: it keeps the move wording it always had.
+  if (!anchorOf(before) || !anchorOf(after) || jsonEqual(before, after)) {
     return anchorLine(before, after)
   }
+  const kind = anchorChangeKind(before, after)
+  if (kind === 'bubble-moved') {
+    return hasTag(after) ? 'Bubble moved' : 'Bubble back in the margin'
+  }
+  if (kind !== 'restyled') return anchorLine(before, after)
   const was = markLabel(before)
   const now = markLabel(after)
+  // Two marks that differ in the log can read alike here (an unknown mark reads as the underline).
   return was === now ? 'Restyled' : `Mark ${was} → ${now}`
 }
 
