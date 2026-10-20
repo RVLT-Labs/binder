@@ -1,8 +1,14 @@
 import { departments, shows } from '@binder/db'
-import { type Actor, layerKey, type NumberFormat, newId } from '@binder/shared'
+import {
+  type Actor,
+  departmentColourProblem,
+  layerKey,
+  type NumberFormat,
+  newId,
+} from '@binder/shared'
 import { and, asc, eq, type InferSelectModel, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { conflict, notFound } from '../errors'
+import { conflict, invalid, notFound } from '../errors'
 import { departmentFields, normaliseCode, parseOrInvalid } from '../validation'
 import { logChange } from './changeLog'
 import type { Executor } from './executor'
@@ -72,6 +78,8 @@ export async function createDepartment(
     if (!show) throw notFound('Show not found')
     assertShowWritable(show)
     const fields = parseOrInvalid(createSchema, input)
+    const colourProblem = departmentColourProblem(fields.colour)
+    if (colourProblem) throw invalid(colourProblem)
 
     const [dup] = await tx
       .select({ id: departments.id })
@@ -151,6 +159,13 @@ export async function updateDepartment(
     if (!show) throw notFound('Show not found')
     assertShowWritable(show)
     const patch = parseOrInvalid(patchSchema, input.patch)
+    // Existing colours remain valid on unrelated edits and echoed unchanged values. Only a
+    // deliberate colour change adopts the new mark floor; never silently recolour legacy shows.
+    if (patch.colour?.toUpperCase() === current.colour.toUpperCase()) patch.colour = current.colour
+    if (patch.colour !== undefined && patch.colour !== current.colour) {
+      const problem = departmentColourProblem(patch.colour)
+      if (problem) throw invalid(problem)
+    }
 
     const before: Record<string, unknown> = {}
     const after: Record<string, unknown> = {}

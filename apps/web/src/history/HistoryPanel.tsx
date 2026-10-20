@@ -218,7 +218,7 @@ function HistoryList({
               </div>
               <time
                 dateTime={entry.serverTs}
-                className="font-mono text-[11px] text-faint tabular-nums"
+                className="font-mono text-[11px] text-muted tabular-nums"
               >
                 {formatWhen(entry.serverTs)}
               </time>

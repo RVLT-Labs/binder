@@ -148,7 +148,7 @@ export function KeepOfflineSwitch({
           checked={on}
           disabled={!user}
           onCheckedChange={change}
-          className="relative after:absolute after:-inset-1.5 after:content-['']"
+          className="shrink-0"
         />
       </div>
       {line && (

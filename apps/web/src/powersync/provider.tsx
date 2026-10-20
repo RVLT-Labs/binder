@@ -2,9 +2,16 @@ import { PowerSyncContext } from '@powersync/react'
 import type { PowerSyncDatabase } from '@powersync/web'
 import { useQueryClient } from '@tanstack/react-query'
 import { type ReactNode, useEffect, useState } from 'react'
+import {
+  activateLocalUser,
+  disposeLocalDatabase,
+  guardLocalDatabase,
+  onLocalClaimInvalidated,
+  quiesceLocalWork,
+} from '../auth/localWork'
 import { forgetSessionUser } from '../auth/session'
 import { clearBlobCache } from '../blobs/fetchBlob'
-import { clearOtherOutboxes } from '../exports/outbox'
+import { clearOtherOutboxes, resumeExportUploads } from '../exports/outbox'
 import { clearOtherOfflinePrefs } from '../offline/keepOffline/store'
 import { ApiConnector } from './connector'
 import { createPowerSync } from './db'
@@ -43,32 +50,52 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
   })
   const db = 'db' in opened ? opened.db : null
   const queryClient = useQueryClient()
+  const [guarded, setGuarded] = useState<PowerSyncDatabase | null>(null)
   const [claimedFor, setClaimedFor] = useState<string | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
 
   useEffect(() => {
     if (!db) return
     let cancelled = false
+    let unsubscribe = () => {}
+    let facade: PowerSyncDatabase | null = null
     void (async () => {
+      let release: (() => void) | undefined
       try {
+        release = await quiesceLocalWork(true)
+        if (cancelled) return
         await claimLocalDb(db, userId, async () => {
-          await clearBlobCache()
-          // Exports another user left waiting to upload go too (see clearOtherOutboxes).
           await clearOtherOutboxes(userId)
-          // And the previous user's keep-offline switches: the cache they drove was wiped above.
+          await clearBlobCache()
           await clearOtherOfflinePrefs(userId)
-          // Cached history, review and version-anchor answers belong to the previous user.
           queryClient.clear()
         })
+        if (cancelled) return
+        activateLocalUser(userId)
+        resumeExportUploads(userId)
+        facade = guardLocalDatabase(db, userId)
+        unsubscribe = onLocalClaimInvalidated(facade, () => {
+          unsubscribe()
+          if (facade) disposeLocalDatabase(facade)
+          cancelled = true
+          setGuarded(null)
+          setClaimedFor(null)
+          queryClient.clear()
+          setFailure('This local session has changed in another tab. Sign in again to continue.')
+        })
+        setGuarded(facade)
+        setClaimedFor(userId)
+        setFailure(null)
       } catch (err) {
         console.error('could not open the local database', err)
         if (!cancelled) setFailure(messageOf(err))
         return
+      } finally {
+        await release?.()
       }
-      if (cancelled) return
-      setClaimedFor(userId)
+      if (cancelled || !facade) return
       try {
-        await db.connect(new ApiConnector())
+        await db.connect(new ApiConnector(facade, userId))
       } catch (err) {
         // The app still works on local data; PowerSync reports sync trouble through its status.
         console.error('could not connect the sync service', err)
@@ -76,6 +103,8 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
     })()
     return () => {
       cancelled = true
+      unsubscribe()
+      if (facade) disposeLocalDatabase(facade)
     }
   }, [db, userId, queryClient])
 
@@ -90,8 +119,8 @@ export function PowerSyncProvider({ userId, children }: { userId: string; childr
       </main>
     )
   }
-  if (!db || claimedFor !== userId) return null
-  return <PowerSyncContext.Provider value={db}>{children}</PowerSyncContext.Provider>
+  if (!guarded || claimedFor !== userId) return null
+  return <PowerSyncContext.Provider value={guarded}>{children}</PowerSyncContext.Provider>
 }
 
 /** After sign-out: stop syncing and delete every local row, queued upload, cached blob, and the remembered user. */

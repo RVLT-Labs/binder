@@ -58,3 +58,23 @@ const RED_THRESHOLD = 20
 export function isTooCloseToRed(hex: string): boolean {
   return deltaE76(hexToLab(hex), RED_LAB) < RED_THRESHOLD
 }
+
+/** WCAG sRGB contrast of a department mark against Binder's fixed white script page. */
+export function departmentMarkContrast(hex: string): number {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return 0
+  const channels = [1, 3, 5].map((i) => {
+    const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  const luminance = channels.reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0)
+  return 1.05 / (luminance + 0.05)
+}
+
+/** Validate new or deliberately changed colours; callers preserve unchanged legacy values. */
+export function departmentColourProblem(hex: string): string | null {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return 'Use a colour like #2F6BD6.'
+  if (isTooCloseToRed(hex)) return "Red is kept for Binder's own alerts. Pick another colour."
+  if (departmentMarkContrast(hex) < 3)
+    return 'Pick a mark with at least 3:1 contrast against the white page.'
+  return null
+}

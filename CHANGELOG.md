@@ -8,6 +8,19 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 ## [Unreleased]
 
 ### Changed
+- Guard retained local CRUD completion handles and read callbacks against session changes; close
+  Print when history restores Calling; reserve 44 px comparison/tool option fields and room in their containers.
+- Adopt canonical RVLT v1.3.0 authority and contrast roles, preserving Binder's fixed white page,
+  Helvetica cue geometry, compact rectangular button faces and dialog cast. Cue words now use page
+  ink on screen and in print; department identity stays on marks and swatches in both themes.
+- Preserve loading-button names, guard disabled/loading slotted controls, reserve nonoverlapping
+  44 px chrome targets, label custom colours and request decimal cue keyboards. Calling keeps
+  the palette and Print closed, says Offline without asserting cache readiness, and labels its
+  next cue relative to the page top. Ambiguous keypad jumps require Page or a recent target.
+- Sign-out checks queued changes and pending exports, stops on count failures, drains local writes
+  and exports before confirmation, rechecks queues and awaits runners before clearing. New or
+  changed department colours need 3:1 mark contrast on white and the existing red guard; unchanged
+  legacy colours remain editable.
 - RVLT-wide design decisions (rvlt-designlanguage v1.2.0, 2026-10-19): page titles use the new `t-page-title`
   (24 px / 800 Archivo; `t-title` stays for dialogs), icons draw at stroke 2 instead of 1.8, key caps are 11 px
   (the floor) instead of 10.5 px, and the opt-in Paper theme is retoned so every text pairing passes 4.5:1

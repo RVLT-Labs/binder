@@ -70,7 +70,7 @@ const draw = (
     </svg>,
   )
 
-test('a go marker is an opaque white pill in the margin: the code in colour, the number in bold ink', () => {
+test('B05/B16 a go marker preserves geometry with the entire label in page ink', () => {
   const { container } = draw(cue, tagOf(cue))
   const g = container.querySelector('[data-cue-id="c1"]') as SVGGElement
   expect(g.getAttribute('data-cue-label')).toBe('LX 10.5')
@@ -93,7 +93,7 @@ test('a go marker is an opaque white pill in the margin: the code in colour, the
   expect(g.querySelector('.cue-tag-bar, .cue-tag-grip, .cue-tag-divider')).toBeNull()
   const [lead, number] = [...g.querySelectorAll('text')]
   expect([lead?.textContent, number?.textContent]).toEqual(['LX', '10.5'])
-  expect(lead?.getAttribute('fill')).toBe('#F5A623')
+  expect(lead?.getAttribute('fill')).toBe('var(--page-ink)')
   expect(number?.getAttribute('fill')).toBe('var(--page-ink)')
   expect(number?.getAttribute('font-weight')).toBe('700')
   expect(lead?.getAttribute('font-weight')).toBeNull()

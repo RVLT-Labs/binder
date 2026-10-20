@@ -29,7 +29,7 @@ SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
 const sheetVariants = cva(
   cn(
-    'fixed z-50 flex flex-col gap-4 p-6 overflow-y-auto overscroll-contain',
+    'fixed z-50 flex flex-col gap-4 p-6 pt-20 overflow-y-auto overscroll-contain',
     'bg-elev text-ink border-2 border-border shadow-[var(--sh-card),var(--lit)]',
     'transition ease-in-out duration-300',
     'data-[state=open]:animate-in data-[state=closed]:animate-out',
@@ -63,7 +63,7 @@ const SheetContent = React.forwardRef<
     <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
       <SheetPrimitive.Close
         className={cn(
-          'absolute right-4 top-4 rounded-[8px] opacity-70 transition-opacity',
+          'absolute right-4 top-4 grid size-11 place-items-center rounded-[8px] opacity-70 transition-opacity',
           'hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red',
           'disabled:pointer-events-none disabled:opacity-45 disabled:cursor-not-allowed',
         )}

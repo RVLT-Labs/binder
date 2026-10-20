@@ -176,7 +176,7 @@ export function ReviewPanel({ documentId, versionNumbers }: ReviewPanelProps) {
           ) : (
             <div className="grid gap-3.5 [&>section:first-of-type_li:first-child]:border-t-0">
               <div className={SECTION_LABEL}>
-                Pending <span className="text-faint">· on the current version</span>
+                Pending <span className="text-muted">· on the current version</span>
               </div>
               {byLayer(data.pending).map((group) => (
                 <LayerGroup
@@ -197,7 +197,7 @@ export function ReviewPanel({ documentId, versionNumbers }: ReviewPanelProps) {
                 className={`${SECTION_LABEL} cursor-pointer list-none max-md:min-h-11 [&::-webkit-details-marker]:hidden`}
               >
                 On an older version{' '}
-                <span className="text-faint">· {data.olderVersions.length}</span>
+                <span className="text-muted">· {data.olderVersions.length}</span>
               </summary>
               {byLayer(data.olderVersions).map((group) => (
                 <LayerGroup
@@ -328,10 +328,7 @@ function ReviewRow({
       data-status={item.anchor.status}
     >
       <div className="grid min-w-0 gap-0.5 col-span-full @[380px]:col-auto">
-        <div
-          className="review-item-head flex flex-wrap items-center gap-x-1.5 gap-y-1 font-semibold"
-          style={{ color: colour }}
-        >
+        <div className="review-item-head flex flex-wrap items-center gap-x-1.5 gap-y-1 font-semibold text-ink">
           <Swatch colour={colour} />
           <Title head={head} table={item.table} />
           <StatusPill status={item.anchor.status} />
@@ -348,17 +345,17 @@ function ReviewRow({
         {item.previous ? (
           <ReviewThumb anchor={item.previous} colour={colour} />
         ) : (
-          <span className="review-thumb review-thumb-missing grid h-12 w-[84px] place-items-center rounded-[4px] border border-dashed border-line-2 bg-card px-1 text-center text-[11px] leading-tight text-faint">
+          <span className="review-thumb review-thumb-missing grid h-12 w-[84px] place-items-center rounded-[4px] border border-dashed border-line-2 bg-card px-1 text-center text-[11px] leading-tight text-muted">
             No earlier position
           </span>
         )}
-        <figcaption className="text-[11px] leading-tight text-faint">
+        <figcaption className="text-[11px] leading-tight text-muted">
           Was {item.previous ? caption(item.previous, versionNumbers) : 'not moved by a revision'}
         </figcaption>
       </figure>
       <figure aria-label="New position" className="m-0 grid w-[84px] gap-0.5">
         <ReviewThumb anchor={item.anchor} colour={colour} />
-        <figcaption className="text-[11px] leading-tight text-faint">
+        <figcaption className="text-[11px] leading-tight text-muted">
           Now {caption(item.anchor, versionNumbers)}
         </figcaption>
       </figure>

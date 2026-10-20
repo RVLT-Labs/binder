@@ -37,12 +37,14 @@ export function Field({
 export function SelectBox({
   className,
   children,
+  style,
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) {
   return (
     <div className={cn('relative', className)}>
       <select
         {...props}
+        style={{ ...style, minHeight: 44, minWidth: 44 }}
         className={cn(
           'h-12 w-full appearance-none rounded-[12px] border-2 border-input bg-paper pr-8 pl-3 text-[16px] font-semibold text-ink-2',
           'md:h-7 md:rounded-[9px] md:pr-7 md:pl-[9px] md:text-[13px]',

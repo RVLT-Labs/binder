@@ -93,3 +93,17 @@ it('does nothing while another modal dialog is open', () => {
   press({ metaKey: true })
   expect(onPrint).toHaveBeenCalledTimes(1)
 })
+
+it('B08 Calling suppresses print shortcuts as the keypad is the sole overlay', () => {
+  render(
+    <PaletteDocumentHostRegistration
+      documentId="d1"
+      versionId="v1"
+      pageCount={43}
+      onPrint={onPrint}
+      calling
+    />,
+  )
+  press({ metaKey: true })
+  expect(onPrint).not.toHaveBeenCalled()
+})

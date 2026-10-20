@@ -26,7 +26,7 @@ const KEYS: Array<[key: string, does: string]> = [
 ]
 
 /**
- * The 26 px strip under the script screen: where you are, what snapping and the active layer will
+ * The wrapping status strip under the script screen: where you are, what snapping and the active layer will
  * do to the next mark, and the page and zoom controls. Desktop and tablet only.
  */
 export function StatusBar({
@@ -42,7 +42,7 @@ export function StatusBar({
     <section
       aria-label="Script status"
       className={cn(
-        'flex h-[26px] shrink-0 items-center gap-4 border-t border-line bg-paper-2 px-3 text-[11.5px] text-muted',
+        'flex min-h-11 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-t border-line bg-paper-2 px-3 py-1 text-[11.5px] text-muted',
         className,
       )}
     >
@@ -54,15 +54,13 @@ export function StatusBar({
       {onSnapChange ? (
         <label
           className={cn(
-            'relative inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm',
-            // a 44 px hit area on a touch tablet, and a focus ring from the checkbox inside
-            "after:absolute after:-inset-x-1 after:-inset-y-2 after:content-['']",
+            'relative inline-flex min-h-11 min-w-11 cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm',
             'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-red has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper-2',
           )}
         >
           <input
             type="checkbox"
-            className="peer sr-only"
+            className="peer absolute inset-0 h-full w-full cursor-pointer opacity-0"
             // the word beside it says the state; the control's name is the setting
             aria-label="Snap to text"
             checked={snap}
@@ -92,13 +90,11 @@ export function StatusBar({
               className="size-2.5 rounded-[3px]"
               style={{ background: activeLayer.colour }}
             />
-            <span className="font-semibold" style={{ color: activeLayer.colour }}>
-              {activeLayer.name}
-            </span>
+            <span className="font-semibold text-ink">{activeLayer.name}</span>
           </span>
         </>
       )}
-      <span className="ml-auto flex items-center gap-3">
+      <span className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-3">
         {children}
         <span className="hidden items-center gap-3 min-[1025px]:flex">
           <span aria-hidden className="h-[18px] w-px bg-line" />

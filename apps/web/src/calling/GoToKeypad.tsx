@@ -1,5 +1,4 @@
 import { formatCueNumber } from '@binder/core'
-import { deptChrome } from '@binder/shared'
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/segmented'
@@ -52,18 +51,18 @@ function canAppend(text: string, key: string, mode: 'cue' | 'page'): boolean {
   return text.includes('.') ? (minor ?? '').length < 2 : major.length < 4
 }
 
-/** What a typed cue number points at: the cue with exactly that number, else the first that starts with it. */
-function findCue(
+/** Exact matches take precedence; an ambiguous number never silently chooses a department. */
+function findCues(
   text: string,
   cues: readonly KeypadCue[],
   departments: readonly KeypadDepartment[],
-): KeypadCue | null {
+): KeypadCue[] {
   const found = matchCues(text, cues, departments)
   const formats = new Map(departments.map((d) => [d.id, d.numberFormat]))
-  const exact = found.find(
+  const exact = found.filter(
     (c) => formatCueNumber(c.major, c.minor, formats.get(c.departmentId) ?? 'decimal') === text,
   )
-  return exact ?? found[0] ?? null
+  return exact.length ? exact : found
 }
 
 /** The key caps' look: a lifted fill with a hard shadow, mono digits (the mockup's `.ov-key`). */
@@ -100,7 +99,9 @@ export function GoToKeypad({
   }, [])
 
   const departmentById = new Map(departments.map((d) => [d.id, d]))
-  const cue = mode === 'cue' ? findCue(text, cues, departments) : null
+  const matches = mode === 'cue' ? findCues(text, cues, departments) : []
+  const cue = matches.length === 1 ? matches[0] : null
+  const ambiguous = matches.length > 1
   const page = mode === 'page' && text !== '' ? Number(text) : null
   const pageOk = page !== null && page >= 1 && page <= pageCount
   const target: GoTarget | null =
@@ -201,22 +202,21 @@ export function GoToKeypad({
           {mode === 'cue' && cue ? (
             <>
               <span
-                className="font-mono text-[16px] font-semibold tabular-nums"
-                style={{
-                  color: departmentById.get(cue.departmentId)?.colour
-                    ? deptChrome(departmentById.get(cue.departmentId)?.colour ?? '')
-                    : undefined,
-                }}
-              >
+                aria-hidden
+                data-department-swatch
+                className="size-2.5 shrink-0 rounded-[3px] border border-input"
+                style={{ background: departmentById.get(cue.departmentId)?.colour ?? undefined }}
+              />
+              <span className="font-mono text-[16px] font-semibold tabular-nums text-ink">
                 {code(cue)}
               </span>{' '}
               {cue.label && (
                 <>
-                  <span className="text-faint">·</span>{' '}
+                  <span className="text-muted">·</span>{' '}
                   <span className="min-w-0 truncate">{cue.label}</span>{' '}
                 </>
               )}
-              <span className="text-faint">·</span>{' '}
+              <span className="text-muted">·</span>{' '}
               <span className="font-mono tabular-nums text-muted">
                 p.{(cue.anchor?.pageIndex ?? 0) + 1}
               </span>
@@ -224,9 +224,13 @@ export function GoToKeypad({
           ) : mode === 'page' && pageOk ? (
             <>
               <span className="font-mono text-[16px] font-semibold tabular-nums">Page {page}</span>{' '}
-              <span className="text-faint">·</span>{' '}
+              <span className="text-muted">·</span>{' '}
               <span className="font-mono tabular-nums text-muted">of {pageCount}</span>
             </>
+          ) : ambiguous ? (
+            <span className="text-muted text-[12px]">
+              Multiple cues match. Use Page or a recent jump.
+            </span>
           ) : text === '' ? (
             <span className="text-muted">
               {mode === 'cue' ? 'Type a cue number' : 'Type a page number'}
@@ -265,14 +269,14 @@ export function GoToKeypad({
           <Button
             type="button"
             variant="ghost"
-            className="h-14 w-28 flex-none rounded-[14px] text-[18px] font-bold md:h-14 md:rounded-[14px] md:text-[18px] md:after:inset-y-0"
+            className="h-14 before:h-14 md:before:h-14 w-28 flex-none rounded-[14px] text-[18px] font-bold md:h-14 md:rounded-[14px] md:text-[18px]"
             onClick={cancel}
           >
             Cancel
           </Button>
           <Button
             type="button"
-            className="h-14 flex-1 rounded-[14px] text-[18px] font-bold md:h-14 md:rounded-[14px] md:text-[18px] md:after:inset-y-0"
+            className="h-14 before:h-14 md:before:h-14 flex-1 rounded-[14px] text-[18px] font-bold md:h-14 md:rounded-[14px] md:text-[18px]"
             disabled={!target}
             onClick={() => go()}
           >
@@ -287,7 +291,7 @@ export function GoToKeypad({
                 <button
                   key={chip.key}
                   type="button"
-                  className="inline-flex h-11 items-center rounded-full border-2 border-line-2 bg-paper-2 px-3.5 font-mono text-[15px] tabular-nums text-ink hover:border-ink-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red md:h-10"
+                  className="inline-flex h-11 min-h-11 min-w-11 items-center rounded-full border-2 border-line-2 bg-paper-2 px-3.5 font-mono text-[15px] tabular-nums text-ink hover:border-ink-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
                   onClick={() => go(chip.target)}
                 >
                   {chip.label}

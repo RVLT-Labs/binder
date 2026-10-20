@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { claimTestAccount } from '../../test/localAccount'
 import {
   clearOfflinePrefs,
   clearOtherOfflinePrefs,
@@ -10,6 +11,8 @@ import {
   setKeepOffline,
 } from './store'
 
+beforeEach(() => claimTestAccount('u1'))
+
 afterEach(async () => {
   await clearOfflinePrefs('u1')
   await clearOfflinePrefs('u2')
@@ -18,12 +21,14 @@ afterEach(async () => {
 test('preferences are per user', async () => {
   await loadOfflinePrefs('u1')
   await setKeepOffline('u1', 'show-a', true)
+  claimTestAccount('u2')
   await setKeepOffline('u2', 'show-b', true)
   // Each user's database holds only their own shows.
   expect((await idbOfflinePrefsStore('u1').list()).map(([id]) => id)).toEqual(['show-a'])
   expect((await idbOfflinePrefsStore('u2').list()).map(([id]) => id)).toEqual(['show-b'])
   // The in-memory mirror follows the user it was last loaded or written for.
   expect([...getOfflinePrefs().prefs.keys()]).toEqual(['show-b'])
+  claimTestAccount('u1')
   await loadOfflinePrefs('u1')
   expect(getOfflinePrefs().userId).toBe('u1')
   expect([...getOfflinePrefs().prefs.keys()]).toEqual(['show-a'])
@@ -40,7 +45,9 @@ test('a preference survives a reload and Off removes it', async () => {
 })
 
 test("clearOtherOfflinePrefs keeps the current user's", async () => {
+  claimTestAccount('u2')
   await setKeepOffline('u2', 'show-b', true)
+  claimTestAccount('u1')
   await setKeepOffline('u1', 'show-a', true)
   await clearOtherOfflinePrefs('u1')
   expect((await idbOfflinePrefsStore('u1').list()).map(([id]) => id)).toEqual(['show-a'])

@@ -33,7 +33,35 @@ export interface ComparePaneProps {
 }
 
 const PAGER =
-  'inline-flex size-6 items-center justify-center rounded-[6px] text-muted hover:bg-elev hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red disabled:cursor-not-allowed disabled:opacity-40 max-md:size-11'
+  "relative isolate inline-flex size-11 shrink-0 items-center justify-center rounded-[6px] text-muted before:pointer-events-none before:absolute before:top-1/2 before:left-1/2 before:-z-10 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-[inherit] before:content-[''] hover:before:bg-elev hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red disabled:cursor-not-allowed disabled:opacity-40 md:before:size-6"
+
+/** Compact page-button faces retain their geometry within separate 44px layout targets. */
+export function ComparePageButton({
+  direction,
+  disabled,
+  onClick,
+}: {
+  direction: 'previous' | 'next'
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={PAGER}
+      style={{ minHeight: 44, minWidth: 44 }}
+      aria-label={direction === 'previous' ? 'Previous page' : 'Next page'}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {direction === 'previous' ? (
+        <BackIcon className="size-3.5" aria-hidden />
+      ) : (
+        <ChevronRightIcon className="size-3.5" aria-hidden />
+      )}
+    </button>
+  )
+}
 
 /** What the caption says about the tinted lines on the page in view. */
 function tintCaption(side: 'old' | 'new', onPage: number, total: number): string {
@@ -97,29 +125,21 @@ export function ComparePane({
       aria-label={title}
       data-side={side}
     >
-      <header className="flex h-[26px] shrink-0 items-center justify-between gap-2 max-md:h-11">
-        <div className="flex min-w-0 items-center gap-0.5">
+      <header className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h2 className="m-0 font-mono text-[13px] font-normal whitespace-nowrap text-ink tabular-nums">
             {versionName} · p.{index + 1}
           </h2>
-          <button
-            type="button"
-            className={PAGER}
-            aria-label="Previous page"
+          <ComparePageButton
+            direction="previous"
             disabled={index <= 0}
             onClick={() => onPageChange(index - 1)}
-          >
-            <BackIcon className="size-3.5" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={PAGER}
-            aria-label="Next page"
+          />
+          <ComparePageButton
+            direction="next"
             disabled={index >= pages.length - 1}
             onClick={() => onPageChange(index + 1)}
-          >
-            <ChevronRightIcon className="size-3.5" aria-hidden />
-          </button>
+          />
         </div>
         <span
           className="truncate text-[12px] text-muted"

@@ -101,7 +101,7 @@ export function OfflineCard({
         'max-md:flex max-md:items-center max-md:gap-3 max-md:border-line max-md:bg-paper-2 max-md:px-3.5 max-md:py-3 max-md:shadow-none',
       )}
     >
-      <WifiOffIcon className="size-5 shrink-0 text-faint md:hidden" />
+      <WifiOffIcon className="size-5 shrink-0 text-muted md:hidden" />
       <div className="min-w-0 flex-1">
         <h2 id={heading} className="t-over mb-2 max-md:sr-only">
           Offline

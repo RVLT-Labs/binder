@@ -1,4 +1,3 @@
-import { deptChrome } from '@binder/shared'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -30,8 +29,7 @@ export interface CallingStripProps {
 }
 
 /** ‹ and ›: the mockup's ghost button with a 44 px hit area on every size. */
-const TURN =
-  'min-w-11 px-2.5 text-[20px] leading-none md:min-w-[26px] md:px-[10px] md:text-[16px] md:after:-inset-x-[9px]'
+const TURN = 'min-w-11 px-2.5 text-[20px] leading-none md:px-[10px] md:text-[16px]'
 
 /**
  * The floating strip at the foot of Calling mode (DESIGN §8): page ‹ n / N ›, the next cue on the
@@ -50,7 +48,6 @@ export function CallingStrip({
   goToRef,
   className,
 }: CallingStripProps) {
-  const chrome = next?.colour ? deptChrome(next.colour) : undefined
   const turn = (
     <>
       <Button
@@ -65,7 +62,7 @@ export function CallingStrip({
         ‹
       </Button>
       <span className="font-mono text-[15px] tabular-nums text-ink md:text-[14px]">
-        p.{page} <span className="text-faint">/ {pages}</span>
+        p.{page} <span className="text-muted">/ {pages}</span>
       </span>
       <Button
         type="button"
@@ -82,16 +79,13 @@ export function CallingStrip({
   )
   const nextCueLine = next ? (
     <>
-      <span
-        className="inline-flex items-center gap-1.5 whitespace-nowrap font-semibold"
-        style={{ color: chrome }}
-      >
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-semibold text-ink">
         <span
           aria-hidden
           className="size-2.5 shrink-0 rounded-[3px]"
           style={{ background: next.colour ?? undefined }}
         />
-        Next {next.department}
+        Next from page top {next.department}
       </span>{' '}
       <span className="font-mono text-[14px] font-semibold tabular-nums text-ink">
         {next.number}
@@ -114,7 +108,7 @@ export function CallingStrip({
         className,
       )}
     >
-      <div className="flex items-center gap-1 max-md:order-1">{turn}</div>
+      <div className="flex items-center gap-2 max-md:order-1">{turn}</div>
       <span aria-hidden className="hidden h-[18px] w-px bg-line md:block" />
       <div className="flex min-w-0 items-center gap-1.5 max-md:order-4 max-md:flex-1">
         {nextCueLine}
@@ -125,7 +119,7 @@ export function CallingStrip({
         type="button"
         variant="line"
         size="sm"
-        className="max-md:order-2 max-md:ml-auto max-md:bg-elev max-md:px-[18px]"
+        className="max-md:order-2 max-md:ml-auto max-md:before:bg-elev max-md:px-[18px]"
         onClick={onGoTo}
       >
         Go to…

@@ -2,11 +2,18 @@ import { newId } from '@binder/shared'
 import type { PowerSyncDatabase } from '@powersync/web'
 import { AppSchema } from './schema'
 
-export type LocalDb = Pick<PowerSyncDatabase, 'getAll' | 'disconnectAndClear'>
+export type LocalDb = Pick<
+  PowerSyncDatabase,
+  'waitForReady' | 'getAll' | 'getClientId' | 'disconnectAndClear'
+>
 
 const OWNER_KEY = 'binder.localDbOwner'
-/** Kept beside the ownership marker: one id per claim of the local database. */
+/** Upload namespace: stable for queued retries while this owner's SQLite file is retained. */
 const DEVICE_KEY = 'binder.localDbDevice'
+/** UI/cache claim may be revoked without changing queued uploads' replay identity. */
+const CLAIM_KEY = 'binder.localDbClaim'
+/** PowerSync's persistent file identity distinguishes an empty live file from a recreated one. */
+const CLIENT_KEY = 'binder.localDbClient'
 
 /** The device id when storage is blocked, so it is at least stable for this page's lifetime. */
 let memoryDeviceId: string | null = null
@@ -31,7 +38,7 @@ function writeDevice(id: string | null): void {
 
 /**
  * This local database's id, a UUIDv7 minted when it is claimed for a new owner (and after sign-out),
- * reused until the next claim of a new or empty database. Upload batch ids are
+ * reused until the next claim of a new owner or recreated database. Upload batch ids are
  * `${deviceId()}-${transactionId}`: PowerSync's transaction counter restarts whenever the database is
  * wiped or recreated, and the device id changes with it, so one user's batch ids never repeat across
  * devices, sign-ins, or databases (the server skips a repeated batch id as a replay).
@@ -42,7 +49,7 @@ export function deviceId(): string {
   return id
 }
 
-function readOwner(): string | null {
+export function readOwner(): string | null {
   try {
     return localStorage.getItem(OWNER_KEY)
   } catch {
@@ -55,7 +62,10 @@ export function writeOwner(userId: string | null): void {
   if (userId === null) writeDevice(null)
   try {
     if (userId) localStorage.setItem(OWNER_KEY, userId)
-    else localStorage.removeItem(OWNER_KEY)
+    else {
+      localStorage.removeItem(OWNER_KEY)
+      localStorage.removeItem(CLAIM_KEY)
+    }
   } catch {
     // Storage blocked: claimLocalDb then finds no marker and wipes any rows, which is safe.
   }
@@ -83,16 +93,31 @@ export async function claimLocalDb(
   userId: string,
   clearForeignCaches?: () => Promise<void>,
 ): Promise<void> {
+  // Unlike getAll(), getClientId() does not await the SDK's schema initialization.
+  await db.waitForReady()
   const owner = readOwner()
+  const clientId = await db.getClientId()
+  if (!clientId) throw new Error('Could not verify the local database identity.')
+  let previousClient: string | null = null
+  try {
+    previousClient = localStorage.getItem(CLIENT_KEY)
+  } catch {}
   if (owner !== userId) await clearForeignCaches?.()
   const empty = !(await hasLocalRows(db))
   if (owner !== userId && (owner !== null || !empty)) {
     await db.disconnectAndClear()
   }
-  // An empty database may be a new one behind a remembered id (its file lost, its storage partition
-  // replaced): its transaction counter restarts, so it needs a new id or its batch ids would repeat
-  // ones the server already applied, and be skipped as replays. With no rows there is no queued
-  // upload, so a new id can never orphan a retry.
-  if (owner !== userId || empty || readDevice() === null) writeDevice(newId())
+  // getClientId() persists through clearing, but changes when the SQLite file is deleted.
+  // Another empty tab before initial sync therefore keeps the verified claim. A recreated file
+  // rotates its upload namespace. Upgrade a legacy nonempty file without orphaning queued retries;
+  // a legacy empty file has no retry to preserve and gets a fresh namespace once.
+  const recreated = previousClient !== clientId && (previousClient !== null || empty)
+  const newDevice = owner !== userId || recreated || readDevice() === null
+  if (newDevice) writeDevice(newId())
+  try {
+    localStorage.setItem(CLIENT_KEY, clientId)
+    if (newDevice || localStorage.getItem(CLAIM_KEY) === null)
+      localStorage.setItem(CLAIM_KEY, newId())
+  } catch {}
   writeOwner(userId)
 }

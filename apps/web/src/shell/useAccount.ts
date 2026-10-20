@@ -2,12 +2,14 @@ import { usePowerSync } from '@powersync/react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { authClient } from '@/auth/client'
+import { countLocalUploadsForSignOut } from '@/auth/localWork'
 import { useSessionUser } from '@/auth/session'
 import { signOutAndClear } from '@/auth/signOut'
 import { clearNotices } from '@/components/noticeStore'
-import { clearOutbox } from '@/exports/outbox'
+import { clearOutbox, pendingExports, stopExportUploads } from '@/exports/outbox'
 import { stopKeepOffline } from '@/offline/keepOffline/active'
 import { clearOfflinePrefs } from '@/offline/keepOffline/store'
+import { readOwner } from '@/powersync/ownership'
 import { clearLocalData } from '@/powersync/provider'
 import type { Account } from './types'
 
@@ -22,6 +24,10 @@ export function useAccount(): Account {
   const navigate = useNavigate()
   const db = usePowerSync()
   const userId = user?.id
+  const assertOwner = () => {
+    if (!userId || readOwner() !== userId)
+      throw new Error('The local database owner changed or could not be verified')
+  }
   return {
     email: user?.email ?? '',
     name: user?.name ?? '',
@@ -35,14 +41,25 @@ export function useAccount(): Account {
           if (userId) await clearOfflinePrefs(userId)
         },
         stopOfflineRunner: stopKeepOffline,
+        stopExportRunner: async () => {
+          if (userId) await stopExportUploads(userId)
+        },
         clearLocalData,
         clearCache: () => {
           clearNotices()
           queryClient.clear()
         },
         toLogin: () => navigate({ to: '/login' }),
-        pendingUploads: async () =>
-          (await db.get<{ n: number }>('SELECT count(*) AS n FROM ps_crud')).n,
+        pendingUploads: async () => {
+          assertOwner()
+          if (!userId) throw new Error('No signed-in owner')
+          return countLocalUploadsForSignOut(db, userId)
+        },
+        pendingExports: async () => {
+          assertOwner()
+          if (!userId) throw new Error('No signed-in owner')
+          return (await pendingExports(userId)).length
+        },
         confirm,
       }),
   }

@@ -58,13 +58,11 @@ test('it lists the non-hidden departments and the personal layer as rows with th
   expect(row('personal:u1').textContent).toContain('only you')
 })
 
-test('a row is the mockup layer row: 30 px, the active one raised on the card, a hidden one faded', () => {
+test('a row reserves 44 px, the active one is raised on the card and a hidden one faded', () => {
   h.hidden = ['department:snd']
   render(<LayerPanel showId="s" versionId="v" />)
   const lx = row('department:lx')
-  expect(lx.className).toContain('h-[30px]')
-  expect(lx.className).toContain('md:max-[1024px]:h-[38px]')
-  expect(lx.className).toContain('max-md:h-11')
+  expect(lx.className).toContain('min-h-11')
   expect(lx.className).toContain('bg-card')
   expect(lx.className).toContain('shadow-card')
   expect(row('department:snd').className).toContain('opacity-55')
@@ -89,4 +87,13 @@ test('a locked layer shows its lock in amber', () => {
   render(<LayerPanel showId="s" versionId="v" />)
   const lock = screen.getByLabelText('Lock LX').parentElement as HTMLElement
   expect(lock.className).toContain('text-amber')
+})
+
+test('B09 layer switches reserve separate 44px slots and the row radio excludes their area', () => {
+  render(<LayerPanel showId="s" versionId="v" />)
+  const show = screen.getByLabelText('Show LX')
+  const lock = screen.getByLabelText('Lock LX')
+  expect(show.parentElement?.className.split(' ')).toContain('size-11')
+  expect(lock.parentElement?.className.split(' ')).toContain('size-11')
+  expect(screen.getByLabelText('Active layer LX').className).toContain('right-[112px]')
 })

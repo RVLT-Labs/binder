@@ -347,9 +347,11 @@ function fakeDeps(over: Partial<SignOutDeps>): SignOutDeps {
     clearOutbox: vi.fn(async () => {}),
     clearOfflinePrefs: vi.fn(async () => {}),
     stopOfflineRunner: vi.fn(async () => {}),
+    stopExportRunner: vi.fn(async () => {}),
     clearCache: vi.fn(),
     toLogin: vi.fn(async () => {}),
     pendingUploads: vi.fn(async () => 0),
+    pendingExports: vi.fn(async () => 0),
     confirm: vi.fn(async () => true),
     ...over,
   }
@@ -392,7 +394,9 @@ describe('AccountMenu', () => {
     openAccountMenu()
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Sign out' }))
 
-    const message = await screen.findByText("3 changes haven't uploaded yet. Sign out anyway?")
+    const message = await screen.findByText(
+      "3 changes haven't uploaded yet. Queued changes and pending exports will be removed from this device. Sign out anyway?",
+    )
     expect(message).toBeTruthy()
     expect(deps.signOut).not.toHaveBeenCalled()
 
@@ -408,7 +412,9 @@ describe('AccountMenu', () => {
     openAccountMenu()
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Sign out' }))
 
-    const message = await screen.findByText("1 change hasn't uploaded yet. Sign out anyway?")
+    const message = await screen.findByText(
+      "1 change hasn't uploaded yet. Queued changes and pending exports will be removed from this device. Sign out anyway?",
+    )
     const dialog = message.closest('dialog') as HTMLElement
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Cancel' }))
     await vi.waitFor(() => expect(screen.queryByText(/uploaded yet/)).toBeNull())
@@ -534,4 +540,19 @@ describe('AppShell phone top bar', () => {
     // Once something is in the slot, CSS hides them (the slot's content makes it :not(:empty)).
     expect(rest.className).toContain('group-has-[[data-phone-slot]:not(:empty)]/bar:hidden')
   })
+})
+
+it('B06 active rail words use ink while the icon carries the module hue', async () => {
+  setWidth(1440)
+  await renderAt(
+    '/shows/s1/cues',
+    <AppShell showId="s1" crumbs={crumbs} account={account()}>
+      <p>cues</p>
+    </AppShell>,
+  )
+  const current = within(screen.getByRole('navigation', { name: 'Binder' })).getByRole('link', {
+    name: 'Cues',
+  })
+  expect(current.querySelector('span')?.className).toContain('text-ink')
+  expect(current.querySelector('svg')?.getAttribute('class')).toContain('text-warn')
 })

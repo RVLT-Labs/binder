@@ -23,7 +23,7 @@ const subscribe = (fn: () => void) => {
 
 /** Opens the palette; the focused control is remembered so closing can hand focus back to it. */
 export function openPalette(): void {
-  if (open) return
+  if (open || host?.calling) return
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   open = true
   emit()
@@ -44,6 +44,8 @@ export function dismissPalette(): void {
   closePalette()
   restoreFocus(back)
 }
+
+export const paletteCalling = (): boolean => host?.calling === true
 
 export const isPaletteOpen = (): boolean => open
 
@@ -76,6 +78,7 @@ const hostListeners = new Set<() => void>()
 /** Registers the open document; returns the function that takes it away again. */
 export function registerDocumentHost(next: PaletteDocumentHost): () => void {
   host = next
+  if (next.calling) closePalette()
   for (const fn of [...hostListeners]) fn()
   return () => {
     if (host !== next) return

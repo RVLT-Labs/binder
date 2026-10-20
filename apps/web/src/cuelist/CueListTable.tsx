@@ -158,7 +158,7 @@ export function CueListTable({ rows, selectedId, readOnly, onEdit, onSelect }: C
                 className={cn(
                   TD,
                   'cue-page text-right font-mono tabular-nums',
-                  !row.placed && 'text-faint',
+                  !row.placed && 'text-muted',
                 )}
               >
                 {pageText(row)}

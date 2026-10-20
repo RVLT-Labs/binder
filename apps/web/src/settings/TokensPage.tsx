@@ -214,7 +214,7 @@ export function TokensPage() {
                     type="button"
                     size="sm"
                     variant="line"
-                    className="border-ink-2 bg-paper"
+                    className="before:border-ink-2 before:bg-paper"
                     loading={revoke.isPending}
                     onClick={() => revoke.mutate(t.id)}
                   >

@@ -98,7 +98,7 @@ export function TopBar({
 
   const shown = crumbs.filter((c) => !c.phoneOnly)
   return (
-    <header className="group/bar flex h-[calc(44px+env(safe-area-inset-top))] shrink-0 items-center gap-3.5 border-b border-line bg-paper px-3.5 pt-[env(safe-area-inset-top)]">
+    <DesktopTopBarFrame>
       <nav aria-label="Breadcrumb" className="min-w-0">
         <ol className="flex items-center gap-1.5 text-[13px]">
           {shown.map((crumb, i) => {
@@ -108,7 +108,7 @@ export function TopBar({
               // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat
               <li key={i} className="flex min-w-0 items-center gap-1.5">
                 {i > 0 && (
-                  <span aria-hidden className="text-faint">
+                  <span aria-hidden className="text-muted">
                     /
                   </span>
                 )}
@@ -140,7 +140,7 @@ export function TopBar({
         </ol>
       </nav>
       <div ref={slotRefs?.chip} className="contents" />
-      <div className="ml-auto flex items-center gap-3">
+      <DesktopTopBarActions>
         {/* At tablet width, a screen with its own controls here (the script's) has no room for the
             word: the dot stays and the word is read out. */}
         <SyncStatus crowded />
@@ -148,7 +148,24 @@ export function TopBar({
         {/* A screen's own controls (see TopBarSlots) sit after the shell's, before the primary. */}
         <div ref={slotRefs?.actions} data-bar-actions className="contents" />
         {primary}
-      </div>
+      </DesktopTopBarActions>
+    </DesktopTopBarFrame>
+  )
+}
+
+/** The shell must grow/wrap around reserved targets instead of clipping them in 44px. */
+export function DesktopTopBarFrame({ children }: { children: ReactNode }) {
+  return (
+    <header className="group/bar flex min-h-[calc(44px+env(safe-area-inset-top))] shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-paper px-3.5 pt-[env(safe-area-inset-top)]">
+      {children}
     </header>
+  )
+}
+
+export function DesktopTopBarActions({ children }: { children: ReactNode }) {
+  return (
+    <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-3">
+      {children}
+    </div>
   )
 }

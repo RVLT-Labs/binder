@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { clearNotices, getNotices } from '../components/noticeStore'
+import { claimTestAccount } from '../test/localAccount'
 import {
   clearOtherOutboxes,
   clearOutbox,
@@ -11,7 +12,10 @@ import {
   pendingExports,
 } from './outbox'
 
-beforeEach(() => clearNotices())
+beforeEach(() => {
+  clearNotices()
+  claimTestAccount('u1')
+})
 
 /** An in-memory store, so the flush logic is tested apart from IndexedDB. */
 function memoryStore(): OutboxStore & { entries: Map<string, PendingExport> } {
@@ -105,6 +109,7 @@ test("flushing as user B never sends user A's pending exports; clearOutbox(A) em
   expect((await pendingExports('user-a')).map((p) => p.id)).toEqual([a.id])
 
   const post = vi.fn(async (_p: PendingExport) => reply(201))
+  claimTestAccount('user-b')
   expect(await flushOutbox('user-b', { post })).toEqual({ sent: 1, kept: 0, dropped: 0 })
   expect(post).toHaveBeenCalledTimes(1)
   expect(post.mock.calls[0][0].id).toBe(b.id)
@@ -252,7 +257,10 @@ test('clearOutbox cancels a flush in flight: no further post goes out under whoe
   const later = pending('u1')
   await enqueueExport(later, store)
   expect(await flushOutbox('u1', { store, post })).toEqual({ sent: 1, kept: 0, dropped: 0 })
-  expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ id: later.id }))
+  expect(post).toHaveBeenLastCalledWith(
+    expect.objectContaining({ id: later.id }),
+    expect.any(AbortSignal),
+  )
 })
 
 test("clearOtherOutboxes empties every other user's outbox and leaves the owner's", async () => {
@@ -372,4 +380,33 @@ test('an unsafe legacy name that is sanitised and still refused with 400: one sa
   // A later flush (reconnect, the retry timer) finds nothing: no second attempt.
   expect(await flushOutbox('u1', { store, post })).toEqual({ sent: 0, kept: 0, dropped: 0 })
   expect(post).toHaveBeenCalledTimes(1)
+})
+
+test('B13 stopping uploads waits for the in-flight request and blocks another run until the owner resumes', async () => {
+  const { stopExportUploads, resumeExportUploads } = await import('./outbox')
+  const userId = 'disposable-stopping-user'
+  claimTestAccount(userId)
+  const entry = pending(userId)
+  await enqueueExport(entry)
+  let release = () => {}
+  const post = vi.fn(
+    () =>
+      new Promise<Response>((done) => {
+        release = () => done(new Response('', { status: 201 }))
+      }),
+  )
+  const flushing = flushOutbox(userId, { post })
+  await vi.waitFor(() => expect(post).toHaveBeenCalledOnce())
+  let stopped = false
+  const stopping = stopExportUploads(userId).then(() => {
+    stopped = true
+  })
+  await Promise.resolve()
+  expect(stopped).toBe(false)
+  expect(await flushOutbox(userId, { post })).toEqual({ sent: 0, kept: 1, dropped: 0 })
+  release()
+  await Promise.all([stopping, flushing])
+  expect(await pendingExports(userId)).toHaveLength(1)
+  resumeExportUploads(userId)
+  await clearOutbox(userId)
 })

@@ -420,7 +420,7 @@ function drawTag(
     strokeWidth: t.outlineWidth,
     dash: t.dash ? [3, 2] : undefined,
   })
-  if (t.lead) d.centredText(t.lead, t.leadX, t.centreY, TAG_FONT_SIZE, colour)
+  if (t.lead) d.centredText(t.lead, t.leadX, t.centreY, TAG_FONT_SIZE, numberInk)
   d.centredText(t.number, t.numberX, t.centreY, TAG_FONT_SIZE, numberInk, true)
 }
 

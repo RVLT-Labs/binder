@@ -103,10 +103,13 @@ pnpm --filter @binder/db generate                       # new migration after a 
 - Roles are viewer, editor (department-scoped) and owner. Archived shows are read-only for everyone.
 
 **UI**
-- `DESIGN.md` is the design system. Since ruling R20 the **mockups are the binding visual standard**
-  (`docs/superpowers/design/binder-ui-2026-10`, regenerate with `python3 _build.py`; render PNGs with
-  `node _shot.mjs <abs index.html> <outdir>`). Match component shapes, red placement, copy and spacing to them;
-  record any deliberate difference in the decisions log at the bottom of DESIGN.md.
+- Visual authority is RVLT Design Language v1.3.0, pinned to
+  `f1a1825a0e07d9df56b3133151299dcd25216f9c`:
+  [docs/AUTHORITY.md](https://github.com/RVLT-Labs/rvlt-designlanguage/blob/f1a1825a0e07d9df56b3133151299dcd25216f9c/docs/AUTHORITY.md).
+  Follow rules > product contracts > machine tokens/contrast > implementation > verified examples > marketing.
+  Local `DESIGN.md` extends it. Mockups guide composition only and lose conflicts with canonical rules.
+  Preserve canonical §19.2: Binder rectangles, fixed white page, Helvetica metrics (14 pt tags, 9 pt type),
+  department marks with page-ink words, and the named dialog cast.
 - Colours, type and spacing come from `apps/web/src/styles/tokens.css` (Tailwind v4 theme); no literal hex in
   components. The script page is always paper and the brightest thing on screen; department colour is the only
   colour on the page; red is never a department colour.

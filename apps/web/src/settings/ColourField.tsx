@@ -1,6 +1,12 @@
-import { COLOUR_RE, DEPARTMENT_COLOUR_PRESETS, deptChrome, isTooCloseToRed } from '@binder/shared'
+import {
+  COLOUR_RE,
+  DEPARTMENT_COLOUR_PRESETS,
+  departmentColourProblem,
+  deptChrome,
+} from '@binder/shared'
 import { useId, useState } from 'react'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn, focusRing } from '@/lib/utils'
 
@@ -38,8 +44,7 @@ export function ColourField({
           type="button"
           aria-label={label}
           className={cn(
-            'grid size-11 shrink-0 place-items-center rounded-[12px] border-2 border-line-2 bg-paper md:h-6 md:w-6 md:rounded-[7px]',
-            "md:relative md:after:absolute md:after:-inset-2.5 md:after:content-['']",
+            'grid size-11 min-h-11 min-w-11 shrink-0 place-items-center rounded-[12px] border-2 border-input bg-paper md:rounded-[7px]',
             focusRing,
             className,
           )}
@@ -80,8 +85,13 @@ function Choices({
       setError(final || !STILL_TYPING.test(colour) ? INVALID_MESSAGE : null)
       return false
     }
-    if (isTooCloseToRed(colour)) {
-      setError(RED_MESSAGE)
+    if (colour === value.toUpperCase()) {
+      setError(null)
+      return true
+    }
+    const problem = departmentColourProblem(colour)
+    if (problem) {
+      setError(problem)
       return false
     }
     setError(null)
@@ -93,7 +103,7 @@ function Choices({
     <>
       <div role="presentation" className="flex flex-wrap gap-2">
         {DEPARTMENT_COLOUR_PRESETS.map((p) => (
-          <label key={p.code} className="relative block size-9 cursor-pointer md:size-7">
+          <label key={p.code} className="relative block size-11 cursor-pointer">
             <input
               type="radio"
               name={name}
@@ -105,7 +115,7 @@ function Choices({
                 onChange(p.colour)
                 close()
               }}
-              className="peer absolute inset-0 m-0 size-full cursor-pointer appearance-none rounded-[8px] border-2 border-line-2 checked:border-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
+              className="peer absolute inset-0 m-0 size-full cursor-pointer appearance-none rounded-[8px] border-2 border-input checked:border-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
             />
             <i
               aria-hidden
@@ -115,9 +125,16 @@ function Choices({
           </label>
         ))}
       </div>
+      {departmentColourProblem(value) && draft.toUpperCase() === value.toUpperCase() && (
+        <p role="status" className="m-0 text-[12px] text-muted">
+          Existing colour is preserved. New colours need 3:1 mark contrast on white and must stay
+          clear of Binder red.
+        </p>
+      )}
+      <Label htmlFor={`${name}-custom`}>Custom colour</Label>
       <div className="flex items-center gap-2">
         <Input
-          aria-label="Custom colour"
+          id={`${name}-custom`}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${name}-err` : undefined}
           value={draft}
@@ -145,7 +162,7 @@ function Choices({
             setDraft(e.target.value.toUpperCase())
             check(e.target.value, true)
           }}
-          className="size-11 shrink-0 cursor-pointer rounded-[10px] border-2 border-line-2 bg-paper p-0.5 md:size-[30px]"
+          className="size-11 shrink-0 cursor-pointer rounded-[10px] border-2 border-input bg-paper p-0.5"
         />
       </div>
       {error && (

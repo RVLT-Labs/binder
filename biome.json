@@ -13,6 +13,7 @@
       "!apps/web/test-results",
       "!apps/web/playwright-report",
       "!docs/superpowers/design",
+      "!.remediation",
       "!.worktrees",
       "!.claude/worktrees"
     ]

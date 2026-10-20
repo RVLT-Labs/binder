@@ -45,7 +45,7 @@ const mono = 'font-mono tabular-nums'
 // `--elev` there (`.dx-row .btn`); in the overview's shared card, and on the phone, they keep the
 // card fill.
 const ACTION = cn(buttonVariants({ variant: 'line', size: 'sm' }), focusRing)
-const ROW_ACTION = cn(ACTION, 'md:bg-elev')
+const ROW_ACTION = cn(ACTION, 'md:before:bg-elev')
 const PRIMARY_ACTION = cn(buttonVariants({ variant: 'primary', size: 'sm' }), focusRing)
 
 /**
@@ -170,7 +170,7 @@ function ReadyRow({
       type="button"
       variant="line"
       size="sm"
-      className="relative z-10 md:bg-elev max-md:hidden"
+      className="relative z-10 md:before:bg-elev max-md:hidden"
       onClick={(e) =>
         onUpload(
           {
@@ -239,7 +239,7 @@ function ReadyRow({
               )}
             </p>
             {entry.kept && !compact && (
-              <p className="m-0 text-[12px] text-faint">
+              <p className="m-0 text-[12px] text-muted">
                 v{entry.kept.number} kept
                 {entry.kept.pageCount !== null && <> · {pages(entry.kept.pageCount)}</>}
               </p>
@@ -284,7 +284,7 @@ function ReadyRow({
           )}
         </div>
         {compact && (
-          <ChevronRightIcon className="size-5 shrink-0 text-faint md:hidden" aria-hidden />
+          <ChevronRightIcon className="size-5 shrink-0 text-muted md:hidden" aria-hidden />
         )}
       </div>
     </li>
@@ -535,7 +535,7 @@ function Steps({ steps }: { steps: VersionStep[] }) {
             'flex items-center gap-1.5 whitespace-nowrap md:gap-[7px]',
             step.state === 'current' && 'font-semibold text-ink',
             step.state === 'done' && 'text-ink-2',
-            step.state === 'pending' && 'text-faint',
+            step.state === 'pending' && 'text-muted',
           )}
         >
           <StepIcon state={step.state} />
@@ -666,7 +666,7 @@ function FailedRow({
                 type="button"
                 variant="line"
                 size="sm"
-                className="md:bg-elev"
+                className="md:before:bg-elev"
                 aria-label={`Try again, ${name}`}
                 aria-describedby={inPlace && !actions.online ? noteId : undefined}
                 disabled={inPlace && (!actions.online || actions.busy)}

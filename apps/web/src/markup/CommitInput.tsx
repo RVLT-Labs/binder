@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { type HTMLAttributes, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -29,6 +29,7 @@ export interface CommitInputProps {
   multiline?: boolean
   disabled?: boolean
   className?: string
+  inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
   placeholder?: string
   'aria-label'?: string
   'aria-invalid'?: boolean

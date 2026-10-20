@@ -106,11 +106,18 @@ test('the sheet is the mockup\'s: show over-label, "Print Libretto v2", the page
   // The presets are the mockup's two links; "All" keeps the name the e2e finds it by.
   expect(screen.getByRole('button', { name: 'Calling script: all layers' }).textContent).toBe('All')
   expect(screen.getByRole('button', { name: 'Only mine' })).toBeTruthy()
+  for (const name of ['Calling script: all layers', 'Only mine']) {
+    const preset = screen.getByRole('button', { name })
+    expect(getComputedStyle(preset).minHeight).toBe('44px')
+    expect(getComputedStyle(preset).minWidth).toBe('44px')
+  }
   expect(screen.queryByRole('button', { name: 'Clean copy' })).toBeNull()
   expect(screen.getByLabelText('Personal layer')).toBeTruthy()
   // Cancel is ghost (transparent border), the red one is Download PDF.
   expect(screen.getByRole('button', { name: 'Cancel' }).className).toContain('border-transparent')
-  expect(screen.getByRole('button', { name: 'Download PDF' }).className).toContain('bg-red')
+  expect(screen.getByRole('button', { name: 'Download PDF' }).className).toContain(
+    'before:bg-primary',
+  )
   expect(screen.queryByRole('button', { name: 'Export PDF' })).toBeNull()
 })
 

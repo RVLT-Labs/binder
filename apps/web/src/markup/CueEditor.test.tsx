@@ -157,3 +157,12 @@ test('"edited by" names the person from presence, says you for yourself, and a t
   delete row.updated_by
   h.peers = []
 })
+
+test('B11 cue-number entry requests a decimal keyboard without changing decimal parsing', () => {
+  const { getByLabelText } = render(<CueEditor cueId="c1" />)
+  const input = getByLabelText('Number')
+  expect(input.getAttribute('inputmode')).toBe('decimal')
+  fireEvent.change(input, { target: { value: '12.5' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(updateCue).toHaveBeenCalledWith({}, expect.anything(), 'c1', { major: 12, minor: 50 })
+})
