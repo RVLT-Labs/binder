@@ -99,7 +99,7 @@ export function tagWidth(lead: string, number: string): number {
 
 export interface CueTagInput {
   id: string
-  /** The cue's anchor y: the tag is level with it unless it collides with the tag above. */
+  /** The cue's anchor y: the tag is level with it unless it is crowded by another tag. */
   y: number
   side: MarkerSide
   /** The department half of the tag (`LX`, `SB LX`, `W LX`). */
@@ -130,7 +130,7 @@ export interface CueTagLayout {
   /** A standby's outline is dashed. */
   dash: boolean
   outlineWidth: number
-  /** The tag's vertical centre: the cue's y, or lower when stacked under another tag. */
+  /** The tag's vertical centre: the cue's y, or above or below it when crowded by other tags. */
   centreY: number
   /** What the tag shows after fitting the margin: the lead (empty when dropped) and the number. */
   lead: string
@@ -171,12 +171,13 @@ export interface CueTagLayout {
  * the margin sheds its department code, then its type word, and only as a last resort overlaps the
  * text.
  *
- * Down each side tags are placed top to bottom in page order (higher y first, ties by department,
- * number, id). A tag stays level with its own line unless it would overlap the tag just above it;
- * then it is pushed down to 2 points below that one. A tag with a note counts as the tag plus the
- * note's 9 points, so a tag never lands on a note. Finally the stack is held inside `bounds`: a
- * tag below `minY` is lifted to it, and the tags above are lifted in turn if they would overlap;
- * nothing goes above `maxY`. The result is in the order of `cues`.
+ * Down each side tags keep their page order (higher y first, ties by department, number, id). A tag
+ * stays level with its own line unless it would overlap a neighbour; tags that crowd one another
+ * form a group, stacked 2 points apart in that order and spread up and down around their lines
+ * (centred so the group moves no further in total than it must). A tag with a note counts as the
+ * tag plus the note's 9 points, so a tag never lands on a note. Groups that then overlap merge and
+ * are centred again. The stack is held inside `bounds`: a group below `minY` is lifted to it, with
+ * the tags above lifted in turn if they would overlap, and nothing goes above `maxY`. The result is in the order of `cues`.
  */
 export function layoutCueTags(input: {
   pageWidth: number
@@ -239,7 +240,18 @@ export function layoutCueTags(input: {
   )
 }
 
-/** Sweeps one side's tags (indices in placement order) down the page, then holds them in bounds. */
+/**
+ * Places one side's tags (indices in placement order, top of the page first) so crowded ones spread
+ * up and down around their own lines.
+ *
+ * Every tag starts as a group of its own, level with its cue. A group's members are stacked in
+ * placement order, `TAG_HEIGHT + TAG_GAP` apart (plus a noted tag's `NOTE_HEIGHT`), and the stack is
+ * centred where its members want to be: the position that minimises the total distance they move,
+ * which is the one where the displacements add up to nothing. When a group's lowest tag overlaps the
+ * next group's highest, the two merge and the merged stack is centred again, until nothing overlaps
+ * (pool-adjacent-violators). A group is held inside `bounds` as part of placing it: lifted off the
+ * footer, kept below the top of the page, so what it then overlaps merges in as well.
+ */
 function stackSide(
   order: number[],
   cues: readonly CueTagInput[],
@@ -249,32 +261,50 @@ function stackSide(
   bounds: { minY: number; maxY: number },
 ) {
   const step = TAG_HEIGHT + TAG_GAP
-  let above: number | undefined
-  for (const i of order) {
-    const y = (cues[i] as CueTagInput).y
-    const below = above === undefined ? 0 : (extra[above] as number)
-    centres[i] =
-      above !== undefined && y > (centres[above] as number) - TAG_HEIGHT - below
-        ? (centres[above] as number) - step - below
-        : y
-    above = i
-  }
-  // Bottom up: lift what is below the floor, and whatever it then overlaps, in turn.
-  for (let k = order.length - 1; k >= 0; k--) {
-    const i = order[k] as number
-    // A note hangs below its tag, so the tag is lifted that much further off the floor.
-    const floor = bounds.minY + TAG_HEIGHT / 2 + (extra[i] as number)
-    if ((centres[i] as number) < floor) centres[i] = floor
-    const up = order[k - 1]
-    if (up === undefined) continue
-    const held = extra[up] as number
-    if ((centres[up] as number) - (centres[i] as number) < TAG_HEIGHT + held) {
-      centres[up] = (centres[i] as number) + step + held
-    }
-  }
-  // Nothing leaves the page at the top, even if a dense cluster has to overlap there.
   const ceiling = bounds.maxY - TAG_HEIGHT / 2
-  for (const i of order) if ((centres[i] as number) > ceiling) centres[i] = ceiling
+  // A note hangs below its tag, so the tag is lifted that much further off the floor.
+  const floorOf = (i: number) => bounds.minY + TAG_HEIGHT / 2 + (extra[i] as number)
+  interface Group {
+    members: number[]
+    /** Where each member sits below the group's first tag (0 for the first). */
+    offsets: number[]
+    /** The first (highest) tag's centre. */
+    top: number
+  }
+  const place = (members: number[]): Group => {
+    const offsets: number[] = []
+    let offset = 0
+    let wanted = 0
+    members.forEach((i, k) => {
+      if (k > 0) offset += step + (extra[members[k - 1] as number] as number)
+      offsets.push(offset)
+      wanted += (cues[i] as CueTagInput).y + offset
+    })
+    // The lowest tag is the one the footer can reach; the highest is the one the page top can.
+    const lowest = members[members.length - 1] as number
+    const lowestOffset = offsets[offsets.length - 1] as number
+    const top = Math.min(Math.max(wanted / members.length, floorOf(lowest) + lowestOffset), ceiling)
+    return { members, offsets, top }
+  }
+  const bottomOf = (g: Group) => g.top - (g.offsets[g.offsets.length - 1] as number)
+  const groups: Group[] = []
+  for (const i of order) {
+    let group = place([i])
+    for (let prev = groups[groups.length - 1]; prev; prev = groups[groups.length - 1]) {
+      const held = extra[prev.members[prev.members.length - 1] as number] as number
+      if (bottomOf(prev) - group.top >= TAG_HEIGHT + held) break
+      groups.pop()
+      group = place([...prev.members, ...group.members])
+    }
+    groups.push(group)
+  }
+  for (const g of groups) {
+    g.members.forEach((i, k) => {
+      // A cluster too big for the room between the footer and the top cannot be spread; it still
+      // stays on the page, overlapping, rather than leave it.
+      centres[i] = Math.min(ceiling, Math.max(g.top - (g.offsets[k] as number), floorOf(i)))
+    })
+  }
 }
 
 /** The order tags take down a side: higher on the page first, then department, number, id. */
