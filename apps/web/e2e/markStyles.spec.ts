@@ -11,6 +11,7 @@ import {
   type Line,
   lineOf,
   pageText,
+  triggerOf,
   withUsers,
   zoomOutTo,
 } from './markupHelpers'
@@ -271,7 +272,7 @@ test("change a cue's mark in the editor and see it redrawn", async ({ browser })
   })
 })
 
-test('dragging the margin tag of a highlight keeps it a highlight', async ({ browser }) => {
+test('dragging the mark of a highlight keeps it a highlight', async ({ browser }) => {
   await withUsers(browser, ['owner'], async ([a]) => {
     const { page } = a
     let id = ''
@@ -290,8 +291,10 @@ test('dragging the margin tag of a highlight keeps it a highlight', async ({ bro
       await expect(trigger(page, id).locator('rect.cue-fill').first()).toBeVisible()
       const firstY = (await localCue(page, id))?.anchor?.y
 
-      const box = await marker(page, id).boundingBox()
-      if (!box) throw new Error('marker not on screen')
+      // The mark (its fill) moves the cue; the margin tag would only move the bubble.
+      await page.getByRole('button', { name: 'Select', exact: true }).click()
+      const box = await triggerOf(page, id).boundingBox()
+      if (!box) throw new Error('mark not on screen')
       const target = await clientPoint(page, 0, to.x, to.centre + 2)
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
       await page.mouse.down()
