@@ -1,4 +1,4 @@
-import { degrees, PDFDocument, PDFName, PDFNumber } from 'pdf-lib'
+import { degrees, PDFDict, PDFDocument, PDFName, PDFNumber } from 'pdf-lib'
 import { describe, expect, test } from 'vitest'
 import { pdfContent, pdfTexts } from '../../test/pdfTexts'
 import type { StampItem } from './stampItems'
@@ -49,6 +49,8 @@ test('stamping keeps every page box and rotation and draws the footer on each pa
         side: 'right',
         sortKey: { department: 0, major: 10, minor: 0 },
         triggerBoxes: [{ x: 60, y: 95, w: 30, h: 10 }],
+        mark: 'underline',
+        caret: null,
         textExtent: { minX: 40, maxX: 150 },
       },
       // A page the PDF does not have is skipped, not an error.
@@ -67,6 +69,8 @@ test('stamping keeps every page box and rotation and draws the footer on each pa
         side: 'left',
         sortKey: { department: 0, major: 1, minor: 0 },
         triggerBoxes: [],
+        mark: 'underline',
+        caret: null,
         textExtent: null,
       },
     ],
@@ -154,6 +158,8 @@ const cueItem = (number: string): Extract<StampItem, { kind: 'cue' }> => ({
   side: 'left',
   sortKey: { department: 0, major: 1, minor: 0 },
   triggerBoxes: [],
+  mark: 'underline',
+  caret: null,
   textExtent: null,
 })
 
@@ -530,5 +536,149 @@ describe('paper fit', () => {
     const doc = await PDFDocument.load(out)
     expect(doc.getPageCount()).toBe(1)
     expect(doc.getPage(0).getMediaBox()).toMatchObject({ width: 612, height: 792 })
+  })
+})
+
+describe('cue marks', () => {
+  const box = { x: 100, y: 195, w: 40, h: 10 }
+  const markedCue = (
+    id: string,
+    mark: Extract<StampItem, { kind: 'cue' }>['mark'],
+    over: Partial<Extract<StampItem, { kind: 'cue' }>> = {},
+  ): Extract<StampItem, { kind: 'cue' }> => ({
+    ...cueItem('77'),
+    id,
+    mark,
+    triggerBoxes: [box],
+    x: box.x,
+    y: box.y + box.h / 2,
+    ...over,
+  })
+  const caret = { x: 120, box }
+
+  async function stampedDoc(items: StampItem[]) {
+    const src = await PDFDocument.create()
+    src.addPage([400, 400])
+    const out = await stampScript(await src.save(), items, footer)
+    const content = ((await pdfContent(out))[0] as string).replace(/\r/g, '')
+    return { content, doc: await PDFDocument.load(out) }
+  }
+
+  /** The page's ExtGState entries as `{ BM, ca }`, by resource name. */
+  function graphicsStates(doc: PDFDocument) {
+    const resources = doc.getPages()[0]?.node.Resources()
+    const ext = resources?.lookup(PDFName.of('ExtGState'), PDFDict)
+    const out = new Map<string, { BM?: string; ca?: number }>()
+    for (const [key, ref] of ext?.entries() ?? []) {
+      const gs = doc.context.lookup(ref, PDFDict)
+      const bm = gs.get(PDFName.of('BM'))
+      const ca = gs.get(PDFName.of('ca'))
+      out.set(key.asString().replace(/^\//, ''), {
+        BM: bm instanceof PDFName ? bm.asString().replace(/^\//, '') : undefined,
+        ca: ca instanceof PDFNumber ? ca.asNumber() : undefined,
+      })
+    }
+    return out
+  }
+
+  test('a highlight draws a translucent fill in the department colour, multiplied, and no underline', async () => {
+    const { content, doc } = await stampedDoc([markedCue('h', 'highlight')])
+    const states = graphicsStates(doc)
+    const used = [...content.matchAll(/\/(\S+) gs/g)].map((m) => states.get(m[1] as string))
+    expect(used).toContainEqual({ BM: 'Multiply', ca: 0.28 })
+    // The fill is the department colour: #F5A623.
+    expect(content).toMatch(/0\.9\d* 0\.6\d* 0\.1\d* rg/)
+    // Underline strokes are 1.5 wide; a highlight leaves none (its connector is thinner).
+    const underlined = (await stampedDoc([markedCue('u', 'underline')])).content
+    const strokes = (c: string) => (c.match(/\nS\n/g) ?? []).length
+    expect(strokes(content)).toBe(strokes(underlined) - 1)
+  })
+
+  test.each([0, 90, 180, 270] as const)(
+    'at /Rotate %i the fill is placed at its padded top-left corner in user space',
+    async (rotation) => {
+      const src = await PDFDocument.create()
+      src.addPage([400, 300]).setRotation(degrees(rotation))
+      const out = await stampScript(await src.save(), [markedCue('h', 'highlight')], footer)
+      const content = ((await pdfContent(out))[0] as string).replace(/\r/g, '')
+      const frame = { bx: 0, by: 0, w: 400, h: 300, rotation }
+      const want = displayedToUser(frame, box.x - 1, box.y + box.h)
+      const m =
+        /1 0 0 1 ([-\d.]+) ([-\d.]+) cm\n([-\d.e]+) ([-\d.e]+) ([-\d.e]+) ([-\d.e]+) 0 0 cm/.exec(
+          content,
+        )
+      expect(m).not.toBeNull()
+      expect(Number(m?.[1])).toBeCloseTo(want.x)
+      expect(Number(m?.[2])).toBeCloseTo(want.y)
+      // The shape is turned with the page.
+      const rad = (rotation * Math.PI) / 180
+      const turn = [Math.cos(rad), Math.sin(rad), -Math.sin(rad), Math.cos(rad)]
+      for (const [i, v] of turn.entries()) expect(Number(m?.[i + 3])).toBeCloseTo(v)
+    },
+  )
+
+  test('the highlight fill is a rounded path, not a plain rectangle', async () => {
+    const { content } = await stampedDoc([markedCue('h', 'highlight')])
+    expect(content).toMatch(/ c\n/)
+  })
+
+  test('a line draws a bar 1.5 pt wide at the caret x and no triangle', async () => {
+    const { content } = await stampedDoc([markedCue('l', 'line', { caret })])
+    expect(content).toMatch(/1\.5 w/)
+    // Both ends of the bar are at x 120 (the caret), the bar standing past the word box.
+    const bar = /\n120 ([\d.]+) m\n120 ([\d.]+) l\n/.exec(content)
+    expect(bar).not.toBeNull()
+    expect(Math.abs(Number(bar?.[1]) - Number(bar?.[2]))).toBeGreaterThan(box.h)
+    // No filled triangle: the only fills are none (a rect fill would be `re`).
+    expect(content).not.toMatch(/\nh\nf\n/)
+  })
+
+  test('a pointer also draws a filled triangle pointing down at the bar', async () => {
+    const { content } = await stampedDoc([markedCue('p', 'pointer', { caret })])
+    const tri = /\n([\d.]+) ([\d.]+) m\n([\d.]+) ([\d.]+) l\n([\d.]+) ([\d.]+) l\nh\nf\n/.exec(
+      content,
+    )
+    expect(tri).not.toBeNull()
+    const n = (i: number) => Number(tri?.[i])
+    // Apex first, on the caret; the base is 5 pt above it, 6 pt wide.
+    expect(n(1)).toBeCloseTo(120)
+    expect(n(4)).toBeCloseTo(n(2) + 5)
+    expect(n(6)).toBeCloseTo(n(2) + 5)
+    expect(n(5) - n(3)).toBeCloseTo(6)
+  })
+
+  test('the draw order is fills, underlines and bars, annotations, then tags', async () => {
+    const { content } = await stampedDoc([
+      markedCue('h', 'highlight', { colour: '#112233' }),
+      markedCue('u', 'underline', {
+        colour: '#445566',
+        y: 300,
+        triggerBoxes: [{ ...box, y: 295 }],
+      }),
+      markedCue('l', 'line', {
+        colour: '#778899',
+        y: 100,
+        triggerBoxes: [{ ...box, y: 95 }],
+        caret: { x: 120, box: { ...box, y: 95 } },
+      }),
+      { ...annotationItem('note', 'ride'), colour: '#AABBCC' } as StampItem,
+    ])
+    /** Where the colour operator `op` first sets `hex`, whatever the float precision. */
+    const rgb = (hex: string, op: string) => {
+      const n = Number.parseInt(hex.slice(1), 16)
+      const want = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+      const m = [...content.matchAll(new RegExp(`([\\d.]+) ([\\d.]+) ([\\d.]+) ${op}\\n`, 'g'))]
+      return (
+        m.find((x) => want.every((v, i) => Math.round(Number(x[i + 1]) * 255) === v))?.index ?? -1
+      )
+    }
+    const fill = content.indexOf(' gs')
+    const underline = rgb('#445566', 'RG')
+    const bar = rgb('#778899', 'RG')
+    const annotation = rgb('#AABBCC', 'rg')
+    const tag = content.indexOf('<3737>')
+    for (const at of [fill, underline, bar, annotation, tag]) expect(at).toBeGreaterThan(-1)
+    expect(Math.max(fill, underline, bar)).toBeLessThan(annotation)
+    expect(annotation).toBeLessThan(tag)
   })
 })

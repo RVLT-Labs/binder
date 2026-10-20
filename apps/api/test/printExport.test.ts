@@ -76,6 +76,8 @@ const cueAt = (
   side: 'left',
   sortKey: { department: 0, major: Number.parseInt(number, 10) || 0, minor: 0 },
   triggerBoxes: [],
+  mark: 'underline',
+  caret: null,
   textExtent: null,
   ...over,
 })

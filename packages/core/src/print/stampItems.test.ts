@@ -86,6 +86,8 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       side: 'left',
       sortKey: { department: 0, major: 10, minor: 0 },
       triggerBoxes: [],
+      mark: 'underline',
+      caret: null,
       textExtent: null,
     },
     {
@@ -103,6 +105,8 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       side: 'left',
       sortKey: { department: 0, major: 14, minor: 50 },
       triggerBoxes: [],
+      mark: 'underline',
+      caret: null,
       textExtent: null,
     },
   ])
@@ -331,5 +335,88 @@ describe('cue notes', () => {
         i.kind === 'cue-note' ? i.cueId : '',
       ),
     ).toEqual(['d'])
+  })
+})
+
+describe('cue marks', () => {
+  const layer: WordLayer = {
+    words: [
+      { t: 'one', x: 50, y: 700, w: 30, h: 10 },
+      { t: 'two', x: 90, y: 700, w: 30, h: 10 },
+      { t: 'three', x: 50, y: 680, w: 40, h: 10 },
+    ],
+    lines: [[0, 1], [2]],
+  }
+  const cueItems = (items: StampItem[]) => items.flatMap((i) => (i.kind === 'cue' ? [i] : []))
+  const run = (cues: Array<CueFields & { id: string }>, words = true) =>
+    cueItems(
+      buildStampItems({
+        ...base,
+        wordLayers: new Map(words ? [[0, layer]] : []),
+        layers: [dept('d-lx')],
+        cues,
+        annotations: [],
+      }),
+    )
+
+  test('an underline cue carries the underline mark and no caret', () => {
+    const [item] = run([
+      cue('a', { anchor: anchor({ text: { quote: 'two', wordStart: 1, wordEnd: 1 } }) }),
+    ])
+    expect(item).toMatchObject({ mark: 'underline', caret: null })
+    expect(item?.triggerBoxes).toEqual([{ x: 90, y: 700, w: 30, h: 10 }])
+  })
+
+  test('a line cue carries mark and caret, and its first word box only', () => {
+    const [item] = run([
+      cue('a', {
+        anchor: anchor({
+          mark: 'line',
+          text: { quote: 'two three', wordStart: 1, wordEnd: 2, offset: 0 },
+        }),
+      }),
+    ])
+    expect(item).toMatchObject({
+      mark: 'line',
+      caret: { x: 90, box: { x: 90, y: 700, w: 30, h: 10 } },
+    })
+    expect(item?.triggerBoxes).toEqual([{ x: 90, y: 700, w: 30, h: 10 }])
+  })
+
+  test('a highlight carries its mark and the boxes of its whole range, and no caret', () => {
+    const [item] = run([
+      cue('a', {
+        anchor: anchor({
+          mark: 'highlight',
+          text: { quote: 'two three', wordStart: 1, wordEnd: 2 },
+        }),
+      }),
+    ])
+    expect(item).toMatchObject({ mark: 'highlight', caret: null })
+    expect(item?.triggerBoxes).toEqual([
+      { x: 90, y: 700, w: 30, h: 10 },
+      { x: 50, y: 680, w: 40, h: 10 },
+    ])
+  })
+
+  test('a cue with no word layer carries empty boxes and no caret, whatever its mark', () => {
+    const items = run(
+      [
+        cue('a', {
+          anchor: anchor({
+            mark: 'line',
+            text: { quote: 'two', wordStart: 1, wordEnd: 1, offset: 1 },
+          }),
+        }),
+        cue('b', {
+          anchor: anchor({ mark: 'highlight', text: { quote: 'two', wordStart: 1, wordEnd: 1 } }),
+        }),
+      ],
+      false,
+    )
+    expect(items.map((i) => [i.mark, i.triggerBoxes, i.caret])).toEqual([
+      ['line', [], null],
+      ['highlight', [], null],
+    ])
   })
 })

@@ -3,6 +3,7 @@ import {
   type AnnotationFields,
   type AnnotationType,
   type CueFields,
+  type CueMark,
   type CueType,
   type LayerRef,
   layerKey,
@@ -14,6 +15,8 @@ import {
 } from '@binder/shared'
 import { formatCueNumber } from '../cues/numbering'
 import { DEFAULT_NOTE_FONT, DEFAULT_STAMP_FONT, DEFAULT_STROKE } from '../markup/annotationLayout'
+import type { Caret } from '../markup/caret'
+import { markInputs } from '../markup/cueMarks'
 import { type TextExtent, textExtent } from '../markup/cueTags'
 import { type Box, markerLead, markerTypeWord } from '../markup/markers'
 import { wordBoxes } from '../markup/wordBoxes'
@@ -46,6 +49,10 @@ export type StampItem =
       sortKey: { department: number; major: number; minor: number }
       /** The trigger words' boxes, one per line; empty when unbound or the page's words are unknown. */
       triggerBoxes: Box[]
+      /** How the trigger is marked: underlined, highlighted, or a line or pointer at a character. */
+      mark: CueMark
+      /** A line or pointer's character boundary; null for the other marks, unbound, or no words. */
+      caret: Caret | null
       /** The page's text block, which tags stay out of; null when its words are unknown. */
       textExtent: TextExtent | null
     }
@@ -159,6 +166,7 @@ export function buildStampItems(input: StampInput): StampItem[] {
     const dept = departments.get(c.departmentId)
     if (!dept) continue
     const words = input.wordLayers.get(c.anchor.pageIndex)
+    const { mark, triggerBoxes, caret } = markInputs(words, c.anchor)
     items.push({
       kind: 'cue',
       id: c.id,
@@ -173,7 +181,9 @@ export function buildStampItems(input: StampInput): StampItem[] {
       colour: dept.colour,
       side: markerSide(input.settings, dept.id),
       sortKey: { department: dept.sortOrder, major: c.major, minor: c.minor },
-      triggerBoxes: words && c.anchor.text ? wordBoxes(words, c.anchor.text) : [],
+      triggerBoxes,
+      mark,
+      caret,
       textExtent: textExtent(words),
     })
     const note = c.notes.replace(/\s+/g, ' ').trim()
