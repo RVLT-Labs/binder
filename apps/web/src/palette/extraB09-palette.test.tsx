@@ -1,14 +1,18 @@
 import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Command } from 'cmdk'
 import { afterEach, expect, test, vi } from 'vitest'
 import * as Palette from './CommandPalette'
 import { isPaletteOpen, openPalette, registerDocumentHost, resetPaletteState } from './paletteState'
 
+const sourceDir = dirname(fileURLToPath(import.meta.url))
+
 afterEach(resetPaletteState)
 
 test('extra B09: actual palette result rows own a coarse 44px floor and 8px spacing while retaining 38px fine rows', () => {
-  const source = readFileSync('src/palette/CommandPalette.tsx', 'utf8')
+  const source = readFileSync(join(sourceDir, 'CommandPalette.tsx'), 'utf8')
   const row = source.slice(source.indexOf('function ResultRow('), source.indexOf('function Part('))
   expect(row).toContain('[@media(pointer:coarse)]:min-h-11')
   expect(row).toContain('[@media(pointer:coarse)]:min-w-11')
@@ -68,9 +72,9 @@ test('extra B09: Calling still prevents opening and an unauthenticated shell doe
   })
   openPalette()
   expect(isPaletteOpen()).toBe(false)
-  const shell = readFileSync('src/shell/AppShell.tsx', 'utf8')
+  const shell = readFileSync(join(sourceDir, '../shell/AppShell.tsx'), 'utf8')
   expect(shell).toMatch(/showId\s*&&\s*<CommandPalette/)
-  const root = readFileSync('src/routes/__root.tsx', 'utf8')
+  const root = readFileSync(join(sourceDir, '../routes/__root.tsx'), 'utf8')
   expect(root).toContain('if (onLogin) return <Outlet />')
   expect(root).toContain('if (!user) return <Navigate to="/login" />')
   expect(root.indexOf('if (!user)')).toBeLessThan(root.indexOf('<PowerSyncProvider'))

@@ -154,11 +154,11 @@ describe('departments', () => {
     expect(pyro).toMatchObject({ code: 'PYRO', name: 'Pyrotechnics', numberFormat: 'decimal' })
     const renamed = await updateDepartment(db, ownerActor, {
       departmentId: pyro.id,
-      patch: { name: 'Pyro and SFX', colour: '#00FF00', numberFormat: 'point', hidden: true },
+      patch: { name: 'Pyro and SFX', colour: '#008000', numberFormat: 'point', hidden: true },
     })
     expect(renamed).toMatchObject({
       name: 'Pyro and SFX',
-      colour: '#00FF00',
+      colour: '#008000',
       numberFormat: 'point',
       hidden: true,
       updatedBy: ownerActor.userId,
