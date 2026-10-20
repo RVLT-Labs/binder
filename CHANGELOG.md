@@ -7,6 +7,19 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 
 ## [Unreleased]
 
+### Added
+- Cue mark styles. A cue is drawn as an underline (as before, and the default), a highlight (a translucent
+  fill in the department colour, 28% and 40% while selected), a line (a bar on a character boundary, so a cue
+  can sit in the middle of a word) or a line with a pointer. The mark is chosen per cue: a `Cue mark` choice
+  beside the type in the cue tool's flyout, and a `Mark` control in the cue editor. The highlight prints too
+  (a multiply-blended fill, so black text stays black); this relaxes the old "print never fills" rule for the
+  highlight only. MCP: `place_cue_at_text` takes `mark` and `charOffset`, and `create_cue` / `update_cue`
+  accept `mark`. History reads a mark change as "restyled". The data lives in the cue's `anchor` JSON (`mark`
+  and `text.offset`), so there is no migration. Spec: `docs/superpowers/specs/2026-10-20-cue-marker-styles.md`.
+  - Compatibility: a web client cached from before this change does not know the new anchor fields and drops
+    them when it moves a cue, so that cue goes back to an underline until the client is reloaded (Reload in
+    the update prompt). Nothing is lost on the server for cues nobody moves.
+
 ### Changed
 - RVLT-wide design decisions (rvlt-designlanguage v1.2.0, 2026-10-19): page titles use the new `t-page-title`
   (24 px / 800 Archivo; `t-title` stays for dialogs), icons draw at stroke 2 instead of 1.8, key caps are 11 px
@@ -22,6 +35,8 @@ issues and open follow-ups". The ones worth knowing:
 - The offline banner takes layout space, so the document stage shifts by about 56 px when the network flaps.
 - In Calling mode the strip's page counter lags after a keypad jump until the next scroll.
 - On an archived show, the phone script keeps a disabled Place cue button whose tooltip covers script text.
+- A highlight whose quote was cut at 400 characters and whose range crosses a page is not flagged `approximate`
+  when a revision re-anchors it, so it can shrink to the part that fits without landing in the review list.
 
 ## 2026-10-17: fixes, license and housekeeping (`d8ecf93`)
 

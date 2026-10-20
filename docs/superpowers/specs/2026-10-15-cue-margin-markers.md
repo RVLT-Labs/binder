@@ -2,6 +2,8 @@
 
 Status: approved by Jayden ("Fix it", 2026-10-15), with Cuelist reference renders. Amends spec 5.2 (overlay) and 5.3 (print) for how cue markers are drawn. Nothing about the data model changes.
 
+Amended by docs/superpowers/specs/2026-10-20-cue-marker-styles.md (mark styles).
+
 ## Problem
 
 A cue marker is drawn as a box whose left edge is the anchor's x, with the label to its right. When a cue is anchored to a word (every `place_cue_at_text` cue, and any cue a person places over the text), the box and label are printed on top of the script's own words, and in print the label's 80% backing lets the script show through. The calling script becomes unreadable at exactly the line that matters.
