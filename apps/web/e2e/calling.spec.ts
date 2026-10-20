@@ -92,7 +92,7 @@ test('Calling mode: no tools, ← → turn pages, the keypad jumps to a cue, Exi
       await expect(page.locator('[data-page-index="0"]')).toBeVisible()
       await expect(page.getByRole('region', { name: 'Calling status' })).toContainText('Calling')
       await expect(strip).toContainText('p.1 / 3')
-      await expect(strip).toContainText(/Next LX\s*4322\s*Calling probe/)
+      await expect(strip).toContainText(/Next from page top LX\s*4322\s*Calling probe/)
 
       // The keys that edit do nothing: c over the page, Delete on the tag, a digit.
       const surface = page.locator('[data-page-index="0"] .markup-surface')
