@@ -1,9 +1,10 @@
 import type { WordLayer } from '@binder/shared'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { PageRow } from '../powersync/schema'
 import { MarkupOverlay } from './MarkupOverlay'
 import { endRelocate, startRelocate } from './relocate'
+import { clearSelection, select } from './selection'
 import { setCueMark, setTool } from './tools'
 
 const h = vi.hoisted(() => ({ session: {} as Record<string, unknown> }))
@@ -31,17 +32,23 @@ const words: WordLayer = {
 }
 
 const placeCue = vi.fn(async () => {})
+const setBubble = vi.fn(async () => {})
+const moveCue = vi.fn(async () => {})
 const placeCueRange = vi.fn(async () => {})
 let snap = true
 
-function mountSession() {
+function mountSession(cues: unknown[] = []) {
   h.session = {
     versionId: 'v1',
     snap,
     cueTarget: { departmentId: 'lx' },
     annotationTarget: { disabled: 'no layer' },
     departments: [{ id: 'lx', code: 'LX', colour: '#F5A623', sort_order: 0 }],
-    view: { cuesByPage: new Map(), annotationsByPage: new Map() },
+    view: {
+      cuesByPage: new Map(cues.length ? [[0, cues]] : []),
+      annotationsByPage: new Map(),
+    },
+    pages: [page],
     markerSide: () => 'left',
     layerColour: () => '#888888',
     stamps: [],
@@ -50,11 +57,13 @@ function mountSession() {
     canEditAnnotation: () => true,
     placeCue,
     placeCueRange,
+    setBubble,
+    moveCue,
   }
 }
 
-function mount() {
-  mountSession()
+function mount(cues: unknown[] = []) {
+  mountSession(cues)
   const view = render(
     <div data-page-index="0">
       <svg aria-label="Page 1 markup">
@@ -97,12 +106,15 @@ beforeEach(() => {
   snap = true
   placeCue.mockClear()
   placeCueRange.mockClear()
+  setBubble.mockClear()
+  moveCue.mockClear()
   setTool('cue', 'go')
   setCueMark('underline')
 })
 afterEach(() => {
   cleanup()
   endRelocate()
+  clearSelection()
   setTool('select', 'go')
 })
 
@@ -238,4 +250,187 @@ test('no line ghost while a cue is being relocated: the click will not use the c
   act(() => startRelocate('cues', 'c1'))
   fireEvent.pointerMove(surface, { clientX: 90, clientY: 98 })
   expect(container.querySelector('line.cue-caret-ghost')).toBeNull()
+})
+
+/** A cue on "or" (page y 705) in the left margin: its pill is at the margin, level with it. */
+const placed = {
+  id: 'c1',
+  department_id: 'lx',
+  type: 'go',
+  label: 'Sunrise',
+  major: 10,
+  minor: 0,
+  dept_code: 'LX',
+  dept_colour: '#F5A623',
+  dept_number_format: 'decimal',
+  anchor: {
+    pageIndex: 0,
+    x: 86,
+    y: 705,
+    status: 'ok',
+    text: { quote: 'or', wordStart: 2, wordEnd: 2 },
+  },
+}
+
+/** The tag the last `setBubble` call wrote. */
+const tagWritten = () => {
+  const call = setBubble.mock.calls.at(-1) as unknown as [string, { dx: number; dy: number }]
+  return call[1]
+}
+
+/** Where the document's elements-at-point say the page is: the sheet, or nothing when off the page. */
+function pageUnderPointer(container: HTMLElement, over: boolean) {
+  const sheet = container.querySelector('[data-page-index]') as HTMLElement
+  document.elementsFromPoint = () => (over ? [sheet] : [])
+}
+
+function pillCentre(container: HTMLElement) {
+  const body = container.querySelector('[data-cue-id="c1"] rect.cue-tag-body') as SVGRectElement
+  const n = (k: string) => Number(body.getAttribute(k))
+  return { x: n('x') + n('width') / 2, y: n('y') + n('height') / 2 }
+}
+
+describe('dragging a cue bubble', () => {
+  beforeEach(() => setTool('select', 'go'))
+
+  test("dragging a selected cue's bubble writes a tag from the drop point and does not change the anchor's x, y or text", () => {
+    select('cues', 'c1')
+    const view = mount([placed])
+    const { container } = view
+    const sheetWith = () => (
+      <div data-page-index="0">
+        <svg aria-label="Page 1 markup">
+          <MarkupOverlay page={page} words={words} zoom={1} />
+        </svg>
+      </div>
+    )
+    pageUnderPointer(container, true)
+    const marker = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+    const centre = pillCentre(container)
+    // Pick the pill up 3 points right of and 2 below its centre, and drop it at page (300, 400).
+    const down = client(centre.x + 3, centre.y - 2)
+    pointer('pointerdown', down.x, down.y, marker)
+    const to = client(300, 400)
+    pointer('pointermove', to.x, to.y, window)
+    // While dragging, a preview pill shows where it will land and nothing is written yet.
+    const preview = container.querySelector(
+      '.cue-bubble-preview rect.cue-tag-body',
+    ) as SVGRectElement
+    expect(preview).not.toBeNull()
+    expect(
+      Number(preview.getAttribute('x')) + Number(preview.getAttribute('width')) / 2,
+    ).toBeCloseTo(297)
+    expect(setBubble).not.toHaveBeenCalled()
+    pointer('pointerup', to.x, to.y, window)
+    // The pill's centre lands at the pointer less the grab offset: (297, 402), relative to (86, 705).
+    expect(setBubble).toHaveBeenCalledTimes(1)
+    expect(tagWritten()).toEqual({ dx: 211, dy: -303 })
+    // The cue itself is not moved.
+    expect(moveCue).not.toHaveBeenCalled()
+    // The preview stays until the stored cue shows the new tag, so the pill never jumps back.
+    expect(container.querySelector('.cue-bubble-preview')).not.toBeNull()
+    mountSession([{ ...placed, anchor: { ...placed.anchor, tag: { dx: 211, dy: -303 } } }])
+    view.rerender(sheetWith())
+    expect(container.querySelector('.cue-bubble-preview')).toBeNull()
+    expect(container.querySelector('.cue-drag-ghost')).toBeNull()
+    expect(document.querySelector('.cue-drag-ghost')).toBeNull()
+  })
+
+  test('a drop outside the page writes nothing', () => {
+    select('cues', 'c1')
+    const { container } = mount([placed])
+    pageUnderPointer(container, false)
+    const marker = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+    const centre = pillCentre(container)
+    const down = client(centre.x, centre.y)
+    pointer('pointerdown', down.x, down.y, marker)
+    pointer('pointermove', 700, 300, window)
+    pointer('pointerup', 700, 300, window)
+    expect(setBubble).not.toHaveBeenCalled()
+    expect(moveCue).not.toHaveBeenCalled()
+  })
+
+  test('an unselected bubble does not drag: it only selects', () => {
+    const { container } = mount([placed])
+    pageUnderPointer(container, true)
+    const marker = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+    const centre = pillCentre(container)
+    const down = client(centre.x, centre.y)
+    pointer('pointerdown', down.x, down.y, marker)
+    pointer('pointermove', 300, 300, window)
+    expect(container.querySelector('.cue-bubble-preview')).toBeNull()
+    pointer('pointerup', 300, 300, window)
+    expect(setBubble).not.toHaveBeenCalled()
+    expect(marker.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  test('the arrow keys nudge the drawn bubble from where it is, relative to the cue', () => {
+    select('cues', 'c1')
+    const { container } = mount([placed])
+    const marker = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+    const c = pillCentre(container)
+    fireEvent.keyDown(marker, { key: 'ArrowDown' })
+    expect(tagWritten().dx).toBeCloseTo(c.x - 86, 1)
+    expect(tagWritten().dy).toBeCloseTo(c.y - 1 - 705, 1)
+    fireEvent.keyDown(marker, { key: 'ArrowRight', shiftKey: true })
+    // Two quick nudges before the first write has landed add up instead of replacing each other.
+    expect(tagWritten().dx).toBeCloseTo(c.x + 10 - 86, 1)
+    expect(tagWritten().dy).toBeCloseTo(c.y - 1 - 705, 1)
+  })
+
+  test('a bubble with a stored tag is drawn at the offset, and the nudge starts from there', () => {
+    select('cues', 'c1')
+    const tagged = { ...placed, anchor: { ...placed.anchor, tag: { dx: 100, dy: -50 } } }
+    const { container } = mount([tagged])
+    const c = pillCentre(container)
+    expect(c.x).toBeCloseTo(186)
+    expect(c.y).toBeCloseTo(655)
+    fireEvent.keyDown(container.querySelector('[data-cue-id="c1"]') as SVGGElement, {
+      key: 'ArrowUp',
+    })
+    expect(tagWritten().dx).toBeCloseTo(100, 1)
+    expect(tagWritten().dy).toBeCloseTo(-49, 1)
+  })
+})
+
+describe('dragging a cue mark', () => {
+  beforeEach(() => setTool('select', 'go'))
+  const cueWithMark = (mark: string) => ({ ...placed, anchor: { ...placed.anchor, mark } })
+
+  test("a selected cue's mark starts the cross-page drag and moves the cue on drop, with the drop flag", () => {
+    select('cues', 'c1')
+    const { container } = mount([cueWithMark('highlight')])
+    pageUnderPointer(container, true)
+    const fill = container.querySelector('[data-cue-trigger="c1"] rect.cue-fill') as SVGRectElement
+    const from = client(90, 705)
+    pointer('pointerdown', from.x, from.y, fill)
+    const to = client(100, 655)
+    pointer('pointermove', to.x, to.y, window)
+    expect(document.querySelector('.cue-drag-ghost')).not.toBeNull()
+    pointer('pointerup', to.x, to.y, window)
+    expect(moveCue).toHaveBeenCalledWith('c1', 0, { x: 100, y: 655 }, { dropped: true })
+    expect(setBubble).not.toHaveBeenCalled()
+    expect(document.querySelector('.cue-drag-ghost')).toBeNull()
+  })
+
+  test("an unselected cue's mark does not drag", () => {
+    const { container } = mount([cueWithMark('highlight')])
+    pageUnderPointer(container, true)
+    const fill = container.querySelector('[data-cue-trigger="c1"] rect.cue-fill') as SVGRectElement
+    const from = client(90, 705)
+    pointer('pointerdown', from.x, from.y, fill)
+    pointer('pointermove', 300, 300, window)
+    expect(document.querySelector('.cue-drag-ghost')).toBeNull()
+    pointer('pointerup', 300, 300, window)
+    expect(moveCue).not.toHaveBeenCalled()
+  })
+
+  test('the mark of a selected cue has a move cursor; an unselected one does not', () => {
+    const view = mount([cueWithMark('highlight')])
+    const fill = () =>
+      view.container.querySelector('[data-cue-trigger="c1"] rect.cue-fill') as SVGRectElement
+    expect(fill().style.cursor).toBe('pointer')
+    act(() => select('cues', 'c1'))
+    expect(fill().style.cursor).toBe('move')
+  })
 })

@@ -64,3 +64,22 @@ test('a bound cue takes its trigger boxes from the words; unbound or without wor
   )
   expect(none.get('c')?.tick).not.toBeNull()
 })
+
+test('a cue whose anchor carries a tag is laid out as a moved bubble at the offset from its point', () => {
+  const layouts = layoutPageCues(
+    [
+      { ...base, id: 'a', anchor: { ...at(500), tag: { dx: 150, dy: -40 } } },
+      { ...base, id: 'b', anchor: at(500) },
+    ],
+    words,
+    { width: 600, height: 800 },
+    () => 'left',
+    () => 0,
+  )
+  const a = layouts.get('a')
+  expect(a?.moved).toBe(true)
+  const box = a?.tag
+  expect((box?.x ?? 0) + (box?.w ?? 0) / 2).toBeCloseTo(250)
+  expect((box?.y ?? 0) + (box?.h ?? 0) / 2).toBeCloseTo(460)
+  expect(layouts.get('b')?.moved).toBe(false)
+})

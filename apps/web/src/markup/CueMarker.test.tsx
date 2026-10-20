@@ -507,3 +507,105 @@ test('a cue with no word layer renders a tick (underline, highlight) or a free b
     expect(t.querySelector('polygon.cue-pointer') !== null).toBe(mark === 'pointer')
   }
 })
+
+test('arrow keys on a movable marker call onNudge by 1 pt, Shift by 10 pt, and do not scroll the page', () => {
+  const onNudge = vi.fn()
+  const { container } = draw(cue, tagOf(cue), { selected: true, movable: true, onNudge })
+  const button = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+  const press = (key: string, shiftKey = false) => {
+    // fireEvent returns false when the default was prevented (the page does not scroll).
+    return fireEvent.keyDown(button, { key, shiftKey })
+  }
+  expect(press('ArrowRight')).toBe(false)
+  expect(press('ArrowLeft')).toBe(false)
+  // Page space is y-up: Up moves the bubble up the page (+y), Down moves it down (-y).
+  expect(press('ArrowUp')).toBe(false)
+  expect(press('ArrowDown')).toBe(false)
+  expect(onNudge.mock.calls).toEqual([
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ])
+  onNudge.mockClear()
+  press('ArrowRight', true)
+  press('ArrowDown', true)
+  expect(onNudge.mock.calls).toEqual([
+    [10, 0],
+    [0, -10],
+  ])
+})
+
+test('an arrow key does not reach a global shortcut handler above the marker', () => {
+  const above = vi.fn()
+  const { container } = draw(cue, tagOf(cue), { selected: true, movable: true, onNudge: vi.fn() })
+  document.addEventListener('keydown', above)
+  fireEvent.keyDown(container.querySelector('[data-cue-id="c1"]') as SVGGElement, {
+    key: 'ArrowDown',
+  })
+  document.removeEventListener('keydown', above)
+  expect(above).not.toHaveBeenCalled()
+})
+
+test('a marker that is not movable ignores them', () => {
+  const onNudge = vi.fn()
+  const { container } = draw(cue, tagOf(cue), { selected: true, movable: false, onNudge })
+  const button = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+  expect(fireEvent.keyDown(button, { key: 'ArrowDown' })).toBe(true)
+  expect(onNudge).not.toHaveBeenCalled()
+})
+
+test('a trigger reports a press on its words, fill or bar, and shows a move cursor when movable', () => {
+  const onPointerDown = vi.fn()
+  const hl = { ...bound, anchor: { ...bound.anchor, mark: 'highlight' as const } }
+  const line = {
+    ...bound,
+    anchor: {
+      ...bound.anchor,
+      mark: 'line' as const,
+      text: { quote: 'the hill', wordStart: 1, wordEnd: 2, offset: 1 },
+    },
+  }
+  for (const [c, selector] of [
+    [bound, 'rect.cue-highlight'],
+    [hl, 'rect.cue-fill'],
+    [line, 'rect.cue-bar-hit'],
+  ] as const) {
+    onPointerDown.mockClear()
+    const { container, unmount } = render(
+      <svg aria-label="Page 1 markup">
+        <CueTrigger
+          cue={c}
+          tag={tagOf(c)}
+          interactive
+          movable
+          coarse
+          onPointerDown={onPointerDown}
+        />
+      </svg>,
+    )
+    const el = container.querySelector(selector) as SVGElement
+    fireEvent.pointerDown(el)
+    expect(onPointerDown).toHaveBeenCalledTimes(1)
+    expect(el.style.cursor).toBe('move')
+    expect(el.style.touchAction).toBe('none')
+    unmount()
+  }
+})
+
+test('the bar hit area stays 44 px wide on a coarse pointer, movable or not', () => {
+  const line = {
+    ...bound,
+    anchor: {
+      ...bound.anchor,
+      mark: 'line' as const,
+      text: { quote: 'the hill', wordStart: 1, wordEnd: 2, offset: 1 },
+    },
+  }
+  const { container } = render(
+    <svg aria-label="Page 1 markup">
+      <CueTrigger cue={line} tag={tagOf(line)} interactive movable coarse zoom={2} />
+    </svg>,
+  )
+  expect(Number(container.querySelector('rect.cue-bar-hit')?.getAttribute('width'))).toBe(22)
+})

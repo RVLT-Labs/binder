@@ -48,6 +48,7 @@ export function layoutPageCues(
         triggerBoxes,
         caret,
         anchorX: c.anchor.x,
+        tag: c.anchor.tag ?? null,
         sortKey: { department: orderOf(department), major: c.major ?? 0, minor: c.minor ?? 0 },
       }
     }),

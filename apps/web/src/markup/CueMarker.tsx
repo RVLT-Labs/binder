@@ -15,7 +15,7 @@ import {
   TAG_RADIUS,
   UNDERLINE_WIDTH,
 } from '@binder/core'
-import type { CueMark, CueType, NumberFormat, TextAnchor } from '@binder/shared'
+import type { BubbleOffset, CueMark, CueType, NumberFormat, TextAnchor } from '@binder/shared'
 import type { KeyboardEvent, PointerEventHandler } from 'react'
 import { SvgText } from './SvgText'
 
@@ -23,6 +23,16 @@ import { SvgText } from './SvgText'
 const SELECTION_WIDTH = 2
 const SELECTION_OFFSET = 3
 const SELECTION_RADIUS = 6
+
+/** A keyboard nudge of the bubble, in page points; Shift takes the larger step. Page space is y-up. */
+const NUDGE = 1
+const NUDGE_SHIFT = 10
+const NUDGES: Record<string, [number, number] | undefined> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, 1],
+  ArrowDown: [0, -1],
+}
 
 const FONT_FAMILY = 'Helvetica, Arial, sans-serif'
 /** The number is dark bold page ink; the code beside it is in the department colour. */
@@ -47,7 +57,14 @@ export interface MarkerCue {
   label: string | null
   major: number | null
   minor: number | null
-  anchor: { pageIndex: number; x: number; y: number; mark?: CueMark; text?: TextAnchor }
+  anchor: {
+    pageIndex: number
+    x: number
+    y: number
+    mark?: CueMark
+    tag?: BubbleOffset
+    text?: TextAnchor
+  }
   dept_code: string
   dept_colour: string
   dept_number_format: NumberFormat
@@ -58,9 +75,13 @@ export interface CueMarkerProps {
   /** Where the tag goes: from `layoutPageCues`, shared with print. */
   tag: CueTagLayout
   selected: boolean
-  /** Drawn with a move cursor: the user may drag it. */
+  /** Drawn with a move cursor: the user may drag it, and the arrow keys nudge it. */
   movable?: boolean
+  /** Drawn faded: its bubble is being dragged and a preview shows where it will land. */
+  faded?: boolean
   onPointerDown?: PointerEventHandler<SVGGElement>
+  /** An arrow key on a movable marker: the bubble moves by this many page points (y up). */
+  onNudge?: (dx: number, dy: number) => void
   /** Enter or Space on the focused tag: select it. */
   onActivate?: () => void
   /** The pointer entered or left the tag: its trigger words fill while it is over. */
@@ -102,6 +123,10 @@ export interface CueTriggerProps {
   zoom?: number
   /** Override `(pointer: coarse)`: the bar's hit rect is 44 px wide for a finger, 12 for a cursor. */
   coarse?: boolean
+  /** The cue is selected and editable: its mark is drawn with a move cursor and takes touch drags. */
+  movable?: boolean
+  /** A press on the mark (its words, fill or bar); the overlay starts a drag from it. */
+  onPointerDown?: PointerEventHandler<SVGElement>
   onActivate?: () => void
   onHover?: (over: boolean) => void
 }
@@ -119,13 +144,21 @@ export function CueTrigger({
   filled = false,
   zoom = 1,
   coarse,
+  movable = false,
+  onPointerDown,
   onActivate,
   onHover,
 }: CueTriggerProps) {
   const colour = cue.dept_colour
   const hit = {
-    style: { pointerEvents: interactive ? 'auto' : 'none', cursor: 'pointer' } as const,
+    style: {
+      pointerEvents: interactive ? 'auto' : 'none',
+      cursor: movable ? 'move' : 'pointer',
+      // A movable mark keeps touch drags for itself instead of scrolling the page.
+      touchAction: movable ? 'none' : undefined,
+    } as const,
     onClick: onActivate,
+    onPointerDown,
     onPointerEnter: () => onHover?.(true),
     onPointerLeave: () => onHover?.(false),
   }
@@ -150,6 +183,7 @@ export function CueTrigger({
           // Multiply keeps the page's text dark under the colour.
           style={{ ...hit.style, mixBlendMode: 'multiply' }}
           onClick={hit.onClick}
+          onPointerDown={hit.onPointerDown}
           onPointerEnter={hit.onPointerEnter}
           onPointerLeave={hit.onPointerLeave}
         />
@@ -169,6 +203,7 @@ export function CueTrigger({
             fillOpacity={filled ? SELECTED_FILL_OPACITY : 0}
             style={hit.style}
             onClick={hit.onClick}
+            onPointerDown={hit.onPointerDown}
             onPointerEnter={hit.onPointerEnter}
             onPointerLeave={hit.onPointerLeave}
           />
@@ -226,6 +261,7 @@ export function CueTrigger({
             fill="transparent"
             style={hit.style}
             onClick={hit.onClick}
+            onPointerDown={hit.onPointerDown}
             onPointerEnter={hit.onPointerEnter}
             onPointerLeave={hit.onPointerLeave}
           />
@@ -256,11 +292,12 @@ export function CueMarker({
   tag,
   selected,
   movable = false,
+  faded = false,
   onPointerDown,
+  onNudge,
   onActivate,
   onHover,
 }: CueMarkerProps) {
-  const colour = cue.dept_colour
   const box = tag.tag
   return (
     // biome-ignore lint/a11y/useSemanticElements: an SVG marker cannot be an HTML <button>; it carries the button role, focus and keys itself
@@ -271,6 +308,15 @@ export function CueMarker({
       aria-label={cueAccessibleName(cue)}
       aria-pressed={selected}
       onKeyDown={(e: KeyboardEvent<SVGGElement>) => {
+        const nudge = movable && onNudge ? NUDGES[e.key] : undefined
+        if (nudge) {
+          // The arrows move the bubble: the page must not scroll and no shortcut may also act.
+          e.preventDefault()
+          e.stopPropagation()
+          const step = e.shiftKey ? NUDGE_SHIFT : NUDGE
+          onNudge?.(nudge[0] * step, nudge[1] * step)
+          return
+        }
         if (e.key !== 'Enter' && e.key !== ' ') return
         e.preventDefault()
         onActivate?.()
@@ -283,6 +329,7 @@ export function CueMarker({
         pointerEvents: 'auto',
         cursor: movable ? 'move' : 'pointer',
         touchAction: movable ? 'none' : undefined,
+        opacity: faded ? 0.35 : undefined,
       }}
       onPointerDown={onPointerDown}
       onPointerEnter={() => onHover?.(true)}
@@ -304,6 +351,17 @@ export function CueMarker({
           pointerEvents="none"
         />
       )}
+      <TagPill cue={cue} tag={tag} />
+    </g>
+  )
+}
+
+/** The pill itself: the opaque body outlined in the department colour, its code and its number. */
+function TagPill({ cue, tag }: { cue: MarkerCue; tag: CueTagLayout }) {
+  const colour = cue.dept_colour
+  const box = tag.tag
+  return (
+    <>
       <rect
         className="cue-tag-body"
         x={box.x}
@@ -342,6 +400,20 @@ export function CueMarker({
       >
         {tag.number}
       </SvgText>
+    </>
+  )
+}
+
+/**
+ * Where a dragged bubble will land: its pill drawn at `tag` (from the layout of the cue with the
+ * dragged offset). Pointer-transparent and hidden from assistive technology; the real marker stays
+ * where it was, faded, until the drop is written.
+ */
+export function BubblePreview({ cue, tag }: { cue: MarkerCue; tag: CueTagLayout }) {
+  return (
+    // biome-ignore lint/a11y/noAriaHiddenOnFocusable: a plain SVG group is never focusable
+    <g className="cue-bubble-preview" aria-hidden="true" pointerEvents="none">
+      <TagPill cue={cue} tag={tag} />
     </g>
   )
 }

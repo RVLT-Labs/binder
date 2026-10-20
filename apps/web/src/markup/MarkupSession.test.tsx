@@ -452,3 +452,100 @@ test('relocating a line cue keeps its mark', async () => {
   await session.relocate('cues', 'c1', 0, { x: 70, y: 702 })
   expect(movedAnchor()).toMatchObject({ mark: 'line', text: { wordStart: 1 } })
 })
+
+test('setBubble writes tag and leaves everything else; null removes it', async () => {
+  const stored = {
+    ...base,
+    x: 86,
+    y: 705,
+    mark: 'highlight',
+    text: { quote: 'or', wordStart: 2, wordEnd: 2 },
+  }
+  storedCue(stored)
+  const session = renderSession()
+  await session.setBubble('c1', { dx: 12, dy: -30 })
+  expect(updateCue).toHaveBeenCalledOnce()
+  expect(movedAnchor()).toEqual({ ...stored, tag: { dx: 12, dy: -30 } })
+  vi.mocked(updateCue).mockClear()
+  storedCue({ ...stored, tag: { dx: 12, dy: -30 } })
+  await session.setBubble('c1', null)
+  expect(movedAnchor()).toEqual(stored)
+  expect(movedAnchor()).not.toHaveProperty('tag')
+})
+
+test('setBubble refuses a cue on a locked layer and says why', async () => {
+  layers.locked = ['department:lx']
+  storedCue({ ...base, x: 86, y: 705 })
+  await renderSession().setBubble('c1', { dx: 1, dy: 1 })
+  expect(updateCue).not.toHaveBeenCalled()
+  expect(getNotices().map((n) => n.message)).toEqual(['The LX layer is locked.'])
+})
+
+test('setBubble leaves an unplaced cue and one that has gone alone', async () => {
+  storedCue(null)
+  const session = renderSession()
+  await session.setBubble('c1', { dx: 1, dy: 1 })
+  db.getOptional.mockResolvedValue(null)
+  await session.setBubble('c1', { dx: 1, dy: 1 })
+  expect(updateCue).not.toHaveBeenCalled()
+  expect(getNotices()).toEqual([])
+})
+
+test('moveCue keeps mark and tag', async () => {
+  loadWords.layer = words
+  const session = renderSession({ snapDefault: 1, pages: [wordsPage] })
+  for (const mark of ['underline', 'highlight', 'line', 'pointer'] as const) {
+    vi.mocked(updateCue).mockClear()
+    storedCue({
+      ...base,
+      x: 86,
+      y: 705,
+      ...(mark === 'underline' ? {} : { mark }),
+      tag: { dx: -20, dy: 15 },
+      text: { quote: 'or', wordStart: 2, wordEnd: 2, offset: 1 },
+    })
+    await session.moveCue('c1', 0, { x: 70, y: 702 }, { dropped: true })
+    expect(movedAnchor()?.tag).toEqual({ dx: -20, dy: 15 })
+    expect(movedAnchor()?.mark).toBe(mark === 'underline' ? undefined : mark)
+  }
+})
+
+test('moveCue of a line re-snaps to a character boundary', async () => {
+  loadWords.layer = words
+  storedCue({
+    ...base,
+    x: 90,
+    y: 705,
+    mark: 'line',
+    text: { quote: 'or', wordStart: 2, wordEnd: 2, offset: 1 },
+  })
+  const session = renderSession({ snapDefault: 1, pages: [wordsPage] })
+  // The pointer is over "be" (x 68 to 82), a little right of its middle.
+  await session.moveCue('c1', 0, { x: 76, y: 702 }, { dropped: true })
+  const text = movedAnchor()?.text
+  expect(text?.wordStart).toBe(1)
+  expect(text?.offset).toBeGreaterThanOrEqual(0)
+  expect(text?.offset).toBeLessThanOrEqual(2)
+  // The bar stands at that boundary, not at the pointer.
+  expect(Number.isInteger(text?.offset)).toBe(true)
+  expect(movedAnchor()?.x).not.toBe(76)
+})
+
+test('moveCue of a highlight keeps its word count', async () => {
+  loadWords.layer = words
+  // "To be" (two words) dragged onto "be": it covers two words from there, not every word to the line's end.
+  storedCue({
+    ...base,
+    x: 50,
+    y: 705,
+    mark: 'highlight',
+    text: { quote: 'To be', wordStart: 0, wordEnd: 1 },
+  })
+  const session = renderSession({ snapDefault: 1, pages: [wordsPage] })
+  await session.moveCue('c1', 0, { x: 72, y: 702 }, { dropped: true })
+  expect(movedAnchor()).toMatchObject({
+    mark: 'highlight',
+    y: 705,
+    text: { wordStart: 1, wordEnd: 2, quote: 'be or' },
+  })
+})

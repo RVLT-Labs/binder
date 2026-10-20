@@ -1,5 +1,7 @@
+import { snapRange } from '@binder/core'
 import {
   type Anchor,
+  type BubbleOffset,
   type CueMark,
   type CueType,
   canEditLayer,
@@ -131,6 +133,12 @@ export interface MarkupSession extends AnnotationActions {
     point: Point,
     options?: { dropped?: boolean },
   ): Promise<void>
+  /**
+   * Moves a cue's bubble only: writes the anchor's `tag` (the bubble's offset from the cue's point, in
+   * page points, y up), or removes it when `tag` is null so the bubble goes back to the margin.
+   * Nothing else in the anchor changes. The same rights checks as a move; an unplaced cue is left alone.
+   */
+  setBubble(id: string, tag: BubbleOffset | null): Promise<void>
   removeCue(id: string): Promise<void>
   /**
    * Puts a review item (a cue or annotation anchored to an older version) at a point of this
@@ -342,6 +350,13 @@ export function MarkupSessionProvider({
     [cueForChange],
   )
 
+  /** The page's word layer when snapping is on and the page has one (loaded unless the caller has it), else null. */
+  const snapWords = useCallback(async (pageIndex: number, loaded?: WordLayer | null) => {
+    const page = latest.current.pages[pageIndex]
+    if (!latest.current.snap || !page?.words_key) return null
+    return loaded ?? (await loadWordLayer(page.words_key))
+  }, [])
+
   const anchorFor = useCallback(
     async (
       pageIndex: number,
@@ -350,10 +365,8 @@ export function MarkupSessionProvider({
       firstWordOutside = false,
       mark: CueMark = 'underline',
     ) => {
-      const page = latest.current.pages[pageIndex]
       const snapOn = latest.current.snap
-      const words =
-        !snapOn || !page?.words_key ? null : (loaded ?? (await loadWordLayer(page.words_key)))
+      const words = await snapWords(pageIndex, loaded)
       return markAnchorAt({
         documentId,
         documentVersionId: versionId,
@@ -365,7 +378,7 @@ export function MarkupSessionProvider({
         mark,
       })
     },
-    [documentId, versionId],
+    [documentId, versionId, snapWords],
   )
 
   /** Numbers and inserts a cue at an anchor in the cue tool's department, then selects it. */
@@ -459,13 +472,27 @@ export function MarkupSessionProvider({
         // A move keeps the cue's mark (and its tag): only where it sits changes.
         const was = current.anchor
         const mark = markOf(was)
-        const placed = await anchorFor(
-          pageIndex,
-          point,
-          undefined,
-          options.dropped === true,
-          isCaretMark(mark) ? mark : 'underline',
-        )
+        const words = mark === 'highlight' ? await snapWords(pageIndex) : null
+        // A highlight keeps its length: the same number of words from the one it is dropped on.
+        const count = Math.max(1, (was?.text?.wordEnd ?? 0) - (was?.text?.wordStart ?? 0) + 1)
+        const snapped = words ? snapRange(words, point, count) : null
+        const placed: Anchor = snapped
+          ? {
+              documentId,
+              documentVersionId: versionId,
+              pageIndex,
+              x: snapped.x,
+              y: snapped.y,
+              text: snapped.text,
+              status: 'ok',
+            }
+          : await anchorFor(
+              pageIndex,
+              point,
+              undefined,
+              options.dropped === true,
+              isCaretMark(mark) ? mark : 'underline',
+            )
         const anchor: Anchor = {
           ...placed,
           ...(mark === 'highlight' ? { mark } : {}),
@@ -478,7 +505,23 @@ export function MarkupSessionProvider({
         report(err)
       }
     },
-    [db, anchorFor, cueForChange],
+    [db, documentId, versionId, anchorFor, snapWords, cueForChange],
+  )
+
+  const setBubble = useCallback(
+    async (id: string, tag: BubbleOffset | null) => {
+      try {
+        const current = await cueForChange(id)
+        if (!current?.anchor) return
+        const { tag: _was, ...rest } = current.anchor
+        const ctxNow = latest.current.ctx
+        if (!ctxNow) return
+        await updateCue(db, ctxNow, id, { anchor: tag ? { ...rest, tag } : rest })
+      } catch (err) {
+        report(err)
+      }
+    },
+    [db, cueForChange],
   )
 
   const removeCue = useCallback(
@@ -564,6 +607,7 @@ export function MarkupSessionProvider({
     placeCue,
     placeCueRange,
     moveCue,
+    setBubble,
     removeCue,
     relocate,
     showCue,
