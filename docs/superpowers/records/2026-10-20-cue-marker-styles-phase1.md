@@ -9,6 +9,10 @@ Phase 1 (Tasks 1 to 12: mark styles) is built and reviewed: each task had its ow
 
 Phase 2 (movable bubble, Tasks 13 to 15) and Phase 3 (connector styles, Tasks 16 and 17) are NOT started.
 
+## Added after Phase 1: Task 12b, crowded margin bubbles spread around their lines
+
+Jayden asked that crowded bubbles move "both up and down a bit around their own lines (not only down)". Built as plan Task 12b (commits ee6b2d8 core, 84d833d e2e, 60c9183 docs, c7d4d1e follow-up): `stackSide` in `packages/core/src/markup/cueTags.ts` now groups overlapping tags and centres each group on where its members want to be (zero total displacement), merging groups that then overlap and holding the result inside the footer floor and page top. Seven old cueTags tests changed by design (listed in the task report); the new e2e `bubbleSpread.spec.ts` was checked against the OLD stacking code and fails there at the "middle bubble level with the line" assertion. Trade-off seen in the screenshot: with four cues on one line the outer bubbles sit about one script line away from it. A stale test title in `CueMarker.test.tsx` ("a tag pushed off its line...") is left as is; it is still true.
+
 ## Rulings made while executing (each with what it costs if wrong)
 
 1. Task 9: a highlight's fill rects carry both classes `cue-fill cue-highlight` (one element), so the existing hover, select and click handling applies; fill-opacity 0.28, 0.4 when filled. The plan's wording was ambiguous. Cost: a selector rename.
