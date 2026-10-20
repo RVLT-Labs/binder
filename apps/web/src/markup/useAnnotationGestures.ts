@@ -101,6 +101,8 @@ export function useAnnotationGestures({ pageIndex, size, words, session, slot, r
   const cueRange =
     tool === 'cue' &&
     !('disabled' in session.cueTarget) &&
+    // With Snap off a press-and-drag is not a range: the click places an unbound tick, as before.
+    session.snap &&
     (cueMark === 'underline' || cueMark === 'highlight')
 
   /**

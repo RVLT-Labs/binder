@@ -140,6 +140,22 @@ for (const mark of ['underline', 'highlight'] as const) {
   })
 }
 
+test('with Snap off a drag selects no range: the click places the one unbound cue', () => {
+  snap = false
+  const { surface, container } = mount()
+  const a = client(75, 705)
+  const b = client(100, 655)
+  pointer('pointerdown', a.x, a.y, surface)
+  pointer('pointermove', b.x, b.y, window)
+  expect(container.querySelector('rect.cue-range-preview')).toBeNull()
+  pointer('pointerup', b.x, b.y, window)
+  fireEvent.click(surface, { clientX: b.x, clientY: b.y })
+  expect(placeCueRange).not.toHaveBeenCalled()
+  // One cue, placed at the release point through the click path (snap off gives it no text).
+  expect(placeCue).toHaveBeenCalledTimes(1)
+  expect(placeCue).toHaveBeenCalledWith(0, { x: 100, y: 655 }, 'go', words, 'underline')
+})
+
 test('a press and release without a drag still places through the click', () => {
   const { surface } = mount()
   pointer('pointerdown', 70, 98, surface)

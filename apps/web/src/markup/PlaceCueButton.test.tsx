@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { setTool } from './tools'
+import { setCueMark, setTool } from './tools'
 
 const h = vi.hoisted(() => ({ session: {} as Record<string, unknown> }))
 vi.mock('./MarkupSession', () => ({ useMarkupSession: () => h.session }))
@@ -22,6 +22,7 @@ function session(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   setTool('select', 'standby')
+  setCueMark('underline')
   session()
 })
 
@@ -35,7 +36,14 @@ test('it is a red button at least 56 px high that says Place cue', () => {
 test('it places a cue at the middle of the visible page, of the chosen type, through placeCue', () => {
   render(<PlaceCueButton />)
   fireEvent.click(screen.getByRole('button', { name: 'Place cue' }))
-  expect(placeCue).toHaveBeenCalledWith(2, { x: 306, y: 400 }, 'standby')
+  expect(placeCue).toHaveBeenCalledWith(2, { x: 306, y: 400 }, 'standby', undefined, 'underline')
+})
+
+test('it places with the mark chosen in the cue flyout', () => {
+  setCueMark('line')
+  render(<PlaceCueButton />)
+  fireEvent.click(screen.getByRole('button', { name: 'Place cue' }))
+  expect(placeCue).toHaveBeenCalledWith(2, { x: 306, y: 400 }, 'standby', undefined, 'line')
 })
 
 test('it is off, with the reason, when cues cannot be placed', () => {

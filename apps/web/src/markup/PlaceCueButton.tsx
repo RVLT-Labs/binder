@@ -14,7 +14,7 @@ import { useTool } from './tools'
  */
 export function PlaceCueButton({ hidden = false }: { hidden?: boolean }) {
   const session = useMarkupSession()
-  const { cueType } = useTool()
+  const { cueType, cueMark } = useTool()
   const hintId = useId()
   if (hidden) return null
   const why = 'disabled' in session.cueTarget ? session.cueTarget.disabled : null
@@ -37,7 +37,7 @@ export function PlaceCueButton({ hidden = false }: { hidden?: boolean }) {
         aria-describedby={why ? hintId : undefined}
         onClick={() => {
           const at = session.viewer.current?.visiblePoint()
-          if (at) void session.placeCue(at.pageIndex, at.point, cueType)
+          if (at) void session.placeCue(at.pageIndex, at.point, cueType, undefined, cueMark)
         }}
       >
         <Plus aria-hidden className="!size-5" strokeWidth={2.2} />
