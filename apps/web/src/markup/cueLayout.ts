@@ -5,15 +5,15 @@ import {
   layoutCueTags,
   markerLead,
   markerTypeWord,
+  markInputs,
   textExtent,
-  wordBoxes,
 } from '@binder/core'
-import type { MarkerSide, TextAnchor, WordLayer } from '@binder/shared'
+import type { CueMark, MarkerSide, TextAnchor, WordLayer } from '@binder/shared'
 import type { MarkerCue } from './CueMarker'
 
 export type LayoutCue = MarkerCue & {
   department_id?: string | null
-  anchor: MarkerCue['anchor'] & { text?: TextAnchor }
+  anchor: MarkerCue['anchor'] & { mark?: CueMark; text?: TextAnchor }
 }
 
 /**
@@ -35,6 +35,7 @@ export function layoutPageCues(
     cues: cues.map((c) => {
       const department = c.department_id ?? ''
       const type = asCueType(c.type)
+      const { mark, triggerBoxes, caret } = markInputs(words, c.anchor)
       return {
         id: c.id,
         y: c.anchor.y,
@@ -43,7 +44,9 @@ export function layoutPageCues(
         lead: markerLead(type, c.dept_code),
         typeWord: markerTypeWord(type),
         number: formatCueNumber(c.major ?? 0, c.minor ?? 0, c.dept_number_format),
-        triggerBoxes: words && c.anchor.text ? wordBoxes(words, c.anchor.text) : [],
+        mark,
+        triggerBoxes,
+        caret,
         anchorX: c.anchor.x,
         sortKey: { department: orderOf(department), major: c.major ?? 0, minor: c.minor ?? 0 },
       }

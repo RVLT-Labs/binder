@@ -212,6 +212,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
               cue={cue}
               tag={tag}
               interactive={tool === 'select' && !rebind}
+              zoom={zoom}
               filled={
                 hovered === cue.id || (selection?.table === 'cues' && selection.id === cue.id)
               }

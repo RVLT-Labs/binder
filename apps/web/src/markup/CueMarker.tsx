@@ -1,15 +1,21 @@
 import {
   asCueType,
+  BAR_WIDTH,
   type CueTagLayout,
   formatCueNumber,
+  HIGHLIGHT_OPACITY,
+  HIGHLIGHT_OPACITY_ACTIVE,
+  HIGHLIGHT_RADIUS,
   LEADER_WIDTH,
   markerText,
+  POINTER_HEIGHT,
+  POINTER_WIDTH,
   SELECTED_FILL_OPACITY,
   TAG_FONT_SIZE,
   TAG_RADIUS,
   UNDERLINE_WIDTH,
 } from '@binder/core'
-import type { CueType, NumberFormat } from '@binder/shared'
+import type { CueMark, CueType, NumberFormat, TextAnchor } from '@binder/shared'
 import type { KeyboardEvent, PointerEventHandler } from 'react'
 import { SvgText } from './SvgText'
 
@@ -22,13 +28,26 @@ const FONT_FAMILY = 'Helvetica, Arial, sans-serif'
 /** The number is dark bold page ink; the code beside it is in the department colour. */
 const INK = 'var(--page-ink)'
 
+/** The bar's hit rect is this wide on screen: a finger on a coarse pointer, a cursor on a fine one. */
+const BAR_HIT_COARSE_PX = 44
+const BAR_HIT_FINE_PX = 12
+
+/** Whether the primary pointer is a finger. False where there is no `matchMedia` (tests, SSR). */
+function coarsePointer(): boolean {
+  try {
+    return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
+  } catch {
+    return false
+  }
+}
+
 export interface MarkerCue {
   id: string
   type: CueType | string | null
   label: string | null
   major: number | null
   minor: number | null
-  anchor: { pageIndex: number; x: number; y: number }
+  anchor: { pageIndex: number; x: number; y: number; mark?: CueMark; text?: TextAnchor }
   dept_code: string
   dept_colour: string
   dept_number_format: NumberFormat
@@ -79,46 +98,81 @@ export interface CueTriggerProps {
   interactive: boolean
   /** The cue is selected or hovered: its trigger words get a light fill (on screen only). */
   filled?: boolean
+  /** The page's zoom (screen px per page point): sizes the bar's hit rect. Default 1. */
+  zoom?: number
+  /** Override `(pointer: coarse)`: the bar's hit rect is 44 px wide for a finger, 12 for a cursor. */
+  coarse?: boolean
   onActivate?: () => void
   onHover?: (over: boolean) => void
 }
 
 /**
- * A cue's trigger on the page: its words underlined in the department colour (or a tick when
- * unbound) and the connector that joins them to the tag. Hidden from assistive technology, which
- * has the tag; clicking the words selects the cue. Drawn under the annotations so they stay
- * clickable.
+ * A cue's trigger on the page, in the department colour: its words underlined or highlighted, a
+ * line or pointer between two letters (or a tick or free bar when unbound), and the connector that
+ * joins it to the tag. Hidden from assistive technology, which has the tag; clicking the mark
+ * selects the cue. Drawn under the annotations so they stay clickable.
  */
 export function CueTrigger({
   cue,
   tag,
   interactive,
   filled = false,
+  zoom = 1,
+  coarse,
   onActivate,
   onHover,
 }: CueTriggerProps) {
   const colour = cue.dept_colour
+  const hit = {
+    style: { pointerEvents: interactive ? 'auto' : 'none', cursor: 'pointer' } as const,
+    onClick: onActivate,
+    onPointerEnter: () => onHover?.(true),
+    onPointerLeave: () => onHover?.(false),
+  }
+  const { bar } = tag
+  const hitWidth = ((coarse ?? coarsePointer()) ? BAR_HIT_COARSE_PX : BAR_HIT_FINE_PX) / (zoom || 1)
   return (
     // biome-ignore lint/a11y/noAriaHiddenOnFocusable: a plain SVG group is never focusable
     <g className="cue-trigger" aria-hidden="true" data-cue-trigger={cue.id} pointerEvents="none">
-      {tag.triggerBoxes.map((b, i) => (
+      {tag.fills.map((b, i) => (
         // biome-ignore lint/a11y/noStaticElementInteractions: the words are a pointer shortcut to selecting the cue; the tag is the keyboard control
         <rect
           // biome-ignore lint/suspicious/noArrayIndexKey: the boxes are positional, one per line
           key={i}
-          className="cue-highlight"
+          className="cue-fill cue-highlight"
           x={b.x}
           y={b.y}
           width={b.w}
           height={b.h}
+          rx={HIGHLIGHT_RADIUS}
           fill={colour}
-          fillOpacity={filled ? SELECTED_FILL_OPACITY : 0}
-          style={{ pointerEvents: interactive ? 'auto' : 'none', cursor: 'pointer' }}
-          onClick={onActivate}
-          onPointerEnter={() => onHover?.(true)}
-          onPointerLeave={() => onHover?.(false)}
+          fillOpacity={filled ? HIGHLIGHT_OPACITY_ACTIVE : HIGHLIGHT_OPACITY}
+          // Multiply keeps the page's text dark under the colour.
+          style={{ ...hit.style, mixBlendMode: 'multiply' }}
+          onClick={hit.onClick}
+          onPointerEnter={hit.onPointerEnter}
+          onPointerLeave={hit.onPointerLeave}
         />
       ))}
+      {tag.mark !== 'highlight' &&
+        tag.triggerBoxes.map((b, i) => (
+          // biome-ignore lint/a11y/noStaticElementInteractions: the words are a pointer shortcut to selecting the cue; the tag is the keyboard control
+          <rect
+            // biome-ignore lint/suspicious/noArrayIndexKey: the boxes are positional, one per line
+            key={i}
+            className="cue-highlight"
+            x={b.x}
+            y={b.y}
+            width={b.w}
+            height={b.h}
+            fill={colour}
+            fillOpacity={filled ? SELECTED_FILL_OPACITY : 0}
+            style={hit.style}
+            onClick={hit.onClick}
+            onPointerEnter={hit.onPointerEnter}
+            onPointerLeave={hit.onPointerLeave}
+          />
+        ))}
       {tag.underlines.map((u, i) => (
         <line
           // biome-ignore lint/suspicious/noArrayIndexKey: the lines are positional, one per line of text
@@ -142,6 +196,40 @@ export function CueTrigger({
           stroke={colour}
           strokeWidth={UNDERLINE_WIDTH}
         />
+      )}
+      {bar && (
+        <>
+          <line
+            className="cue-bar"
+            x1={bar.x}
+            x2={bar.x}
+            y1={bar.y1}
+            y2={bar.y2}
+            stroke={colour}
+            strokeWidth={BAR_WIDTH}
+          />
+          {bar.pointer && (
+            // The overlay is y-up, so the base is above the bar's top and the triangle points down at it.
+            <polygon
+              className="cue-pointer"
+              points={`${bar.x},${bar.y2} ${bar.x - POINTER_WIDTH / 2},${bar.y2 + POINTER_HEIGHT} ${bar.x + POINTER_WIDTH / 2},${bar.y2 + POINTER_HEIGHT}`}
+              fill={colour}
+            />
+          )}
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut to selecting the cue; the tag is the keyboard control */}
+          <rect
+            className="cue-bar-hit"
+            x={bar.x - hitWidth / 2}
+            y={bar.y1}
+            width={hitWidth}
+            height={bar.y2 - bar.y1 + (bar.pointer ? POINTER_HEIGHT : 0)}
+            fill="transparent"
+            style={hit.style}
+            onClick={hit.onClick}
+            onPointerEnter={hit.onPointerEnter}
+            onPointerLeave={hit.onPointerLeave}
+          />
+        </>
       )}
       {tag.leader && (
         <polyline

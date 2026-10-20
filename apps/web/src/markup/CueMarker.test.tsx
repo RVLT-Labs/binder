@@ -342,3 +342,168 @@ test('a tag pushed off its line draws a three-segment connector that jogs in the
   expect(points[3]?.[1]).toBe(points[2]?.[1])
   expect(points[0]?.[1]).toBe(tag.centreY)
 })
+
+const marked = (c: LayoutCue, mark: 'highlight' | 'line' | 'pointer'): LayoutCue => ({
+  ...c,
+  anchor: { ...c.anchor, mark },
+})
+const withCaret = (mark: 'line' | 'pointer'): LayoutCue => ({
+  ...marked(bound, mark),
+  anchor: {
+    ...bound.anchor,
+    mark,
+    text: { quote: 'the hill', wordStart: 1, wordEnd: 2, offset: 1 },
+  },
+})
+
+const triggerOf = (
+  c: LayoutCue,
+  tag: CueTagLayout,
+  props: Partial<Parameters<typeof CueTrigger>[0]> = {},
+) =>
+  render(
+    <svg aria-label="Page 1 markup">
+      <CueTrigger cue={c} tag={tag} interactive {...props} />
+    </svg>,
+  ).container
+
+test('a highlight draws rect.cue-fill boxes in the department colour at 0.28, 0.4 when filled, with no line.cue-underline', () => {
+  const c = marked(bound, 'highlight')
+  const tag = tagOf(c)
+  const rest = triggerOf(c, tag)
+  expect(rest.querySelector('line.cue-underline')).toBeNull()
+  expect(rest.querySelector('.cue-tick')).toBeNull()
+  const fills = [...rest.querySelectorAll('rect.cue-fill')]
+  expect(fills).toHaveLength(1)
+  const f = fills[0] as SVGRectElement
+  expect(f.getAttribute('class')).toBe('cue-fill cue-highlight')
+  expect(f.getAttribute('fill')).toBe('#F5A623')
+  expect(f.getAttribute('fill-opacity')).toBe('0.28')
+  expect(f.getAttribute('rx')).toBe('2')
+  expect(f.style.mixBlendMode).toBe('multiply')
+  // Padded past the words (224 to 276) by the fill padding.
+  expect(Number(f.getAttribute('x'))).toBeLessThan(224)
+  expect(Number(f.getAttribute('width'))).toBeGreaterThan(52)
+  // The fill rects are the only hit and hover targets: no second rect on the same words.
+  expect(rest.querySelectorAll('rect.cue-highlight')).toHaveLength(1)
+  const active = triggerOf(c, tag, { filled: true })
+  expect(active.querySelector('rect.cue-fill')?.getAttribute('fill-opacity')).toBe('0.4')
+})
+
+test('a highlight is selected and hovered through its fill boxes', () => {
+  const c = marked(bound, 'highlight')
+  const onActivate = vi.fn()
+  const onHover = vi.fn()
+  const container = triggerOf(c, tagOf(c), { onActivate, onHover })
+  const f = container.querySelector('rect.cue-fill') as SVGRectElement
+  fireEvent.click(f)
+  fireEvent.pointerEnter(f)
+  fireEvent.pointerLeave(f)
+  expect(onActivate).toHaveBeenCalledOnce()
+  expect(onHover.mock.calls).toEqual([[true], [false]])
+  expect(f.style.pointerEvents).toBe('auto')
+})
+
+test('a line draws line.cue-bar at the bar x; a pointer also draws polygon.cue-pointer', () => {
+  const line = withCaret('line')
+  const lineTag = tagOf(line)
+  const bar = lineTag.bar
+  if (!bar) throw new Error('no bar')
+  const lc = triggerOf(line, lineTag)
+  const l = lc.querySelector('line.cue-bar') as SVGLineElement
+  expect(l.getAttribute('x1')).toBe(String(bar.x))
+  expect(l.getAttribute('x2')).toBe(String(bar.x))
+  expect(l.getAttribute('y1')).toBe(String(bar.y1))
+  expect(l.getAttribute('y2')).toBe(String(bar.y2))
+  expect(l.getAttribute('stroke')).toBe('#F5A623')
+  expect(l.getAttribute('stroke-width')).toBe('1.5')
+  expect(lc.querySelector('polygon.cue-pointer')).toBeNull()
+  expect(lc.querySelector('line.cue-underline')).toBeNull()
+  // The word's box still fills lightly when the cue is selected or hovered.
+  const words = lc.querySelector('rect.cue-highlight') as SVGRectElement
+  expect(words.getAttribute('fill-opacity')).toBe('0')
+  expect(
+    triggerOf(line, lineTag, { filled: true })
+      .querySelector('rect.cue-highlight')
+      ?.getAttribute('fill-opacity'),
+  ).toBe('0.1')
+
+  const pointer = withCaret('pointer')
+  const pointerTag = tagOf(pointer)
+  const pb = pointerTag.bar
+  if (!pb) throw new Error('no bar')
+  const pc = triggerOf(pointer, pointerTag)
+  expect(pc.querySelector('line.cue-bar')).not.toBeNull()
+  const tri = pc.querySelector('polygon.cue-pointer') as SVGPolygonElement
+  expect(tri.getAttribute('fill')).toBe('#F5A623')
+  // Points down at the bar: apex on the bar's top, base 5 above it, 6 wide.
+  expect(tri.getAttribute('points')).toBe(
+    `${pb.x},${pb.y2} ${pb.x - 3},${pb.y2 + 5} ${pb.x + 3},${pb.y2 + 5}`,
+  )
+})
+
+test('a coarse-pointer bar has a transparent 44 px hit rect that selects the cue', () => {
+  const c = withCaret('line')
+  const tag = tagOf(c)
+  const bar = tag.bar
+  if (!bar) throw new Error('no bar')
+  const onActivate = vi.fn()
+  const onHover = vi.fn()
+  const container = triggerOf(c, tag, { coarse: true, zoom: 2, onActivate, onHover })
+  const hit = container.querySelector('rect.cue-bar-hit') as SVGRectElement
+  expect(hit.getAttribute('fill')).toBe('transparent')
+  // 44 screen px at zoom 2 is 22 page points, centred on the bar.
+  expect(hit.getAttribute('width')).toBe('22')
+  expect(Number(hit.getAttribute('x'))).toBeCloseTo(bar.x - 11)
+  expect(Number(hit.getAttribute('y'))).toBeCloseTo(bar.y1)
+  expect(Number(hit.getAttribute('height'))).toBeCloseTo(bar.y2 - bar.y1)
+  expect(hit.style.pointerEvents).toBe('auto')
+  fireEvent.click(hit)
+  fireEvent.pointerEnter(hit)
+  expect(onActivate).toHaveBeenCalledOnce()
+  expect(onHover).toHaveBeenCalledWith(true)
+  const fine = triggerOf(c, tag, { coarse: false })
+  expect(fine.querySelector('rect.cue-bar-hit')?.getAttribute('width')).toBe('12')
+  const off = triggerOf(c, tag, { interactive: false, coarse: true })
+  expect((off.querySelector('rect.cue-bar-hit') as SVGRectElement).style.pointerEvents).toBe('none')
+})
+
+test('the hit width follows (pointer: coarse) when no prop says', () => {
+  const original = window.matchMedia
+  window.matchMedia = ((q: string) => ({ matches: q === '(pointer: coarse)' })) as never
+  try {
+    const c = withCaret('line')
+    const container = triggerOf(c, tagOf(c))
+    expect(container.querySelector('rect.cue-bar-hit')?.getAttribute('width')).toBe('44')
+  } finally {
+    window.matchMedia = original
+  }
+})
+
+test('a cue with no word layer renders a tick (underline, highlight) or a free bar (line, pointer)', () => {
+  const noWords = (c: LayoutCue) => {
+    const tag = layoutPageCues(
+      [c],
+      null,
+      { width: 600, height: 800 },
+      () => 'left',
+      () => 0,
+    ).get(c.id)
+    if (!tag) throw new Error('no layout')
+    return triggerOf(c, tag)
+  }
+  for (const mark of ['highlight'] as const) {
+    const t = noWords(marked(cue, mark))
+    expect(t.querySelector('line.cue-tick')).not.toBeNull()
+    expect(t.querySelector('rect.cue-fill, line.cue-bar')).toBeNull()
+  }
+  expect(noWords(cue).querySelector('line.cue-tick')).not.toBeNull()
+  for (const mark of ['line', 'pointer'] as const) {
+    const t = noWords(marked(cue, mark))
+    expect(t.querySelector('line.cue-bar')).not.toBeNull()
+    expect(t.querySelector('line.cue-tick')).toBeNull()
+    expect(t.querySelector('rect.cue-highlight')).toBeNull()
+    expect(t.querySelector('rect.cue-bar-hit')).not.toBeNull()
+    expect(t.querySelector('polygon.cue-pointer') !== null).toBe(mark === 'pointer')
+  }
+})
