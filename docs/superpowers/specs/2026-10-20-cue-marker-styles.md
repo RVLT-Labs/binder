@@ -68,10 +68,10 @@ interface Anchor {
 
 New in `packages/core/src/markup` (`caret.ts`):
 
-- `caretX(word, offset)`: `word.x + word.w * share`, where `share` is the width of the first `offset` characters over the width of the whole word, using `helveticaWidth` per character (equal widths when the word has a character Helvetica metrics lack, and for a zero-width word).
+- `caretX(word, offset)`: `word.x + word.w * share`, where `share` is the width of the first `offset` characters over the width of the whole word, using `helveticaWidth` over the word's code points (it already measures a character outside WinAnsi as a typical letter), and the word's left edge for a zero-width word.
 - `snapToCaret(layer, point)`: finds the line like `snapToLine`, then the character boundary whose `caretX` is nearest `point.x`, across the whole line (so the line can sit between two words, at the end of one word or the start of the next).
 
-A boundary shared by two words (the end of one, the start of the next) is stored on the earlier word, with `offset` equal to its length; the stored quote then starts at that word, as every quote starts at `wordStart`.
+Every character boundary of every word on the line is a candidate, including each word's start (`offset` 0) and end (`offset` equal to its length). They are different points on the page, so a boundary is stored on the word it belongs to, and the stored quote starts at that word, as every quote starts at `wordStart`.
 
 The same function draws and snaps, so what the preview shows is what is stored and printed. Helvetica widths are an approximation for a script set in another face; the preview is the check, and a boundary within a point or two of the glyph edge is the expected accuracy.
 
@@ -146,7 +146,7 @@ Everything is a local write that syncs up. Nothing here needs the network.
 - **History:** `packages/core/src/history/summarise.ts` calls any cue `anchor` change "moved". An update whose anchors differ only in `mark` reads "restyled"; only in `tag`, "bubble moved". The history panel's verb text is updated to match.
 - **MCP** (the capability must be in MCP; no new tool name is added, so `mcpParity` is unaffected):
   - `place_cue_at_text`: optional `mark` (default `underline`) and `charOffset` (a whole number, only with `line` / `pointer`; a boundary inside the quote's first word, default 0). A `highlight` covers the whole matched quote.
-  - `create_cue` and `update_cue`: the `anchor` placement accepts `mark` and `charOffset`; `update_cue` also takes top-level `mark`, `charOffset` and `bubble` (`{dx, dy}`, or `null` to reset to the margin) that apply to the cue's current anchor, an error if the cue is unplaced.
+  - `create_cue` and `update_cue`: the `anchor` placement (coordinates only, so it binds no word) accepts `mark` and `bubble`; a `line` or `pointer` placed this way is a free bar at `(x, y)`. `update_cue` also takes top-level `mark`, `charOffset` and `bubble` (`{dx, dy}`, or `null` to reset to the margin) that apply to the cue's current anchor; `charOffset` is an error on a cue with no bound word, and any of the three is an error if the cue is unplaced.
   - `update_show` settings: `connectorStyles` joins `paperSize`, `stampSet` and `markerSides` as a key the app reads.
 - **Docs, same change** (`skillDocs.test.ts` fails otherwise): `skills/binder/references/tools.md`, `placing-cues.md` ("How a cue looks"), `data-model.md` (anchor fields and settings keys), `exports-and-print.md`, `workflows.md`.
 
