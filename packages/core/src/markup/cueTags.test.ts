@@ -1,8 +1,15 @@
 import { describe, expect, test } from 'vitest'
 import {
+  BAR_OVERHANG,
+  BAR_WIDTH,
   type CueTagInput,
   type CueTagLayout,
   DEFAULT_MARGIN,
+  FREE_BAR_HEIGHT,
+  HIGHLIGHT_OPACITY,
+  HIGHLIGHT_OPACITY_ACTIVE,
+  HIGHLIGHT_PAD_X,
+  HIGHLIGHT_RADIUS,
   LEADER_GUTTER,
   LEADER_STEP,
   layoutCueTags,
@@ -10,6 +17,8 @@ import {
   NOTE_FONT_SIZE,
   NOTE_HEIGHT,
   NOTE_MIN_COLUMN,
+  POINTER_HEIGHT,
+  POINTER_WIDTH,
   TAG_EDGE,
   TAG_FONT_SIZE,
   TAG_GAP,
@@ -607,5 +616,123 @@ describe('cue notes', () => {
       CueTagLayout,
     ]
     expect(t.note?.box.y).toBeGreaterThanOrEqual(19)
+  })
+})
+
+describe('cue marks: highlight, line and pointer', () => {
+  const word = { x: 300, y: 495, w: 40, h: 10 }
+  const caret = { x: 320, box: word }
+
+  test('the mark constants', () => {
+    expect(HIGHLIGHT_OPACITY).toBe(0.28)
+    expect(HIGHLIGHT_OPACITY_ACTIVE).toBe(0.4)
+    expect(HIGHLIGHT_RADIUS).toBe(2)
+    expect(HIGHLIGHT_PAD_X).toBe(1)
+    expect(BAR_WIDTH).toBe(1.5)
+    expect(BAR_OVERHANG).toBe(3)
+    expect(POINTER_WIDTH).toBe(6)
+    expect(POINTER_HEIGHT).toBe(5)
+    expect(FREE_BAR_HEIGHT).toBe(14)
+  })
+
+  test('underline: a cue with no mark is an underline, with no fills and no bar', () => {
+    const t = one(cue('a', { triggerBoxes: [word] }))
+    expect(t.mark).toBe('underline')
+    expect(t.fills).toEqual([])
+    expect(t.bar).toBeNull()
+    expect(t.underlines).toHaveLength(1)
+    expect(one(cue('a', { mark: 'underline', triggerBoxes: [word] }))).toEqual(t)
+  })
+
+  test('highlight: one padded fill per trigger box, no underlines, no tick; the leader ends at the first box outer edge', () => {
+    const low = { x: 100, y: 475, w: 60, h: 10 }
+    const t = one(cue('a', { mark: 'highlight', triggerBoxes: [word, low] }))
+    expect(t.mark).toBe('highlight')
+    expect(t.fills).toEqual([
+      { x: 299, y: 495, w: 42, h: 10 },
+      { x: 99, y: 475, w: 62, h: 10 },
+    ])
+    expect(t.triggerBoxes).toEqual([word, low])
+    expect(t.underlines).toEqual([])
+    expect(t.tick).toBeNull()
+    expect(t.bar).toBeNull()
+    expect(t.leader?.at(-1)).toEqual({ x: 299, y: 494 })
+    const r = one(cue('a', { side: 'right', mark: 'highlight', triggerBoxes: [word, low] }))
+    expect(r.leader?.at(-1)).toEqual({ x: 341, y: 494 })
+  })
+
+  test('highlight with no trigger boxes falls back to the tick', () => {
+    const t = one(cue('a', { mark: 'highlight', anchorX: 250 }))
+    expect(t.fills).toEqual([])
+    expect(t.underlines).toEqual([])
+    expect(t.tick).toEqual({ x: 250, y1: 493, y2: 504 })
+    expect(t.leader?.at(-1)).toEqual({ x: 250, y: 493 })
+  })
+
+  test('line: the bar is at the caret x, the word height plus the overhang each end; the leader ends at it', () => {
+    const t = one(cue('a', { mark: 'line', triggerBoxes: [word], caret }))
+    expect(t.mark).toBe('line')
+    expect(t.bar).toEqual({
+      x: 320,
+      y1: 495 - BAR_OVERHANG,
+      y2: 505 + BAR_OVERHANG,
+      pointer: false,
+    })
+    expect(t.underlines).toEqual([])
+    expect(t.tick).toBeNull()
+    expect(t.fills).toEqual([])
+    expect(t.triggerBoxes).toEqual([word])
+    expect(t.leader?.at(-1)).toEqual({ x: 320, y: 494 })
+    const r = one(cue('a', { side: 'right', mark: 'line', triggerBoxes: [word], caret }))
+    expect(r.leader?.at(-1)).toEqual({ x: 320, y: 494 })
+  })
+
+  test('pointer: the same bar with pointer true', () => {
+    const t = one(cue('a', { mark: 'pointer', triggerBoxes: [word], caret }))
+    expect(t.mark).toBe('pointer')
+    expect(t.bar).toEqual({ x: 320, y1: 492, y2: 508, pointer: true })
+    expect(t.underlines).toEqual([])
+    expect(t.tick).toBeNull()
+    expect(t.leader?.at(-1)).toEqual({ x: 320, y: 494 })
+  })
+
+  test('line with no caret: a free bar of FREE_BAR_HEIGHT centred on y at anchorX, the leader ends at its bottom', () => {
+    const t = one(cue('a', { mark: 'line', anchorX: 250 }))
+    expect(t.bar).toEqual({ x: 250, y1: 493, y2: 507, pointer: false })
+    expect(t.bar && t.bar.y2 - t.bar.y1).toBe(FREE_BAR_HEIGHT)
+    expect(t.tick).toBeNull()
+    expect(t.underlines).toEqual([])
+    expect(t.leader?.at(-1)).toEqual({ x: 250, y: 493 })
+    const p = one(cue('a', { mark: 'pointer', anchorX: 250 }))
+    expect(p.bar).toEqual({ x: 250, y1: 493, y2: 507, pointer: true })
+  })
+
+  test('a line right of the tag edge on a left tag draws a leader; a bar under the tag draws none', () => {
+    const far = one(cue('a', { mark: 'line', triggerBoxes: [word], caret }))
+    expect(far.leader).not.toBeNull()
+    const under = { x: 10, y: 495, w: 40, h: 10 }
+    const near = one(
+      cue('a', { mark: 'line', triggerBoxes: [under], caret: { x: 12, box: under } }),
+    )
+    expect(near.bar?.x).toBe(12)
+    expect(near.leader).toBeNull()
+  })
+
+  test('leaders of two marks on one line still stagger by LEADER_STEP', () => {
+    const [a, b] = layout([
+      cue('a', {
+        mark: 'line',
+        triggerBoxes: [word],
+        caret,
+        sortKey: { department: 0, major: 1, minor: 0 },
+      }),
+      cue('b', {
+        mark: 'highlight',
+        triggerBoxes: [word],
+        sortKey: { department: 0, major: 2, minor: 0 },
+      }),
+    ]) as [CueTagLayout, CueTagLayout]
+    expect(a.leader?.at(-1)?.y).toBe(494)
+    expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - LEADER_STEP)
   })
 })

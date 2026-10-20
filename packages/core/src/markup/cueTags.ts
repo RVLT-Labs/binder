@@ -1,4 +1,5 @@
-import type { CueType, MarkerSide, WordLayer } from '@binder/shared'
+import type { CueMark, CueType, MarkerSide, WordLayer } from '@binder/shared'
+import type { Caret } from './caret'
 import { helveticaBoldWidth, helveticaWidth } from './helvetica'
 import type { Box } from './markers'
 
@@ -23,6 +24,20 @@ export const UNDERLINE_WIDTH = 1.5
 export const UNDERLINE_DROP = 1
 /** The on-screen fill of a selected or hovered cue's trigger words. */
 export const SELECTED_FILL_OPACITY = 0.1
+/** A highlight is the trigger words' boxes filled at this opacity (more when its cue is active). */
+export const HIGHLIGHT_OPACITY = 0.28
+export const HIGHLIGHT_OPACITY_ACTIVE = 0.4
+export const HIGHLIGHT_RADIUS = 2
+/** A highlight's fill reaches this far past each side of the word box. */
+export const HIGHLIGHT_PAD_X = 1
+/** A line or pointer is a bar this thick, reaching this far above and below the word box. */
+export const BAR_WIDTH = 1.5
+export const BAR_OVERHANG = 3
+/** A pointer's triangle (drawn by the renderers), this wide and this tall. */
+export const POINTER_WIDTH = 6
+export const POINTER_HEIGHT = 5
+/** A line or pointer with no word to sit in is a free bar this tall, centred on the cue's y. */
+export const FREE_BAR_HEIGHT = 14
 export const LEADER_WIDTH = 0.75
 /** A connector that has to jog turns in a gutter this far into the margin from the text block. */
 export const LEADER_GUTTER = 2
@@ -97,8 +112,12 @@ export interface CueTagInput {
   type: CueType
   /** The trigger words' boxes, one per line; empty when the cue is unbound or its words unknown. */
   triggerBoxes: readonly Box[]
-  /** The cue's anchor x: where an unbound cue's tick stands. */
+  /** The cue's anchor x: where an unbound cue's tick (or a free bar) stands. */
   anchorX: number
+  /** How the trigger is drawn; absent is an underline. */
+  mark?: CueMark
+  /** For a line or pointer: where the bar stands and the word it sits in; null or absent when unbound. */
+  caret?: Caret | null
   /** The cue's note, printed in one line under the tag; empty or absent for none. */
   note?: string
   /** Cues on one line are ordered by department sort order, then cue number, then id. */
@@ -128,7 +147,13 @@ export interface CueTagLayout {
   numberX: number
   /** The trigger words' boxes, one per line: what a selected cue fills on screen. */
   triggerBoxes: Box[]
-  /** The underline under each trigger box. */
+  /** How the trigger is drawn. */
+  mark: CueMark
+  /** A highlight's fills: the trigger boxes padded by `HIGHLIGHT_PAD_X` on each side. */
+  fills: Box[]
+  /** A line or pointer's bar (`y1` the bottom, `y2` the top, as `tick`); null for the other marks. */
+  bar: { x: number; y1: number; y2: number; pointer: boolean } | null
+  /** The underline under each trigger box (underline mark only). */
   underlines: Array<{ x1: number; x2: number; y: number }>
   /** An unbound cue's mark at its anchor. */
   tick: { x: number; y1: number; y2: number } | null
@@ -256,11 +281,34 @@ function comparePlacement(a: CueTagInput, b: CueTagInput): number {
   return b.y - a.y || compareKeys(a, b)
 }
 
-/** Where a cue's mark ends: the left or right end of its first underline, or the bottom of its tick. */
+/** A line or pointer's bar: at the caret, the word's height plus the overhang, or free at the anchor. */
+function barOf(c: CueTagInput): { x: number; y1: number; y2: number; pointer: boolean } {
+  const pointer = c.mark === 'pointer'
+  if (c.caret) {
+    const b = c.caret.box
+    return { x: c.caret.x, y1: b.y - BAR_OVERHANG, y2: b.y + b.h + BAR_OVERHANG, pointer }
+  }
+  return { x: c.anchorX, y1: c.y - FREE_BAR_HEIGHT / 2, y2: c.y + FREE_BAR_HEIGHT / 2, pointer }
+}
+
+/**
+ * Where a cue's mark ends: the left or right end of its first underline (or the padded outer edge
+ * of a highlight's first fill, at the same y), the bar of a line or pointer (at the word's
+ * underline y, or the bottom of a free bar), or the bottom of a tick.
+ */
 function markTarget(c: CueTagInput): { x: number; y: number } | null {
   const first = c.triggerBoxes[0]
-  if (first)
-    return { x: c.side === 'left' ? first.x : first.x + first.w, y: first.y - UNDERLINE_DROP }
+  if (c.mark === 'line' || c.mark === 'pointer') {
+    const bar = barOf(c)
+    return { x: bar.x, y: c.caret ? c.caret.box.y - UNDERLINE_DROP : bar.y1 }
+  }
+  if (first) {
+    const pad = c.mark === 'highlight' ? HIGHLIGHT_PAD_X : 0
+    return {
+      x: c.side === 'left' ? first.x - pad : first.x + first.w + pad,
+      y: first.y - UNDERLINE_DROP,
+    }
+  }
   return { x: c.anchorX, y: c.y - TICK_BELOW }
 }
 
@@ -320,15 +368,27 @@ function layoutOne(
     : null
   const leadX = x + TAG_PAD
   const numberX = lead === '' ? leadX : leadX + helveticaWidth(lead, TAG_FONT_SIZE) + TAG_TEXT_GAP
-  const underlines = c.triggerBoxes.map((b) => ({
-    x1: b.x,
-    x2: b.x + b.w,
-    y: b.y - UNDERLINE_DROP,
-  }))
-  const first = underlines[0]
-  const tick = first
-    ? null
-    : { x: c.anchorX, y1: c.y - TICK_BELOW, y2: c.y - TICK_BELOW + TICK_HEIGHT }
+  const mark = c.mark ?? 'underline'
+  const barred = mark === 'line' || mark === 'pointer'
+  const underlines =
+    mark === 'underline'
+      ? c.triggerBoxes.map((b) => ({ x1: b.x, x2: b.x + b.w, y: b.y - UNDERLINE_DROP }))
+      : []
+  const fills =
+    mark === 'highlight'
+      ? c.triggerBoxes.map((b) => ({
+          x: b.x - HIGHLIGHT_PAD_X,
+          y: b.y,
+          w: b.w + 2 * HIGHLIGHT_PAD_X,
+          h: b.h,
+        }))
+      : []
+  // A tick stands where a mark has no word to sit on: an unbound underline or highlight.
+  const tick =
+    !barred && c.triggerBoxes.length === 0
+      ? { x: c.anchorX, y1: c.y - TICK_BELOW, y2: c.y - TICK_BELOW + TICK_HEIGHT }
+      : null
+  const bar = barred ? barOf(c) : null
   const base = markTarget(c)
   const leader = connector({
     left,
@@ -350,6 +410,9 @@ function layoutOne(
     leadX,
     numberX,
     triggerBoxes: c.triggerBoxes.map((b) => ({ ...b })),
+    mark,
+    fills,
+    bar,
     underlines,
     tick,
     leader,

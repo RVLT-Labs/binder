@@ -52,11 +52,20 @@ export type { MarkInputs } from './markup/cueMarks'
 export { markInputs, withMark } from './markup/cueMarks'
 export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
+  BAR_OVERHANG,
+  BAR_WIDTH,
+  FREE_BAR_HEIGHT,
+  HIGHLIGHT_OPACITY,
+  HIGHLIGHT_OPACITY_ACTIVE,
+  HIGHLIGHT_PAD_X,
+  HIGHLIGHT_RADIUS,
   LEADER_WIDTH,
   layoutCueTags,
   NOTE_FONT_SIZE,
   NOTE_HEIGHT,
   NOTE_MIN_COLUMN,
+  POINTER_HEIGHT,
+  POINTER_WIDTH,
   SELECTED_FILL_OPACITY,
   TAG_FONT_SIZE,
   TAG_RADIUS,
