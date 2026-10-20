@@ -14,6 +14,24 @@ export function lineCentreY(layer: WordLayer, lineIndex: number): number {
   return n === 0 ? Number.NaN : sum / n
 }
 
+/** The line whose centre is nearest `y` within `maxDistance`, or null. */
+export function nearestLine(
+  layer: WordLayer,
+  y: number,
+  maxDistance = SNAP_DISTANCE_PT,
+): { lineIndex: number; centre: number; distance: number } | null {
+  let best: { lineIndex: number; centre: number; distance: number } | null = null
+  for (let lineIndex = 0; lineIndex < layer.lines.length; lineIndex++) {
+    const centre = lineCentreY(layer, lineIndex)
+    if (Number.isNaN(centre)) continue
+    const distance = Math.abs(centre - y)
+    if (distance <= maxDistance && (!best || distance < best.distance)) {
+      best = { lineIndex, centre, distance }
+    }
+  }
+  return best
+}
+
 /**
  * Spec 5.2 snapping: the line whose centre is nearest `point.y` within `maxDistance`, with the text
  * anchor taken from the word nearest `point.x` forward to the line end, up to eight words. `x` is
@@ -27,15 +45,7 @@ export function snapToLine(
   maxDistance = SNAP_DISTANCE_PT,
   options: { firstWordOutside?: boolean } = {},
 ): { y: number; text: TextAnchor } | null {
-  let best: { lineIndex: number; centre: number; distance: number } | null = null
-  for (let lineIndex = 0; lineIndex < layer.lines.length; lineIndex++) {
-    const centre = lineCentreY(layer, lineIndex)
-    if (Number.isNaN(centre)) continue
-    const distance = Math.abs(centre - point.y)
-    if (distance <= maxDistance && (!best || distance < best.distance)) {
-      best = { lineIndex, centre, distance }
-    }
-  }
+  const best = nearestLine(layer, point.y, maxDistance)
   if (!best) return null
 
   const line = (layer.lines[best.lineIndex] ?? []).filter((i) => layer.words[i])

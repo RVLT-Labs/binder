@@ -4,7 +4,7 @@ export { compareReadingOrder } from './anchors/order'
 export type { QuoteMatch, StreamWord } from './anchors/quote'
 export { anchorAtMatch, buildWordStream, findQuote, normaliseForMatch } from './anchors/quote'
 export { reanchor, reanchorAll } from './anchors/reanchor'
-export { lineCentreY, snapToLine } from './anchors/snap'
+export { lineCentreY, nearestLine, snapToLine } from './anchors/snap'
 export type { VersionText } from './anchors/types'
 export type { CueListFlag, CueListRow } from './cues/cueList'
 export { cueListRows } from './cues/cueList'
@@ -39,6 +39,8 @@ export {
   unboundSnippet,
   wrapText,
 } from './markup/annotationLayout'
+export type { Caret } from './markup/caret'
+export { caretAt, caretX, clampOffset, snapToCaret } from './markup/caret'
 export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
   LEADER_WIDTH,
