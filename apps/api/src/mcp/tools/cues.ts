@@ -295,7 +295,7 @@ export function registerCueTools(server: McpServer, mcp: McpContext): void {
         'mark and charOffset restyle the cue where it stands, keeping its quote: mark switches ' +
         'between underline, highlight, line and pointer, and charOffset moves a line or pointer ' +
         'within the first word of its anchor (x follows). With an anchor too, the new anchor is ' +
-        'applied first and mark and charOffset on top of it. They are errors on an unplaced cue, ' +
+        'applied first and mark and charOffset on top of it (anchor null with them is an error). They are errors on an unplaced cue, ' +
         'and charOffset is an error on a cue bound to no word or without a line or pointer mark. ' +
         'Fields you omit are unchanged. Returns the cue.',
       inputSchema: z.object({
@@ -335,9 +335,11 @@ export function registerCueTools(server: McpServer, mcp: McpContext): void {
         patch.anchor = anchor === null ? null : await anchorFor(db, actor, anchor)
       }
       if (mark !== undefined || charOffset !== undefined) {
-        const base = anchor !== undefined ? patch.anchor : current.anchor
-        if (!base) throw invalid('the cue is unplaced; place it before changing its mark')
-        patch.anchor = await restyleAnchor(db, blobs, base, { mark, charOffset })
+        patch.anchor = await restyleAnchor(db, blobs, current.anchor, {
+          anchor: patch.anchor,
+          mark,
+          charOffset,
+        })
       }
       await updateCue(db, actor, { cueId, patch })
       return jsonResult(await getCue(db, actor, { cueId }))

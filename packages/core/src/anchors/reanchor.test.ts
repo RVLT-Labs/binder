@@ -812,7 +812,7 @@ describe('reanchor and the cue mark', () => {
     expect(r.y).toBeCloseTo(lineCentreY(b.layers.get(0) as WordLayer, 9), 6)
   })
 
-  test('a highlight whose quote was cut at 400 characters comes back approximate', () => {
+  test('a highlight or underline whose quote was cut at 400 characters comes back approximate', () => {
     const longLines = Array.from({ length: 8 }, (_, k) => words(`w${k}xxxxxxx`, 10).join(' '))
     const text = [...fill(2, 'a'), ...longLines, ...fill(2, 'b')]
     const a = versionFromLines(text, { versionId: 'v1', ...dims })
@@ -832,11 +832,49 @@ describe('reanchor and the cue mark', () => {
     expect(r.status).toBe('approximate')
     expect(r.text?.quote).toBe(quote)
     expect(r.text?.wordEnd).toBe(wordStart + quote.split(' ').length - 1)
-    // Only a highlight is held back: the same stored range on an underline stays ok.
-    expect(reanchor({ ...anchor, mark: undefined }, a, b).status).toBe('ok')
+    // The two range marks are held back: a cut underline (the cue tool's drag keeps the whole range
+    // for it too) shrinks silently otherwise.
+    expect(reanchor({ ...anchor, mark: undefined }, a, b).status).toBe('approximate')
+    expect(reanchor({ ...anchor, mark: undefined }, a, b).text?.quote).toBe(quote)
+    // A line or pointer is a caret, never a range, so it is not held back by a long stored range.
+    expect(reanchor({ ...anchor, mark: 'line' }, a, b).status).toBe('ok')
     // A normal highlight is still ok.
     const short = anchorOn(a, 2, 10, { mark: 'highlight' })
     expect(reanchor(short, a, b).status).toBe('ok')
+  })
+
+  test('an uncut underline over eight words is ok', () => {
+    const twelve = words('amber', 12).join(' ')
+    const a = versionFromLines([...fill(5, 'a'), twelve, ...fill(10, 'b')], {
+      versionId: 'v1',
+      ...dims,
+    })
+    const anchor = anchorOn(a, 5, 12)
+    expect(anchor).not.toHaveProperty('mark')
+    const b = versionFromLines([...fill(4, 'n'), ...fill(5, 'a'), twelve, ...fill(10, 'b')], {
+      versionId: 'v2',
+      ...dims,
+    })
+    expect(reanchor(anchor, a, b).status).toBe('ok')
+  })
+
+  test('an annotation highlight with a twelve-word quote keeps its full range on re-anchor', () => {
+    // An annotation anchor has no mark; its quote used to be re-matched at most eight words long.
+    const twelve = words('amber', 12).join(' ')
+    const a = versionFromLines([...fill(5, 'a'), twelve, ...fill(10, 'b')], {
+      versionId: 'v1',
+      ...dims,
+    })
+    const anchor = anchorOn(a, 5, 12)
+    const b = versionFromLines([...fill(4, 'n'), ...fill(5, 'a'), twelve, ...fill(10, 'b')], {
+      versionId: 'v2',
+      ...dims,
+    })
+    const r = reanchor(anchor, a, b)
+    const start = (b.layers.get(0) as WordLayer).words.findIndex((w) => w.t === 'amber0')
+    expect(r).not.toHaveProperty('mark')
+    expect(r.text).toEqual({ quote: twelve, wordStart: start, wordEnd: start + 11 })
+    expect(r.status).toBe('ok')
   })
 
   test('an uncut highlight is ok even when layer word indices are not in reading order', () => {

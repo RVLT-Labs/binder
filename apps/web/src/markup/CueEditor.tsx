@@ -98,11 +98,18 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
     }
   }
 
-  /** Switches how the cue marks its place; the range stays, and a line takes the caret's x. */
+  /**
+   * Switches how the cue marks its place; the range stays, and a line takes the caret's x (leaving a
+   * line keeps x where the caret was).
+   */
   async function saveMark(mark: CueMark) {
     const anchor = cue.anchor
     if (!anchor || mark === markOf(anchor)) return
-    const key = session.pages[anchor.pageIndex]?.words_key
+    // The page's words belong to the version open in the viewer: another version's cue has none here.
+    const key =
+      anchor.documentVersionId === session.versionId
+        ? session.pages[anchor.pageIndex]?.words_key
+        : null
     let layer = null
     try {
       layer = key ? await loadWordLayer(key) : null

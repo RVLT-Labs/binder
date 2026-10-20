@@ -133,13 +133,14 @@ function place(
 }
 
 /**
- * Whether a highlight's stored range covered more words than its stored quote: the quote was cut at
- * the character limit. Measured in the old word stream (reading order), not by word index, because
- * layer indices are not guaranteed to follow reading order. False when the range cannot be located.
+ * Whether a range mark's (underline or highlight) stored range covered more words than its stored
+ * quote: the quote was cut at the character limit. Measured in the old word stream (reading order),
+ * not by word index, because layer indices are not guaranteed to follow reading order. False when the
+ * range cannot be located, and for a line or pointer, which is a caret and not a range.
  */
-function highlightWasCut(a: Anchor, fromStream: StreamWord[]): boolean {
+function rangeWasCut(a: Anchor, fromStream: StreamWord[]): boolean {
   const text = a.text
-  if (markOf(a) !== 'highlight' || !text) return false
+  if (isCaretMark(markOf(a)) || !text) return false
   const at = (wordIndex: number): number =>
     fromStream.findIndex((w) => w.pageIndex === a.pageIndex && w.wordIndex === wordIndex)
   const first = at(text.wordStart)
@@ -250,7 +251,7 @@ function reanchorWith(
         const sure =
           mode === 'exact' &&
           survivorIsAnchored(a, m, from, fromStream(), target) &&
-          !highlightWasCut(a, fromStream())
+          !rangeWasCut(a, fromStream())
         return place(a, m, sure ? 'ok' : 'approximate', from, target)
       }
       if (ms.length > 1) {

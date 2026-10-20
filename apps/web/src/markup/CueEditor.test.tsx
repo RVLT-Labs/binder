@@ -30,6 +30,7 @@ vi.mock('../presence/PresenceProvider', () => ({
 vi.mock('./MarkupSession', () => ({
   useMarkupSession: () => ({
     userId: 'me',
+    versionId: 'v',
     departments: [{ id: 'lx', code: 'LX', name: 'Lighting', number_format: 'decimal' }],
     editable: [{ kind: 'department', id: 'lx' }],
     pages: [{ words_key: 'w0' }, { words_key: 'w1' }],
@@ -43,7 +44,10 @@ vi.mock('./mutations', async (original) => ({
   updateCue: vi.fn(async () => {}),
 }))
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(loadWordLayer).mockResolvedValue(null)
+})
 
 test('Escape in a text field cancels the edit and leaves the selection alone', () => {
   const { getByLabelText } = render(<CueEditor cueId="c1" />)
@@ -245,6 +249,26 @@ test('choosing Line saves an anchor with mark line and offset 0 (x at the caret 
   expect(anchor.mark).toBe('line')
   expect(anchor.text.offset).toBe(0)
   expect(anchor.x).toBe(100)
+  row.anchor = null
+})
+
+test("a cue anchored on another version does not take its offset or x from this version's words", async () => {
+  row.anchor = placedAnchor({ documentVersionId: 'older' }) as never
+  const layer = {
+    words: [{ t: 'hello', x: 100, y: 50, w: 50, h: 10 }],
+    lines: [[0]],
+  }
+  vi.mocked(loadWordLayer).mockResolvedValue(layer as never)
+  const { getByRole } = render(<CueEditor cueId="c1" />)
+  fireEvent.click(
+    within(getByRole('radiogroup', { name: 'Mark' })).getByRole('radio', { name: 'Line' }),
+  )
+  await vi.waitFor(() => expect(updateCue).toHaveBeenCalledTimes(1))
+  // the layer belongs to the open version, not the cue's: it is not read, and x stays where it was
+  expect(loadWordLayer).not.toHaveBeenCalled()
+  const patch = vi.mocked(updateCue).mock.calls[0][3] as { anchor: { mark: string; x: number } }
+  expect(patch.anchor.mark).toBe('line')
+  expect(patch.anchor.x).toBe(10)
   row.anchor = null
 })
 

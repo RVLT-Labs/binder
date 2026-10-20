@@ -51,7 +51,7 @@ interface Anchor {
 - **`tag`** is `{dx, dy}` in page points, finite, each within +/-14400. The bubble's centre is drawn at `(anchor.x + dx, anchor.y + dy)`. Absent means the margin layout decides.
 - **`x` and `y`** keep meaning "where the mark is". For a line, the stored `x` is the bar's x and `y` is the line's centre, so a client or agent that only reads `x`/`y` still lands in the right place.
 - **Unbound cues** (`wordStart` of -1, or a page with no word layer): `line` and `pointer` draw a free bar at `(x, y)` (14 pt tall, centred on `y`); `underline` and `highlight` fall back to today's tick, since there is nothing to underline or fill.
-- **Highlight range and quote.** A highlight's quote is its whole range (cut at 400 characters on a word boundary), not the usual first eight words, so re-anchoring finds and keeps the whole phrase. A range longer than its cut quote loses the cut tail when re-anchored and is flagged `approximate`, which puts it in the review list rather than silently shrinking.
+- **Highlight range and quote.** A highlight's quote is its whole range (cut at 400 characters on a word boundary), not the usual first eight words, so re-anchoring finds and keeps the whole phrase. A range longer than its cut quote loses the cut tail when re-anchored and is flagged `approximate`, which puts it in the review list rather than silently shrinking. The same holds for an underline dragged out with the cue tool, which also keeps its whole range.
 
 ### Validation (`packages/shared`)
 

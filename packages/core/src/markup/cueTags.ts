@@ -158,8 +158,9 @@ export interface CueTagLayout {
   /** An unbound cue's mark at its anchor. */
   tick: { x: number; y1: number; y2: number } | null
   /**
-   * The connector from the tag to the first underline (or tick) as a polyline of square joins, or
-   * null when they already meet. It always runs at the underline's y so it never crosses a glyph.
+   * The connector from the tag to the mark (the first underline or tick, the outer edge of a
+   * highlight's first fill, or a line or pointer's bar) as a polyline of square joins, or null when
+   * they already meet. It always runs at the underline's y so it never crosses a glyph.
    */
   leader: Array<{ x: number; y: number }> | null
 }
@@ -281,13 +282,16 @@ function comparePlacement(a: CueTagInput, b: CueTagInput): number {
   return b.y - a.y || compareKeys(a, b)
 }
 
-/** A line or pointer's bar: at the caret, the word's height plus the overhang, or free at the anchor. */
+/** A line or pointer's bar at a caret: the word's height plus the overhang, `y1` the bottom, `y2` the top. */
+export function barAt(caret: Caret): { x: number; y1: number; y2: number } {
+  const b = caret.box
+  return { x: caret.x, y1: b.y - BAR_OVERHANG, y2: b.y + b.h + BAR_OVERHANG }
+}
+
+/** A line or pointer's bar: at the caret (`barAt`), or free at the anchor. */
 function barOf(c: CueTagInput): { x: number; y1: number; y2: number; pointer: boolean } {
   const pointer = c.mark === 'pointer'
-  if (c.caret) {
-    const b = c.caret.box
-    return { x: c.caret.x, y1: b.y - BAR_OVERHANG, y2: b.y + b.h + BAR_OVERHANG, pointer }
-  }
+  if (c.caret) return { ...barAt(c.caret), pointer }
   return { x: c.anchorX, y1: c.y - FREE_BAR_HEIGHT / 2, y2: c.y + FREE_BAR_HEIGHT / 2, pointer }
 }
 

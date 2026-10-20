@@ -21,6 +21,10 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
     the update prompt). Nothing is lost on the server for cues nobody moves.
 
 ### Changed
+- Re-anchoring after a script revision no longer shortens a matched quote to eight words, so an annotation
+  highlight whose quote is longer than eight words keeps its full range instead of shrinking.
+- A cue's underline range that was cut at 400 characters (a long drag with the cue tool) re-anchors as
+  `approximate`, as a cut highlight does, instead of shrinking silently.
 - RVLT-wide design decisions (rvlt-designlanguage v1.2.0, 2026-10-19): page titles use the new `t-page-title`
   (24 px / 800 Archivo; `t-title` stays for dialogs), icons draw at stroke 2 instead of 1.8, key caps are 11 px
   (the floor) instead of 10.5 px, and the opt-in Paper theme is retoned so every text pairing passes 4.5:1
@@ -35,8 +39,12 @@ issues and open follow-ups". The ones worth knowing:
 - The offline banner takes layout space, so the document stage shifts by about 56 px when the network flaps.
 - In Calling mode the strip's page counter lags after a keypad jump until the next scroll.
 - On an archived show, the phone script keeps a disabled Place cue button whose tooltip covers script text.
-- A highlight whose quote was cut at 400 characters and whose range crosses a page is not flagged `approximate`
-  when a revision re-anchors it, so it can shrink to the part that fits without landing in the review list.
+- A highlight or underline whose quote was cut at 400 characters and whose range crosses a page is not flagged
+  `approximate` when a revision re-anchors it, so it can shrink to the part that fits without landing in the
+  review list.
+- On a touch screen the cue tool places a cue with a tap: a finger cannot drag a range because the page scrolls.
+  To highlight several words use an Apple Pencil, or place an underline and switch its Mark to Highlight in the
+  cue editor.
 
 ## 2026-10-17: fixes, license and housekeeping (`d8ecf93`)
 

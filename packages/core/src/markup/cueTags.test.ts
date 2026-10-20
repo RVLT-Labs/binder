@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   BAR_OVERHANG,
   BAR_WIDTH,
+  barAt,
   type CueTagInput,
   type CueTagLayout,
   DEFAULT_MARGIN,
@@ -622,6 +623,14 @@ describe('cue notes', () => {
 describe('cue marks: highlight, line and pointer', () => {
   const word = { x: 300, y: 495, w: 40, h: 10 }
   const caret = { x: 320, box: word }
+
+  test('barAt is the bar at a caret: the word box plus the overhang each side', () => {
+    expect(barAt({ x: 40, box: { x: 30, y: 495, w: 20, h: 10 } })).toEqual({
+      x: 40,
+      y1: 495 - BAR_OVERHANG,
+      y2: 505 + BAR_OVERHANG,
+    })
+  })
 
   test('the mark constants', () => {
     expect(HIGHLIGHT_OPACITY).toBe(0.28)

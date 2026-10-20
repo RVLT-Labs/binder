@@ -320,9 +320,10 @@ class DisplayedPage {
   }
 
   /**
-   * A white-or-coloured rounded rectangle, filled and/or outlined, in displayed space. A fill
-   * `fillOpacity` below 1 or a `blendMode` is drawn through the page's graphics state (the
-   * outline stays opaque and un-blended); without them it is plain path operators.
+   * A white-or-coloured rounded rectangle, filled and/or outlined, in displayed space. A fill with
+   * `fillOpacity` or a `blendMode` set (even to 1 or Normal) is drawn through the page's graphics
+   * state (an ExtGState) and takes no outline: `stroke`, `strokeWidth` and `dash` are ignored there.
+   * Without them it is plain path operators and may be outlined.
    */
   roundedRect(
     x: number,
@@ -340,7 +341,11 @@ class DisplayedPage {
     },
   ) {
     if (o.fill && (o.blendMode !== undefined || o.fillOpacity !== undefined)) {
-      this.blendedRoundedRect(x, y, w, h, r, { ...o, fill: o.fill })
+      this.blendedRoundedRect(x, y, w, h, r, {
+        fill: o.fill,
+        fillOpacity: o.fillOpacity,
+        blendMode: o.blendMode,
+      })
       return
     }
     const k = r * 0.5523
@@ -372,7 +377,7 @@ class DisplayedPage {
     )
   }
 
-  /** `roundedRect` for a fill that is translucent or blended: pdf-lib keeps those in an ExtGState. */
+  /** `roundedRect` for a fill that is translucent or blended (fill only): pdf-lib keeps those in an ExtGState. */
   private blendedRoundedRect(
     x: number,
     y: number,
@@ -382,9 +387,6 @@ class DisplayedPage {
     o: {
       fill: ReturnType<typeof rgb>
       fillOpacity?: number
-      stroke?: ReturnType<typeof rgb>
-      strokeWidth?: number
-      dash?: number[]
       blendMode?: BlendMode
     },
   ) {
@@ -393,9 +395,6 @@ class DisplayedPage {
     this.svgRoundedRect(corner, 0, w, h, Math.min(radius, w / 2, h / 2), {
       color: o.fill,
       opacity: o.fillOpacity,
-      borderColor: o.stroke,
-      borderWidth: o.stroke ? (o.strokeWidth ?? 1) : 0,
-      borderDashArray: o.dash,
       blendMode: o.blendMode,
     })
   }

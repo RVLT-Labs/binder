@@ -48,17 +48,27 @@ function checkCharOffset(charOffset: number | undefined, mark: CueMark): void {
 }
 
 /**
- * The anchor drawn with `mark` and/or a character offset. `mark` defaults to the anchor's current
- * one; the offset applies to the word at `text.wordStart`, clamped to its length, and `x` follows
- * the caret when the page's word layer can be read (otherwise the change still applies). `invalid`
- * when `charOffset` is given and no word is bound or the mark is not a line or pointer.
+ * The anchor an `update_cue` call that restyles ends with: `current` (the cue's anchor now, null when
+ * unplaced) or the new `change.anchor` (applied first), drawn with `change.mark` and/or a character
+ * offset. `mark` defaults to the base anchor's own; the offset applies to the word at
+ * `text.wordStart`, clamped to its length, and `x` follows the caret when the page's word layer can
+ * be read (otherwise the change still applies). `invalid` when the cue is unplaced, when the call
+ * also sets `anchor: null` (it would both unplace and restyle the cue), or when `charOffset` is
+ * given and no word is bound or the mark is not a line or pointer.
  */
 export async function restyleAnchor(
   db: Executor,
   blobs: BlobStore,
-  anchor: Anchor,
-  change: { mark?: CueMark; charOffset?: number },
+  current: Anchor | null,
+  change: { anchor?: Anchor | null; mark?: CueMark; charOffset?: number },
 ): Promise<Anchor> {
+  if (change.anchor === null) {
+    throw invalid(
+      'this call both unplaces the cue (anchor: null) and restyles it (mark or charOffset); do one or the other',
+    )
+  }
+  const anchor = change.anchor ?? current
+  if (!anchor) throw invalid('the cue is unplaced; place it before changing its mark')
   checkMark(change.mark)
   const mark = change.mark ?? markOf(anchor)
   checkCharOffset(change.charOffset, mark)

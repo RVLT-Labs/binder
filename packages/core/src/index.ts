@@ -55,6 +55,7 @@ export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
   BAR_OVERHANG,
   BAR_WIDTH,
+  barAt,
   FREE_BAR_HEIGHT,
   HIGHLIGHT_OPACITY,
   HIGHLIGHT_OPACITY_ACTIVE,

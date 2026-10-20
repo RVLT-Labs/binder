@@ -331,6 +331,19 @@ describe('cue tools', () => {
       expect(resultText(none)).toMatch(/^invalid: .*unplaced/)
     })
 
+    test('update_cue with anchor null and a mark says the call both unplaces and restyles', async () => {
+      const made = await place({ quote: 'bravo charlie' })
+      const id = made.structuredContent?.cue.id
+      for (const extra of [{ mark: 'highlight' }, { charOffset: 1 }]) {
+        const res = await callTool(owner, 'update_cue', { cueId: id, anchor: null, ...extra })
+        expect(resultText(res)).toMatch(/^invalid: .*unplaces.*restyles/)
+        expect(resultText(res)).not.toMatch(/place it before/)
+      }
+      // nothing was applied: the cue is still placed
+      const still = await callTool(owner, 'get_cue', { cueId: id })
+      expect(still.structuredContent?.anchor).toBeTruthy()
+    })
+
     test('create_cue with a coordinates anchor and mark line makes a free bar (no text, no offset)', async () => {
       const made = await callTool(owner, 'create_cue', {
         showId: s.show.id,

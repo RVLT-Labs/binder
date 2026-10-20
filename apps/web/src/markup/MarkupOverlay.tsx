@@ -1,7 +1,7 @@
 import {
   asCueType,
-  BAR_OVERHANG,
   BAR_WIDTH,
+  barAt,
   caretAt,
   formatCueNumber,
   markerText,
@@ -112,10 +112,8 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const caretGhost = useMemo(() => {
     if (!aiming || !aim || !session.snap || !words) return null
     const caret = snapToCaret(words, aim)
-    const box = caret && caretAt(words, caret.text)?.box
-    return caret && box
-      ? { x: caret.x, y1: box.y - BAR_OVERHANG, y2: box.y + box.h + BAR_OVERHANG }
-      : null
+    const at = caret && caretAt(words, caret.text)
+    return caret && at ? barAt({ x: caret.x, box: at.box }) : null
   }, [aiming, aim, session.snap, words])
   const { cueTarget } = session
   const cueColour =

@@ -117,7 +117,7 @@ From `packages/core/src/markup/cueTags.ts` and `print/stampScript.ts`, the same 
 
 ### Marks: underline, highlight, line, pointer
 
-`mark` says how the cue marks its place; absent means `underline`. Set it with `place_cue_at_text {mark, charOffset}` or restyle a placed cue with `update_cue {mark, charOffset}` (the quote and position stay).
+`mark` says how the cue marks its place; absent means `underline`. Set it with `place_cue_at_text {mark, charOffset}` or restyle a placed cue with `update_cue {mark, charOffset}` (the quote and page stay; `x` follows a line or pointer's character position, so switching to a line moves `x` to the caret and leaving a line keeps `x` at the old caret position).
 
 | Mark | Drawn as | Use it for |
 |---|---|---|
