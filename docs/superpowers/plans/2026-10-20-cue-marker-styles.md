@@ -271,6 +271,20 @@
 
 ---
 
+### Task 12b: Spread crowded margin bubbles (added after Phase 1, approved by Jayden)
+
+Jayden: "when bubbles in the margin get too close to each other, they should spread both up and down a bit around their own lines (not only down), so each full bubble shows and stays near its line." A bounded change to `stackSide` in `packages/core/src/markup/cueTags.ts`, which today sweeps tags top to bottom and only ever pushes a tag below the one above (the footer is the only thing that lifts them).
+
+**Files:** Modify `packages/core/src/markup/cueTags.ts` (+ `cueTags.test.ts`, and `packages/core/src/print/stampScript.test.ts` where it asserts stacked positions); `docs/superpowers/specs/2026-10-15-cue-margin-markers.md` (the "Down each side..." bullet and the "pushed off its line by stacking" bullet); `skills/binder/references/placing-cues.md` (lines about stacking); `CHANGELOG.md`; `DESIGN.md` decisions log; create `apps/web/e2e/bubbleSpread.spec.ts`.
+
+**Behaviour:** tags that overlap form a group; the group is stacked with today's spacing (`TAG_HEIGHT + TAG_GAP`, plus `NOTE_HEIGHT` under a tag with a note) and centred on where its members want to be (the position that minimises total movement, so the group's unconstrained total displacement is zero); groups that then overlap merge and are re-centred; tags that do not overlap stay exactly level with their lines; the result is held inside `bounds` (lifted off the footer, held below the top, the squeezed-cluster fallback as today). Margin tags only; both sides; screen, print and export share it.
+
+- [ ] **Step 1: Write the failing tests** in `cueTags.test.ts`: `two cues on one line end up 8 pt above and 8 pt below it, the higher in placement order above`; `three on one line are 16 pt apart centred on the line`; `a group's unconstrained total displacement is zero`; `tags that do not overlap stay exactly on their lines`; `groups that overlap after centring merge and re-centre (a lone tag between two clusters)`; `placement order is kept: a tag earlier in the order is never below the next`; `within a group the spacing is exactly TAG_HEIGHT + TAG_GAP (+ NOTE_HEIGHT under a noted tag) and between groups tags never overlap`; `a group near the footer is lifted off it and a group at the top is held on the page, cluster squeezed between them still stays on the page`; `input order does not matter`; `right-side tags spread the same way`; `a spread tag keeps its connector: it leaves its own tag and jogs to its own underline, above or below the line`.
+- [ ] **Step 2: Run** `cd packages/core && pnpm exec vitest run src/markup/cueTags.test.ts`. Expected: the new tests FAIL, and some existing stacking tests assert the old down-only positions.
+- [ ] **Step 3: Implement** the group-merge placement in `stackSide` (pool-adjacent-violators style: start with one group per tag at its desired y; place a group by the mean of `y_k + offset_k`; merge overlapping neighbours and repeat; then bounds). Update existing tests that encode "only down" (the `crowding` block, the `I1`/`I2` tests, the stacked-note tests, `stampScript.test.ts` stacked cases): change the expected positions by design, keep the invariant each test names, and list every changed assertion in the report.
+- [ ] **Step 4: Run** `cd packages/core && pnpm exec vitest run`, `cd apps/web && pnpm exec vitest run src/markup`, `pnpm lint`, `pnpm typecheck`, then `pnpm e2e bubbleSpread markup responsive` (new e2e: three cues placed on one line of the libretto spread with the middle one level and the others above and below, all fully on the page, and the cues are still selectable).
+- [ ] **Step 5: Docs and commit:** amend the two spec bullets and the skill doc, add the CHANGELOG entry (note that crowded bubbles in existing shows sit slightly differently, on screen and on paper) and a DESIGN.md decisions row dated 2026-10-20 quoting Jayden verbatim; commit `feat(core): spread crowded margin bubbles up and down around their lines`.
+
 ## Phase 2: Movable bubble
 
 ### Task 13: Core moved-bubble layout, stamping and verb
