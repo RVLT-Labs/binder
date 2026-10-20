@@ -8,11 +8,19 @@ import type { Account } from './types'
 
 /** The hue's soft fill and colour for the current item. Whole class names, so Tailwind sees them. */
 const ACTIVE: Record<NavHue, string> = {
-  blue: 'bg-blue-soft text-blue shadow-card',
-  amber: 'bg-amber-soft text-amber shadow-card',
-  teal: 'bg-teal-soft text-teal shadow-card',
-  purple: 'bg-purple-soft text-purple shadow-card',
-  green: 'bg-green-soft text-green shadow-card',
+  blue: 'bg-blue-soft text-ink shadow-card',
+  amber: 'bg-amber-soft text-ink shadow-card',
+  teal: 'bg-teal-soft text-ink shadow-card',
+  purple: 'bg-purple-soft text-ink shadow-card',
+  green: 'bg-green-soft text-ink shadow-card',
+}
+
+const ICON_HUE: Record<NavHue, string> = {
+  blue: 'text-blue',
+  amber: 'text-warn',
+  teal: 'text-teal',
+  purple: 'text-purple',
+  green: 'text-green',
 }
 
 // The mockup's `.rail-item`: 44 x 44, radius 12, a 2 px top pad and a 2 px gap. (Its label is 10 px;
@@ -78,8 +86,13 @@ export function Rail({
                 title={iconsOnly ? item.label : undefined}
                 className={cn(ITEM, active ? ACTIVE[item.hue] : 'text-muted hover:text-ink')}
               >
-                <Icon className={iconsOnly ? 'size-5' : 'size-[18px]'} aria-hidden />
-                <span className={iconsOnly ? 'sr-only' : undefined}>{item.label}</span>
+                <Icon
+                  className={cn(iconsOnly ? 'size-5' : 'size-[18px]', active && ICON_HUE[item.hue])}
+                  aria-hidden
+                />
+                <span className={cn(iconsOnly && 'sr-only', active && 'text-ink')}>
+                  {item.label}
+                </span>
               </NavLink>
             )
           })}

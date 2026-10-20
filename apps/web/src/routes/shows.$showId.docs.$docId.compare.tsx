@@ -1,7 +1,6 @@
 import { useQuery } from '@powersync/react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDownIcon } from '@/components/icons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/segmented'
@@ -10,6 +9,7 @@ import { ContextPanel } from '../panel/ContextPanel'
 import type { DocumentRow, DocumentVersionRow } from '../powersync/schema'
 import { ChangeList, type ChangeListState, ChangeSteps } from '../revisions/ChangeList'
 import { ComparePane } from '../revisions/ComparePane'
+import { CompareVersionPicker } from '../revisions/CompareVersionPicker'
 import {
   type Change,
   changeHunks,
@@ -39,47 +39,6 @@ export const Route = createFileRoute('/shows/$showId/docs/$docId/compare')({
 
 const label = (v: DocumentVersionRow) => `v${v.version_number}${v.label ? ` · ${v.label}` : ''}`
 const short = (v: DocumentVersionRow) => `v${v.version_number}`
-
-/** A version picker drawn as the mockup's `.dx-vchip`: mono, outlined, the compared-to one lit. */
-function VersionChip({
-  name,
-  value,
-  versions,
-  on,
-  onChange,
-}: {
-  name: string
-  value: string
-  versions: DocumentVersionRow[]
-  on?: boolean
-  onChange: (id: string) => void
-}) {
-  return (
-    <span className="relative inline-flex">
-      <select
-        aria-label={name}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={cn(
-          'h-[26px] appearance-none rounded-[8px] border-2 border-line-2 bg-card pr-6 pl-2.5 font-mono text-[12px] text-muted',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red',
-          on && 'bg-elev text-ink',
-          'max-md:h-11 max-md:rounded-[12px] max-md:pr-8 max-md:pl-3 max-md:text-[14px]',
-        )}
-      >
-        {versions.map((v) => (
-          <option key={v.id} value={v.id}>
-            {short(v)}
-          </option>
-        ))}
-      </select>
-      <ChevronDownIcon
-        aria-hidden
-        className="pointer-events-none absolute top-1/2 right-2 size-3 -translate-y-1/2 text-muted"
-      />
-    </span>
-  )
-}
 
 /** "Cut" and "Added" with the wash each draws on the page (the mockup's `.dx-key`). */
 function Key() {
@@ -199,30 +158,19 @@ function ComparePage() {
         : { kind: 'diff', removed: diff.removed, added: diff.added, hunks }
 
   const picker = (
-    <span className="inline-flex items-center gap-2">
-      <VersionChip
-        name="From"
-        value={fromVersion?.id ?? ''}
-        versions={versions}
-        onChange={(id) => {
-          setActive(null)
-          choose({ from: id })
-        }}
-      />
-      <span aria-hidden className="text-muted">
-        →
-      </span>
-      <VersionChip
-        name="To"
-        value={toVersion?.id ?? ''}
-        versions={versions}
-        on
-        onChange={(id) => {
-          setActive(null)
-          choose({ to: id })
-        }}
-      />
-    </span>
+    <CompareVersionPicker
+      versions={versions}
+      from={fromVersion?.id ?? ''}
+      to={toVersion?.id ?? ''}
+      onFromChange={(id) => {
+        setActive(null)
+        choose({ from: id })
+      }}
+      onToChange={(id) => {
+        setActive(null)
+        choose({ to: id })
+      }}
+    />
   )
   const reviewLink = (
     <Button asChild variant="line" size="sm">

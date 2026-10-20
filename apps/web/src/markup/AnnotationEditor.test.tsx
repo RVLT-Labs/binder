@@ -90,6 +90,8 @@ test('the colour starts as the layer colour and is saved into the style', () => 
   const { getByLabelText } = render(<AnnotationEditor annotationId="a1" />)
   const colour = getByLabelText('Colour') as HTMLInputElement
   expect(colour.value).toBe('#f5a623')
+  expect(getComputedStyle(colour).minHeight).toBe('44px')
+  expect(getComputedStyle(colour).minWidth).toBe('44px')
   // Dragging in the picker only previews (input events)...
   fireEvent.input(colour, { target: { value: '#ff0000' } })
   expect(session.editAnnotation).not.toHaveBeenCalled()

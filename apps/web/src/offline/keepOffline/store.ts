@@ -1,5 +1,6 @@
 import { clear, createStore, del, entries, get, set } from 'idb-keyval'
 import { useSyncExternalStore } from 'react'
+import { captureLocalAccountWork } from '../../auth/localWork'
 
 /**
  * The keep-offline preference of one show on this device: present means On, absent means Off.
@@ -88,7 +89,18 @@ export async function loadOfflinePrefs(
   userId: string,
   store: OfflinePrefsStore = idbOfflinePrefsStore(userId),
 ): Promise<void> {
+  const claim = captureLocalAccountWork(userId)
+  await loadPrefs(userId, store, claim.checkClaim)
+}
+
+async function loadPrefs(
+  userId: string,
+  store: OfflinePrefsStore,
+  check: () => void,
+): Promise<void> {
+  check()
   const list = await store.list()
+  check()
   list.sort((a, b) => a[1].enabledAt.localeCompare(b[1].enabledAt) || a[0].localeCompare(b[0]))
   publish({ userId, prefs: new Map(list) })
 }
@@ -111,19 +123,38 @@ export async function setKeepOffline(
   on: boolean,
   store: OfflinePrefsStore = idbOfflinePrefsStore(userId),
 ): Promise<void> {
-  if (snapshot.userId !== userId) await loadOfflinePrefs(userId, store)
+  // Capture and register before even the initial preference load can yield to sign-out.
+  const claim = captureLocalAccountWork(userId)
+  return claim.run(() => writePref(userId, showId, on, store, claim.checkClaim))
+}
+
+async function writePref(
+  userId: string,
+  showId: string,
+  on: boolean,
+  store: OfflinePrefsStore,
+  check: () => void,
+): Promise<void> {
+  check()
+  if (snapshot.userId !== userId) await loadPrefs(userId, store, check)
+  check()
   // The mirror is re-read after each await: another call may have published meanwhile, and
   // publishing a copy taken before the write would drop its change.
   const current = () => (snapshot.userId === userId ? snapshot.prefs : null)
   if (on) {
     if (current()?.has(showId)) return
     const pref: OfflinePref = { on: true, enabledAt: new Date().toISOString() }
+    check()
     await store.set(showId, pref)
+    check()
     const prefs = current()
     if (prefs) publish({ userId, prefs: new Map(prefs).set(showId, pref) })
     await requestPersistence()
+    check()
   } else {
+    check()
     await store.remove(showId)
+    check()
     const prefs = current()
     if (prefs?.has(showId)) {
       const next = new Map(prefs)
@@ -134,8 +165,14 @@ export async function setKeepOffline(
 }
 
 /** Forgets one show's preference (the runner does this when the show leaves this device). */
-export const dropOfflinePref = (userId: string, showId: string): Promise<void> =>
-  setKeepOffline(userId, showId, false)
+export async function dropOfflinePref(userId: string, showId: string): Promise<void> {
+  const claim = captureLocalAccountWork(userId)
+  // Pruning already holds a shared cache lock. Never wait behind an exclusive sign-out
+  // while holding that outer lock; a busy prune is retried by the runner.
+  return claim.commit(() =>
+    writePref(userId, showId, false, idbOfflinePrefsStore(userId), claim.checkClaim),
+  )
+}
 
 /** Deletes the user's preferences (sign-out): every show starts Off for the next sign-in. */
 export async function clearOfflinePrefs(

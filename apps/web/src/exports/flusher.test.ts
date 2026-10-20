@@ -11,11 +11,15 @@ vi.mock('./outbox', () => ({ flushOutbox: (...args: unknown[]) => flushOutbox(..
 const { ApiError } = await import('../api/client')
 const { RETRY_MS, flushForSession, flushSoon, startOutboxFlusher } = await import('./flusher')
 
+const { activateLocalUser } = await import('../auth/localWork')
 const ME = 'server-user'
 const flushed = { sent: 1, kept: 0, dropped: 0 }
 let online = true
 
 beforeEach(() => {
+  localStorage.setItem('binder.localDbOwner', ME)
+  localStorage.setItem('binder.localDbClaim', 'server-user-claim')
+  activateLocalUser(ME)
   vi.useFakeTimers()
   get.mockReset().mockResolvedValue({ user: { id: ME } })
   flushOutbox.mockReset().mockResolvedValue(flushed)
@@ -142,4 +146,34 @@ test('flushSoon goes through the started flusher, and works on its own when none
   expect(vi.getTimerCount()).toBe(1)
   stop()
   expect(vi.getTimerCount()).toBe(0)
+})
+
+test('P1 /me reply cannot move an original local A claim to server account B', async () => {
+  localStorage.setItem('binder.localDbOwner', 'A')
+  localStorage.setItem('binder.localDbClaim', 'claim-A')
+  const { activateLocalUser } = await import('../auth/localWork')
+  activateLocalUser('A')
+  get.mockResolvedValue({ user: { id: 'B' } })
+  expect(await flushForSession()).toBe('retry')
+  expect(flushOutbox).not.toHaveBeenCalled()
+})
+
+test('P1 delayed /me reply rejects the claim captured before the request', async () => {
+  localStorage.setItem('binder.localDbOwner', 'A')
+  localStorage.setItem('binder.localDbClaim', 'claim-A')
+  const { activateLocalUser } = await import('../auth/localWork')
+  activateLocalUser('A')
+  let finish!: (value: { user: { id: string } }) => void
+  get.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  const flushing = flushForSession()
+  localStorage.setItem('binder.localDbClaim', 'new-A-claim')
+  activateLocalUser('A')
+  finish({ user: { id: 'A' } })
+  expect(await flushing).toBe('retry')
+  expect(flushOutbox).not.toHaveBeenCalled()
 })

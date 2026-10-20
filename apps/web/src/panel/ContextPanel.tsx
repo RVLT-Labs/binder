@@ -69,7 +69,7 @@ const TAB =
 
 function Pill({ n }: { n: number }) {
   return (
-    <span className="ml-1 inline-flex h-4 items-center rounded-full bg-blue-soft px-1.5 font-sans text-[11px] font-semibold leading-none text-blue">
+    <span className="ml-1 inline-flex h-4 items-center rounded-full bg-blue-soft px-1.5 font-sans text-[11px] font-semibold leading-none text-info">
       {n}
     </span>
   )

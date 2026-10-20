@@ -296,10 +296,7 @@ function CueListPage() {
     rows.length === 0 ? (
       <EmptyState
         label={
-          <span
-            className="inline-flex items-center gap-1.5 text-[13px] font-bold"
-            style={{ color: current.colour ? deptChrome(current.colour) : undefined }}
-          >
+          <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink">
             <Swatch colour={current.colour ? deptChrome(current.colour) : 'var(--faint)'} />
             {current.code}
             <span className="font-mono font-normal text-muted tabular-nums">0</span>

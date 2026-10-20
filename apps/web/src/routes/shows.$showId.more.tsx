@@ -46,7 +46,7 @@ function Row({
           <Icon className="size-[18px]" aria-hidden />
         </span>
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        <ChevronRightIcon className="size-5 shrink-0 text-faint" aria-hidden />
+        <ChevronRightIcon className="size-5 shrink-0 text-muted" aria-hidden />
       </Link>
     </li>
   )

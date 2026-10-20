@@ -32,7 +32,7 @@ export function PlaceCueButton({ hidden = false }: { hidden?: boolean }) {
       <Button
         type="button"
         size="lg"
-        className="h-14 min-w-14 gap-2 rounded-[16px] px-5 text-[16px]"
+        className="h-14 before:h-14 md:before:h-14 min-w-14 gap-2 rounded-[16px] px-5 text-[16px]"
         disabled={why !== null}
         aria-describedby={why ? hintId : undefined}
         onClick={() => {

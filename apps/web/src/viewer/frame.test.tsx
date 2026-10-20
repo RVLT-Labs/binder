@@ -187,11 +187,42 @@ test('the strip and its buttons carry the mockup sizes: 34 px buttons on a card 
   )
 })
 
-test('the status bar is 26 px with 11.5 px type, the layer name in its own colour, "on" in mono', () => {
+test('the status bar reserves touch height with 11.5 px type, the layer name in readable ink, "on" in mono', () => {
   render(<StatusBar page={1} pages={43} snap activeLayer={{ name: 'LX', colour: '#C9811F' }} />)
   const bar = screen.getByRole('region', { name: 'Script status' })
-  expect(bar.className).toContain('h-[26px]')
+  expect(bar.className).toContain('min-h-11')
   expect(bar.className).toContain('text-[11.5px]')
   expect(within(bar).getByText('on').className).toContain('font-mono')
-  expect(within(bar).getByText('LX').style.color).not.toBe('')
+  expect(within(bar).getByText('LX').style.color).toBe('')
+  expect(within(bar).getByText('LX').className).toContain('text-ink')
+})
+
+test('round3 real cue/stamp flyouts change tool state and reserve native 44px fields in both axes', () => {
+  render(<ToolStrip />)
+  fireEvent.click(screen.getByRole('button', { name: 'Cue tool' }))
+  const type = screen.getByRole('combobox', { name: 'Cue type' }) as HTMLSelectElement
+  fireEvent.change(type, { target: { value: 'standby' } })
+  expect(type.value).toBe('standby')
+  fireEvent.click(screen.getByRole('button', { name: 'Stamp tool' }))
+  const stamp = screen.getByRole('combobox', { name: 'Stamp' }) as HTMLSelectElement
+  fireEvent.change(stamp, { target: { value: 'Go' } })
+  expect(stamp.value).toBe('Go')
+  fireEvent.click(screen.getByRole('button', { name: 'Cue tool' }))
+  expect((screen.getByRole('combobox', { name: 'Cue type' }) as HTMLSelectElement).value).toBe(
+    'standby',
+  )
+  for (const field of [type, stamp]) {
+    expect(field.className).toContain('min-h-11')
+    expect(field.className).toContain('min-w-11')
+  }
+})
+
+test('round3 inline flyouts reserve flow space instead of covering the next menu controls', () => {
+  render(<ToolStrip variant="inline" />)
+  fireEvent.click(screen.getByRole('button', { name: 'Cue tool' }))
+  const field = screen.getByRole('combobox', { name: 'Cue type' })
+  expect(field.parentElement?.className.split(' ')).not.toContain('absolute')
+  expect(screen.getByRole('group', { name: 'Markup tools' }).className).toContain(
+    'pointer-coarse:gap-2',
+  )
 })

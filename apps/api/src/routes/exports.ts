@@ -53,6 +53,17 @@ exportRoutes.get('/shows/:showId/exports', requireUser, async (c) =>
 
 // Multipart: a `meta` field (JSON), then the `file`. The file must start with the signature of its kind.
 exportRoutes.post('/shows/:showId/exports', requireUser, async (c) => {
+  // The session still authenticates/authorizes normally. The expectation only rejects a
+  // queued file captured by another account before multipart bytes reach storage.
+  const expectedUser = c.req.header('X-Binder-Expected-User')
+  if (expectedUser !== undefined && expectedUser !== actorOf(c).userId)
+    return c.json(
+      {
+        code: 'export_account_mismatch',
+        message: 'Sign in to the account that queued this export.',
+      },
+      412,
+    )
   const { db, blobs } = c.var.deps
   const showId = c.req.param('showId')
   await assertCanExport(db, actorOf(c), showId)

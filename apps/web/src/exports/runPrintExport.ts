@@ -13,6 +13,7 @@ import {
   validateExportFilename,
   type WordLayer,
 } from '@binder/shared'
+import { assertDatabaseOwner, runDatabaseWork } from '../auth/localWork'
 import { blobUrl, fetchBlob } from '../blobs/fetchBlob'
 import { pushNotice } from '../components/noticeStore'
 import { type EditContext, fromCueRow } from '../markup/mutations'
@@ -156,7 +157,7 @@ async function blobBytes(key: string, what: string): Promise<Uint8Array> {
  * also queued for upload (the export outbox), which gives the show its ExportRecord whenever there
  * is a network. Stamping (and so pdf-lib) is loaded only here, never with the main bundle.
  */
-export async function runPrintExport(
+async function runPrintExportImpl(
   db: ExportDb,
   ctx: EditContext,
   input: PrintInput,
@@ -356,8 +357,10 @@ export async function runPrintExport(
     })
 
   // The file is the user's the moment it exists, online or not.
+  assertDatabaseOwner(db, ctx.userId)
   fx.download(filename, bytes)
   try {
+    assertDatabaseOwner(db, ctx.userId)
     await fx.enqueue({
       id,
       showId: ctx.showId,
@@ -386,4 +389,10 @@ export async function runPrintExport(
     })
   }
   return { id, filename, bytes }
+}
+
+export function runPrintExport(
+  ...args: Parameters<typeof runPrintExportImpl>
+): ReturnType<typeof runPrintExportImpl> {
+  return runDatabaseWork(args[0], args[1].userId, () => runPrintExportImpl(...args))
 }

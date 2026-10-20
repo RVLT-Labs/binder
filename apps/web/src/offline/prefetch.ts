@@ -1,3 +1,4 @@
+import { captureLocalCacheWork } from '../auth/localWork'
 import { blobUrl, storeBlob } from '../blobs/fetchBlob'
 import type { DocumentVersionRow, PageRow } from '../powersync/schema'
 
@@ -109,6 +110,8 @@ export async function prefetchShow(
   showId: string,
   onProgress: (progress: PrefetchProgress) => void,
 ): Promise<PrefetchResult> {
+  const lifecycle = captureLocalCacheWork()
+  lifecycle.check()
   try {
     // Without this the browser may evict the cache under storage pressure. Denial is not fatal.
     await navigator.storage?.persist?.()
@@ -122,9 +125,10 @@ export async function prefetchShow(
   let next = 0
   async function worker() {
     while (next < urls.length) {
+      lifecycle.check()
       const url = urls[next++]
       try {
-        await storeBlob(url)
+        await storeBlob(url, lifecycle)
       } catch {
         failed.push(url)
       }

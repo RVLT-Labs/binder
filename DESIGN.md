@@ -4,12 +4,19 @@ Binder, by RVLT. Version 1.0, 2026-10-16. Approved by Jayden ("I like the design
 
 ## 0. How this document works
 
-Binder is a sibling of RVLT Flow and inherits **RVLT Flow's `DESIGN.md` v1.1.1** (`~/rvltflow/gearflow/DESIGN.md`, registry `rvlt-labs.github.io/rvlt-designlanguage`) as law: tokens, type, spacing, radius, hard shadows, motion, required interactive states, status system, personality rules, mobile touch rules. This document records only:
+Binder follows **RVLT Design Language v1.3.0**, pinned to
+`f1a1825a0e07d9df56b3133151299dcd25216f9c`. The canonical
+[docs/AUTHORITY.md](https://github.com/RVLT-Labs/rvlt-designlanguage/blob/f1a1825a0e07d9df56b3133151299dcd25216f9c/docs/AUTHORITY.md)
+and `authority.json` define precedence: normative rules > product contracts > machine tokens
+(`packages/flow-theme/tokens.json` and `contrast.json`) > implementation > verified examples > marketing.
+Canonical rules win conflicts with this document and local mockups, except deliberate product differences
+recorded in canonical **§19.2**. Local mockups guide composition only within that contract.
 
-- what Binder adds that Flow has no need for (the script page, cue markup, calling mode, the cue editor), and
-- where Binder deliberately differs, each with the reason.
-
-When this document is silent, Flow's is the answer. **The approved mockups are the binding standard for how every screen looks** (Jayden, 2026-10-16: "make sure the designs are fully compliant with the mockups"): where a mockup and Flow's registry or this document disagree on a component's shape, size, colour, copy or placement, the mockup wins. Buttons are drawn as the mockups draw them (10 px radius, 30 px tall at desktop, 44 px on phones), not as the registry's pills, and red appears where the mockups put it. The only exceptions are the floors (11 px text, 44 px phone targets), accessible names the tests rely on, and details that need data Binder does not have yet; each is listed in the decisions log.
+Preserve Binder's approved §19.2 differences: compact rounded rectangular controls (30 px drawn on desktop,
+44 px on phones, with separate nonoverlapping touch targets where needed), the fixed white script page
+and page ink on the dark stage in both themes, Helvetica/HelveticaBold metrics with 14 pt tags and 9 pt
+page type, coloured department marks with readable page-ink words, and the named dialog drop/cast token.
+This document adds Binder's script, markup and Calling behavior without overruling canonical accessibility.
 
 ## 1. Product context
 
@@ -19,10 +26,10 @@ Binder is the stage manager's binder, digital: script and score PDFs, cues per d
 
 The prompt corner is where the stage manager sits with the book, the cue lights and the headset: dark, calm, everything in reach, the script lit and everything else dimmed. Confident, quick, quiet. The RVLT voice (dry, warm) appears only in greetings and empty states.
 
-Three rules are Binder's own and outrank everything below:
+Three Binder product rules apply within the canonical §19.2 contract:
 
 1. **The page is paper.** A script page always renders as the PDF's own white (`--page`), in both themes, and is the brightest thing on screen. Chrome never competes with it: no bright panels beside the page, and controls stay muted until hovered or focused.
-2. **Department colour is the only colour on the page.** Markup is drawn in department colours tuned to read as ink on white. Chrome around the page stays monochrome espresso plus RVLT red where the mockups put it (primary buttons, the live state, the active tab and tool, the selected cue). Presence uses a person's colour, never a department's.
+2. **Department colour is the only colour on the page.** Markup is drawn in department colours tuned to read as ink on white. Chrome around the page stays monochrome espresso plus RVLT red where its semantic role requires it (primary buttons, the live state, the active tab and tool, the selected cue). Presence uses a person's colour, never a department's.
 3. **Two modes, one layout.** *Markup* is the full shell. *Calling* strips it to the page, the page number and a floating strip; nothing in Calling is editable. Both draw the page identically, so what you mark is what you call and what you print.
 
 ## 3. Typography
@@ -31,7 +38,7 @@ Flow's stack, unchanged: Archivo 800 (display, `--font-display`, the `font-displ
 
 Binder additions:
 
-- **Every cue number, page number, version, time, count, file name and key cap is Geist Mono with tabular figures**, everywhere: tags on screen, tables, cards, the palette, the keypad, history rows. Columns of numbers must line up.
+- **Every cue number, page number, version, time, count, file name and key cap is Geist Mono with tabular figures**, in chrome: tables, cards, the palette, the keypad and history rows. Page tags use the Helvetica metrics below. Columns of numbers must line up.
 - **The script's own text is never restyled.** Binder draws over the PDF; it never reflows or re-fonts it.
 - **Markup type on the page** (tag lead and number, stamps, notes) is Helvetica-metric (`helveticaWidth` in core) on screen and Helvetica in print, so screen and paper measure identically. This is the one place Binder's UI fonts are not used, by design.
 - 11 px floor, sentence case everywhere, over-labels included (the mockups' `.t-over`: 11 px / 600, .02em tracking, muted; no uppercase).
@@ -43,7 +50,7 @@ Binder additions:
 
 Flow's espresso tokens verbatim (`--paper #141210`, `--paper-2 #1A1613`, `--card #211C17`, `--elev #2A241D`, `--ink #F5EFE2`, `--ink-2`, `--muted`, `--faint`, `--line`, `--line-2`, `--red #E0363D`, `--red-700`, status `--ok`/`--warn`, module hues, `--sh-card`, `--sh-hover`, `--sh-stk`, `--lit`). Dark is the default because Binder's working condition is the dark (tech table, FOH, a bio box). Flow's light "Paper" theme is the opt-in for daytime prep and print-adjacent review; it changes chrome only, never the page. Paper was retoned on 2026-10-19 (RVLT v1.2.0) so every text pairing passes 4.5:1: `--ok`/`--green` `#007D36`, `--warn` `#9B5F00`, `--rep` `#706857`, `--blue` `#2A65D0`, `--muted` `#665E4F`, `--faint` `#756B58`, `--coral` `#C25524`, `--teal` `#0E847C`, `--lime` `#73911B`.
 
-Red is a primary action (a view can have several, as the mockups draw them: the top bar's, and each script row's Open — RVLT's rule is one red primary **per region**, and the top bar and a list's repeated row action are separate regions), live/active state ("Calling", the active phone tab, the selected cue), and alerts. **Red is never a department colour** and never decoration.
+Red is a primary action (a view can have several, as the mockups draw them: the top bar's, and each script row's Open — RVLT's rule is one red primary **per region**, and the top bar and a list's repeated row action are separate regions), live/active state ("Calling", the active phone tab, the selected cue), and alerts. **Red is never a department colour** and never decoration. White-on-red fills use `--action-red`, readable red words use `--red-text`, and errors use `--t-out`. Readable meta and placeholders use `--muted`; faint is decoration only. Native control boundaries use `--input` (`--control-line`).
 
 ### 4.2 The page
 
@@ -68,7 +75,7 @@ A department's colour is stored on the department (owner-editable in Show settin
 | Personal | (per user) | `#6B7280` | `#9E9483` |
 
 - On the page, use the stored colour as is.
-- In chrome (swatches, cue numbers in lists, palette results on espresso), use the chrome tint: `deptChrome(hex)` = the table's tint when the stored colour is a default, otherwise `color-mix(in oklab, <hex> 70%, white)`. Never put a dark department colour as text on espresso.
+- For decorative swatches on espresso, use the chrome tint: `deptChrome(hex)` = the table's tint when the stored colour is a default, otherwise `color-mix(in oklab, <hex> 70%, white)`. Readable department words use theme-aware ink; hue belongs on the swatch. Do not use these dark-only tints for readable words.
 - The colour picker in Show settings offers the seven defaults as presets plus a custom value, and refuses anything within ΔE76 20 of RVLT red (that catches `#D0021B` at 13.3 and still allows coral at 25.8) with the message "Red is kept for Binder's own alerts. Pick another colour."
 - Existing shows keep their stored colours. (The M1 default for SM was red, `#D0021B`; owners can change it, and the picker's red guard applies the next time it is edited.)
 
@@ -80,7 +87,7 @@ Avatars use Flow's module hues as person colours (Jayden amber, Oli teal, Mikael
 
 The authoritative geometry is `docs/superpowers/specs/2026-10-15-cue-margin-markers.md`, implemented once in `@binder/core` (`layoutCueTags`) and used by both the screen overlay and print stamping. In design terms:
 
-- **Tag**: a pill in the margin, opaque white, 1 pt outline in the department colour: department code in the colour, cue number in bold page ink. Standby: dashed outline. Warn: 1.5 pt outline. Narrow margins drop the department code first, then the type word, never the number.
+- **Tag**: a pill in the margin, opaque white, 1 pt outline in the department colour: department code and cue number in page ink, with only the number bold. Standby: dashed outline. Warn: 1.5 pt outline. Narrow margins drop the department code first, then the type word, never the number.
 - **Trigger**: the words the cue goes on, underlined 1.5 pt in the department colour. On screen only, a 10 % fill while the cue is selected or hovered. Print never fills.
 - **Leader**: 0.75 pt at the underline's level, so it never crosses a glyph; a stacked tag jogs through a 2 pt gutter outside the text block.
 - **Side**: per department (`settings.markerSides`), default left.
@@ -102,7 +109,7 @@ Calling mode is designed for the tablet first (iPad landscape and portrait), and
 
 ### 6.2 Desktop shell
 
-- **Rail** 56 px, `--paper-2`, right rule `--line`. Top: the Binder mark (28 px). Items 44 × 44, icon over an 11 px label (the mockup draws 10 px; the 11 px floor wins). Module hues: Script blue, Cues amber, Docs teal, Activity purple, Exports green; the active item takes its hue's soft fill and colour with `--sh-card`. Foot: Shows, then the user's avatar.
+- **Rail** 56 px, `--paper-2`, right rule `--line`. Top: the Binder mark (28 px). Items 44 × 44, icon over an 11 px label (the mockup draws 10 px; the 11 px floor wins). Module hues: Script blue, Cues amber, Docs teal, Activity purple, Exports green; the active item takes its hue's soft fill with `--sh-card`, ink words and a hue icon. Foot: Shows, then the user's avatar.
 - **Top bar** 44 px (plus the top safe-area inset), `--paper`, bottom rule `--line`: breadcrumbs (show / document, current item bold), version chip, then on the right sync state, presence avatars, secondary actions, and the primary button (red). The script's own bar is the markup mockup's: sync, presence, Undo, Redo, Print, Calling mode and a "…" menu that holds Upload revision, Command palette…, Go to page… and Renumber from script order.
 - **Content** on `--paper`, 28–32 px padding (left and right padding never less than the device's safe-area insets), sections labelled with Flow's section-label (over-label plus rule).
 - **Script screen**: thumbnails column (92 px, the thumbnails 62 px wide inside it) · the page centred on a `#0E0C0A` stage with a floating tool strip at its left edge · the right panel (340 px, `--paper-2`, tabs Cue / Layers / History / Review). A 26 px status bar at the bottom: page n of N, snap state (Snap lives here, not in the strip), active layer, the four shortcuts people forget (`c` `]` `g` `⌘K`). The tool strip's buttons are 34 px with a mouse and 44 px on any touch screen (`pointer: coarse`); on a short touch screen the strip scrolls rather than shrinks its buttons. A tool's own options (the cue type, the stamp) open in a small flyout beside the tool, clamped inside the viewport.
@@ -118,7 +125,7 @@ Rail drops its labels (52 px). Thumbnails hide by default (toggle in the top bar
 - Top bar 56 px (back chevron, title, one action) so 44 px targets fit.
 - The page fills the width with the tags still in its margins. The tool strip becomes a single "Place cue" floating button, shown when nothing is selected. Selecting a cue opens the cue editor as a **bottom sheet** (20 px top radius, grab handle, covers the tab bar while open).
 - Tables become cards (one row, one card: big mono number, label, page and trigger, flag pill). Swipe left on an activity row reveals Revert.
-- Every target ≥ 44 px; nothing depends on hover; safe-area insets respected (Flow §15): the bottom inset under the tab bar, the top inset above the top bar, and the left and right insets (a notch in landscape) around the whole shell, the notices, the sheets and Calling mode. The shared Checkbox's hit area is 40 px with a mouse and 44 px on a touch screen.
+- Every target ≥ 44 px; nothing depends on hover; safe-area insets respected (Flow §15): the bottom inset under the tab bar, the top inset above the top bar, and the left and right insets (a notch in landscape) around the whole shell, the notices, the sheets and Calling mode. The shared Checkbox reserves a 44 px layout target around its compact drawn box on every screen.
 
 ## 7. Navigation
 
@@ -146,9 +153,9 @@ Binder-specific components (each has a mockup in the gallery):
 | **SyncState** | dot plus word: Synced (ok), Syncing… n (warn), Offline (muted; the count of waiting changes is in the OfflineBanner, not here), Conflict n (red, not built: see ConflictCard) |
 | **Presence** | stacked avatars; "In the binder now" list with document and page |
 | **CommandPalette** | 640 px, 20 px radius, groups as in §7, current result with the red edge and ↵ hint, footer of keys in mono |
-| **CallingStrip** | page ‹ n / N ›, next cue on the active department (swatch, code, mono number, label), Go to…, Exit |
+| **CallingStrip** | page ‹ n / N ›, Next from page top on the active department (swatch, code, mono number, label); this is page-relative navigation context, with no called-cue cursor, Go to…, Exit |
 | **GoToKeypad** | Cue / Page segmented, 40 px mono readout, live match line, 3 × 4 keys ≥ 64 px, wide red Go, Recent chips |
-| **OfflineBanner** | the States sheet's banner: `--elev`, 2 px `--line-2`, radius 12, a wifi-off icon in `--muted`, "Offline. Changes are saved on this device — N waiting to sync." with N in mono. A polite status, never an alert. Drawn once, under the top bar of every signed-in screen, while the browser is offline; Calling mode's overlay covers it, since "offline, cached" is already that mode's calm state |
+| **OfflineBanner** | the States sheet's banner: `--elev`, 2 px `--line-2`, radius 12, a wifi-off icon in `--muted`, "Offline. Changes are saved on this device — N waiting to sync." with N in mono. A polite status, never an alert. Drawn once, under the top bar of every signed-in screen, while the browser is offline; Calling mode's overlay covers it, since "Offline" is already that mode's calm state |
 | **Notice (toast)** | an `--elev` card, 2 px `--line-2`, radius 12, the sticker shadow, bottom-right (above the tab bar on a phone); the action is a blue 600 link and × dismisses. A problem (a rejected write, an error) also has a 3 px red bar down its left edge; good news has none |
 | **EmptyState** | an `.empty` card (`--card`, 2 px `--line-2`, `--r`, `--sh-card`): an optional icon tile or label, a 15 px / 600 heading, one `--ink-2` line, then optionally the Kalam line (`--ink-2`, never red) and one outlined action. Kalam appears nowhere else in a list |
 | **Skeleton** | rows on the table's column widths (52 px · flexible · 44 px, 46 px high), solid `--elev` bars with a pulse and no gradient (Flow), under visually hidden "Loading…" text |
@@ -160,7 +167,7 @@ Required states for every interactive element are Flow's §9.1 (rest, hover, foc
 ## 9. Modes
 
 - **Markup**: everything above.
-- **Calling**: entered from the top bar ("Calling mode") or ⇧C. Shows only a slim status line (red "Calling" pill, show · document · version, time, sync state) and the page at reading size, with the CallingStrip floating at the bottom. Page turn by tap on the page's left or right third, swipe, or ←/→. Nothing is editable. The keypad (GoToKeypad) is the only overlay. Offline and cached is the normal state here and reads as calm.
+- **Calling**: entered from the top bar ("Calling mode") or ⇧C. Shows only a slim status line (red "Calling" pill, show · document · version, time, sync state) and the page at reading size, with the CallingStrip floating at the bottom. Page turn by tap on the page's left or right third, swipe, or ←/→. Nothing is editable. The keypad (GoToKeypad) is the only overlay. Offline reads as calm. Network state does not prove that the PDF or its dependencies are cached.
 
 ## 10. Keyboard
 
@@ -237,3 +244,10 @@ Lockups: in the app header, the tile and "Binder" in Archivo 800 with a "by RVLT
 | 2026-10-16 | The top bar's sync word is "Offline" with no count; "N waiting to sync" lives in the OfflineBanner, a live region that stays mounted so its arrival is announced (R47) | the states mockup draws it so (R21); tests read the count from `data-pending` |
 | 2026-10-16 | Search hits on the page use fixed page colours (a yellow wash, an orange active hit), never a theme token or a department's colour | the page is white in every theme and a department colour on it means that department's own markup |
 | 2026-10-19 | RVLT-wide decisions (rvlt-designlanguage v1.2.0) adopted: page `h1` is `t-page-title` (24 px / 800), icons stroke 2, Kbd at 11 px, Paper retoned to 4.5:1, one red primary per region, Albert as RVLT's character | Jayden's RVLT-wide calls. These four depart from the mockups on purpose: the page title (22 → 24 px), icon stroke (1.8 → 2), Kbd (10.5 → 11 px, the floor) and Paper's colours; buttons stay the mockups' rounded rectangles (buttons are per product) |
+
+| 2026-10-20 | Canonical v1.3.0 authority supersedes the 2026-10-16 mockup-precedence rulings, including R20/R21 | Preserve §19.2 Binder deltas; canonical rules, tokens and contrast pairings govern implementation |
+
+| 2026-10-20 | Chrome targets reserve at least 44 × 44 px in layout instead of extending invisible regions into neighbours | Buttons keep their compact 26/30/40 px drawn faces; native fields use a real 44 px minimum, and segmented items, tabs, colour choices, layer switches and Sheet close reserve their own space |
+| 2026-10-20 | Calling uses ink department words, page-relative Next, honest Offline and the keypad as its sole overlay | Hue remains on swatches, navigation never fires cues, and ambiguous numbers require Page or a recent target |
+| 2026-10-20 | Sign-out checks CRUD and export queues under a local-work lock and preserves data when counts fail or change | Generation and writes drain before confirmation; server-first sign-out and awaited runner shutdown precede removal |
+| 2026-10-20 | New or changed department colours require 3:1 marks on white and the existing ΔE76 red guard | Unchanged legacy values remain editable and are never silently recoloured |

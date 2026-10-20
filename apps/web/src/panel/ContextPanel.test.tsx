@@ -164,7 +164,7 @@ test('the Review pill is a 16 px blue pill and is left out at zero', () => {
   expect(screen.getByRole('tab', { name: 'Review 4' })).toBeTruthy()
   expect(pill.className).toContain('h-4')
   expect(pill.className).toContain('bg-blue-soft')
-  expect(pill.className).toContain('text-blue')
+  expect(pill.className).toContain('text-info')
   unmount()
   render(<Harness count={0} />)
   expect(screen.getByRole('tab', { name: 'Review' })).toBeTruthy()

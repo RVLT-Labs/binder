@@ -12,16 +12,15 @@ interface Row {
   colour: string
 }
 
-/** The icon box: 16 px at 768 and up (`.layer-row .ic span`), a 44 px target on a phone. */
-const ICON_BOX =
-  'relative grid size-4 shrink-0 place-items-center text-faint max-md:size-11 md:max-[1024px]:size-8'
+/** A 44 px layout target around the compact visibility/lock icon. */
+const ICON_BOX = 'relative grid size-11 shrink-0 place-items-center text-muted'
 
 /**
  * A visibility or lock switch drawn as the mockup's icon: a real checkbox underneath (its label is
  * the accessible name and it takes the focus), the icon on top. `on` and `off` are the icons for
  * the checked and unchecked state.
  */
-function IconSwitch({
+export function IconSwitch({
   label,
   checked,
   disabled,
@@ -114,7 +113,7 @@ export function LayerPanel({
   return (
     <section className="layer-panel flex flex-col gap-2" aria-label="Layers">
       <h2 className={labelled ? SECTION_LABEL : 'sr-only'}>Layers</h2>
-      <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
         {rows.map(({ layer, code, name, colour }) => {
           const key = layerKey(layer)
           const canEdit = editable.some((l) => layerKey(l) === key)
@@ -126,8 +125,8 @@ export function LayerPanel({
               key={key}
               data-layer={key}
               className={cn(
-                // `.layer-row`: 30 px (38 on the tablet sheet, a 44 px target on a phone), radius 8, 13 px
-                'relative flex h-[30px] items-center gap-2 rounded-[8px] px-2 text-[13px] text-ink max-md:h-11 md:max-[1024px]:h-[38px]',
+                // The 44 px row reserves separate radio and switch targets; radius 8, 13 px text.
+                'relative flex h-11 min-h-11 items-center gap-2 rounded-[8px] px-2 text-[13px] text-ink',
                 'has-[input[type=radio]:focus-visible]:ring-2 has-[input[type=radio]:focus-visible]:ring-red',
                 isActive && 'bg-card shadow-card',
                 hidden && 'opacity-55',
@@ -141,7 +140,7 @@ export function LayerPanel({
                 checked={isActive}
                 disabled={!canEdit}
                 onChange={() => store.setActive(layer)}
-                className="absolute inset-0 m-0 size-full cursor-pointer appearance-none rounded-[8px] opacity-0 disabled:cursor-not-allowed"
+                className="absolute inset-y-0 left-0 right-[112px] m-0 min-w-11 cursor-pointer appearance-none rounded-[8px] opacity-0 disabled:cursor-not-allowed"
               />
               <Swatch colour={colour} />
               <span
@@ -150,11 +149,11 @@ export function LayerPanel({
               >
                 {code}
                 {!name && code === 'Personal' && (
-                  <span className="ml-1.5 text-[11px] text-faint">only you</span>
+                  <span className="ml-1.5 text-[11px] text-muted">only you</span>
                 )}
               </span>
-              <span className="font-mono text-[11px] text-faint tabular-nums">{count(layer)}</span>
-              <span className="flex gap-1.5">
+              <span className="font-mono text-[11px] text-muted tabular-nums">{count(layer)}</span>
+              <span className="flex gap-2">
                 <IconSwitch
                   label={`Show ${code}`}
                   checked={!hidden}

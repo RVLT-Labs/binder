@@ -1,4 +1,5 @@
 import { pushNotice } from '../components/noticeStore'
+import { endLocalSession, quiesceLocalWork } from './localWork'
 
 export interface SignOutDeps {
   /** Better Auth's signOut: resolves with `error` on a server failure, throws when it cannot send. */
@@ -13,10 +14,13 @@ export interface SignOutDeps {
    * nothing can write to the cache. Runs before `clearLocalData` (which empties the blob cache).
    */
   stopOfflineRunner: () => Promise<void>
+  stopExportRunner: () => Promise<void>
   clearCache: () => void
   toLogin: () => Promise<void>
   /** How many local changes are still queued for upload (`ps_crud`); signing out would discard them. */
   pendingUploads: () => Promise<number>
+  /** Queued export files, scoped to the signed-in owner. */
+  pendingExports: () => Promise<number>
   /** Asks the user a yes/no question (the browser's `confirm`). */
   confirm: (message: string) => boolean | Promise<boolean>
 }
@@ -27,15 +31,46 @@ export interface SignOutDeps {
  * pending exports) and cached queries thrown away; if it fails (offline, 5xx) the user stays signed in with everything
  * intact and is told why.
  */
-export async function signOutAndClear(deps: SignOutDeps): Promise<void> {
-  // A queue that cannot be counted must not strand the sign-out.
-  const pending = await deps.pendingUploads().catch((err) => {
-    console.error('could not count pending uploads', err)
-    return 0
-  })
-  if (pending > 0) {
-    const what = pending === 1 ? '1 change hasn' : `${pending} changes haven`
-    if (!(await deps.confirm(`${what}'t uploaded yet. Sign out anyway?`))) return
+async function signOutLocked(deps: SignOutDeps): Promise<void> {
+  const count = async () => {
+    const [changes, exports] = await Promise.all([deps.pendingUploads(), deps.pendingExports()])
+    if (![changes, exports].every((n) => Number.isSafeInteger(n) && n >= 0))
+      throw new Error('Invalid queue count')
+    return { changes, exports }
+  }
+  let approved = { changes: 0, exports: 0 }
+  try {
+    let current = await count()
+    // Repeat a warning if work appeared while the user was considering it. The writer lock
+    // normally prevents increases; these checks also guard external writers and count races.
+    for (let attempt = 0; ; attempt++) {
+      if (attempt >= 3) throw new Error('Queues keep changing')
+      if (current.changes > approved.changes || current.exports > approved.exports) {
+        const n = current.changes
+        const changes =
+          n > 0 ? `${n === 1 ? '1 change hasn' : `${n} changes haven`}'t uploaded yet. ` : ''
+        const files =
+          current.exports > 0
+            ? `${current.exports} pending export${current.exports === 1 ? '' : 's'}. `
+            : ''
+        if (
+          !(await deps.confirm(
+            `${changes}${files}Queued changes and pending exports will be removed from this device. Sign out anyway?`,
+          ))
+        )
+          return
+      }
+      approved = current
+      current = await count()
+      if (current.changes <= approved.changes && current.exports <= approved.exports) break
+    }
+  } catch {
+    pushNotice({
+      kind: 'error',
+      message:
+        'Could not check waiting changes and exports. Nothing was removed. Try signing out again when local storage is available.',
+    })
+    return
   }
   let failure: string | undefined
   try {
@@ -51,12 +86,41 @@ export async function signOutAndClear(deps: SignOutDeps): Promise<void> {
     })
     return
   }
-  // First, so a download in flight cannot repopulate the cache that `clearLocalData` empties.
-  await deps.stopOfflineRunner().catch((err) => console.error('could not stop keep-offline', err))
-  // The files are the user's own and leave with them; a storage error must not strand the sign-out.
-  await deps.clearOutbox().catch((err) => console.error('could not clear the export outbox', err))
-  await deps.clearOfflinePrefs().catch((err) => console.error('could not clear keep-offline', err))
+  endLocalSession()
+  await deps.stopExportRunner()
+  await deps.stopOfflineRunner()
+  try {
+    const final = await count()
+    if (final.changes > approved.changes || final.exports > approved.exports)
+      throw new Error('New waiting work')
+  } catch {
+    endLocalSession()
+    pushNotice({
+      kind: 'error',
+      message:
+        'The server signed out, but waiting work changed or could not be checked. Local data was retained. Sign in to the same account to recover it.',
+    })
+    return
+  }
+  await deps.clearOutbox()
+  await deps.clearOfflinePrefs()
   await deps.clearLocalData()
+  endLocalSession()
   deps.clearCache()
   await deps.toLogin()
+}
+
+export async function signOutAndClear(deps: SignOutDeps): Promise<void> {
+  let release: (() => void) | undefined
+  try {
+    release = await quiesceLocalWork()
+    await signOutLocked(deps)
+  } catch (error) {
+    pushNotice({
+      kind: 'error',
+      message: `Could not finish signing out. Local data was retained where possible: ${error instanceof Error ? error.message : String(error)}`,
+    })
+  } finally {
+    await release?.()
+  }
 }

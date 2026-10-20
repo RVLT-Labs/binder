@@ -137,7 +137,7 @@ export function AnnotationEditor({ annotationId, onDone }: AnnotationEditorProps
               variant="line"
               size="sm"
               aria-pressed={rebinding}
-              className="justify-self-start aria-pressed:border-ink"
+              className="justify-self-start aria-pressed:before:border-ink"
               onClick={() => (rebinding ? endRebind() : startRebind(annotationId))}
             >
               {rebinding ? 'Cancel re-select' : 'Re-select words'}
@@ -285,7 +285,7 @@ interface ColourFieldProps {
  * A colour swatch. Dragging in the picker only previews; the colour is saved when the picker closes
  * (the input's native change event), so one choice is one write.
  */
-function ColourField({ id, value, onCommit }: ColourFieldProps) {
+export function ColourField({ id, value, onCommit }: ColourFieldProps) {
   const input = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState(value.toLowerCase())
   const [focused, setFocused] = useState(false)
@@ -311,6 +311,7 @@ function ColourField({ id, value, onCommit }: ColourFieldProps) {
       ref={input}
       id={id}
       type="color"
+      style={{ minHeight: 44, minWidth: 44 }}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onFocus={() => setFocused(true)}

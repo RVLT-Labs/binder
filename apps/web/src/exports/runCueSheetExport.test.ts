@@ -1,13 +1,19 @@
 import { strFromU8, unzipSync } from 'fflate'
 import { PDFDocument } from 'pdf-lib'
 import { beforeEach, expect, test } from 'vitest'
+import { activateLocalUser, guardLocalDatabase } from '../auth/localWork'
 import { clearNotices, getNotices } from '../components/noticeStore'
 import type { EditContext } from '../markup/mutations'
 import type { PendingExport } from './outbox'
 import { runCueSheetExport } from './runCueSheetExport'
 import type { ExportDb } from './runPrintExport'
 
-beforeEach(() => clearNotices())
+beforeEach(() => {
+  clearNotices()
+  localStorage.setItem('binder.localDbOwner', 'user-me')
+  localStorage.setItem('binder.localDbDevice', 'export-test-ticket')
+  activateLocalUser('user-me')
+})
 
 const ctx: EditContext = {
   showId: 'show-1',
@@ -57,18 +63,21 @@ let cues = [
 const documents = [{ id: 'doc-1', title: 'Libretto', current_version_id: 'v2' }]
 
 function fakeDb(): ExportDb {
-  return {
-    async getAll<T>(sql: string, params: unknown[] = []): Promise<T[]> {
-      const rows = (() => {
-        if (sql.includes('FROM shows')) return [{ title: 'Pirates: A/B', settings }]
-        if (sql.includes('FROM departments')) return departments.filter((d) => d.id === params[0])
-        if (sql.includes('FROM cues')) return cues.filter((c) => c.department_id === params[1])
-        if (sql.includes('FROM documents')) return documents
-        throw new Error(`unexpected query ${sql}`)
-      })()
-      return rows as T[]
+  return guardLocalDatabase(
+    {
+      async getAll<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+        const rows = (() => {
+          if (sql.includes('FROM shows')) return [{ title: 'Pirates: A/B', settings }]
+          if (sql.includes('FROM departments')) return departments.filter((d) => d.id === params[0])
+          if (sql.includes('FROM cues')) return cues.filter((c) => c.department_id === params[1])
+          if (sql.includes('FROM documents')) return documents
+          throw new Error(`unexpected query ${sql}`)
+        })()
+        return rows as T[]
+      },
     },
-  }
+    'user-me',
+  )
 }
 
 async function run(format: 'pdf' | 'xlsx' | 'csv', departmentId = 'd-lx') {

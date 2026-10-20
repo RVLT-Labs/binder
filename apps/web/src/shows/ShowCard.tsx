@@ -33,6 +33,24 @@ export interface ShowCardProps {
 // The mockup's `.show-card`: radius 20, padding 16, gap 10, at least 168 px high (phone: 14, 8, none).
 const CARD = 'relative rounded-[20px] border-2 p-3.5 md:p-4'
 
+/** The pencil artwork is unchanged; its real button reserves a 44px target. */
+export function ShowRenameButton({ title, onClick }: { title: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={`Rename ${title}`}
+      onClick={onClick}
+      style={{ minHeight: 44, minWidth: 44 }}
+      className={cn(
+        'relative z-10 -mr-2 flex size-11 shrink-0 items-center justify-center rounded-full text-muted hover:text-ink md:size-9',
+        focusRing,
+      )}
+    >
+      <Pencil className="size-4" aria-hidden />
+    </button>
+  )
+}
+
 /**
  * One show on the shows home (DESIGN §8, mockup `.show-card`): a status pill with a word, the title
  * as the card's link, its documents and cue count, a "to review" flag, and when it last changed. A
@@ -119,20 +137,13 @@ export function ShowCard({
           {!archived && <span aria-hidden className="size-1.5 rounded-full bg-current" />}
           {archived ? 'Archived' : 'Active'}
         </Badge>
-        <button
-          type="button"
-          aria-label={`Rename ${title}`}
+        <ShowRenameButton
+          title={title}
           onClick={() => {
             setDraft(title)
             setEditing(true)
           }}
-          className={cn(
-            'relative z-10 -mr-2 flex size-11 shrink-0 items-center justify-center rounded-full text-faint hover:text-ink md:size-9',
-            focusRing,
-          )}
-        >
-          <Pencil className="size-4" aria-hidden />
-        </button>
+        />
       </div>
 
       <h3
@@ -191,7 +202,7 @@ export function ShowCard({
             )}
           >
             {cueCount === 0 && (
-              <span className="inline-flex items-center whitespace-nowrap rounded-[var(--r)] border border-line-2 px-2.5 py-1.5 font-hand text-[15px] leading-snug text-red">
+              <span className="inline-flex items-center whitespace-nowrap rounded-[var(--r)] border border-line-2 px-2.5 py-1.5 font-hand text-[15px] leading-snug text-red-text">
                 {documents.length > 0 ? 'script in, nothing placed yet' : 'nothing placed yet'}
               </span>
             )}

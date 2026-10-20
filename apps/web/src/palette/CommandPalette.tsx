@@ -1,5 +1,5 @@
 import { Command } from 'cmdk'
-import { type CSSProperties, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   CloseIcon,
   CuesIcon,
@@ -162,7 +162,7 @@ function PaletteBody({ showId }: { showId: string }) {
               setPicked('')
             }}
             placeholder="Cue, page, script text or action"
-            className="min-w-0 flex-1 bg-transparent font-mono text-[18px] max-md:h-11 text-ink caret-ink outline-none placeholder:font-sans placeholder:text-[15px] placeholder:text-faint"
+            className="min-w-0 flex-1 bg-transparent font-mono text-[18px] max-md:h-11 text-ink caret-ink outline-none placeholder:font-sans placeholder:text-[15px] placeholder:text-muted"
           />
           <span aria-hidden className="max-md:hidden">
             <Kbd>esc</Kbd>
@@ -202,15 +202,15 @@ function PaletteBody({ showId }: { showId: string }) {
   )
 }
 
-function ResultRow({ result, onRun }: { result: Result; onRun: (r: Result) => void }) {
+export function ResultRow({ result, onRun }: { result: Result; onRun: (r: Result) => void }) {
   const Icon = ICONS[result.icon]
   return (
     <Command.Item
       value={result.id}
       onSelect={() => onRun(result)}
       className={cn(
-        // 38 px rows (44 on a phone); the current one has the red edge and a faint red wash
-        'group/item flex h-[38px] cursor-default items-center gap-3 px-[18px] text-[14px] text-ink outline-none max-md:h-11',
+        // Fine desktop rows stay 38px; coarse rows reserve 44px and 8px of neighbour space.
+        'group/item flex h-[38px] cursor-default items-center gap-3 px-[18px] text-[14px] text-ink outline-none max-md:h-11 [@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11 [@media(pointer:coarse)]:mb-2',
         'data-[selected=true]:bg-red/12 data-[selected=true]:shadow-[inset_3px_0_0_var(--red)]',
       )}
     >
@@ -244,21 +244,27 @@ function ResultRow({ result, onRun }: { result: Result; onRun: (r: Result) => vo
 }
 
 function Part({ part, first }: { part: ResultPart; first: boolean }) {
-  const style: CSSProperties | undefined = part.colour ? { color: part.colour } : undefined
   return (
     <span
-      style={style}
       className={cn(
         // a code (the cue or page number) keeps its width; the words after it give way and truncate
         part.bold ? 'shrink-0' : 'min-w-0 overflow-hidden text-ellipsis',
         part.mono && 'font-mono tabular-nums',
         part.bold && 'font-semibold',
+        part.colour && 'inline-flex items-center gap-1.5 text-ink',
         part.dim && 'text-ink-2',
-        part.faint && 'text-faint',
+        part.faint && 'text-muted',
         'whitespace-pre',
         !first && !part.joined && 'ml-2',
       )}
     >
+      {part.colour && (
+        <i
+          aria-hidden
+          className="inline-block size-2.5 shrink-0 rounded-[3px]"
+          style={{ background: part.colour }}
+        />
+      )}
       {part.text}
     </span>
   )

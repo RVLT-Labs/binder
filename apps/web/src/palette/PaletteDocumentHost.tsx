@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { modalIsOpen } from '@/lib/modalDialog'
 import { useMarkupSession } from '../markup/MarkupSession'
-import { isPaletteOpen, registerDocumentHost } from './paletteState'
+import { isPaletteOpen, paletteCalling, registerDocumentHost } from './paletteState'
 
 /**
  * Tells the command palette about the open document (see `PaletteDocumentHost`), and gives Print
@@ -20,7 +20,7 @@ export function PaletteDocumentHostRegistration({
   pageCount: number
   /** Opens the page's print dialog; focus returns to `opener` when it closes. */
   onPrint: (opener: HTMLElement | null) => void
-  /** The document is in Calling mode: the palette's switch then offers the way back. */
+  /** Calling keeps the palette and Print closed; only the keypad may overlay the page. */
   calling?: boolean
   /** Switches between markup and Calling mode. */
   onToggleCalling?: () => void
@@ -51,7 +51,7 @@ export function PaletteDocumentHostRegistration({
       if (e.defaultPrevented || modalIsOpen() || isPaletteOpen()) return
       // The browser would print the app's chrome; Binder's own Print is what ⌘P means here.
       e.preventDefault()
-      if (e.repeat) return
+      if (e.repeat || paletteCalling()) return
       latest.current.onPrint(
         document.activeElement instanceof HTMLElement ? document.activeElement : null,
       )

@@ -13,8 +13,8 @@ import { cn, focusRing } from '@/lib/utils'
 import type { Account } from './types'
 import { useConfirm } from './useConfirm'
 
-/** 44px rows on a phone (every target), compact where there is a pointer. */
-const ITEM = 'min-h-11 md:min-h-8'
+/** The primitive owns coarse targets; only a fine desktop pointer gets compact rows. */
+const ITEM = 'min-h-11 md:[@media(pointer:fine)]:min-h-8'
 
 /**
  * The person's avatar and, under it, who they are signed in as, their show's settings, the access

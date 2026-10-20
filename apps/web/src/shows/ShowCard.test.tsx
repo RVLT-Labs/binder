@@ -82,6 +82,9 @@ test('shows nothing about cues until the count is known', async () => {
 
 test('Rename opens the title field, Save hands back the trimmed title', async () => {
   const { onRename } = await renderCard()
+  const rename = screen.getByRole('button', { name: 'Rename Songs for a New World' })
+  expect(getComputedStyle(rename).minHeight).toBe('44px')
+  expect(getComputedStyle(rename).minWidth).toBe('44px')
   fireEvent.click(screen.getByRole('button', { name: 'Rename Songs for a New World' }))
   const field = screen.getByLabelText('Show title') as HTMLInputElement
   expect(field.value).toBe('Songs for a New World')

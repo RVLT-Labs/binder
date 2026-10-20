@@ -95,7 +95,7 @@ export function VersionSwitcher({
             value={selectedId}
             onChange={(e) => onSelect(e.target.value)}
             className={cn(
-              'h-11 w-full max-w-full appearance-none truncate rounded-[12px] border-2 border-border bg-card pr-9 pl-3 font-mono text-[14px] text-ink',
+              'h-11 w-full max-w-full appearance-none truncate rounded-[12px] border-2 border-input bg-card pr-9 pl-3 font-mono text-[14px] text-ink',
               focusRing,
             )}
           >

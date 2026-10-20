@@ -48,8 +48,8 @@ export interface DocumentControlsProps {
   onRenumber: (() => void) | null
 }
 
-/** Rows of the "…" menu: 32 px where there is a pointer. */
-const ITEM = 'min-h-8'
+/** Compact rows only for fine pointers; coarse targets belong to the primitive. */
+const ITEM = '[@media(pointer:fine)]:min-h-8'
 
 /** The document's own actions as the phone's menu lists them, 44 px each. */
 export function documentMenuItems(
@@ -183,7 +183,7 @@ export function DocumentControls(props: DocumentControlsProps & { viewerOwnsPhon
             type="button"
             variant="ghost"
             size="sm"
-            className="hover:bg-elev hover:text-ink aria-pressed:bg-card aria-pressed:text-ink"
+            className="hover:before:bg-elev hover:text-ink aria-pressed:before:bg-card aria-pressed:text-ink"
             aria-label="Thumbnails"
             aria-pressed={thumbnails.open}
             onClick={thumbnails.onToggle}
@@ -196,7 +196,7 @@ export function DocumentControls(props: DocumentControlsProps & { viewerOwnsPhon
             type="button"
             variant="ghost"
             size="sm"
-            className="hover:bg-elev hover:text-ink aria-pressed:bg-card aria-pressed:text-ink"
+            className="hover:before:bg-elev hover:text-ink aria-pressed:before:bg-card aria-pressed:text-ink"
             aria-label="Context panel"
             aria-pressed={panel.open}
             onClick={panel.onToggle}
@@ -236,7 +236,7 @@ export function DocumentControls(props: DocumentControlsProps & { viewerOwnsPhon
               variant="ghost"
               size="sm"
               aria-label="Document options"
-              className="hover:bg-elev hover:text-ink data-[state=open]:bg-card data-[state=open]:text-ink"
+              className="hover:before:bg-elev hover:text-ink data-[state=open]:before:bg-card data-[state=open]:text-ink"
             >
               <MoreIcon />
             </Button>

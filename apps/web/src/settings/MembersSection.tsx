@@ -163,7 +163,7 @@ function MemberRow({
           <span className="inline-flex h-9 w-24 items-center rounded-[10px] border-2 border-line-2 bg-paper px-3 text-[13px] font-semibold text-ink-2 md:col-start-4 md:h-7 md:w-full md:rounded-[9px] md:px-[9px]">
             {ROLE_LABEL[member.role]}
           </span>
-          <span className="justify-self-end pr-2 text-[12px] text-faint md:col-start-5">You</span>
+          <span className="justify-self-end pr-2 text-[12px] text-muted md:col-start-5">You</span>
         </>
       ) : (
         <>

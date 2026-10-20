@@ -35,17 +35,15 @@ export function firstUnusedColour(departments: Array<{ colour: string | null }>)
 
 // swatch, code, name, number format, marker side, cues, hidden: the settings mockup's columns
 // (without the drag grip and Remove, which the app has no action for).
-const COLUMNS = 'md:grid-cols-[24px_56px_minmax(0,1fr)_128px_128px_74px_64px]'
+const COLUMNS = 'md:grid-cols-[44px_56px_minmax(0,1fr)_128px_128px_74px_64px]'
 const ROW_GRID = cn('md:grid md:items-center md:gap-x-3', COLUMNS)
 
 /** The department code as the mockups' tinted pill (`.ac-code`, `.mb-code`). */
 function CodePill({ code, colour }: { code: string; colour: string | null }) {
   const c = colour && COLOUR_RE.test(colour) ? deptChrome(colour) : 'var(--muted)'
   return (
-    <span
-      className="inline-flex h-6 min-w-[46px] items-center justify-center rounded-[7px] px-2.5 font-mono text-[12.5px] font-semibold md:h-[22px] md:min-w-11 md:px-[9px] md:text-[12px]"
-      style={{ color: c, background: `color-mix(in oklab, ${c} 14%, transparent)` }}
-    >
+    <span className="inline-flex h-6 min-w-[46px] items-center justify-center rounded-[7px] px-2.5 font-mono text-[12.5px] font-semibold text-ink bg-paper-2 gap-1.5 md:h-[22px] md:min-w-11 md:px-[9px] md:text-[12px]">
+      <i aria-hidden className="size-2 shrink-0 rounded-[2px]" style={{ background: c }} />
       {code}
     </span>
   )
@@ -58,7 +56,7 @@ function Cues({ count }: { count: number }) {
   return (
     <span className="font-mono text-[12px] text-ink-2 tabular-nums md:text-right md:text-[12.5px]">
       {count}
-      <span className="ml-1 font-sans text-[11px] text-faint">{count === 1 ? 'cue' : 'cues'}</span>
+      <span className="ml-1 font-sans text-[11px] text-muted">{count === 1 ? 'cue' : 'cues'}</span>
     </span>
   )
 }

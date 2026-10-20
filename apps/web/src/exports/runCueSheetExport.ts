@@ -1,5 +1,6 @@
 import { cueListRows } from '@binder/core'
 import { type CueFields, type NumberFormat, newId, type SheetFormat } from '@binder/shared'
+import { assertDatabaseOwner, runDatabaseWork } from '../auth/localWork'
 import { pushNotice } from '../components/noticeStore'
 import { type EditContext, fromCueRow } from '../markup/mutations'
 import { CUE_TYPES } from '../markup/rows'
@@ -39,7 +40,7 @@ const defaultEffects: CueSheetEffects = {
  * the show its ExportRecord whenever there is a network, so it works the same offline. The PDF and
  * XLSX writers (pdf-lib, fflate) are loaded only here, never with the main bundle.
  */
-export async function runCueSheetExport(
+async function runCueSheetExportImpl(
   db: ExportDb,
   ctx: EditContext,
   input: CueSheetInput,
@@ -131,8 +132,10 @@ export async function runCueSheetExport(
   const filename = exportFilename([showTitle, title], file.ext)
 
   // The file is the user's the moment it exists, online or not.
+  assertDatabaseOwner(db, ctx.userId)
   fx.download(filename, bytes, file.mime)
   try {
+    assertDatabaseOwner(db, ctx.userId)
     await fx.enqueue({
       id,
       showId: ctx.showId,
@@ -154,4 +157,10 @@ export async function runCueSheetExport(
     })
   }
   return { id, filename, bytes }
+}
+
+export function runCueSheetExport(
+  ...args: Parameters<typeof runCueSheetExportImpl>
+): ReturnType<typeof runCueSheetExportImpl> {
+  return runDatabaseWork(args[0], args[1].userId, () => runCueSheetExportImpl(...args))
 }

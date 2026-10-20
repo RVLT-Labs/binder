@@ -4,42 +4,38 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
-/**
- * The mockups' button (docs/superpowers/design/binder-ui-2026-10/_head.html `.btn`): a rounded
- * rectangle, never a pill. At 768 px and up it is 30 px high (26 for `sm`, 40 for `lg`) with radius
- * 10 (8, 10); below that it is the phone's 44 px (48 for `lg`) with radius 12. On a tablet the
- * visible button is the mockup's size and an invisible `after:` layer keeps a 44 px hit area.
- * Red is the primary, and a primary carries the sticker shadow; the outlined button is the
- * card-filled 2px outline. See DESIGN.md §0 (the mockups are the binding standard).
- */
+/** The actual button reserves a nonoverlapping 44px target in layout. Its pointer-inert
+ * ::before draws Binder's compact rectangular face (26/30/40px on desktop). No enlarged
+ * hit region extends into neighbours. The same contract applies to slotted links. */
 const buttonVariants = cva(
   // states (§9.1): focus-visible ring on every variant; tactile press; disabled = greyed,
   // not-allowed cursor, no lift/shadow (clicks blocked by the `disabled` attr).
   // Every variant has a 2px border (transparent where it is not drawn) so heights never shift.
-  "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap border-2 font-sans font-semibold transition-[transform,box-shadow,background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0 disabled:hover:translate-y-0 [&_svg]:size-4 [&_svg]:shrink-0 md:after:absolute md:after:inset-x-0 md:after:content-['']",
+  "relative isolate inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 whitespace-nowrap border-2 font-sans font-semibold transition-[transform,box-shadow,background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0 disabled:hover:translate-y-0 [&_svg]:size-4 [&_svg]:shrink-0 border-transparent before:pointer-events-none before:absolute before:-inset-x-[2px] before:top-1/2 before:-z-10 before:-translate-y-1/2 before:rounded-[inherit] before:border-2 before:content-[''] disabled:before:shadow-none aria-disabled:before:shadow-none",
   {
     variants: {
       variant: {
         // primary action: red, 2px red border, the sticker shadow (hard drop plus top highlight)
         primary:
-          'border-red bg-red text-primary-foreground shadow-sticker hover:-translate-y-px active:translate-x-[2px] active:translate-y-[2px] active:shadow-lit',
+          'before:border-primary before:bg-primary text-primary-foreground before:shadow-sticker hover:-translate-y-px active:translate-x-[2px] active:translate-y-[2px] active:before:shadow-lit',
         // hero CTA only: primary + sanctioned red bloom (§8); bloom is the --sh-halo token
-        halo: 'border-red bg-red text-primary-foreground shadow-[var(--sh-halo)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[0_1px_0_var(--red-700)]',
+        halo: 'before:border-primary before:bg-primary text-primary-foreground before:shadow-[var(--sh-halo)] hover:-translate-y-px active:translate-y-[2px] active:before:shadow-[0_1px_0_var(--red-700)]',
         // the default button: card fill, 2px outline (--line-2 dark / --ink light, §9)
-        line: 'border-border bg-card text-ink hover:border-ink-2 hover:bg-elev active:translate-y-px',
+        line: 'before:border-border before:bg-card text-ink hover:before:border-ink-2 hover:before:bg-elev active:translate-y-px',
         // text only: ink-2, transparent border
-        ghost: 'border-transparent bg-transparent text-ink-2 hover:text-ink active:opacity-80',
+        ghost:
+          'before:border-transparent before:bg-transparent text-ink-2 hover:text-ink active:opacity-80',
         // cream: for use on the full-red CTA block (fixed cream tokens, §3.6)
         cream:
-          'border-transparent bg-[var(--cream)] text-[var(--cream-ink)] shadow-[var(--sh-cream)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[var(--sh-cream-press)]',
+          'before:border-transparent before:bg-[var(--cream)] text-[var(--cream-ink)] before:shadow-[var(--sh-cream)] hover:-translate-y-px active:translate-y-[2px] active:before:shadow-[var(--sh-cream-press)]',
       },
       size: {
-        // Phone: 44 px. 768 and up: the mockup's heights, with a 44 px hit area from `after:`.
-        sm: 'h-11 rounded-[12px] px-4 text-[14px] md:h-[26px] md:rounded-[8px] md:px-[9px] md:text-[12px] md:after:-inset-y-[9px]',
+        // The target stays 44 px; ::before draws the compact face at 768 px and up.
+        sm: 'h-11 before:h-11 rounded-[12px] px-4 text-[14px] md:before:h-[26px] md:rounded-[8px] md:px-[9px] md:text-[12px]',
         default:
-          'h-11 rounded-[12px] px-4 text-[14px] md:h-[30px] md:rounded-[10px] md:px-3 md:text-[13px] md:after:-inset-y-[7px]',
-        lg: 'h-12 rounded-[12px] px-7 text-[16px] md:h-10 md:rounded-[10px] md:px-5 md:text-[14px] md:after:-inset-y-[2px]',
-        icon: 'size-11 rounded-[12px]',
+          'h-11 before:h-11 rounded-[12px] px-4 text-[14px] md:before:h-[30px] md:rounded-[10px] md:px-3 md:text-[13px]',
+        lg: 'h-12 before:h-12 rounded-[12px] px-7 text-[16px] md:before:h-10 md:rounded-[10px] md:px-5 md:text-[14px]',
+        icon: 'size-11 before:h-11 rounded-[12px]',
       },
     },
     compoundVariants: [
@@ -64,11 +60,59 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ) => {
     const classes = cn(buttonVariants({ variant, size, className }))
-    // asChild defers rendering to a single child (Slot) — no spinner injection there.
+    // Slot merges child handlers first. Replace activation handlers on the child itself while
+    // blocked; a guard only on Slot would run after a child's action had already happened.
     if (asChild) {
+      const child = React.Children.only(children) as React.ReactElement<
+        React.HTMLAttributes<HTMLElement> & { disabled?: boolean }
+      >
+      const blocked = disabled || loading || child.props.disabled
+      const stop = (event: React.SyntheticEvent) => {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      const guards = blocked
+        ? {
+            onClick: stop,
+            onClickCapture: stop,
+            onAuxClick: stop,
+            onAuxClickCapture: stop,
+            onTouchStart: stop,
+            onTouchStartCapture: stop,
+            onTouchEnd: stop,
+            onTouchEndCapture: stop,
+            onKeyPress: stop,
+            onKeyPressCapture: stop,
+            onDoubleClick: stop,
+            onDoubleClickCapture: stop,
+            onPointerDown: stop,
+            onPointerDownCapture: stop,
+            onPointerUp: stop,
+            onPointerUpCapture: stop,
+            onMouseDown: stop,
+            onMouseDownCapture: stop,
+            onMouseUp: stop,
+            onMouseUpCapture: stop,
+            onKeyDown: stop,
+            onKeyDownCapture: stop,
+            onKeyUp: stop,
+            onKeyUpCapture: stop,
+          }
+        : {}
       return (
-        <Slot className={classes} ref={ref} {...props}>
-          {children}
+        <Slot
+          className={cn(classes, blocked && 'cursor-not-allowed opacity-45 shadow-none')}
+          ref={ref}
+          {...props}
+          {...guards}
+        >
+          {React.cloneElement(child, {
+            ...guards,
+            'aria-disabled': blocked || child.props['aria-disabled'],
+            'aria-busy': loading || child.props['aria-busy'] || props['aria-busy'] || undefined,
+            ...(blocked ? { tabIndex: -1 } : {}),
+            ...(child.type === 'button' ? { disabled: blocked } : {}),
+          })}
         </Slot>
       )
     }
@@ -76,9 +120,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         className={classes}
         ref={ref}
-        disabled={disabled || loading}
-        aria-busy={loading || undefined}
         {...props}
+        disabled={disabled || loading}
+        aria-busy={loading || props['aria-busy'] || undefined}
       >
         {/* loading: spinner replaces the label but the label keeps its width (no layout shift, §9.1) */}
         {loading && (
@@ -86,7 +130,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
           </span>
         )}
-        <span className={cn('inline-flex items-center gap-1.5', loading && 'invisible')}>
+        <span className={cn('inline-flex items-center gap-1.5', loading && 'opacity-0')}>
           {children}
         </span>
       </button>

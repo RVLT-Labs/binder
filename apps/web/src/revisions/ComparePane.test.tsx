@@ -91,6 +91,11 @@ test('the pane keeps its accessible name and the page buttons step the page', ()
   const onPageChange = vi.fn()
   render(<ComparePane {...props} onPageChange={onPageChange} />)
   expect(screen.getByRole('region', { name: 'Old · v1' })).toBeTruthy()
+  for (const label of ['Previous page', 'Next page']) {
+    const button = screen.getByRole('button', { name: label })
+    expect(getComputedStyle(button).minHeight).toBe('44px')
+    expect(getComputedStyle(button).minWidth).toBe('44px')
+  }
   expect(
     (screen.getByRole('button', { name: 'Previous page' }) as HTMLButtonElement).disabled,
   ).toBe(true)

@@ -393,7 +393,7 @@ test('Needs you is the mockup card: radius 14, an over-label inside, small butto
   expect(screen.getByRole('heading', { name: 'Needs you' }).className).toContain('t-over')
   expect(screen.getByRole('list').className).not.toContain('divide-y')
   // size sm: 26 px at 768 and up
-  expect(screen.getByRole('link', { name: 'Review' }).className).toContain('md:h-[26px]')
+  expect(screen.getByRole('link', { name: 'Review' }).className).toContain('md:before:h-[26px]')
 })
 
 test('the phone Needs you has its label above a padding-0 card with 52 px rows', async () => {
@@ -424,11 +424,11 @@ test('on the Scripts card Open is the red button, after Cue lists and Compare', 
     .getAllByRole('link')
     .filter((l) => ['Cue lists', 'Compare v1 → v2', 'Open'].includes(l.textContent ?? ''))
   expect(links.map((l) => l.textContent)).toEqual(['Cue lists', 'Compare v1 → v2', 'Open'])
-  expect(links[2].className).toContain('bg-red')
-  expect(links[0].className).not.toContain('bg-red')
+  expect(links[2].className).toContain('before:bg-primary')
+  expect(links[0].className).not.toContain('before:bg-primary')
   // The overview's buttons are the card fill (`.btn`); only Documents rows use elev (`.dx-row .btn`).
-  expect(links[0].className).not.toContain('md:bg-elev')
-  expect(links[1].className).not.toContain('md:bg-elev')
+  expect(links[0].className).not.toContain('md:before:bg-elev')
+  expect(links[1].className).not.toContain('md:before:bg-elev')
   // The version number in the compare button is plain text, not mono.
   expect(links[1].querySelector('.font-mono')).toBeNull()
 })
@@ -443,8 +443,8 @@ test('on the Documents screen Open stays plain, and the row is the mockup card w
     .filter((t) => ['Open', 'Cue lists', 'Compare v1 → v2'].includes(t ?? ''))
   expect(names).toEqual(['Open', 'Cue lists', 'Compare v1 → v2'])
   const open = within(item).getByRole('link', { name: 'Open' })
-  expect(open.className).not.toContain('bg-red')
-  expect(open.className).toContain('md:bg-elev')
+  expect(open.className).not.toContain('before:bg-primary')
+  expect(open.className).toContain('md:before:bg-elev')
   expect(within(item).getByRole('button', { name: 'Upload new version' })).toBeTruthy()
   // the title is Hanken 15 px / 600, the meta line 12 px
   expect(within(item).getByRole('heading').className).toContain('text-[15px]')

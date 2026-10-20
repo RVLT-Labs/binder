@@ -1,12 +1,20 @@
 import type { SyncUploadRequest } from '@binder/shared'
 import { type CommonPowerSyncDatabase, type CrudEntry, UpdateType } from '@powersync/web'
 import { beforeEach, expect, test, vi } from 'vitest'
+import { guardLocalDatabase } from '../auth/localWork'
 import { clearNotices, getNotices } from '../components/noticeStore'
+import { claimTestAccount } from '../test/localAccount'
 import { ApiConnector, toCrudEntries } from './connector'
 import { deviceId } from './ownership'
 import { UPLOAD_CHUNK_MAX_BYTES } from './uploadChunks'
 
-beforeEach(() => clearNotices())
+beforeEach(() => {
+  clearNotices()
+  claimTestAccount('A')
+})
+function connector() {
+  return new ApiConnector(guardLocalDatabase({}, 'A'), 'A')
+}
 
 const entry = (e: Partial<CrudEntry>) => e as CrudEntry
 
@@ -48,7 +56,7 @@ test('uploads a transaction, records rejections as notices, and completes it', a
   vi.stubGlobal('fetch', fetchMock)
   const complete = vi.fn(async () => {})
 
-  await new ApiConnector().uploadData(fakeDb({ crud: [patch], transactionId: 7, complete }))
+  await connector().uploadData(fakeDb({ crud: [patch], transactionId: 7, complete }))
 
   const [url, init] = fetchMock.mock.calls[0]
   expect(url).toBe('/api/sync/upload')
@@ -71,16 +79,14 @@ test('throws on a non-2xx upload so PowerSync retries, leaving the transaction q
   )
   const complete = vi.fn(async () => {})
 
-  await expect(new ApiConnector().uploadData(fakeDb({ crud: [patch], complete }))).rejects.toThrow(
-    /503/,
-  )
+  await expect(connector().uploadData(fakeDb({ crud: [patch], complete }))).rejects.toThrow(/503/)
   expect(complete).not.toHaveBeenCalled()
 })
 
 test('does nothing when the upload queue is empty', async () => {
   const fetchMock = vi.fn()
   vi.stubGlobal('fetch', fetchMock)
-  await new ApiConnector().uploadData(fakeDb(null))
+  await connector().uploadData(fakeDb(null))
   expect(fetchMock).not.toHaveBeenCalled()
 })
 
@@ -91,7 +97,7 @@ test('fetchCredentials returns the endpoint and token from the API', async () =>
       Response.json({ token: 't', expiresAt: '2026-10-15T01:00:00.000Z', endpoint: 'http://ps' }),
     ),
   )
-  expect(await new ApiConnector().fetchCredentials()).toEqual({
+  expect(await connector().fetchCredentials()).toEqual({
     endpoint: 'http://ps',
     token: 't',
     expiresAt: new Date('2026-10-15T01:00:00.000Z'),
@@ -103,7 +109,7 @@ test('fetchCredentials returns null when signed out', async () => {
     'fetch',
     vi.fn(async () => Response.json({ error: 'unauthenticated' }, { status: 401 })),
   )
-  expect(await new ApiConnector().fetchCredentials()).toBeNull()
+  expect(await connector().fetchCredentials()).toBeNull()
 })
 
 test('without a transaction id the batch id is still device-scoped and fits the server grammar', async () => {
@@ -111,7 +117,7 @@ test('without a transaction id the batch id is still device-scoped and fits the 
     Response.json({ applied: 1, rejected: [] }),
   )
   vi.stubGlobal('fetch', fetchMock)
-  await new ApiConnector().uploadData(fakeDb({ crud: [patch], complete: async () => {} }))
+  await connector().uploadData(fakeDb({ crud: [patch], complete: async () => {} }))
   const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
   expect(body.batchId.startsWith(`${deviceId()}-`)).toBe(true)
   expect(body.batchId).toMatch(/^[A-Za-z0-9_-]{1,100}$/)
@@ -164,7 +170,7 @@ function recordPosts(respond: (body: SyncUploadRequest, n: number) => Response) 
 test('uploads 1,200 entries as three ordered chunks of 400 under one batch id and completes once', async () => {
   const { ids, tx, db } = bigTx(1200)
   const posts = recordPosts((body) => Response.json({ applied: body.entries.length, rejected: [] }))
-  await new ApiConnector().uploadData(db)
+  await connector().uploadData(db)
   expect(posts.map((p) => p.entries.length)).toEqual([400, 400, 400])
   expect(new Set(posts.map((p) => p.batchId))).toEqual(new Set([`${deviceId()}-42`]))
   expect(posts.map((p) => p.chunk)).toEqual([
@@ -190,7 +196,7 @@ test('40 entries of about 100 KB upload in chunks within the byte budget, in ord
       return Response.json({ applied: body.entries.length, rejected: [] })
     }),
   )
-  await new ApiConnector().uploadData(db)
+  await connector().uploadData(db)
   expect(posted.length).toBeGreaterThan(1)
   for (const size of sizes) expect(size).toBeLessThanOrEqual(UPLOAD_CHUNK_MAX_BYTES)
   expect(posted.flatMap((p) => p.entries.map((e) => e.id))).toEqual(ids)
@@ -208,7 +214,7 @@ test('a failed second chunk throws and never completes the transaction', async (
       ? Response.json({ error: 'unavailable' }, { status: 503 })
       : Response.json({ applied: body.entries.length, rejected: [] }),
   )
-  await expect(new ApiConnector().uploadData(db)).rejects.toThrow(/503/)
+  await expect(connector().uploadData(db)).rejects.toThrow(/503/)
   // The third chunk is never sent; PowerSync retries the whole transaction later.
   expect(posts.map((p) => p.chunk?.index)).toEqual([0, 1])
   expect(tx.complete).not.toHaveBeenCalled()
@@ -234,7 +240,7 @@ test('rejections from every chunk become notices naming the row, before the tran
       ],
     }),
   )
-  await new ApiConnector().uploadData(db)
+  await connector().uploadData(db)
   expect(getNotices().map((n) => n.message)).toEqual([
     'Your change to a cue was not saved: you cannot edit this layer',
     'Your change to a cue was not saved: you cannot edit this layer',
@@ -245,7 +251,7 @@ test('rejections from every chunk become notices naming the row, before the tran
 test('a replayed chunk raises no notice and the transaction completes', async () => {
   const { tx, db } = bigTx(3)
   recordPosts(() => Response.json({ applied: 0, rejected: [], replay: true }))
-  await new ApiConnector().uploadData(db)
+  await connector().uploadData(db)
   expect(getNotices()).toEqual([])
   expect(tx.complete).toHaveBeenCalledOnce()
 })

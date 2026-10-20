@@ -50,3 +50,15 @@ describe('DEPARTMENT_COLOUR_PRESETS', () => {
     }
   })
 })
+
+test('B14 all presets clear the white-page mark floor; validation preserves the red guard', async () => {
+  const { departmentMarkContrast, departmentColourProblem } = await import('./colour')
+  for (const preset of DEPARTMENT_COLOUR_PRESETS) {
+    expect(departmentMarkContrast(preset.colour)).toBeGreaterThanOrEqual(3)
+    expect(departmentColourProblem(preset.colour)).toBeNull()
+  }
+  expect(departmentMarkContrast('#FFFFFF')).toBe(1)
+  expect(departmentMarkContrast('#000000')).toBe(21)
+  expect(departmentColourProblem('#FFFFFF')).toMatch(/3:1/)
+  expect(departmentColourProblem('#E0363D')).toMatch(/Red is kept/)
+})

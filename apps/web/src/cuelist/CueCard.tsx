@@ -32,16 +32,16 @@ export function CueCard({ cue, selected, onSelect }: CueCardProps) {
         <span className="block font-mono text-[22px] font-semibold leading-[1.1] tabular-nums text-ink">
           {cue.display}
         </span>
-        <span className="mt-px block font-mono text-[11px] leading-[1.2] text-faint">
+        <span className="mt-px block font-mono text-[11px] leading-[1.2] text-muted">
           {cue.type}
         </span>
       </span>
       <span className="block min-w-0">
         <span className="block truncate text-[15px] font-semibold leading-[1.3] text-ink">
-          {cue.label || <span className="text-faint">—</span>}
+          {cue.label || <span className="text-muted">—</span>}
         </span>
         <span className="cue-trigger block truncate font-mono text-[11.5px] leading-[1.4] text-ink-2">
-          <span className="text-faint">{cue.page}</span>
+          <span className="text-muted">{cue.page}</span>
           {cue.trigger && ` · ${cue.trigger}`}
         </span>
       </span>

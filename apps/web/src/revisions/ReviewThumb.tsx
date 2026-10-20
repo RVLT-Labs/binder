@@ -51,7 +51,7 @@ export function ReviewThumb({ anchor, colour }: ReviewThumbProps) {
   const layer = useWordLayer(page?.words_key)
   if (!page?.thumb_key || !page.width || !page.height) {
     return (
-      <span className="review-thumb review-thumb-missing grid h-12 w-[84px] place-items-center rounded-[4px] border border-dashed border-line-2 bg-card px-1 text-center text-[11px] leading-tight text-faint">
+      <span className="review-thumb review-thumb-missing grid h-12 w-[84px] place-items-center rounded-[4px] border border-dashed border-line-2 bg-card px-1 text-center text-[11px] leading-tight text-muted">
         Page not available
       </span>
     )

@@ -80,6 +80,7 @@ export function CueDetail({
             <Field label="Number" htmlFor={`${ids}-number`}>
               <CommitInput
                 id={`${ids}-number`}
+                inputMode="decimal"
                 className="font-mono tabular-nums"
                 value={row.display}
                 aria-invalid={error ? true : undefined}
@@ -116,7 +117,7 @@ export function CueDetail({
                 borderColor: department?.colour ? deptChrome(department.colour) : undefined,
               }}
             >
-              “{row.trigger}” <span className="whitespace-nowrap text-faint">{row.page}</span>
+              “{row.trigger}” <span className="whitespace-nowrap text-muted">{row.page}</span>
             </p>
           </Field>
         )}

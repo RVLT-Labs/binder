@@ -1,10 +1,12 @@
 import { beforeEach, expect, test, vi } from 'vitest'
+import { activateLocalUser, guardLocalDatabase } from '../auth/localWork'
 import { claimLocalDb, deviceId, type LocalDb, writeOwner } from './ownership'
 
 const OWNER_KEY = 'binder.localDbOwner'
 
-function fakeDb(rowsIn: string[] = []) {
+function fakeDb(rowsIn: string[] = [], clientId = 'same-live-database') {
   const db = {
+    getClientId: vi.fn(async () => clientId),
     getAll: vi.fn(async (sql: string) =>
       rowsIn.some((table) => sql.includes(`"${table}"`)) ? [{ x: 1 }] : [],
     ),
@@ -115,7 +117,26 @@ test('claiming an empty database mints a new device id, so a recreated database 
   // restarts at 1): the old id would repeat batch ids the server has already applied.
   await claimLocalDb(fakeDb(['shows']), 'u1')
   const first = deviceId()
-  await claimLocalDb(fakeDb(), 'u1')
+  await claimLocalDb(fakeDb([], 'recreated-database'), 'u1')
   expect(deviceId()).not.toBe(first)
   expect(deviceId()).toMatch(UUID)
+})
+
+test('R4 two empty same-owner claims keep the first facade editable after initial sync', async () => {
+  const rows: string[] = []
+  const first = {
+    ...fakeDb(rows),
+    execute: vi.fn(async () => 'saved'),
+  }
+  await claimLocalDb(first, 'u1')
+  activateLocalUser('u1')
+  const facade = guardLocalDatabase(first, 'u1')
+  const originalTicket = deviceId()
+  await claimLocalDb(fakeDb(), 'u1') // second tab, same live SQLite file, still waiting for sync
+  rows.push('shows')
+  await expect(facade.execute()).resolves.toBe('saved')
+  expect(deviceId()).toBe(originalTicket)
+  await claimLocalDb(fakeDb(['shows']), 'u2')
+  await expect(facade.execute()).rejects.toThrow(/session has changed/)
+  expect(first.execute).toHaveBeenCalledOnce()
 })
