@@ -1,4 +1,10 @@
-import { QUOTE_MAX_WORDS, SNAP_DISTANCE_PT, type TextAnchor, type WordLayer } from '@binder/shared'
+import {
+  QUOTE_MAX_CHARS,
+  QUOTE_MAX_WORDS,
+  SNAP_DISTANCE_PT,
+  type TextAnchor,
+  type WordLayer,
+} from '@binder/shared'
 
 /** Mean of `y + h / 2` over the line's words; NaN for a line with no words. */
 export function lineCentreY(layer: WordLayer, lineIndex: number): number {
@@ -77,4 +83,57 @@ export function snapToLine(
       wordEnd: last,
     },
   }
+}
+
+/**
+ * The words joined with spaces, cut on a word boundary so the result is at most `QUOTE_MAX_CHARS`.
+ * The first word is always kept, even when it alone is longer.
+ */
+export function cutQuote(words: readonly string[]): string {
+  let out = ''
+  for (let i = 0; i < words.length; i++) {
+    const next = i === 0 ? (words[0] as string) : `${out} ${words[i]}`
+    if (i > 0 && next.length > QUOTE_MAX_CHARS) break
+    out = next
+  }
+  return out
+}
+
+/** The text anchor for a range of words (indices in either order); the quote is the whole range, cut. */
+export function rangeText(layer: WordLayer, from: number, to: number): TextAnchor {
+  const wordStart = Math.min(from, to)
+  const wordEnd = Math.max(from, to)
+  const texts: string[] = []
+  for (let i = wordStart; i <= wordEnd; i++) {
+    const w = layer.words[i]
+    if (w) texts.push(w.t)
+  }
+  return { quote: cutQuote(texts), wordStart, wordEnd }
+}
+
+/**
+ * The line nearest `point.y` within `maxDistance`, then the word nearest `point.x`, as a one-word
+ * range. `x` is the word's left edge. Null when no line is close enough.
+ */
+export function snapToWord(
+  layer: WordLayer,
+  point: { x: number; y: number },
+  maxDistance = SNAP_DISTANCE_PT,
+): { x: number; y: number; text: TextAnchor } | null {
+  const best = nearestLine(layer, point.y, maxDistance)
+  if (!best) return null
+  let pick = -1
+  let pickDx = Number.POSITIVE_INFINITY
+  for (const i of layer.lines[best.lineIndex] ?? []) {
+    const w = layer.words[i]
+    if (!w) continue
+    const dx = point.x < w.x ? w.x - point.x : point.x > w.x + w.w ? point.x - (w.x + w.w) : 0
+    if (dx < pickDx) {
+      pickDx = dx
+      pick = i
+    }
+  }
+  const word = layer.words[pick]
+  if (!word) return null
+  return { x: word.x, y: best.centre, text: rangeText(layer, pick, pick) }
 }

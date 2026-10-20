@@ -1,6 +1,6 @@
 import type { WordLayer } from '@binder/shared'
 import { describe, expect, test } from 'vitest'
-import { lineCentreY, snapToLine } from './snap'
+import { cutQuote, lineCentreY, rangeText, snapToLine, snapToWord } from './snap'
 
 const layer: WordLayer = {
   words: [
@@ -101,5 +101,66 @@ describe('a dropped cue (the first word outside the line)', () => {
 
   test('a point too far from every line still does not snap', () => {
     expect(snapToLine(layer, { x: 10, y: 600 }, 12, drop)).toBeNull()
+  })
+})
+
+describe('cutQuote', () => {
+  test('short text is unchanged', () => {
+    expect(cutQuote(['a', 'bc', 'def'])).toBe('a bc def')
+  })
+
+  test('long text is cut on a word boundary at or under 400 characters', () => {
+    const words = Array.from({ length: 200 }, () => 'abcd')
+    const out = cutQuote(words)
+    expect(out.length).toBeLessThanOrEqual(400)
+    expect(out.length).toBeGreaterThan(390)
+    expect(out.split(' ').every((w) => w === 'abcd')).toBe(true)
+  })
+
+  test('one huge word is kept whole', () => {
+    const huge = 'x'.repeat(500)
+    expect(cutQuote([huge, 'tail'])).toBe(huge)
+  })
+})
+
+describe('rangeText', () => {
+  test('indices in either order give the same range', () => {
+    const a = rangeText(layer, 1, 3)
+    expect(a).toEqual(rangeText(layer, 3, 1))
+    expect(a).toEqual({ quote: 'PIRATES OF PENZANCE', wordStart: 1, wordEnd: 3 })
+  })
+
+  test('a 60-word range cuts at 400 characters but wordEnd stays the last word', () => {
+    const words = Array.from({ length: 60 }, (_, i) => ({
+      t: 'abcdefghi',
+      x: 10 + i * 10,
+      y: 700,
+      w: 9,
+      h: 12,
+    }))
+    const long: WordLayer = { words, lines: [words.map((_, i) => i)] }
+    const r = rangeText(long, 0, 59)
+    expect(r.quote.length).toBeLessThanOrEqual(400)
+    expect(r.quote.length).toBeGreaterThan(380)
+    expect(r.wordStart).toBe(0)
+    expect(r.wordEnd).toBe(59)
+  })
+})
+
+describe('snapToWord', () => {
+  test('picks the word under the pointer', () => {
+    expect(snapToWord(layer, { x: 110, y: 706 })).toEqual({
+      x: 104,
+      y: 706,
+      text: { quote: 'PIRATES', wordStart: 1, wordEnd: 1 },
+    })
+  })
+
+  test('left of the line picks the first word', () => {
+    expect(snapToWord(layer, { x: 10, y: 706 })?.text.wordStart).toBe(0)
+  })
+
+  test('no line in range gives null', () => {
+    expect(snapToWord(layer, { x: 110, y: 400 })).toBeNull()
   })
 })

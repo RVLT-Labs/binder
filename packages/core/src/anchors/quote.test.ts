@@ -193,3 +193,18 @@ describe('anchorAtMatch', () => {
     expect(a.text.wordEnd).toBe(7)
   })
 })
+
+describe('anchorAtMatch word limit', () => {
+  const long = buildWordStream(new Map([[0, layerOf(['a b c d e f g h i j k l'])]]))
+  const to = text(new Map([[0, layerOf(['a b c d e f g h i j k l'])]]))
+
+  test('Infinity covers the whole match', () => {
+    const a = anchorAtMatch(long, { start: 0, end: 11 }, to, Number.POSITIVE_INFINITY)
+    expect(a.text).toEqual({ quote: 'a b c d e f g h i j k l', wordStart: 0, wordEnd: 11 })
+  })
+
+  test('the default still stops at eight words', () => {
+    const a = anchorAtMatch(long, { start: 0, end: 11 }, to)
+    expect(a.text).toEqual({ quote: 'a b c d e f g h', wordStart: 0, wordEnd: 7 })
+  })
+})

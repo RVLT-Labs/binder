@@ -1,6 +1,6 @@
 import { QUOTE_MAX_WORDS, type TextAnchor, type WordLayer } from '@binder/shared'
 import { normaliseToken } from '../search/normalise'
-import { lineCentreY } from './snap'
+import { cutQuote, lineCentreY } from './snap'
 import type { VersionText } from './types'
 
 export interface StreamWord {
@@ -141,10 +141,11 @@ export function anchorAtMatch(
   stream: StreamWord[],
   m: QuoteMatch,
   to: VersionText,
+  maxWords = QUOTE_MAX_WORDS,
 ): { pageIndex: number; x: number; y: number; lineLeft: number; text: TextAnchor } {
   const first = stream[m.start] as StreamWord
   const layer = to.layers.get(first.pageIndex) as WordLayer
-  const matched = stream.slice(m.start, Math.min(m.end, m.start + QUOTE_MAX_WORDS - 1) + 1)
+  const matched = stream.slice(m.start, Math.min(m.end, m.start + maxWords - 1) + 1)
   const onStartPage = matched.filter((w) => w.pageIndex === first.pageIndex)
   const line = layer.lines[first.lineIndex] ?? []
   const lineFirst = layer.words[line[0] as number]
@@ -154,7 +155,7 @@ export function anchorAtMatch(
     y: lineCentreY(layer, first.lineIndex),
     lineLeft: lineFirst?.x ?? (layer.words[first.wordIndex] as { x: number }).x,
     text: {
-      quote: matched.map((w) => w.t).join(' '),
+      quote: cutQuote(matched.map((w) => w.t)),
       wordStart: first.wordIndex,
       wordEnd: (onStartPage.at(-1) as StreamWord).wordIndex,
     },

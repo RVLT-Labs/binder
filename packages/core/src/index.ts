@@ -4,7 +4,14 @@ export { compareReadingOrder } from './anchors/order'
 export type { QuoteMatch, StreamWord } from './anchors/quote'
 export { anchorAtMatch, buildWordStream, findQuote, normaliseForMatch } from './anchors/quote'
 export { reanchor, reanchorAll } from './anchors/reanchor'
-export { lineCentreY, nearestLine, snapToLine } from './anchors/snap'
+export {
+  cutQuote,
+  lineCentreY,
+  nearestLine,
+  rangeText,
+  snapToLine,
+  snapToWord,
+} from './anchors/snap'
 export type { VersionText } from './anchors/types'
 export type { CueListFlag, CueListRow } from './cues/cueList'
 export { cueListRows } from './cues/cueList'
