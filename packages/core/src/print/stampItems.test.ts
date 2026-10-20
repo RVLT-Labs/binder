@@ -88,6 +88,7 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       triggerBoxes: [],
       mark: 'underline',
       caret: null,
+      tag: null,
       textExtent: null,
     },
     {
@@ -107,6 +108,7 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       triggerBoxes: [],
       mark: 'underline',
       caret: null,
+      tag: null,
       textExtent: null,
     },
   ])
@@ -419,4 +421,22 @@ describe('cue marks', () => {
       ['highlight', [], null],
     ])
   })
+})
+
+test('a cue with a tag is stamped at the offset, without its note', () => {
+  const items = buildStampItems({
+    ...base,
+    layers: [dept('d-lx')],
+    cues: [
+      cue('a', { notes: 'Ride the pad', anchor: anchor({ tag: { dx: 30, dy: -12 } }) }),
+      cue('b', { notes: 'Late' }),
+    ],
+    annotations: [],
+  })
+  const cues = items.filter((i) => i.kind === 'cue')
+  expect(cues.map((i) => (i.kind === 'cue' ? i.tag : 'x'))).toEqual([{ dx: 30, dy: -12 }, null])
+  // The anchor is still where the mark is; the tag is the bubble's offset from it.
+  expect(cues[0]).toMatchObject({ x: 100, y: 500 })
+  const notes = items.filter((i) => i.kind === 'cue-note')
+  expect(notes.map((i) => (i.kind === 'cue-note' ? i.cueId : ''))).toEqual(['b'])
 })

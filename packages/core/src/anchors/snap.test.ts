@@ -1,6 +1,6 @@
 import type { WordLayer } from '@binder/shared'
 import { describe, expect, test } from 'vitest'
-import { cutQuote, lineCentreY, rangeText, snapToLine, snapToWord } from './snap'
+import { cutQuote, lineCentreY, rangeText, snapRange, snapToLine, snapToWord } from './snap'
 
 const layer: WordLayer = {
   words: [
@@ -162,5 +162,40 @@ describe('snapToWord', () => {
 
   test('no line in range gives null', () => {
     expect(snapToWord(layer, { x: 110, y: 400 })).toBeNull()
+  })
+})
+
+describe('snapRange', () => {
+  test('keeps the requested word count from the nearest word', () => {
+    expect(snapRange(layer, { x: 110, y: 706 }, 2)).toEqual({
+      x: 104,
+      y: 706,
+      text: { quote: 'PIRATES OF', wordStart: 1, wordEnd: 2 },
+    })
+    expect(snapRange(layer, { x: 110, y: 706 }, 1)?.text).toEqual({
+      quote: 'PIRATES',
+      wordStart: 1,
+      wordEnd: 1,
+    })
+  })
+
+  test('a point left of the line starts at the first word, right of it at the last', () => {
+    expect(snapRange(layer, { x: 10, y: 706 }, 2)?.text.wordStart).toBe(0)
+    expect(snapRange(layer, { x: 400, y: 706 }, 1)?.text.wordStart).toBe(3)
+  })
+
+  test('clamps at the last word of the layer', () => {
+    // From PENZANCE (3) five words would run past the layer's last word (4, ACT).
+    expect(snapRange(layer, { x: 200, y: 706 }, 5)?.text).toEqual({
+      quote: 'PENZANCE ACT',
+      wordStart: 3,
+      wordEnd: 4,
+    })
+  })
+
+  test('null when no line is in range', () => {
+    expect(snapRange(layer, { x: 110, y: 400 }, 3)).toBeNull()
+    expect(snapRange(layer, { x: 110, y: 718.5 }, 3)).toBeNull()
+    expect(snapRange(layer, { x: 110, y: 718.5 }, 3, 20)?.y).toBe(706)
   })
 })

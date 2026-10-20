@@ -137,3 +137,23 @@ export function snapToWord(
   if (!word) return null
   return { x: word.x, y: best.centre, text: rangeText(layer, pick, pick) }
 }
+
+/**
+ * The line nearest `point.y` within `maxDistance`, the word nearest `point.x` on it (the first or
+ * last word when the point is outside the line), then `wordCount` words from there by layer index,
+ * stopping at the layer's last word. `x` is the first word's left edge and `y` the line's centre.
+ * Null when no line is close enough. Moving a cue's mark by dragging it uses this so a range keeps
+ * its length.
+ */
+export function snapRange(
+  layer: WordLayer,
+  point: { x: number; y: number },
+  wordCount: number,
+  maxDistance = SNAP_DISTANCE_PT,
+): { x: number; y: number; text: TextAnchor } | null {
+  const start = snapToWord(layer, point, maxDistance)
+  if (!start) return null
+  const first = start.text.wordStart
+  const last = Math.min(first + Math.max(1, Math.floor(wordCount)) - 1, layer.words.length - 1)
+  return { x: start.x, y: start.y, text: rangeText(layer, first, last) }
+}

@@ -1,6 +1,8 @@
 import { degrees, PDFDict, PDFDocument, PDFName, PDFNumber } from 'pdf-lib'
 import { describe, expect, test } from 'vitest'
 import { pdfContent, pdfTexts } from '../../test/pdfTexts'
+import { TAG_EDGE, TAG_PAD, tagWidth } from '../markup/cueTags'
+import { helveticaWidth } from '../markup/helvetica'
 import type { StampItem } from './stampItems'
 import { displayedToUser, frameOf, stampScript } from './stampScript'
 
@@ -51,6 +53,7 @@ test('stamping keeps every page box and rotation and draws the footer on each pa
         triggerBoxes: [{ x: 60, y: 95, w: 30, h: 10 }],
         mark: 'underline',
         caret: null,
+        tag: null,
         textExtent: { minX: 40, maxX: 150 },
       },
       // A page the PDF does not have is skipped, not an error.
@@ -71,6 +74,7 @@ test('stamping keeps every page box and rotation and draws the footer on each pa
         triggerBoxes: [],
         mark: 'underline',
         caret: null,
+        tag: null,
         textExtent: null,
       },
     ],
@@ -160,6 +164,7 @@ const cueItem = (number: string): Extract<StampItem, { kind: 'cue' }> => ({
   triggerBoxes: [],
   mark: 'underline',
   caret: null,
+  tag: null,
   textExtent: null,
 })
 
@@ -680,5 +685,52 @@ describe('cue marks', () => {
     for (const at of [fill, underline, bar, annotation, tag]) expect(at).toBeGreaterThan(-1)
     expect(Math.max(fill, underline, bar)).toBeLessThan(annotation)
     expect(annotation).toBeLessThan(tag)
+  })
+})
+
+describe('a moved bubble', () => {
+  const stampedText = async (items: StampItem[]) => drawnText(await stampedContent(items))
+  const margin = cueItem('1')
+
+  test('a cue with a tag is stamped at the offset, without its note', async () => {
+    const note = {
+      kind: 'cue-note',
+      cueId: 'n',
+      pageIndex: 0,
+      text: 'Ride the pad',
+      colour: '#F5A623',
+    } satisfies StampItem
+    const plain = await stampedText([margin])
+    const moved = await stampedText([{ ...margin, tag: { dx: 100, dy: 50 } }, note])
+    const num = (d: typeof plain) => d.find((t) => t.text === '1')
+    const lead = (d: typeof plain) => d.find((t) => t.text === 'LX')
+    if (!num(plain) || !num(moved) || !lead(moved)) throw new Error('missing text')
+    // Centred 100 pt right of the anchor (x 40) and 50 up, with the pill's own width.
+    const w = tagWidth('LX', '1')
+    expect(lead(moved)?.x).toBeCloseTo(40 + 100 - w / 2 + TAG_PAD)
+    expect(num(moved)?.x).toBeCloseTo((lead(moved)?.x ?? 0) + helveticaWidth('LX', 9) + 3)
+    expect((num(moved)?.y ?? 0) - (num(plain)?.y ?? 0)).toBeCloseTo(50)
+    // The margin tag is flush with the page edge; this one is not.
+    expect(lead(plain)?.x).toBeCloseTo(TAG_EDGE + TAG_PAD)
+    // The note under a moved bubble would hide script text: it is not drawn.
+    expect(moved.map((t) => t.text)).not.toContain('Ride the pad')
+    // The same note under a margin tag is drawn.
+    const withNote = await stampedText([margin, note])
+    expect(withNote.map((t) => t.text)).toContain('Ride the pad')
+  })
+
+  test('a moved bubble keeps its full lead in a margin too narrow for it', async () => {
+    const extent = { minX: 20, maxX: 380 }
+    const item = {
+      ...margin,
+      lead: 'SB LX',
+      typeWord: 'SB',
+      type: 'standby' as const,
+      textExtent: extent,
+    }
+    const shrunk = await stampedText([item])
+    expect(shrunk.map((t) => t.text)).not.toContain('SB LX')
+    const moved = await stampedText([{ ...item, tag: { dx: 150, dy: 0 } }])
+    expect(moved.map((t) => t.text)).toContain('SB LX')
   })
 })

@@ -451,8 +451,10 @@ function layoutCues(
     mark: c.mark,
     caret: c.caret,
     anchorX: c.x,
+    tag: c.tag,
     sortKey: c.sortKey,
-    note: toWinAnsi(notes.get(c.id)?.text ?? ''),
+    // A moved bubble sits on the script, where a note would hide words.
+    note: c.tag ? '' : toWinAnsi(notes.get(c.id)?.text ?? ''),
   }))
   const layouts = layoutCueTags({
     pageWidth,

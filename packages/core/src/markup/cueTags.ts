@@ -1,4 +1,4 @@
-import type { CueMark, CueType, MarkerSide, WordLayer } from '@binder/shared'
+import type { BubbleOffset, CueMark, CueType, MarkerSide, WordLayer } from '@binder/shared'
 import type { Caret } from './caret'
 import { helveticaBoldWidth, helveticaWidth } from './helvetica'
 import type { Box } from './markers'
@@ -120,6 +120,11 @@ export interface CueTagInput {
   caret?: Caret | null
   /** The cue's note, printed in one line under the tag; empty or absent for none. */
   note?: string
+  /**
+   * Where the user dragged the bubble: its centre sits at `(anchorX + dx, y + dy)` instead of in the
+   * margin. A cue with a tag takes no part in the margin layout and shows no note.
+   */
+  tag?: BubbleOffset | null
   /** Cues on one line are ordered by department sort order, then cue number, then id. */
   sortKey: { department: number; major: number; minor: number }
 }
@@ -127,6 +132,8 @@ export interface CueTagInput {
 export interface CueTagLayout {
   id: string
   side: MarkerSide
+  /** True for a bubble dragged off the margin (the input had a `tag`). */
+  moved: boolean
   /** A standby's outline is dashed. */
   dash: boolean
   outlineWidth: number
@@ -160,7 +167,8 @@ export interface CueTagLayout {
   /**
    * The connector from the tag to the mark (the first underline or tick, the outer edge of a
    * highlight's first fill, or a line or pointer's bar) as a polyline of square joins, or null when
-   * they already meet. It always runs at the underline's y so it never crosses a glyph.
+   * they already meet. It always runs at the underline's y so it never crosses a glyph. A moved
+   * bubble's is one straight segment from the tag's centre to the mark (it may cross text).
    */
   leader: Array<{ x: number; y: number }> | null
 }
@@ -179,6 +187,11 @@ export interface CueTagLayout {
  * are centred again. The stack is held inside `bounds`: a group below `minY` is lifted to it, with
  * the tags above lifted in turn if they would overlap, and nothing goes above `maxY`. The result is
  * in the order of `cues`.
+ *
+ * A cue with a `tag` is a moved bubble and sits outside all of this: its centre is
+ * `(anchorX + dx, y + dy)`, held inside the page width and `bounds`; it shows the full lead and no
+ * note, joins its mark with one straight segment, and neither the stack nor the leader stagger
+ * counts it.
  */
 export function layoutCueTags(input: {
   pageWidth: number
@@ -203,9 +216,12 @@ export function layoutCueTags(input: {
     left: textEdges.left - NOTE_COLUMN_INSET,
     right: pageWidth - textEdges.right - NOTE_COLUMN_INSET,
   }
-  const notes = cues.map((c) => fitNote(c.note, columns[c.side]))
+  const isMoved = cues.map((c) => c.tag != null)
+  const notes = cues.map((c, i) => (isMoved[i] ? null : fitNote(c.note, columns[c.side])))
   const noteExtra = notes.map((n) => (n ? NOTE_HEIGHT : 0))
-  const fitted = cues.map((c) => {
+  const fitted = cues.map((c, i) => {
+    // A moved bubble is not in the margin, so it keeps its whole lead.
+    if (isMoved[i]) return { lead: c.lead, w: tagWidth(c.lead, c.number) }
     const room = (c.side === 'left' ? left : pageWidth - right) - TAG_EDGE
     // The department goes first, then the type word: the outline carries the type, but a word is
     // what survives a photocopy.
@@ -218,7 +234,7 @@ export function layoutCueTags(input: {
   for (const side of ['left', 'right'] as const) {
     const order = cues
       .map((_, i) => i)
-      .filter((i) => (cues[i] as CueTagInput).side === side)
+      .filter((i) => !isMoved[i] && (cues[i] as CueTagInput).side === side)
       .sort((a, b) => comparePlacement(cues[a] as CueTagInput, cues[b] as CueTagInput))
     order.forEach((i, k) => {
       rank.set(i, k)
@@ -227,18 +243,39 @@ export function layoutCueTags(input: {
   }
   const targets = cues.map((c) => markTarget(c))
   const offsets = leaderOffsets(cues, targets, rank)
-  return cues.map((c, i) =>
-    layoutOne(
+  return cues.map((c, i) => {
+    const { lead, w } = fitted[i] as { lead: string; w: number }
+    const movedTo = c.tag ? movedCentre(c, c.tag, w, pageWidth, bounds) : null
+    return layoutOne(
       c,
-      (fitted[i] as { lead: string }).lead,
-      (fitted[i] as { w: number }).w,
+      lead,
+      w,
       notes[i] ?? null,
-      centres[i] as number,
+      movedTo ? movedTo.y : (centres[i] as number),
       pageWidth,
       textEdges,
       offsets[i] as number,
-    ),
-  )
+      movedTo,
+    )
+  })
+}
+
+/**
+ * Where a moved bubble's centre goes: the anchor plus its offset, held so the whole pill is inside
+ * the page width and the vertical bounds (the same limits margin tags keep to).
+ */
+function movedCentre(
+  c: CueTagInput,
+  tag: BubbleOffset,
+  w: number,
+  pageWidth: number,
+  bounds: { minY: number; maxY: number },
+): { x: number; y: number } {
+  const half = TAG_HEIGHT / 2
+  return {
+    x: Math.max(w / 2, Math.min(pageWidth - w / 2, c.anchorX + tag.dx)),
+    y: Math.min(bounds.maxY - half, Math.max(bounds.minY + half, c.y + tag.dy)),
+  }
 }
 
 /**
@@ -357,7 +394,11 @@ function leaderOffsets(
   rank: Map<number, number>,
 ): number[] {
   const out = cues.map(() => 0)
-  const sorted = cues.map((_, i) => i).sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
+  // A moved bubble has no rank: it neither is staggered nor staggers the leaders of the others.
+  const sorted = cues
+    .map((_, i) => i)
+    .filter((i) => rank.has(i))
+    .sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
   for (const i of sorted) {
     const t = targets[i]
     if (!t) continue
@@ -391,9 +432,11 @@ function layoutOne(
   pageWidth: number,
   textEdges: { left: number; right: number },
   leaderDrop: number,
+  /** A moved bubble's centre; null for a tag in the margin. */
+  movedTo: { x: number; y: number } | null,
 ): CueTagLayout {
   const left = c.side === 'left'
-  const x = left ? TAG_EDGE : pageWidth - TAG_EDGE - w
+  const x = movedTo ? movedTo.x - w / 2 : left ? TAG_EDGE : pageWidth - TAG_EDGE - w
   const tag: Box = { x, y: centre - TAG_HEIGHT / 2, w, h: TAG_HEIGHT }
   const noteBox = note
     ? {
@@ -425,16 +468,19 @@ function layoutOne(
       : null
   const bar = barred ? barOf(c) : null
   const base = markTarget(c)
-  const leader = connector({
-    left,
-    tag,
-    centre,
-    target: base ? { x: base.x, y: base.y - leaderDrop } : null,
-    gutter: left ? textEdges.left - LEADER_GUTTER : textEdges.right + LEADER_GUTTER,
-  })
+  const leader = movedTo
+    ? straightConnector(tag, movedTo, base)
+    : connector({
+        left,
+        tag,
+        centre,
+        target: base ? { x: base.x, y: base.y - leaderDrop } : null,
+        gutter: left ? textEdges.left - LEADER_GUTTER : textEdges.right + LEADER_GUTTER,
+      })
   return {
     id: c.id,
     side: c.side,
+    moved: movedTo !== null,
     dash: c.type === 'standby',
     outlineWidth: c.type === 'warn' ? TAG_OUTLINE_WARN : TAG_OUTLINE,
     centreY: centre,
@@ -477,6 +523,21 @@ function fitNote(note: string | undefined, column: number): string | null {
 function noteBoxUnder(tag: Box, text: string, left: boolean): Box {
   const w = helveticaWidth(text, NOTE_FONT_SIZE)
   return { x: left ? tag.x : tag.x + tag.w - w, y: tag.y - NOTE_HEIGHT, w, h: NOTE_HEIGHT }
+}
+
+/**
+ * A moved bubble's connector: one straight segment from the pill's centre (the opaque pill hides
+ * that end, so the line meets its outline) to the mark. Null when the pill covers the mark.
+ */
+function straightConnector(
+  tag: Box,
+  centre: { x: number; y: number },
+  target: { x: number; y: number } | null,
+): Array<{ x: number; y: number }> | null {
+  if (!target) return null
+  const covered =
+    target.x >= tag.x && target.x <= tag.x + tag.w && target.y >= tag.y && target.y <= tag.y + tag.h
+  return covered ? null : [{ x: centre.x, y: centre.y }, target]
 }
 
 /**

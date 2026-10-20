@@ -9,6 +9,7 @@ export {
   lineCentreY,
   nearestLine,
   rangeText,
+  snapRange,
   snapToLine,
   snapToWord,
 } from './anchors/snap'

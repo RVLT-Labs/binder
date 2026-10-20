@@ -78,6 +78,7 @@ const cueAt = (
   triggerBoxes: [],
   mark: 'underline',
   caret: null,
+  tag: null,
   textExtent: null,
   ...over,
 })

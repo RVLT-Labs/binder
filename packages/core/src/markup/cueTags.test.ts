@@ -972,3 +972,146 @@ describe('cue marks: highlight, line and pointer', () => {
     expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - LEADER_STEP)
   })
 })
+
+describe('moved bubbles', () => {
+  const under = { x: 300, y: 495, w: 40, h: 10 }
+  const moved = (id: string, over: Partial<CueTagInput> = {}) =>
+    cue(id, { tag: { dx: 20, dy: -30 }, triggerBoxes: [under], anchorX: 300, ...over })
+
+  test('moved is false for a margin tag, and true for a cue with a tag', () => {
+    expect(one(cue('a')).moved).toBe(false)
+    expect(one(cue('a', { tag: null })).moved).toBe(false)
+    expect(one(moved('a')).moved).toBe(true)
+  })
+
+  test('a moved bubble is centred at (anchorX + dx, y + dy)', () => {
+    const t = one(moved('a'))
+    expect(t.tag.x + t.tag.w / 2).toBeCloseTo(300 + 20)
+    expect(t.centreY).toBe(500 - 30)
+    expect(t.tag.y + t.tag.h / 2).toBe(470)
+    expect(t.tag.h).toBe(TAG_HEIGHT)
+    expect(t.leadX).toBeCloseTo(t.tag.x + TAG_PAD)
+    // The side does not decide where it sits.
+    const right = one(moved('b', { side: 'right' }))
+    expect(right.tag.x + right.tag.w / 2).toBeCloseTo(320)
+  })
+
+  test('it is clamped inside the page width and the vertical bounds (so never in the footer)', () => {
+    const w = tagWidth('LX', '10')
+    const farRight = one(moved('a', { tag: { dx: 5000, dy: 0 } }))
+    expect(farRight.tag.x + farRight.tag.w).toBeCloseTo(WIDTH)
+    const farLeft = one(moved('a', { tag: { dx: -5000, dy: 0 } }))
+    expect(farLeft.tag.x).toBeCloseTo(0)
+    expect(farLeft.tag.w).toBeCloseTo(w)
+    const [footer] = layoutCueTags({
+      pageWidth: WIDTH,
+      bounds: { minY: 40, maxY: 800 },
+      textExtent: WIDE,
+      cues: [moved('a', { tag: { dx: 0, dy: -5000 } })],
+    }) as [CueTagLayout]
+    expect(footer.centreY).toBe(40 + TAG_HEIGHT / 2)
+    expect(footer.tag.y).toBe(40)
+    const top = one(moved('a', { tag: { dx: 0, dy: 5000 } }))
+    expect(top.centreY).toBe(800 - TAG_HEIGHT / 2)
+    expect(top.tag.y + top.tag.h).toBe(800)
+  })
+
+  test('it takes no part in stacking: margin tags that would have stepped around it do not, and it does not step around them', () => {
+    const margin = [
+      cue('a', { y: 500, sortKey: { department: 0, major: 1, minor: 0 } }),
+      cue('b', { y: 500, sortKey: { department: 0, major: 2, minor: 0 } }),
+    ]
+    const alone = layout(margin)
+    // A bubble sitting right where the margin tags are.
+    const withBubble = layout([
+      ...margin,
+      moved('m', { y: 500, anchorX: 20, tag: { dx: 0, dy: 0 }, triggerBoxes: [] }),
+    ])
+    expect(withBubble[0]?.centreY).toBe(alone[0]?.centreY)
+    expect(withBubble[1]?.centreY).toBe(alone[1]?.centreY)
+    expect(withBubble[2]?.centreY).toBe(500)
+    // A lone moved bubble does not push a margin tag away either, nor does a pile of them.
+    const pile = layout([
+      cue('a', { y: 500 }),
+      ...[1, 2, 3].map((n) =>
+        moved(`m${n}`, { y: 500, tag: { dx: 0, dy: 0 }, anchorX: 20, triggerBoxes: [] }),
+      ),
+    ])
+    expect(pile[0]?.centreY).toBe(500)
+    expect(pile[1]?.centreY).toBe(500)
+    expect(pile[2]?.centreY).toBe(500)
+  })
+
+  test('it shows the full lead, never the shrunk one', () => {
+    const narrow = { minX: 40, maxX: 560 }
+    const tag = { dx: 10, dy: 0 }
+    const c = { lead: 'SB LX', typeWord: 'SB', number: '14.5', type: 'standby' as const }
+    const margin = one(cue('a', { ...c, y: 500 }), narrow)
+    expect(margin.lead).not.toBe('SB LX')
+    const t = one(moved('b', { ...c, tag }), narrow)
+    expect(t.lead).toBe('SB LX')
+    expect(t.tag.w).toBeCloseTo(tagWidth('SB LX', '14.5'))
+  })
+
+  test('it draws no note, and the note does not lift it off the footer', () => {
+    const t = one(moved('a', { note: 'Ride the pad' }))
+    expect(t.note).toBeNull()
+    const [low] = layoutCueTags({
+      pageWidth: WIDTH,
+      bounds: { minY: 40, maxY: 800 },
+      textExtent: WIDE,
+      cues: [moved('a', { note: 'Ride the pad', tag: { dx: 0, dy: -5000 } })],
+    }) as [CueTagLayout]
+    expect(low.centreY).toBe(40 + TAG_HEIGHT / 2)
+  })
+
+  test('its leader is one straight segment from the tag centre to the mark, even off the line', () => {
+    const t = one(moved('a', { tag: { dx: 60, dy: -80 } }))
+    const centre = { x: t.tag.x + t.tag.w / 2, y: t.centreY }
+    expect(t.leader).toEqual([centre, { x: 300, y: 494 }])
+    // Right-hand side tags get the same (the side does not matter).
+    const r = one(moved('b', { side: 'right', tag: { dx: -60, dy: 40 } }))
+    expect(r.leader).toHaveLength(2)
+    expect(r.leader?.[1]).toEqual({ x: 340, y: 494 })
+  })
+
+  test('its leader ends at the bar of a line, the fill of a highlight and the tick of an unbound cue', () => {
+    const caret = { x: 320, box: under }
+    const line = one(moved('a', { mark: 'line', caret, tag: { dx: 0, dy: 60 } }))
+    expect(line.leader?.at(-1)).toEqual({ x: 320, y: 494 })
+    const unbound = one(moved('b', { triggerBoxes: [], anchorX: 300, tag: { dx: 0, dy: 60 } }))
+    expect(unbound.leader?.at(-1)).toEqual({ x: 300, y: 500 - 7 })
+  })
+
+  test('it has no leader when the tag overlaps the mark', () => {
+    // Centred on the underline start (left tag target x 300), so the pill covers it.
+    const t = one(moved('a', { tag: { dx: 0, dy: -4 } }))
+    expect(t.tag.x).toBeLessThan(300)
+    expect(t.tag.x + t.tag.w).toBeGreaterThan(300)
+    expect(t.leader).toBeNull()
+  })
+
+  test('parallel-leader staggering ignores it', () => {
+    const word = { x: 300, y: 495, w: 40, h: 10 }
+    const [a, m, b] = layout([
+      cue('a', {
+        triggerBoxes: [word],
+        sortKey: { department: 0, major: 1, minor: 0 },
+      }),
+      moved('m', {
+        triggerBoxes: [word],
+        tag: { dx: 0, dy: 60 },
+        sortKey: { department: 0, major: 2, minor: 0 },
+      }),
+      cue('b', {
+        triggerBoxes: [word],
+        sortKey: { department: 0, major: 3, minor: 0 },
+      }),
+    ]) as [CueTagLayout, CueTagLayout, CueTagLayout]
+    // The moved bubble's leader ends exactly on the mark target (no stagger) ...
+    expect(m.leader?.at(-1)?.y).toBe(494)
+    // ... and does not push the margin tags' leaders down: b is the second margin tag, one step.
+    expect(a.leader?.at(-1)?.y).toBe(494)
+    expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - LEADER_STEP)
+  })
+})
