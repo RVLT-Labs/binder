@@ -136,6 +136,15 @@ function colourOf(hex: string) {
   return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255)
 }
 
+/**
+ * A rounded rectangle as an SVG path with its top-left corner at the origin, y pointing down (as
+ * `drawSvgPath` reads it), `w` wide, `h` tall, corners of radius `r`.
+ */
+function roundedRectPath(w: number, h: number, r: number): string {
+  const k = r * 0.5523
+  return `M ${r} 0 L ${w - r} 0 C ${w - r + k} 0 ${w} ${r - k} ${w} ${r} L ${w} ${h - r} C ${w} ${h - r + k} ${w - r + k} ${h} ${w - r} ${h} L ${r} ${h} C ${r - k} ${h} 0 ${h - r + k} 0 ${h - r} L 0 ${r} C 0 ${r - k} ${r - k} 0 ${r} 0 Z`
+}
+
 /** Draws in displayed space on one page: every point and rotation goes through the page frame. */
 class DisplayedPage {
   private readonly turn
@@ -200,17 +209,33 @@ class DisplayedPage {
       cx + dx * Math.cos(rad) - dy * Math.sin(rad),
       cy + dx * Math.sin(rad) + dy * Math.cos(rad),
     )
-    const k = r * 0.5523
-    const path = `M ${r} 0 L ${w - r} 0 C ${w - r + k} 0 ${w} ${r - k} ${w} ${r} L ${w} ${h - r} C ${w} ${h - r + k} ${w - r + k} ${h} ${w - r} ${h} L ${r} ${h} C ${r - k} ${h} 0 ${h - r + k} 0 ${h - r} L 0 ${r} C 0 ${r - k} ${r - k} 0 ${r} 0 Z`
-    this.page.drawSvgPath(path, {
-      x: corner.x,
-      y: corner.y,
-      rotate: degrees(this.frame.rotation + angle),
+    this.svgRoundedRect(corner, angle, w, h, r, {
       color: o.fill,
       opacity: o.fillOpacity,
       borderColor: o.stroke,
       borderWidth: o.strokeWidth,
       borderOpacity: 1,
+    })
+  }
+
+  /**
+   * A rounded rectangle through `drawSvgPath`, which keeps opacity and blend mode in an ExtGState.
+   * `corner` is its top-left corner in user space; it is turned `angle` degrees on top of the
+   * page's own rotation.
+   */
+  private svgRoundedRect(
+    corner: { x: number; y: number },
+    angle: number,
+    w: number,
+    h: number,
+    r: number,
+    o: Parameters<PDFPage['drawSvgPath']>[1],
+  ) {
+    this.page.drawSvgPath(roundedRectPath(w, h, r), {
+      ...o,
+      x: corner.x,
+      y: corner.y,
+      rotate: degrees(this.frame.rotation + angle),
     })
   }
 
@@ -363,15 +388,9 @@ class DisplayedPage {
       blendMode?: BlendMode
     },
   ) {
-    const r = Math.min(radius, w / 2, h / 2)
-    const k = r * 0.5523
     // drawSvgPath's origin is the shape's top-left corner with y pointing down.
     const corner = displayedToUser(this.frame, x, y + h)
-    const path = `M ${r} 0 L ${w - r} 0 C ${w - r + k} 0 ${w} ${r - k} ${w} ${r} L ${w} ${h - r} C ${w} ${h - r + k} ${w - r + k} ${h} ${w - r} ${h} L ${r} ${h} C ${r - k} ${h} 0 ${h - r + k} 0 ${h - r} L 0 ${r} C 0 ${r - k} ${r - k} 0 ${r} 0 Z`
-    this.page.drawSvgPath(path, {
-      x: corner.x,
-      y: corner.y,
-      rotate: this.turn,
+    this.svgRoundedRect(corner, 0, w, h, Math.min(radius, w / 2, h / 2), {
       color: o.fill,
       opacity: o.fillOpacity,
       borderColor: o.stroke,
