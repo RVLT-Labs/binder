@@ -1,5 +1,5 @@
 import type { LayerRef, WordLayer } from '@binder/shared'
-import { render } from '@testing-library/react'
+import { cleanup, render } from '@testing-library/react'
 import { createRef } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { clearNotices, getNotices } from '../components/noticeStore'
@@ -25,6 +25,8 @@ vi.mock('@powersync/react', () => ({
   usePowerSync: () => db,
   useQuery: () => ({ data: [{ status: show.status, settings: '{"stampSet":["Hold","Go"]}' }] }),
 }))
+const loadWords = vi.hoisted(() => ({ layer: null as unknown }))
+vi.mock('./wordLayers', () => ({ loadWordLayer: vi.fn(async () => loadWords.layer) }))
 vi.mock('./useMarkup', () => ({
   useMarkup: () => ({ cuesByPage: new Map(), annotationsByPage: new Map(), ordered: [] }),
 }))
@@ -369,4 +371,84 @@ test('placeCueRange refuses on a version that is not current', async () => {
     words,
   )
   expect(insertCue).not.toHaveBeenCalled()
+})
+
+/** The cue as stored: its row has the department and the anchor JSON. */
+function storedCue(anchor: Record<string, unknown> | null) {
+  db.getOptional.mockResolvedValue({
+    department_id: 'lx',
+    layer_kind: 'department',
+    layer_id: 'lx',
+    anchor: anchor ? JSON.stringify(anchor) : null,
+  })
+}
+const base = { documentId: 'd1', documentVersionId: 'v1', pageIndex: 0, status: 'ok' }
+const movedAnchor = () => vi.mocked(updateCue).mock.calls[0]?.[3].anchor
+
+test('moveCue keeps a highlight: the new anchor is the plain placement plus the mark', async () => {
+  loadWords.layer = words
+  storedCue({
+    ...base,
+    x: 86,
+    y: 705,
+    mark: 'highlight',
+    text: { quote: 'or', wordStart: 2, wordEnd: 2 },
+  })
+  const session = renderSession({ snapDefault: 1, pages: [wordsPage] })
+  await session.moveCue('c1', 0, { x: 72, y: 702 }, { dropped: true })
+  expect(movedAnchor()).toMatchObject({ mark: 'highlight', y: 705 })
+  expect(movedAnchor()?.text?.wordStart).toBe(1)
+})
+
+test('moveCue keeps a line or pointer and re-snaps it to a character boundary', async () => {
+  loadWords.layer = words
+  for (const mark of ['line', 'pointer'] as const) {
+    vi.mocked(updateCue).mockClear()
+    storedCue({
+      ...base,
+      x: 90,
+      y: 705,
+      mark,
+      text: { quote: 'or', wordStart: 2, wordEnd: 2, offset: 1 },
+    })
+    const session = renderSession({ snapDefault: 1, pages: [wordsPage] })
+    await session.moveCue('c1', 0, { x: 70, y: 702 })
+    expect(movedAnchor()).toMatchObject({ mark, y: 705, text: { wordStart: 1 } })
+    expect(movedAnchor()?.text?.offset).toBeTypeOf('number')
+    cleanup()
+  }
+})
+
+test('moveCue leaves an underline without a mark key, and carries a tag over', async () => {
+  loadWords.layer = words
+  storedCue({ ...base, x: 86, y: 705, text: { quote: 'or', wordStart: 2, wordEnd: 2 } })
+  const session = renderSession({ snapDefault: 1, pages: [wordsPage] })
+  await session.moveCue('c1', 0, { x: 70, y: 702 })
+  expect(movedAnchor()).not.toHaveProperty('mark')
+  expect(movedAnchor()).not.toHaveProperty('tag')
+  vi.mocked(updateCue).mockClear()
+  storedCue({
+    ...base,
+    x: 86,
+    y: 705,
+    mark: 'line',
+    tag: { dx: 3, dy: 4 },
+    text: { quote: 'or', wordStart: 2, wordEnd: 2, offset: 0 },
+  })
+  await session.moveCue('c1', 0, { x: 70, y: 702 })
+  expect(movedAnchor()).toMatchObject({ mark: 'line', tag: { dx: 3, dy: 4 } })
+})
+
+test('relocating a line cue keeps its mark', async () => {
+  loadWords.layer = words
+  storedCue({
+    ...base,
+    x: 90,
+    y: 705,
+    mark: 'line',
+    text: { quote: 'or', wordStart: 2, wordEnd: 2, offset: 1 },
+  })
+  const session = renderSession({ snapDefault: 1, pages: [wordsPage] })
+  await session.relocate('cues', 'c1', 0, { x: 70, y: 702 })
+  expect(movedAnchor()).toMatchObject({ mark: 'line', text: { wordStart: 1 } })
 })

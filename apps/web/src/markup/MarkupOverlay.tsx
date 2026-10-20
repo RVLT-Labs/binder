@@ -108,7 +108,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const gestures = useAnnotationGestures({ pageIndex, size, words, session, slot, root })
   const { preview } = gestures
   // A line or pointer is aimed with a ghost bar at the character boundary the click would take.
-  const aiming = placing && isCaretMark(cueMark)
+  const aiming = placing && isCaretMark(cueMark) && !relocating
   const caretGhost = useMemo(() => {
     if (!aiming || !aim || !session.snap || !words) return null
     const caret = snapToCaret(words, aim)

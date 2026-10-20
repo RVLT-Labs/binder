@@ -258,6 +258,43 @@ test("change a cue's mark in the editor and see it redrawn", async ({ browser })
   })
 })
 
+test('dragging the margin tag of a highlight keeps it a highlight', async ({ browser }) => {
+  await withUsers(browser, ['owner'], async ([a]) => {
+    const { page } = a
+    let id = ''
+    try {
+      await page.getByLabel('Active layer LX').check()
+      await zoomOutTo(page)
+      const { words } = await pageText(page, 0)
+      const from = lineOf(words, 3)
+      const to = lineOf(words, 6)
+      id = await placeMark(page, 'underline', from)
+      const editor = page.getByRole('region', { name: 'Cue editor' })
+      await editor
+        .getByRole('radiogroup', { name: 'Mark' })
+        .getByRole('radio', { name: 'Highlight', exact: true })
+        .click()
+      await expect(trigger(page, id).locator('rect.cue-fill').first()).toBeVisible()
+      const firstY = (await localCue(page, id))?.anchor?.y
+
+      const box = await marker(page, id).boundingBox()
+      if (!box) throw new Error('marker not on screen')
+      const target = await clientPoint(page, 0, to.x, to.centre + 2)
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(target.x, target.y, { steps: 12 })
+      await page.mouse.up()
+
+      await expect.poll(async () => (await localCue(page, id))?.anchor?.y).not.toBe(firstY)
+      expect(markOf((await localCue(page, id))?.anchor)).toBe('highlight')
+      await expect(trigger(page, id).locator('rect.cue-fill').first()).toBeVisible()
+      await expect(trigger(page, id).locator('line.cue-underline')).toHaveCount(0)
+    } finally {
+      await removeCues(page, id ? [id] : [])
+    }
+  })
+})
+
 /** The page's ExtGState entries as `{ BM, ca }`, across every page of a PDF. */
 async function graphicsStates(bytes: Buffer): Promise<Array<{ BM?: string; ca?: number }>> {
   const doc = await PDFDocument.load(bytes)

@@ -3,9 +3,11 @@ import {
   type CueMark,
   type CueType,
   canEditLayer,
+  isCaretMark,
   type LayerRef,
   layerKey,
   type MarkerSide,
+  markOf,
   PERSONAL_LAYER_COLOUR,
   type TextAnchor,
   type WordLayer,
@@ -310,20 +312,34 @@ export function MarkupSessionProvider({
 
   /**
    * The rights check every move and delete makes itself, whoever calls it: the cue as stored now.
-   * False (with a notice saying why) when it may not change; false quietly when it has gone.
+   * The cue's current anchor (null when unplaced) when it may change; null (with a notice saying
+   * why) when it may not, and null quietly when it has gone.
    */
-  const mayChange = useCallback(
-    async (id: string) => {
-      const row = await db.getOptional<{ department_id: string | null }>(
-        'SELECT department_id FROM cues WHERE id = ?',
+  const cueForChange = useCallback(
+    async (id: string): Promise<{ anchor: Anchor | null } | null> => {
+      const row = await db.getOptional<{ department_id: string | null; anchor?: string | null }>(
+        'SELECT department_id, anchor FROM cues WHERE id = ?',
         [id],
       )
-      if (!row) return false
+      if (!row) return null
       const reason = whyCantEdit(row)
-      if (reason) pushNotice({ kind: 'error', message: reason })
-      return reason === null
+      if (reason) {
+        pushNotice({ kind: 'error', message: reason })
+        return null
+      }
+      let anchor: Anchor | null = null
+      try {
+        anchor = row.anchor ? (JSON.parse(row.anchor) as Anchor) : null
+      } catch {
+        anchor = null
+      }
+      return { anchor }
     },
     [db, whyCantEdit],
+  )
+  const mayChange = useCallback(
+    async (id: string) => (await cueForChange(id)) !== null,
+    [cueForChange],
   )
 
   const anchorFor = useCallback(
@@ -438,8 +454,23 @@ export function MarkupSessionProvider({
   const moveCue = useCallback(
     async (id: string, pageIndex: number, point: Point, options: { dropped?: boolean } = {}) => {
       try {
-        if (!(await mayChange(id))) return
-        const anchor = await anchorFor(pageIndex, point, undefined, options.dropped === true)
+        const current = await cueForChange(id)
+        if (!current) return
+        // A move keeps the cue's mark (and its tag): only where it sits changes.
+        const was = current.anchor
+        const mark = markOf(was)
+        const placed = await anchorFor(
+          pageIndex,
+          point,
+          undefined,
+          options.dropped === true,
+          isCaretMark(mark) ? mark : 'underline',
+        )
+        const anchor: Anchor = {
+          ...placed,
+          ...(mark === 'highlight' ? { mark } : {}),
+          ...(was?.tag ? { tag: was.tag } : {}),
+        }
         const ctxNow = latest.current.ctx
         if (!ctxNow) return
         await updateCue(db, ctxNow, id, { anchor })
@@ -447,7 +478,7 @@ export function MarkupSessionProvider({
         report(err)
       }
     },
-    [db, anchorFor, mayChange],
+    [db, anchorFor, cueForChange],
   )
 
   const removeCue = useCallback(

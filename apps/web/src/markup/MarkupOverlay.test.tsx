@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { PageRow } from '../powersync/schema'
 import { MarkupOverlay } from './MarkupOverlay'
+import { endRelocate, startRelocate } from './relocate'
 import { setCueMark, setTool } from './tools'
 
 const h = vi.hoisted(() => ({ session: {} as Record<string, unknown> }))
@@ -101,6 +102,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  endRelocate()
   setTool('select', 'go')
 })
 
@@ -226,4 +228,14 @@ test('no ghost for underline or highlight, with snap off, away from every line, 
   fireEvent.pointerMove(view.surface, near)
   fireEvent.pointerLeave(view.group)
   expect(view.container.querySelector('line.cue-caret-ghost')).toBeNull()
+})
+
+test('no line ghost while a cue is being relocated: the click will not use the cue tool mark', () => {
+  setCueMark('line')
+  const { surface, container } = mount()
+  fireEvent.pointerMove(surface, { clientX: 90, clientY: 98 })
+  expect(container.querySelector('line.cue-caret-ghost')).not.toBeNull()
+  act(() => startRelocate('cues', 'c1'))
+  fireEvent.pointerMove(surface, { clientX: 90, clientY: 98 })
+  expect(container.querySelector('line.cue-caret-ghost')).toBeNull()
 })
