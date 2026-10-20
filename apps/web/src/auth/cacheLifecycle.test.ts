@@ -237,6 +237,7 @@ test('R3 cleanup failure revokes the claim while retaining the queued CRUD uploa
   const { claimLocalDb, deviceId } = await import('../powersync/ownership')
   let synced = false
   const raw = {
+    waitForReady: async () => {},
     getClientId: async () => 'disposable-live-file',
     getAll: async <T>(sql: string): Promise<T[]> =>
       synced && sql.includes('"shows"') ? ([{ x: 1 }] as T[]) : [],

@@ -2,7 +2,10 @@ import { newId } from '@binder/shared'
 import type { PowerSyncDatabase } from '@powersync/web'
 import { AppSchema } from './schema'
 
-export type LocalDb = Pick<PowerSyncDatabase, 'getAll' | 'getClientId' | 'disconnectAndClear'>
+export type LocalDb = Pick<
+  PowerSyncDatabase,
+  'waitForReady' | 'getAll' | 'getClientId' | 'disconnectAndClear'
+>
 
 const OWNER_KEY = 'binder.localDbOwner'
 /** Upload namespace: stable for queued retries while this owner's SQLite file is retained. */
@@ -90,6 +93,8 @@ export async function claimLocalDb(
   userId: string,
   clearForeignCaches?: () => Promise<void>,
 ): Promise<void> {
+  // Unlike getAll(), getClientId() does not await the SDK's schema initialization.
+  await db.waitForReady()
   const owner = readOwner()
   const clientId = await db.getClientId()
   if (!clientId) throw new Error('Could not verify the local database identity.')

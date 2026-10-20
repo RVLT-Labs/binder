@@ -6,6 +6,7 @@ const OWNER_KEY = 'binder.localDbOwner'
 
 function fakeDb(rowsIn: string[] = [], clientId = 'same-live-database') {
   const db = {
+    waitForReady: vi.fn(async () => {}),
     getClientId: vi.fn(async () => clientId),
     getAll: vi.fn(async (sql: string) =>
       rowsIn.some((table) => sql.includes(`"${table}"`)) ? [{ x: 1 }] : [],
@@ -16,6 +17,65 @@ function fakeDb(rowsIn: string[] = [], clientId = 'same-live-database') {
 }
 
 beforeEach(() => localStorage.clear())
+
+test('awaits SDK initialization before querying the persistent identity or claiming ownership', async () => {
+  let initialize!: () => void
+  let ready = false
+  const initialization = new Promise<void>((resolve) => {
+    initialize = () => {
+      ready = true
+      resolve()
+    }
+  })
+  // Installed SDK boundary: construction starts initialization; getAll waits for it,
+  // but getClientId queries bucket storage directly, before ps_kv exists if not ready.
+  const db = {
+    ...fakeDb(),
+    waitForReady: vi.fn(() => initialization),
+    getClientId: vi.fn(async () => {
+      if (!ready) throw new Error('powersync_client_id: no such table: ps_kv')
+      return 'initialized-file'
+    }),
+    getAll: vi.fn(async () => {
+      await initialization
+      return []
+    }),
+  }
+  const clearForeign = vi.fn(async () => {})
+  const claiming = claimLocalDb(db, 'u1', clearForeign)
+  // Attach rejection handling immediately so RED does not produce an unhandled rejection.
+  const outcome = claiming.then(
+    () => null,
+    (error: unknown) => error,
+  )
+  try {
+    await Promise.resolve()
+    expect(db.getClientId).not.toHaveBeenCalled()
+    expect(db.getAll).not.toHaveBeenCalled()
+    expect(clearForeign).not.toHaveBeenCalled()
+    expect(localStorage.length).toBe(0)
+  } finally {
+    initialize()
+    await outcome
+  }
+  expect(await outcome).toBeNull()
+  expect(db.getClientId).toHaveBeenCalledOnce()
+  expect(localStorage.getItem('binder.localDbClient')).toBe('initialized-file')
+  expect(localStorage.getItem(OWNER_KEY)).toBe('u1')
+  expect(db.disconnectAndClear).not.toHaveBeenCalled()
+})
+
+test('propagates initialization failure without querying identity or changing ownership', async () => {
+  const db = fakeDb()
+  const error = new Error('SQLite initialization failed')
+  db.waitForReady.mockRejectedValue(error)
+  const clearForeign = vi.fn(async () => {})
+  await expect(claimLocalDb(db, 'u1', clearForeign)).rejects.toBe(error)
+  expect(db.getClientId).not.toHaveBeenCalled()
+  expect(db.getAll).not.toHaveBeenCalled()
+  expect(clearForeign).not.toHaveBeenCalled()
+  expect(localStorage.length).toBe(0)
+})
 
 test('keeps the database when it belongs to the signed-in user', async () => {
   localStorage.setItem(OWNER_KEY, 'u1')
