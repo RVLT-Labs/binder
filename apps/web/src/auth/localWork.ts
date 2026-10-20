@@ -1,4 +1,4 @@
-import type { PowerSyncDatabase } from '@powersync/web'
+import type { PowerSyncDatabase, WatchedQuery } from '@powersync/web'
 
 /** Coordinate local writers with sign-out. Web Locks also serialize cooperating tabs. */
 let paused = false
@@ -469,6 +469,10 @@ export function guardLocalDatabase<T extends object>(db: T, userId: string): T {
                     invalidate()
                     return {
                       closed: true,
+                      listenerMeta: {
+                        counts: { total: 0 },
+                        registerListener: () => () => {},
+                      },
                       state: {
                         data: [],
                         isLoading: false,
@@ -479,7 +483,7 @@ export function guardLocalDatabase<T extends object>(db: T, userId: string): T {
                       registerListener: () => () => {},
                       updateSettings: async () => {},
                       close: async () => {},
-                    }
+                    } satisfies WatchedQuery<unknown[]>
                   }
                   const built = build()
                   const watched = Reflect.apply(Reflect.get(built, method, built), built, args)

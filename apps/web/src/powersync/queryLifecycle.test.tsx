@@ -42,9 +42,31 @@ test.each(['dispose', 'account transition'] as const)(
       }),
     ]) {
       expect(watched.closed).toBe(true)
-      expect(watched.state.data).toEqual([])
+      expect(watched.state).toEqual({
+        data: [],
+        isLoading: false,
+        isFetching: false,
+        error: null,
+        lastUpdated: null,
+      })
+      expect(watched.listenerMeta.counts).toEqual({ total: 0 })
+      const metadataChanged = vi.fn()
+      const removeMetadata = watched.listenerMeta.registerListener({
+        listenersChanged: metadataChanged,
+      })
       const changed = vi.fn()
-      watched.registerListener({ onData: changed })()
+      const removeListener = watched.registerListener({
+        onData: changed,
+        onError: changed,
+        onStateChange: changed,
+        settingsWillUpdate: changed,
+        closed: changed,
+      })
+      expect(watched.listenerMeta.counts).toEqual({ total: 0 })
+      removeListener()
+      removeListener()
+      removeMetadata()
+      removeMetadata()
       await watched.updateSettings({
         query: {
           compile: () => ({ sql: 'SELECT private_rows', parameters: [] }),
@@ -52,8 +74,21 @@ test.each(['dispose', 'account transition'] as const)(
         },
       })
       await watched.close()
+      await watched.close()
+      expect(watched.closed).toBe(true)
+      expect(watched.listenerMeta.counts).toEqual({ total: 0 })
+      expect(metadataChanged).not.toHaveBeenCalled()
       expect(changed).not.toHaveBeenCalled()
     }
+    const first = retained.watch()
+    const second = retained.watch()
+    expect(first).not.toBe(second)
+    expect(first.state).not.toBe(second.state)
+    expect(first.state.data).not.toBe(second.state.data)
+    expect(first.listenerMeta).not.toBe(second.listenerMeta)
+    expect(first.listenerMeta.counts).not.toBe(second.listenerMeta.counts)
+    first.listenerMeta.counts.total = 42
+    expect(second.listenerMeta.counts).toEqual({ total: 0 })
     expect(customQuery).not.toHaveBeenCalled()
     await expect(db.getAll('SELECT private_rows')).rejects.toThrow(/session has changed/)
     await expect(db.execute('DELETE FROM private_rows')).rejects.toThrow(/session has changed/)
