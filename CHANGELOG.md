@@ -21,6 +21,11 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
     the update prompt). Nothing is lost on the server for cues nobody moves.
 
 ### Changed
+- Crowded margin bubbles now spread up and down around their own lines instead of only drifting down the
+  page, so each bubble stays near its line (two cues on one line sit 8 pt above and 8 pt below it). Tags that
+  do not overlap stay level with their lines. The same layout runs on screen, in browser print and in server
+  export, so crowded bubbles in existing shows sit slightly differently on screen and on paper than before;
+  nothing stored changes.
 - Re-anchoring after a script revision no longer shortens a matched quote to eight words, so an annotation
   highlight whose quote is longer than eight words keeps its full range instead of shrinking.
 - A cue's underline range that was cut at 400 characters (a long drag with the cue tool) re-anchors as

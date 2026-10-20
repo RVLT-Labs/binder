@@ -481,7 +481,7 @@ function noteBoxUnder(tag: Box, text: string, left: boolean): Box {
 /**
  * The connector from a tag to its mark, always at the mark's y so it never crosses a glyph. A tag
  * level with its line runs straight out, starting under the pill's curve so it meets the outline.
- * A tag pushed off its line leaves at its own centre, turns in the gutter beside the text block,
+ * A tag spread off its line (above or below it) leaves at its own centre, turns in the gutter beside the text block,
  * and runs in to the mark.
  */
 function connector(o: {

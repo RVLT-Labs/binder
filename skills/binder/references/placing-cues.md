@@ -109,8 +109,8 @@ From `packages/core/src/markup/cueTags.ts` and `print/stampScript.ts`, the same 
 ```
 
 - The **tag** sits flush in the margin of the department's side (`settings.markerSides[departmentId]`, left by default), level with the trigger line. It shows the department code (with `SB` or `W` for standby and warn) and the number in bold. When the margin is too narrow the code is dropped, then the type word, so the number always shows.
-- The **leader line** runs from the tag to the underline's end at the underline's `y`, so it never crosses a glyph. A tag pushed down by a crowded stack leaves at its own centre, turns in the gutter beside the text block and comes in at the line.
-- Tags on one side stack top to bottom; a tag that would overlap the one above is pushed 2 pt below it, and nothing goes under the footer.
+- The **leader line** runs from the tag to the underline's end at the underline's `y`, so it never crosses a glyph. A tag spread above or below its line by a crowded stack leaves at its own centre, turns in the gutter beside the text block and comes in at the line.
+- Tags on one side keep page order. Tags that crowd one another stack 2 pt apart and spread up and down around their own lines (two cues on one line sit just above and just below it); a tag that overlaps nothing stays level with its line. Nothing goes under the footer.
 - The **trigger words** are underlined (1.5 pt) on each line they cover. A cue without trigger words gets a short vertical tick at its anchor instead. That is the default `underline` mark; a cue can choose another with `anchor.mark` (see below).
 - The **note** is the whole `notes` text flattened to one line of 7 pt in the department colour directly under the tag, cut with `…` to the note column (margin less 8 pt); none when the margin is under 48 pt.
 - Several cues on one line get leaders 1.5 pt apart so they separate in black and white.
