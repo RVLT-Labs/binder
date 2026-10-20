@@ -433,7 +433,6 @@ export function guardLocalDatabase<T extends object>(db: T, userId: string): T {
           input: Parameters<PowerSyncDatabase['customQuery']>[0] &
             Parameters<PowerSyncDatabase['query']>[0],
         ) => {
-          check()
           const real = target as unknown as PowerSyncDatabase
           const query =
             key === 'customQuery'
@@ -447,32 +446,55 @@ export function guardLocalDatabase<T extends object>(db: T, userId: string): T {
                     return input.mapper ? rows.map(input.mapper) : rows
                   },
                 }
-          const built = real.customQuery({
-            compile: () => {
-              check()
-              return query.compile()
-            },
-            execute: (options) => read(() => query.execute(options)) as Promise<unknown[]>,
-          })
-          return new Proxy(built, {
-            get(q, method) {
-              const fn = Reflect.get(q, method, q)
-              if (method !== 'watch' && method !== 'differentialWatch')
-                return typeof fn === 'function' ? fn.bind(q) : fn
-              return (...args: unknown[]) => {
+          const build = () =>
+            real.customQuery({
+              compile: () => {
                 check()
-                const watched = fn.apply(q, args)
-                const close = () => watched.close()
-                closers.add(close)
-                watched.registerListener({
-                  closed: () => {
-                    closers.delete(close)
-                  },
-                })
-                return watched
-              }
+                return query.compile()
+              },
+              execute: (options) => read(() => query.execute(options)) as Promise<unknown[]>,
+            })
+          return new Proxy(
+            {},
+            {
+              get(_q, method) {
+                if (method !== 'watch' && method !== 'differentialWatch') return undefined
+                return (...args: unknown[]) => {
+                  // Installed useQuery creates watches in passive effects, which can reconnect
+                  // after revocation. Return an already-closed subscription, never a new SDK
+                  // capability. Building a query is lazy; its execution remains claim-checked.
+                  try {
+                    check()
+                  } catch {
+                    invalidate()
+                    return {
+                      closed: true,
+                      state: {
+                        data: [],
+                        isLoading: false,
+                        isFetching: false,
+                        error: null,
+                        lastUpdated: null,
+                      },
+                      registerListener: () => () => {},
+                      updateSettings: async () => {},
+                      close: async () => {},
+                    }
+                  }
+                  const built = build()
+                  const watched = Reflect.apply(Reflect.get(built, method, built), built, args)
+                  const close = () => watched.close()
+                  closers.add(close)
+                  watched.registerListener({
+                    closed: () => {
+                      closers.delete(close)
+                    },
+                  })
+                  return watched
+                }
+              },
             },
-          })
+          )
         }
       }
       if (
