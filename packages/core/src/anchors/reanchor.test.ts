@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs'
 import type { Anchor, WordLayer } from '@binder/shared'
 import { describe, expect, test } from 'vitest'
 import { versionFromLines } from '../../test/textLayers'
+import { caretX } from '../markup/caret'
 import { buildWordStream, findQuote } from './quote'
 import { reanchor, reanchorAll } from './reanchor'
-import { lineCentreY, snapToLine } from './snap'
+import { cutQuote, lineCentreY, snapToLine } from './snap'
 import type { VersionText } from './types'
 
 const pirates = readFileSync(
@@ -640,5 +641,254 @@ describe('reanchorAll', () => {
     const ok = out.filter((r) => r.status === 'ok').length
     expect(ok).toBeGreaterThan(400)
     expect(out.every((r) => r.documentVersionId === 'v2')).toBe(true)
+  })
+})
+
+describe('reanchor and the cue mark', () => {
+  const words = (prefix: string, n: number): string[] =>
+    Array.from({ length: n }, (_, k) => `${prefix}${k}`)
+  const fill = (n: number, tag: string): string[] =>
+    Array.from({ length: n }, (_, k) => `${tag}${k} pad`)
+  const dims = { linesPerPage: 20 }
+
+  /** An anchor on the first word of `line` of `version`, quoting `count` words. */
+  function anchorOn(
+    version: VersionText,
+    line: number,
+    count: number,
+    extra: Partial<Anchor> = {},
+  ): Anchor {
+    const pageIndex = Math.floor(line / dims.linesPerPage)
+    const layer = version.layers.get(pageIndex) as WordLayer
+    const indices = layer.lines[line % dims.linesPerPage] as number[]
+    const first = indices[0] as number
+    const picked = indices.slice(0, count)
+    return {
+      documentId: 'doc',
+      documentVersionId: version.versionId,
+      pageIndex,
+      x: LEFT,
+      y: lineCentreY(layer, line % dims.linesPerPage),
+      text: {
+        quote: picked.map((i) => (layer.words[i] as { t: string }).t).join(' '),
+        wordStart: first,
+        wordEnd: picked.at(-1) as number,
+      },
+      status: 'ok',
+      ...extra,
+    }
+  }
+
+  const baseLines = [...fill(5, 'a'), 'lantern! glows softly', ...fill(10, 'b')]
+  const from1 = versionFromLines(baseLines, { versionId: 'v1', ...dims })
+
+  test("a line keeps its offset, clamped to the matched word's new length, and its x is the new caret x", () => {
+    const oldLayer = from1.layers.get(0) as WordLayer
+    const oldWord = oldLayer.words[
+      (oldLayer.lines[5] as number[])[0] as number
+    ] as WordLayer['words'][number]
+    const lineAnchor = (offset: number): Anchor => ({
+      ...anchorOn(from1, 5, 3, { mark: 'line', tag: { dx: 4, dy: -2 } }),
+      x: caretX(oldWord, offset),
+      text: {
+        ...(anchorOn(from1, 5, 3).text as NonNullable<Anchor['text']>),
+        offset,
+      },
+    })
+    // An unchanged quote moved down a page-line: the offset is kept and x follows the new word.
+    const moved = versionFromLines([...fill(2, 'z'), ...baseLines], { versionId: 'v2', ...dims })
+    const kept = reanchor(lineAnchor(4), from1, moved)
+    const newLayer = moved.layers.get(0) as WordLayer
+    const newWord = newLayer.words[kept.text?.wordStart as number] as {
+      t: string
+      x: number
+      w: number
+    }
+    expect(kept.status).toBe('ok')
+    expect(newWord.t).toBe('lantern!')
+    expect(kept.text?.offset).toBe(4)
+    expect(kept.x).toBeCloseTo(caretX(newWord, 4), 6)
+    expect(kept.mark).toBe('line')
+    expect(kept.tag).toEqual({ dx: 4, dy: -2 })
+
+    // A normalised match onto a shorter word clamps the offset to the new length.
+    const shorter = versionFromLines(
+      baseLines.map((l) => (l.startsWith('lantern') ? 'Lantern glows softly' : l)),
+      { versionId: 'v3', ...dims },
+    )
+    const clamped = reanchor(lineAnchor(8), from1, shorter)
+    const shortWord = (shorter.layers.get(0) as WordLayer).words[
+      clamped.text?.wordStart as number
+    ] as {
+      t: string
+      x: number
+      w: number
+    }
+    expect(clamped.status).toBe('approximate')
+    expect(clamped.text?.offset).toBe(7)
+    expect(clamped.x).toBeCloseTo(shortWord.x + shortWord.w, 6)
+  })
+
+  test('a pointer without an offset gets no offset and the usual line-relative x', () => {
+    const pointer = anchorOn(from1, 5, 3, { mark: 'pointer', x: LEFT + OFFSET })
+    const moved = versionFromLines([...fill(2, 'z'), ...baseLines], { versionId: 'v2', ...dims })
+    const r = reanchor(pointer, from1, moved)
+    expect(r.text).not.toHaveProperty('offset')
+    expect(r.mark).toBe('pointer')
+  })
+
+  test('a line whose quote is not found goes positional: the text is unbound, the offset is dropped, mark and tag survive, and the status is approximate or unresolved as before', () => {
+    const line: Anchor = {
+      ...anchorOn(from1, 5, 3, { mark: 'line', tag: { dx: 1, dy: 2 } }),
+    }
+    line.text = { ...(line.text as NonNullable<Anchor['text']>), offset: 3 }
+    const gone = versionFromLines(
+      baseLines.map((l) => (l.startsWith('lantern') ? 'nothing similar here' : l)),
+      { versionId: 'v2', ...dims },
+    )
+    const same = reanchor(line, from1, gone)
+    expect(same.status).toBe('approximate')
+    expect(same.text).toEqual({ quote: 'lantern! glows softly', wordStart: -1, wordEnd: -1 })
+    expect(same.text).not.toHaveProperty('offset')
+    expect(same.mark).toBe('line')
+    expect(same.tag).toEqual({ dx: 1, dy: 2 })
+    const longer = versionFromLines(
+      [...baseLines, ...fill(30, 'c')].map((l) => (l.startsWith('lantern') ? 'zzz' : l)),
+      { versionId: 'v3', ...dims },
+    )
+    const diff = reanchor(line, from1, longer)
+    expect(diff.status).toBe('unresolved')
+    expect(diff.text).not.toHaveProperty('offset')
+    expect(diff.mark).toBe('line')
+    expect(diff.tag).toEqual({ dx: 1, dy: 2 })
+  })
+
+  test('mark and tag survive a match, several matches, and the safe fallbacks', () => {
+    const marked: Anchor = {
+      ...anchorOn(from1, 5, 3, { mark: 'highlight', tag: { dx: 9, dy: 8 } }),
+    }
+    const check = (r: Anchor) => {
+      expect(r.mark).toBe('highlight')
+      expect(r.tag).toEqual({ dx: 9, dy: 8 })
+    }
+    const moved = versionFromLines([...fill(2, 'z'), ...baseLines], { versionId: 'v2', ...dims })
+    check(reanchor(marked, from1, moved))
+    const doubled = versionFromLines([...baseLines, 'lantern! glows softly'], {
+      versionId: 'v3',
+      ...dims,
+    })
+    const several = reanchor(marked, from1, doubled)
+    expect(several.status).toBe('approximate')
+    check(several)
+    check(reanchor(marked, from1, versionFromLines(fill(3, 'q'), { versionId: 'v4', ...dims })))
+    // The catch fallbacks: matching throws on the old version.
+    const layers = new Map(from1.layers)
+    layers.get = () => {
+      throw new Error('boom')
+    }
+    const flaky = { ...from1, layers } as VersionText
+    const safe = reanchor(marked, flaky, moved)
+    expect(safe.status).toBe('unresolved')
+    check(safe)
+  })
+
+  test('a highlight of twelve words keeps all twelve after a revision that moves it', () => {
+    const twelve = words('amber', 12).join(' ')
+    const a = versionFromLines([...fill(5, 'a'), twelve, ...fill(10, 'b')], {
+      versionId: 'v1',
+      ...dims,
+    })
+    const anchor = anchorOn(a, 5, 12, { mark: 'highlight' })
+    expect(anchor.text?.wordEnd).toBe((anchor.text?.wordStart as number) + 11)
+    const b = versionFromLines([...fill(4, 'n'), ...fill(5, 'a'), twelve, ...fill(10, 'b')], {
+      versionId: 'v2',
+      ...dims,
+    })
+    const r = reanchor(anchor, a, b)
+    const start = (b.layers.get(0) as WordLayer).words.findIndex((w) => w.t === 'amber0')
+    expect(r.status).toBe('ok')
+    expect(r.text?.quote).toBe(twelve)
+    expect(r.text).toEqual({ quote: twelve, wordStart: start, wordEnd: start + 11 })
+    expect(r.y).toBeCloseTo(lineCentreY(b.layers.get(0) as WordLayer, 9), 6)
+  })
+
+  test('a highlight whose quote was cut at 400 characters comes back approximate', () => {
+    const longLines = Array.from({ length: 8 }, (_, k) => words(`w${k}xxxxxxx`, 10).join(' '))
+    const text = [...fill(2, 'a'), ...longLines, ...fill(2, 'b')]
+    const a = versionFromLines(text, { versionId: 'v1', ...dims })
+    const layer = a.layers.get(0) as WordLayer
+    const wordStart = (layer.lines[2] as number[])[0] as number
+    const wordEnd = (layer.lines[9] as number[]).at(-1) as number
+    const all80 = layer.words.slice(wordStart, wordEnd + 1).map((w) => w.t)
+    const quote = cutQuote(all80)
+    expect(quote.split(' ').length).toBeLessThan(80)
+    const anchor: Anchor = {
+      ...anchorOn(a, 2, 1),
+      text: { quote, wordStart, wordEnd },
+      mark: 'highlight',
+    }
+    const b = versionFromLines(text, { versionId: 'v2', ...dims })
+    const r = reanchor(anchor, a, b)
+    expect(r.status).toBe('approximate')
+    expect(r.text?.quote).toBe(quote)
+    expect(r.text?.wordEnd).toBe(wordStart + quote.split(' ').length - 1)
+    // Only a highlight is held back: the same stored range on an underline stays ok.
+    expect(reanchor({ ...anchor, mark: undefined }, a, b).status).toBe('ok')
+    // A normal highlight is still ok.
+    const short = anchorOn(a, 2, 10, { mark: 'highlight' })
+    expect(reanchor(short, a, b).status).toBe('ok')
+  })
+
+  test('an uncut highlight is ok even when layer word indices are not in reading order', () => {
+    // Two lines whose words interleave in the layer: line A holds the even indices, line B the odd ones.
+    const a = Array.from({ length: 12 }, (_, k) => `alpha${k}`)
+    const b = Array.from({ length: 12 }, (_, k) => `bravo${k}`)
+    const layerWords: WordLayer['words'] = []
+    const lineA: number[] = []
+    const lineB: number[] = []
+    for (let k = 0; k < 12; k++) {
+      lineA.push(layerWords.length)
+      layerWords.push({ t: a[k] as string, x: 72 + k * 40, y: 700, w: 38, h: 10 })
+      lineB.push(layerWords.length)
+      layerWords.push({ t: b[k] as string, x: 72 + k * 40, y: 686, w: 38, h: 10 })
+    }
+    const version = (versionId: string): VersionText => ({
+      versionId,
+      documentId: 'doc',
+      pageCount: 1,
+      pages: [{ width: 595, height: 842 }],
+      layers: new Map([[0, { words: layerWords, lines: [lineA, lineB] }]]),
+    })
+    const anchor: Anchor = {
+      documentId: 'doc',
+      documentVersionId: 'v1',
+      pageIndex: 0,
+      x: 72,
+      y: 705,
+      text: { quote: a.join(' '), wordStart: 0, wordEnd: 22 },
+      mark: 'highlight',
+      status: 'ok',
+    }
+    const r = reanchor(anchor, version('v1'), version('v2'))
+    expect(r.status).toBe('ok')
+    expect(r.text?.quote).toBe(a.join(' '))
+    expect(r.text).toMatchObject({ wordStart: 0, wordEnd: 22 })
+  })
+
+  test('an eight-word underline re-anchors exactly as before', () => {
+    const eight = words('cedar', 8).join(' ')
+    const a = versionFromLines([...fill(5, 'a'), `${eight} trailing words`, ...fill(10, 'b')], {
+      versionId: 'v1',
+      ...dims,
+    })
+    const anchor = anchorOn(a, 5, 8)
+    const b = versionFromLines(
+      [...fill(3, 'n'), ...fill(5, 'a'), `${eight} trailing words`, ...fill(10, 'b')],
+      { versionId: 'v2', ...dims },
+    )
+    const r = reanchor(anchor, a, b)
+    const start = (b.layers.get(0) as WordLayer).words.findIndex((w) => w.t === 'cedar0')
+    expect(r.status).toBe('ok')
+    expect(r.text).toEqual({ quote: eight, wordStart: start, wordEnd: start + 7 })
   })
 })

@@ -1,4 +1,5 @@
-import type { Anchor, AnchorStatus, WordLayer } from '@binder/shared'
+import { type Anchor, type AnchorStatus, isCaretMark, markOf, type WordLayer } from '@binder/shared'
+import { caretX, clampOffset } from '../markup/caret'
 import {
   anchorAtMatch,
   buildWordStream,
@@ -93,6 +94,11 @@ function closest(
   return best
 }
 
+/**
+ * The anchor placed on match `m`. The matched range is the whole quote (not capped at eight words);
+ * the stored quote is kept. A character offset is clamped to the new word and, for a line or pointer
+ * mark, `x` is that caret's x (the stored x is the bar's x) instead of the old line-relative x.
+ */
 function place(
   a: Anchor,
   m: QuoteMatch,
@@ -100,18 +106,46 @@ function place(
   from: VersionText,
   { to, stream }: Target,
 ): Anchor {
-  const p = anchorAtMatch(stream, m, to)
+  const p = anchorAtMatch(stream, m, to, Number.POSITIVE_INFINITY)
   const left = oldLineLeft(from, a)
-  const x = left === null ? p.x : p.lineLeft + (a.x - left)
+  let x = left === null ? p.x : p.lineLeft + (a.x - left)
   const text = a.text as NonNullable<Anchor['text']>
+  const placed: NonNullable<Anchor['text']> = {
+    quote: text.quote,
+    wordStart: p.text.wordStart,
+    wordEnd: p.text.wordEnd,
+  }
+  if (text.offset !== undefined) {
+    const word = to.layers.get(p.pageIndex)?.words[p.text.wordStart]
+    if (word) {
+      placed.offset = clampOffset(word.t, text.offset)
+      if (isCaretMark(markOf(a))) x = caretX(word, placed.offset)
+    }
+  }
   return {
     ...a,
     documentVersionId: to.versionId,
     pageIndex: p.pageIndex,
     ...clampTo({ pageIndex: p.pageIndex, x, y: p.y }, from, to, a.pageIndex),
-    text: { quote: text.quote, wordStart: p.text.wordStart, wordEnd: p.text.wordEnd },
+    text: placed,
     status,
   }
+}
+
+/**
+ * Whether a highlight's stored range covered more words than its stored quote: the quote was cut at
+ * the character limit. Measured in the old word stream (reading order), not by word index, because
+ * layer indices are not guaranteed to follow reading order. False when the range cannot be located.
+ */
+function highlightWasCut(a: Anchor, fromStream: StreamWord[]): boolean {
+  const text = a.text
+  if (markOf(a) !== 'highlight' || !text) return false
+  const at = (wordIndex: number): number =>
+    fromStream.findIndex((w) => w.pageIndex === a.pageIndex && w.wordIndex === wordIndex)
+  const first = at(text.wordStart)
+  const last = at(text.wordEnd)
+  if (first < 0 || last < first) return false
+  return last - first + 1 > text.quote.split(/\s+/).filter((t) => t !== '').length
 }
 
 function positional(a: Anchor, from: VersionText, to: VersionText): Anchor {
@@ -213,7 +247,10 @@ function reanchorWith(
       const ms = findQuote(target.stream, a.text.quote, mode)
       if (ms.length === 1) {
         const m = ms[0] as QuoteMatch
-        const sure = mode === 'exact' && survivorIsAnchored(a, m, from, fromStream(), target)
+        const sure =
+          mode === 'exact' &&
+          survivorIsAnchored(a, m, from, fromStream(), target) &&
+          !highlightWasCut(a, fromStream())
         return place(a, m, sure ? 'ok' : 'approximate', from, target)
       }
       if (ms.length > 1) {
