@@ -111,9 +111,26 @@ From `packages/core/src/markup/cueTags.ts` and `print/stampScript.ts`, the same 
 - The **tag** sits flush in the margin of the department's side (`settings.markerSides[departmentId]`, left by default), level with the trigger line. It shows the department code (with `SB` or `W` for standby and warn) and the number in bold. When the margin is too narrow the code is dropped, then the type word, so the number always shows.
 - The **leader line** runs from the tag to the underline's end at the underline's `y`, so it never crosses a glyph. A tag pushed down by a crowded stack leaves at its own centre, turns in the gutter beside the text block and comes in at the line.
 - Tags on one side stack top to bottom; a tag that would overlap the one above is pushed 2 pt below it, and nothing goes under the footer.
-- The **trigger words** are underlined (1.5 pt) on each line they cover. A cue without trigger words gets a short vertical tick at its anchor instead.
+- The **trigger words** are underlined (1.5 pt) on each line they cover. A cue without trigger words gets a short vertical tick at its anchor instead. That is the default `underline` mark; a cue can choose another with `anchor.mark` (see below).
 - The **note** is the whole `notes` text flattened to one line of 7 pt in the department colour directly under the tag, cut with `…` to the note column (margin less 8 pt); none when the margin is under 48 pt.
 - Several cues on one line get leaders 1.5 pt apart so they separate in black and white.
+
+### Marks: underline, highlight, line, pointer
+
+`mark` says how the cue marks its place; absent means `underline`. Set it with `place_cue_at_text {mark, charOffset}` or restyle a placed cue with `update_cue {mark, charOffset}` (the quote and position stay).
+
+| Mark | Drawn as | Use it for |
+|---|---|---|
+| `underline` | The default: the trigger words underlined. | A cue that fires on a phrase. |
+| `highlight` | The whole quoted range filled with the department colour at about 28% (translucent, so the text still reads). `place_cue_at_text` anchors the **whole** matched quote, not the usual first eight words. | A cue that spans a passage, such as underscore or a held effect. Quote the passage in full. |
+| `line` | A thin vertical bar in the department colour at one character position inside the first word, a little taller than the word. | A cue on an exact syllable or breath: `charOffset` 3 puts it after the third character of the word. |
+| `pointer` | The same bar with a small triangle on top. | A line cue that should be easy to spot. |
+
+- `charOffset` counts characters from the start of the quote's first word: 0 is before it, the word's length is after its last character. To put a bar in a later word, start the `quote` at that word. `charOffset` is an error with `underline` or `highlight`, and `place_cue_at_text` rejects an offset past the end of the first word (`update_cue` clamps it).
+- A `line` or `pointer` ignores the rest of the quote for drawing; the quote is still what re-anchoring searches for after a revision.
+- A cue placed by **coordinates** (`create_cue` or `update_cue` with `anchor`, which accept `mark`) binds no word: a `line` or `pointer` is a free bar 14 pt tall centred on `(x, y)`, and an `underline` or `highlight` falls back to the short tick.
+- Marks belong to cues; annotation tools refuse a `mark`.
+- Read the mark back from `anchor.mark` (absent is `underline`) and, for a line or pointer, `anchor.text.offset`.
 
 Every page of a marked-script export also carries a footer: `Show · Document v2 · LX, SND · export <id tail> · 2026-10-16 22:31`.
 

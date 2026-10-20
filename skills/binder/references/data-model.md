@@ -77,7 +77,11 @@ An anchor:
 
 - `documentVersionId` says which version the position belongs to. A cue whose anchor is on a version other than the document's current one is "on an older version".
 - `status`: `ok`, `approximate` (re-anchoring matched loosely or fell back to position on a same-length script) or `unresolved` (page counts differ, or the page no longer exists). Only re-anchoring sets anything but `ok`.
-- `text` is the **text anchor**: the quoted words (at most 8 for a cue placed by text, up to 400 characters for a highlight) and their inclusive indices into that page's `words`. `wordStart: -1, wordEnd: -1` means "unbound": the quote is remembered but the words were not found on this version. A cue without `text` is a **positional anchor**: it survives revisions only by page and position.
+- `text` is the **text anchor**: the quoted words (at most 8 for a cue placed by text, up to 400 characters for a highlight, or for a cue whose `mark` is `highlight`) and their inclusive indices into that page's `words`. `wordStart: -1, wordEnd: -1` means "unbound": the quote is remembered but the words were not found on this version. A cue without `text` is a **positional anchor**: it survives revisions only by page and position.
+- `text.offset` (optional, cues only): a character boundary inside the word at `wordStart`, 0 being before its first character and the word's length after its last. Present only with a `mark` of `line` or `pointer` and a bound word; drawing clamps it to the word's current length.
+- `mark` (optional, cues only): `underline`, `highlight`, `line` or `pointer`. Absent means `underline`. A `line` or `pointer` is drawn as a bar at `text.offset`, with `x` at that character and `y` at the line's centre; on an anchor with no bound word it is a free bar at `(x, y)`. See [placing-cues.md](placing-cues.md#how-a-cue-looks-on-the-page).
+- `tag` (optional, cues only): `{dx, dy}` in points, the position of the cue's tag relative to its anchor; absent means the tag takes its place in the margin. Tools do not set it yet; it is kept when a cue is moved by re-anchoring.
+- Annotations take none of `mark`, `tag` and `text.offset`: their anchors are refused with them.
 
 ## Cues
 

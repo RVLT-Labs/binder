@@ -110,6 +110,37 @@ describe('revertChange: updates', () => {
     expect((await getCue(db, s.actors.owner, { cueId: cue.id })).label).toBe('Fly in')
   })
 
+  test('reverting a restyle puts the old mark back', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const base = {
+      ...anchorAt(s.docId, s.versionId, 1, 150, 700),
+      text: { quote: 'bravo charlie', wordStart: 1, wordEnd: 2 },
+    }
+    const cue = await mkCue(s, s.actors.owner, 'LX', { anchor: base })
+    const restyled = {
+      ...base,
+      mark: 'line' as const,
+      x: 160,
+      text: { ...base.text, offset: 3 },
+    }
+    await updateCue(db, s.actors.owner, { cueId: cue.id, patch: { anchor: restyled } })
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).anchor).toEqual(restyled)
+
+    const result = await revertChange(db, s.actors.editorLx, {
+      seq: await lastSeq(s, cue.id, 'update'),
+    })
+    expect(result).toMatchObject({ reverted: 1, skipped: [] })
+    const back = (await getCue(db, s.actors.owner, { cueId: cue.id })).anchor
+    expect(back).toEqual(base)
+    expect(back?.mark).toBeUndefined()
+    expect(back?.text?.offset).toBeUndefined()
+
+    // and the revert itself reverts, restoring the line
+    await revertChange(db, s.actors.owner, { seq: await lastSeq(s, cue.id, 'update') })
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).anchor).toEqual(restyled)
+  })
+
   test('a revert through MCP is logged with the agent', async () => {
     const s = await setupMarkupShow()
     const db = s.deps.db

@@ -36,7 +36,7 @@ The default name is `<show slug>-<document slug>-v<versionNumber>-<layers>.pdf`,
 
 ### What prints
 
-Cue tags in the margin (department side from `settings.markerSides`), the trigger words underlined with a leader from the tag, the note under the tag, then annotations, in the order the screen draws them ([placing-cues.md](placing-cues.md#how-a-cue-looks-on-the-page)). Only marks anchored on the printed version appear; a cue left on an older version is not on the page. Unplaced cues never print on the script (they are on the cue sheet).
+Cue tags in the margin (department side from `settings.markerSides`), the trigger words marked with a leader from the tag, the note under the tag, then annotations, in the order the screen draws them ([placing-cues.md](placing-cues.md#how-a-cue-looks-on-the-page)). How the trigger words are marked follows each cue's `mark`: an `underline` draws a 1.5 pt line, a `highlight` a translucent fill in the department colour over the quoted range (multiplied into the page, so black script text stays black), and a `line` or `pointer` a 1.5 pt bar at its character position (a pointer with a small triangle on top). Highlights are the one place print fills anything. Only marks anchored on the printed version appear; a cue left on an older version is not on the page. Unplaced cues never print on the script (they are on the cue sheet).
 
 The footer on every page, 7 pt grey at the bottom left: `<show> · <document> v<n> · <layers> · export <last 8 of the export id> · YYYY-MM-DD HH:MM` in the server's local time. The layer label is `Clean copy`, `All layers`, `All layers + personal`, `LX, SND`, `LX + personal` or `Personal`.
 

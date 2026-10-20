@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { type FooterInfo, type StampItem, stampScript } from '@binder/core'
+import { caretX, type FooterInfo, type StampItem, stampScript } from '@binder/core'
 import { documentVersions, shows } from '@binder/db'
 import { FIXTURES } from '@binder/fixtures'
 import { eq } from 'drizzle-orm'
@@ -11,9 +11,9 @@ import { degrees, PDFDocument } from 'pdf-lib'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { searchableBlobKey } from '../src/blob/keys'
 import { AppError } from '../src/errors'
-import { exportMarkedScript, listExportRecords } from '../src/services'
+import { createCue, exportMarkedScript, listExportRecords } from '../src/services'
 import { librettoBytes } from './documentHelpers'
-import { setupMarkupShow } from './markupHelpers'
+import { putWordLayer, setupMarkupShow } from './markupHelpers'
 import { findMissingTools, skipWithoutTools } from './tools'
 
 const run = promisify(execFile)
@@ -795,6 +795,80 @@ describe.skipIf(skip)('exportMarkedScript print options with poppler', () => {
       expect([filename, res]).toEqual([filename, 'invalid'])
     }
   })
+
+  test('exportMarkedScript of a highlight cue draws the department colour fill; of a line cue, the bar', async () => {
+    const f = await ready()
+    // A blank A4 page, so the pixels under the marks are paper.
+    const blank = await blankPage(0)
+    const key = searchableBlobKey(f.show.id, f.docId, f.versionId)
+    await f.deps.blobs.put(key, blank, 'application/pdf')
+    const height = 841.89
+    const box = (t: string, x: number, y: number) => ({ t, x, y: y - 5, w: 60, h: 10 })
+    // Line 0: "alpha bravo" at y 500 (highlighted); line 1: "charlie delta" at y 400 (a bar in "charlie").
+    const words = [
+      box('alpha', 200, 500),
+      box('bravo', 270, 500),
+      box('charlie', 200, 400),
+      box('delta', 270, 400),
+    ]
+    await putWordLayer(f.deps.db, f.deps.blobs, f.versionId, 0, {
+      words,
+      lines: [
+        [0, 1],
+        [2, 3],
+      ],
+    })
+    const anchor = (y: number, x: number, quote: string, wordStart: number, extra = {}) => ({
+      documentId: f.docId,
+      documentVersionId: f.versionId,
+      pageIndex: 0,
+      x,
+      y,
+      status: 'ok' as const,
+      text: { quote, wordStart, wordEnd: wordStart + 1 },
+      ...extra,
+    })
+    await createCue(f.deps.db, f.actors.owner, {
+      showId: f.show.id,
+      departmentId: f.depts.LX.id,
+      number: { major: 1, minor: 0 },
+      anchor: anchor(500, 200, 'alpha bravo', 0, { mark: 'highlight' }),
+    })
+    const offset = 3
+    const bar = caretX(words[2] as { t: string; x: number; w: number }, offset)
+    await createCue(f.deps.db, f.actors.owner, {
+      showId: f.show.id,
+      departmentId: f.depts.LX.id,
+      number: { major: 2, minor: 0 },
+      anchor: {
+        ...anchor(400, bar, 'charlie delta', 2, { mark: 'line' }),
+        text: { quote: 'charlie delta', wordStart: 2, wordEnd: 3, offset },
+      },
+    })
+    const { record } = await exportMarkedScript(f.deps.db, f.deps.blobs, f.actors.owner, {
+      documentId: f.docId,
+      layers: [{ kind: 'department', id: f.depts.LX.id }],
+    })
+    const out = await bytesOf(f, record.fileKey)
+
+    // The highlight: the department colour at 28% over paper, across the whole range.
+    const tint = (hex: string) =>
+      `#${[1, 3, 5]
+        .map((i) => Math.round(255 * 0.72 + Number.parseInt(hex.slice(i, i + 2), 16) * 0.28))
+        .map((v) => v.toString(16).padStart(2, '0'))
+        .join('')}`
+    const lx = f.depts.LX.colour
+    for (const x of [215, 255, 300])
+      expect(near(await pixelAt(out, 0, x, height - 500), tint(lx))).toBe(true)
+    // Not outside the range, and not on the line cue's words.
+    expect(near(await pixelAt(out, 0, 190, height - 500), '#FFFFFF')).toBe(true)
+    expect(near(await pixelAt(out, 0, 215, height - 400), '#FFFFFF')).toBe(true)
+
+    // The line: a solid bar of the department colour at the caret, none beside it.
+    expect(near(await pixelAt(out, 0, bar, height - 400, 288), lx)).toBe(true)
+    expect(near(await pixelAt(out, 0, bar + 6, height - 400, 288), '#FFFFFF')).toBe(true)
+    expect(near(await pixelAt(out, 0, bar - 6, height - 400, 288), '#FFFFFF')).toBe(true)
+  }, 60_000)
 
   test('the default file name is the slug form', async () => {
     const f = await ready('Songs for a New World')

@@ -143,6 +143,33 @@ describe('annotation tools', () => {
     }
   })
 
+  test('annotation tools refuse a mark on the anchor: marks belong to cues', async () => {
+    const made = await callTool(viewer, 'create_annotation', {
+      showId: s.show.id,
+      layer: 'personal',
+      type: 'note',
+      text: 'no mark here',
+      anchor: { ...place(2), mark: 'highlight' },
+    })
+    expect(made.isError).toBe(true)
+    expect(resultText(made)).toMatch(/mark/)
+    const kept = await callTool(viewer, 'create_annotation', {
+      showId: s.show.id,
+      layer: 'personal',
+      type: 'note',
+      text: 'plain',
+      anchor: place(2),
+    })
+    expect(kept.isError).toBeFalsy()
+    expect(kept.structuredContent?.anchor.mark).toBeUndefined()
+    const moved = await callTool(viewer, 'update_annotation', {
+      annotationId: kept.structuredContent?.id,
+      anchor: { ...place(3), mark: 'line' },
+    })
+    expect(moved.isError).toBe(true)
+    expect(resultText(moved)).toMatch(/mark/)
+  })
+
   test('permissions: the LX editor cannot draw on SND and a viewer cannot draw on a department', async () => {
     const onSnd = await callTool(lx, 'create_annotation', {
       showId: s.show.id,
