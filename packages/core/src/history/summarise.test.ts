@@ -66,6 +66,69 @@ describe('summariseBatch', () => {
   test('a cue without a department code omits the code', () =>
     expect(summariseBatch(added(2, null))).toBe('added 2 cues'))
 
+  describe('restyled', () => {
+    const base = {
+      documentId: 'd',
+      documentVersionId: 'v',
+      pageIndex: 1,
+      x: 10,
+      y: 100,
+      status: 'ok',
+      text: { quote: 'hello', wordStart: 2, wordEnd: 3 },
+    }
+    const update = (before: unknown, after: unknown) =>
+      cue('update', 'LX', { anchor: before }, { anchor: after })
+
+    test('a mark-only anchor change reads "restyled 1 LX cue"', () =>
+      expect(summariseBatch([update(base, { ...base, mark: 'highlight' })])).toBe(
+        'restyled 1 LX cue',
+      ))
+
+    test('a mark change that also moves the anchor reads moved', () =>
+      expect(summariseBatch([update(base, { ...base, mark: 'highlight', pageIndex: 2 })])).toBe(
+        'moved 1 LX cue',
+      ))
+
+    test('an offset-only change reads restyled', () =>
+      expect(
+        summariseBatch([
+          update(
+            { ...base, mark: 'line', text: { ...base.text, offset: 0 } },
+            { ...base, mark: 'line', text: { ...base.text, offset: 3 } },
+          ),
+        ]),
+      ).toBe('restyled 1 LX cue'))
+
+    test('switching to a line changes x without moving the cue', () =>
+      expect(
+        summariseBatch([
+          update(base, { ...base, mark: 'line', x: 42, text: { ...base.text, offset: 0 } }),
+        ]),
+      ).toBe('restyled 1 LX cue'))
+
+    test('x still counts as a move between two non-caret marks', () =>
+      expect(summariseBatch([update(base, { ...base, mark: 'highlight', x: 42 })])).toBe(
+        'moved 1 LX cue',
+      ))
+
+    test('a restyle and a relabel in one update counts both', () =>
+      expect(
+        summariseBatch([
+          cue(
+            'update',
+            'LX',
+            { anchor: base, label: 'a' },
+            { anchor: { ...base, mark: 'highlight' }, label: 'b' },
+          ),
+        ]),
+      ).toBe('restyled 1 LX cue and relabelled 1'))
+
+    test('the verb sits after moved', () =>
+      expect(
+        summariseBatch([update(base, { ...base, mark: 'highlight' }), ...moves(1, 'LX')]),
+      ).toBe('moved 1 LX cue and restyled 1'))
+  })
+
   test('annotations: added, moved by anchor or geometry, edited, deleted', () => {
     const ann = (
       op: SummaryRow['op'],

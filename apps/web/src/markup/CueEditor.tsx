@@ -1,5 +1,5 @@
-import { formatCueNumber, markerLead, parseCueNumber } from '@binder/core'
-import type { CueFields, CueType } from '@binder/shared'
+import { formatCueNumber, markerLead, parseCueNumber, withMark } from '@binder/core'
+import { type CueFields, type CueMark, type CueType, markOf } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
 import { useId, useState } from 'react'
 import { ChevronDownIcon } from '@/components/icons'
@@ -16,6 +16,7 @@ import { useBreakpoint } from '../shell/useBreakpoint'
 import { CommitInput, leaveFieldOnEscape } from './CommitInput'
 import { useMarkupSession } from './MarkupSession'
 import { fromCueRow, updateCue } from './mutations'
+import { loadWordLayer } from './wordLayers'
 
 export const NUMBER_HINT = 'Cue numbers look like 10, 10.5, or 0.50.'
 
@@ -23,6 +24,13 @@ const TYPES: Array<{ value: CueType; label: string }> = [
   { value: 'go', label: 'Go' },
   { value: 'standby', label: 'Standby' },
   { value: 'warn', label: 'Warn' },
+]
+
+const MARKS: Array<{ value: CueMark; label: string }> = [
+  { value: 'underline', label: 'Underline' },
+  { value: 'highlight', label: 'Highlight' },
+  { value: 'line', label: 'Line' },
+  { value: 'pointer', label: 'Line with pointer' },
 ]
 
 export interface CueEditorProps {
@@ -76,6 +84,20 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
     } catch (err) {
       pushNotice({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
     }
+  }
+
+  /** Switches how the cue marks its place; the range stays, and a line takes the caret's x. */
+  async function saveMark(mark: CueMark) {
+    const anchor = cue.anchor
+    if (!anchor || mark === markOf(anchor)) return
+    const key = session.pages[anchor.pageIndex]?.words_key
+    let layer = null
+    try {
+      layer = key ? await loadWordLayer(key) : null
+    } catch {
+      // a page whose words will not load still changes mark; withMark copes without a layer
+    }
+    await save({ anchor: withMark(anchor, mark, { layer }) })
   }
 
   function saveNumber(text: string) {
@@ -192,6 +214,17 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
           </Field>
           {!phone && layerField}
         </div>
+        <Field label="Mark">
+          <Segmented
+            aria-label="Mark"
+            value={markOf(cue.anchor)}
+            onValueChange={(mark) => void saveMark(mark as CueMark)}
+            options={MARKS}
+            disabled={!editable || !cue.anchor}
+            className="flex w-full [&>*]:flex-1"
+            itemClassName="md:max-[1024px]:h-9 md:max-[1024px]:px-[9px] md:max-[1024px]:text-[12.5px]"
+          />
+        </Field>
         {quote}
         {!phone && notesField}
         {phone && (
