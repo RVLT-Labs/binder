@@ -1,5 +1,14 @@
-import { asCueType, formatCueNumber, markerText } from '@binder/core'
-import type { LayerRef, WordLayer } from '@binder/shared'
+import {
+  asCueType,
+  BAR_OVERHANG,
+  BAR_WIDTH,
+  caretAt,
+  formatCueNumber,
+  markerText,
+  snapToCaret,
+  wordBoxes,
+} from '@binder/core'
+import { isCaretMark, type LayerRef, type WordLayer } from '@binder/shared'
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -63,11 +72,13 @@ const layerOf = (row: AnnotationRow): LayerRef => ({
 export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const session = useMarkupSession()
   const selection = useSelection()
-  const { tool, cueType, rebind } = useTool()
+  const { tool, cueType, cueMark, rebind } = useTool()
   const relocating = useRelocating()
   const { peers } = usePresencePeers()
   const peerOn = useMemo(() => peerSelections(peers, session.versionId), [peers, session.versionId])
   const [ghost, setGhost] = useState<Ghost | null>(null)
+  /** The pointer on this page, kept only while a line or pointer mark is being aimed (it draws the caret ghost). */
+  const [aim, setAim] = useState<{ x: number; y: number } | null>(null)
   /** The cue the pointer is over (its tag or its trigger words): its words fill lightly. */
   const [hovered, setHovered] = useState<string | null>(null)
   /** The one drag in progress from this page: a cue marker, a shape, a handle, or a drawing. */
@@ -96,6 +107,21 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const dragging = rebind !== null || (annotating && isDragTool(tool))
   const gestures = useAnnotationGestures({ pageIndex, size, words, session, slot, root })
   const { preview } = gestures
+  // A line or pointer is aimed with a ghost bar at the character boundary the click would take.
+  const aiming = placing && isCaretMark(cueMark)
+  const caretGhost = useMemo(() => {
+    if (!aiming || !aim || !session.snap || !words) return null
+    const caret = snapToCaret(words, aim)
+    const box = caret && caretAt(words, caret.text)?.box
+    return caret && box
+      ? { x: caret.x, y1: box.y - BAR_OVERHANG, y2: box.y + box.h + BAR_OVERHANG }
+      : null
+  }, [aiming, aim, session.snap, words])
+  const { cueTarget } = session
+  const cueColour =
+    'departmentId' in cueTarget
+      ? (departments.find((d) => d.id === cueTarget.departmentId)?.colour ?? '')
+      : ''
 
   // A row that disappears mid-drag (deleted elsewhere, its layer hidden) ends the drag at once.
   useEffect(() => {
@@ -119,6 +145,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   function track(e: ReactMouseEvent<Element>) {
     const point = pointOf(e)
     session.hover.current = point ? { pageIndex, point } : null
+    if (aiming) setAim(point)
   }
 
   function onSurfaceClick(e: ReactMouseEvent<SVGRectElement>) {
@@ -127,8 +154,12 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
     if (relocating) {
       void session.relocate(relocating.table, relocating.id, pageIndex, point)
       endRelocate()
-    } else if (placing) void session.placeCue(pageIndex, point, cueType, words)
-    else if (gestures.placeByClick(point) || dragging) return
+    } else if (placing) {
+      // The click that ends a range drag has already placed its cue.
+      if (!gestures.consumeDragClick()) {
+        void session.placeCue(pageIndex, point, cueType, words, cueMark)
+      }
+    } else if (gestures.placeByClick(point) || dragging) return
     else clearSelection()
   }
 
@@ -183,6 +214,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
       onPointerMove={track}
       onPointerLeave={() => {
         if (session.hover.current?.pageIndex === pageIndex) session.hover.current = null
+        setAim(null)
       }}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the page surface takes pointer placement and drawing; the keyboard places cues with c */}
@@ -247,6 +279,36 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
       })}
       {preview?.kind === 'draft' && (
         <AnnotationPreview annotation={preview.shape} layerColour={draftColour} words={words} />
+      )}
+      {preview?.kind === 'range' && words && (
+        <g className="cue-range-preview-boxes" pointerEvents="none">
+          {wordBoxes(words, preview.text).map((b) => (
+            <rect
+              key={`${b.x}:${b.y}`}
+              className="cue-range-preview"
+              x={b.x}
+              y={b.y}
+              width={b.w}
+              height={b.h}
+              fill={cueColour}
+              fillOpacity={0.3}
+              style={{ mixBlendMode: 'multiply' }}
+            />
+          ))}
+        </g>
+      )}
+      {caretGhost && (
+        <line
+          className="cue-caret-ghost"
+          x1={caretGhost.x}
+          x2={caretGhost.x}
+          y1={caretGhost.y1}
+          y2={caretGhost.y2}
+          stroke={cueColour}
+          strokeWidth={BAR_WIDTH}
+          opacity={0.5}
+          style={{ pointerEvents: 'none' }}
+        />
       )}
       {handlesFor && (
         <Handles

@@ -1,4 +1,4 @@
-import { buildWordStream, lineCentreY } from '@binder/core'
+import { buildWordStream, cutQuote, lineCentreY } from '@binder/core'
 import { QUOTE_MAX_WORDS, type TextAnchor, type WordLayer } from '@binder/shared'
 
 type Point = { x: number; y: number }
@@ -13,9 +13,15 @@ function distanceTo(w: WordLayer['words'][number], p: Point): number {
 /**
  * The words a drag from `from` to `to` covers (displayed points on one page): each end maps to its
  * nearest word, and the range is every word between them in reading order. The quote is the first
- * eight words; `wordStart` and `wordEnd` are indices into the page's words. Null for a page with no words.
+ * eight words, or with `wholeQuote` the whole range cut at the quote's character cap; `wordStart` and
+ * `wordEnd` are indices into the page's words. Null for a page with no words.
  */
-export function wordRangeFromDrag(layer: WordLayer, from: Point, to: Point): TextAnchor | null {
+export function wordRangeFromDrag(
+  layer: WordLayer,
+  from: Point,
+  to: Point,
+  options: { wholeQuote?: boolean } = {},
+): TextAnchor | null {
   const stream = buildWordStream(new Map([[0, layer]]))
   if (stream.length === 0) return null
   const nearest = (p: Point) => {
@@ -36,10 +42,12 @@ export function wordRangeFromDrag(layer: WordLayer, from: Point, to: Point): Tex
   const covered = stream.slice(Math.min(a, b), Math.max(a, b) + 1)
   const indices = covered.map((w) => w.wordIndex)
   return {
-    quote: covered
-      .slice(0, QUOTE_MAX_WORDS)
-      .map((w) => w.t)
-      .join(' '),
+    quote: options.wholeQuote
+      ? cutQuote(covered.map((w) => w.t))
+      : covered
+          .slice(0, QUOTE_MAX_WORDS)
+          .map((w) => w.t)
+          .join(' '),
     wordStart: Math.min(...indices),
     wordEnd: Math.max(...indices),
   }

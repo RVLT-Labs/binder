@@ -94,7 +94,7 @@ export function useMarkupShortcuts(calling?: CallingKeys): void {
         case 'placeCue': {
           const at = session.hover.current
           if (!at) return
-          void session.placeCue(at.pageIndex, at.point, tool.cueType)
+          void session.placeCue(at.pageIndex, at.point, tool.cueType, undefined, tool.cueMark)
           break
         }
         case 'jumpToPage':

@@ -1,4 +1,4 @@
-import type { LayerRef } from '@binder/shared'
+import type { LayerRef, WordLayer } from '@binder/shared'
 import { render } from '@testing-library/react'
 import { createRef } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -14,6 +14,7 @@ import {
   deleteAnnotation,
   deleteCue,
   insertAnnotation,
+  insertCue,
   updateAnnotation,
   updateCue,
 } from './mutations'
@@ -30,6 +31,7 @@ vi.mock('./useMarkup', () => ({
 vi.mock('./mutations', async (original) => ({
   ...(await original<typeof import('./mutations')>()),
   deleteCue: vi.fn(async () => {}),
+  insertCue: vi.fn(async () => 'new-cue'),
   updateCue: vi.fn(async () => {}),
   insertAnnotation: vi.fn(async () => 'new-id'),
   updateAnnotation: vi.fn(async () => {}),
@@ -68,7 +70,9 @@ vi.mock('./useLayers', () => ({
 
 const page = { id: 'p0', index: 0, width: 600, height: 800, words_key: null } as unknown as PageRow
 
-function renderSession(extra: { versionReadOnly?: string | null } = {}): MarkupSession {
+function renderSession(
+  extra: { versionReadOnly?: string | null; snapDefault?: number; pages?: PageRow[] } = {},
+): MarkupSession {
   let session: MarkupSession | null = null
   function Probe() {
     session = useMarkupSession()
@@ -79,10 +83,10 @@ function renderSession(extra: { versionReadOnly?: string | null } = {}): MarkupS
       showId="s1"
       documentId="d1"
       versionId="v1"
-      pages={[page]}
-      snapDefault={0}
+      pages={extra.pages ?? [page]}
+      snapDefault={extra.snapDefault ?? 0}
       viewer={createRef()}
-      {...extra}
+      versionReadOnly={extra.versionReadOnly}
     >
       <Probe />
     </MarkupSessionProvider>,
@@ -296,4 +300,73 @@ test('an archived show’s reason wins over the version’s', () => {
   show.status = 'archived'
   const session = renderSession({ versionReadOnly: OLD_VERSION })
   expect(session.readOnly).toBe(ARCHIVED_HINT)
+})
+
+const wordsPage = { ...page, words_key: 'words/0' } as unknown as PageRow
+/** "To be or not" on one line centred on y 705. */
+const words: WordLayer = {
+  words: [
+    { t: 'To', x: 50, y: 700, w: 14, h: 10 },
+    { t: 'be', x: 68, y: 700, w: 14, h: 10 },
+    { t: 'or', x: 86, y: 700, w: 14, h: 10 },
+    { t: 'not', x: 104, y: 700, w: 20, h: 10 },
+  ],
+  lines: [[0, 1, 2, 3]],
+}
+const insertedAnchor = () => vi.mocked(insertCue).mock.calls[0]?.[2].anchor
+
+test('placeCue passes the chosen mark through to the inserted row', async () => {
+  db.getAll.mockResolvedValue([])
+  const session = renderSession({ snapDefault: 1, pages: [wordsPage] })
+  await session.placeCue(0, { x: 90, y: 702 }, 'go', words, 'highlight')
+  expect(insertedAnchor()).toMatchObject({
+    mark: 'highlight',
+    x: 86,
+    y: 705,
+    text: { quote: 'or', wordStart: 2, wordEnd: 2 },
+  })
+  vi.mocked(insertCue).mockClear()
+  await session.placeCue(0, { x: 90, y: 702 }, 'go', words, 'line')
+  expect(insertedAnchor()).toMatchObject({ mark: 'line', y: 705 })
+  expect(insertedAnchor()?.text?.offset).toBeTypeOf('number')
+  vi.mocked(insertCue).mockClear()
+  // No mark given: today's underline, with no mark key at all.
+  await session.placeCue(0, { x: 90, y: 702 }, 'go', words)
+  expect(insertedAnchor()).not.toHaveProperty('mark')
+})
+
+test('placeCueRange inserts a cue whose text is the dragged range', async () => {
+  db.getAll.mockResolvedValue([])
+  const session = renderSession({ snapDefault: 1, pages: [wordsPage] })
+  const text = { quote: 'be or', wordStart: 1, wordEnd: 2 }
+  vi.mocked(insertCue).mockClear()
+  await session.placeCueRange(0, text, 'standby', 'highlight', words)
+  const row = vi.mocked(insertCue).mock.calls[0]?.[2]
+  expect(row?.type).toBe('standby')
+  expect(row?.anchor).toEqual({
+    documentId: 'd1',
+    documentVersionId: 'v1',
+    pageIndex: 0,
+    x: 68,
+    y: 705,
+    status: 'ok',
+    text,
+    mark: 'highlight',
+  })
+  vi.mocked(insertCue).mockClear()
+  await session.placeCueRange(0, text, 'go', 'underline', words)
+  expect(insertedAnchor()).not.toHaveProperty('mark')
+  expect(insertedAnchor()?.text).toEqual(text)
+})
+
+test('placeCueRange refuses on a version that is not current', async () => {
+  const session = renderSession({ versionReadOnly: OLD_VERSION, pages: [wordsPage] })
+  await session.placeCueRange(
+    0,
+    { quote: 'be', wordStart: 1, wordEnd: 1 },
+    'go',
+    'highlight',
+    words,
+  )
+  expect(insertCue).not.toHaveBeenCalled()
 })

@@ -1,11 +1,13 @@
 import {
   type Anchor,
+  type CueMark,
   type CueType,
   canEditLayer,
   type LayerRef,
   layerKey,
   type MarkerSide,
   PERSONAL_LAYER_COLOUR,
+  type TextAnchor,
   type WordLayer,
 } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
@@ -28,7 +30,7 @@ import type { LayerState, LayerStore } from './layerState'
 import { readMarkerSide } from './markerSideSettings'
 import type { CueRowWithDept, MarkupView } from './markupView'
 import { deleteCue, type EditContext, insertCue, updateCue } from './mutations'
-import { anchorAt, numberAt } from './placement'
+import { markAnchorAt, numberAt } from './placement'
 import { endRelocate } from './relocate'
 import { clearSelection, select } from './selection'
 import { effectiveSnap, loadSnapOverride, saveSnapOverride } from './snapPref'
@@ -38,6 +40,7 @@ import type { DepartmentRow } from './useDepartments'
 import { useLayers } from './useLayers'
 import { type HistoricSource, useMarkup } from './useMarkup'
 import { loadWordLayer } from './wordLayers'
+import { highlightPoint } from './wordRange'
 
 const annotationLayer = (a: { layer_kind: string | null; layer_id: string | null }): LayerRef => ({
   kind: a.layer_kind === 'personal' ? 'personal' : 'department',
@@ -93,8 +96,29 @@ export interface MarkupSession extends AnnotationActions {
   layerName(layer: LayerRef): string
   /** The layer's colour: a department's own, or the personal layer's grey. */
   layerColour(layer: LayerRef): string
-  /** `words` is the page's word layer when the caller already has it; otherwise it is loaded. */
-  placeCue(pageIndex: number, point: Point, type: CueType, words?: WordLayer | null): Promise<void>
+  /**
+   * `words` is the page's word layer when the caller already has it; otherwise it is loaded. `mark`
+   * is how the cue marks its words (underline when omitted); a highlight takes the word under the
+   * point, a line or pointer the character boundary nearest it.
+   */
+  placeCue(
+    pageIndex: number,
+    point: Point,
+    type: CueType,
+    words?: WordLayer | null,
+    mark?: CueMark,
+  ): Promise<void>
+  /**
+   * Places a cue on a dragged range of words: its anchor text is `text`, at the first word's left
+   * edge and its line's centre. `words` is the page's layer when the caller has it.
+   */
+  placeCueRange(
+    pageIndex: number,
+    text: TextAnchor,
+    type: CueType,
+    mark: 'underline' | 'highlight',
+    words?: WordLayer | null,
+  ): Promise<void>
   /**
    * `dropped` is a cue dropped by its margin tag: a pointer outside the line's extent starts the
    * trigger at the line's first word, not the nearest.
@@ -308,12 +332,13 @@ export function MarkupSessionProvider({
       point: Point,
       loaded?: WordLayer | null,
       firstWordOutside = false,
+      mark: CueMark = 'underline',
     ) => {
       const page = latest.current.pages[pageIndex]
       const snapOn = latest.current.snap
       const words =
         !snapOn || !page?.words_key ? null : (loaded ?? (await loadWordLayer(page.words_key)))
-      return anchorAt({
+      return markAnchorAt({
         documentId,
         documentVersionId: versionId,
         pageIndex,
@@ -321,46 +346,93 @@ export function MarkupSessionProvider({
         words,
         snap: snapOn,
         firstWordOutside,
+        mark,
       })
     },
     [documentId, versionId],
   )
 
-  const placeCue = useCallback(
-    async (pageIndex: number, point: Point, type: CueType, words?: WordLayer | null) => {
+  /** Numbers and inserts a cue at an anchor in the cue tool's department, then selects it. */
+  const insertPlaced = useCallback(
+    async (anchor: Anchor, type: CueType) => {
       const target = latest.current.cueTarget
       if ('disabled' in target) return
+      const rows = await db.getAll<{ id: string; major: number; minor: number; anchor: string }>(
+        `SELECT id, major, minor, anchor FROM cues
+         WHERE department_id = ? AND json_extract(anchor, '$.documentVersionId') = ?`,
+        [target.departmentId, versionId],
+      )
+      const number = numberAt(
+        anchor,
+        rows.map((r) => ({
+          ...r,
+          anchor: JSON.parse(r.anchor) as { pageIndex: number; y: number },
+        })),
+      )
+      const now = latest.current
+      if (!now.ctx || now.readOnly) return
+      const id = await insertCue(db, now.ctx, {
+        departmentId: target.departmentId,
+        ...number,
+        label: '',
+        type,
+        notes: '',
+        colour: null,
+        anchor,
+      })
+      select('cues', id)
+    },
+    [db, versionId],
+  )
+
+  const placeCue = useCallback(
+    async (
+      pageIndex: number,
+      point: Point,
+      type: CueType,
+      words?: WordLayer | null,
+      mark: CueMark = 'underline',
+    ) => {
+      if ('disabled' in latest.current.cueTarget) return
       try {
-        const anchor = await anchorFor(pageIndex, point, words)
-        const rows = await db.getAll<{ id: string; major: number; minor: number; anchor: string }>(
-          `SELECT id, major, minor, anchor FROM cues
-           WHERE department_id = ? AND json_extract(anchor, '$.documentVersionId') = ?`,
-          [target.departmentId, versionId],
-        )
-        const number = numberAt(
-          anchor,
-          rows.map((r) => ({
-            ...r,
-            anchor: JSON.parse(r.anchor) as { pageIndex: number; y: number },
-          })),
-        )
-        const now = latest.current
-        if (!now.ctx || now.readOnly) return
-        const id = await insertCue(db, now.ctx, {
-          departmentId: target.departmentId,
-          ...number,
-          label: '',
-          type,
-          notes: '',
-          colour: null,
-          anchor,
-        })
-        select('cues', id)
+        await insertPlaced(await anchorFor(pageIndex, point, words, false, mark), type)
       } catch (err) {
         report(err)
       }
     },
-    [db, versionId, anchorFor],
+    [insertPlaced, anchorFor],
+  )
+
+  const placeCueRange = useCallback(
+    async (
+      pageIndex: number,
+      text: TextAnchor,
+      type: CueType,
+      mark: 'underline' | 'highlight',
+      loaded?: WordLayer | null,
+    ) => {
+      if ('disabled' in latest.current.cueTarget) return
+      try {
+        const key = latest.current.pages[pageIndex]?.words_key
+        const words = loaded ?? (key ? await loadWordLayer(key) : null)
+        const at = words ? highlightPoint(words, text) : null
+        if (!at) return
+        const anchor: Anchor = {
+          documentId,
+          documentVersionId: versionId,
+          pageIndex,
+          x: at.x,
+          y: at.y,
+          text,
+          status: 'ok',
+          ...(mark === 'underline' ? {} : { mark }),
+        }
+        await insertPlaced(anchor, type)
+      } catch (err) {
+        report(err)
+      }
+    },
+    [documentId, versionId, insertPlaced],
   )
 
   const moveCue = useCallback(
@@ -459,6 +531,7 @@ export function MarkupSessionProvider({
         : (departments.find((d) => d.id === layer.id)?.colour ?? PERSONAL_LAYER_COLOUR),
     ...annotations,
     placeCue,
+    placeCueRange,
     moveCue,
     removeCue,
     relocate,

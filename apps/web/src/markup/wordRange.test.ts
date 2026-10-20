@@ -57,6 +57,42 @@ describe('wordRangeFromDrag', () => {
       wordEnd: 13,
     }))
 
+  test("wholeQuote gives the whole range's text, still cut at 400 characters", () => {
+    const ten = wordRangeFromDrag(layer(), centre(0), centre(9), { wholeQuote: true })
+    expect(ten).toEqual({
+      quote: 'one two three four five six seven eight nine ten',
+      wordStart: 0,
+      wordEnd: 9,
+    })
+    // Sixty words of nine letters (ten with the space) overrun the cap: the quote stops at a word boundary.
+    const long: WordLayer = {
+      words: Array.from({ length: 60 }, (_, i) => ({
+        t: 'abcdefghi',
+        x: 10 + (i % 10) * 50,
+        y: 700 - Math.floor(i / 10) * 20,
+        w: 40,
+        h: 10,
+      })),
+      lines: Array.from({ length: 6 }, (_, row) =>
+        Array.from({ length: 10 }, (_, c) => row * 10 + c),
+      ),
+    }
+    const range = wordRangeFromDrag(
+      long,
+      { x: 20, y: 705 },
+      { x: 480, y: 585 },
+      { wholeQuote: true },
+    )
+    expect(range).toMatchObject({ wordStart: 0, wordEnd: 59 })
+    expect(range?.quote.length).toBeLessThanOrEqual(400)
+    expect(range?.quote.split(' ').length).toBeGreaterThan(8)
+    expect(range?.quote.endsWith('abcdefghi')).toBe(true)
+    // Without it the quote is still the first eight words.
+    expect(
+      wordRangeFromDrag(long, { x: 20, y: 705 }, { x: 480, y: 585 })?.quote.split(' '),
+    ).toHaveLength(8)
+  })
+
   test('a page with no words gives nothing', () =>
     expect(wordRangeFromDrag({ words: [], lines: [] }, { x: 0, y: 0 }, { x: 5, y: 5 })).toBeNull())
 })
