@@ -154,6 +154,9 @@ export function snapRange(
   const start = snapToWord(layer, point, maxDistance)
   if (!start) return null
   const first = start.text.wordStart
-  const last = Math.min(first + Math.max(1, Math.floor(wordCount)) - 1, layer.words.length - 1)
+  const last = Math.min(
+    first + (Number.isFinite(wordCount) ? Math.max(1, Math.floor(wordCount)) : 1) - 1,
+    layer.words.length - 1,
+  )
   return { x: start.x, y: start.y, text: rangeText(layer, first, last) }
 }

@@ -1091,6 +1091,58 @@ describe('moved bubbles', () => {
     expect(t.leader).toBeNull()
   })
 
+  describe('overlapping any part of its own mark', () => {
+    // A wide underline from x 300 to 500 at y 494.
+    const wide = { x: 300, y: 495, w: 200, h: 10 }
+    // The pill is ~21 wide and 14 tall; its centre is (anchorX + dx, y + dy), y = 500.
+    const over = (mark: CueTagInput['mark'], extra: Partial<CueTagInput>, dx: number, dy: number) =>
+      one(moved('a', { mark, triggerBoxes: [wide], tag: { dx, dy }, ...extra }))
+
+    test('a bubble over the middle of its wide underline draws no leader', () => {
+      const t = over(undefined, {}, 100, -2)
+      expect(t.tag.x).toBeGreaterThan(300)
+      expect(t.tag.x + t.tag.w).toBeLessThan(500)
+      expect(t.leader).toBeNull()
+    })
+
+    test('over the middle of a wide highlight draws no leader', () => {
+      const t = over('highlight', {}, 100, 3)
+      expect(t.fills).toHaveLength(1)
+      expect(t.leader).toBeNull()
+    })
+
+    test("over its line's bar or pointer draws no leader", () => {
+      const caret = { x: 320, box: { x: 300, y: 495, w: 40, h: 10 } }
+      // On the bar, but not on the word-underline end the leader would target.
+      const line = over('line', { caret, anchorX: 320 }, 0, 14)
+      expect(line.bar).not.toBeNull()
+      expect(line.leader).toBeNull()
+      // Over the pointer's triangle above the bar.
+      const pointer = over('pointer', { caret, anchorX: 320 }, 0, 17)
+      expect(pointer.leader).toBeNull()
+      // Over the word the line sits in, away from the bar.
+      const word = over('line', { caret, anchorX: 320 }, 15, 0)
+      expect(word.leader).toBeNull()
+    })
+
+    test('over the tick of an unbound cue draws no leader', () => {
+      const t = over(undefined, { triggerBoxes: [], anchorX: 300 }, 0, 2)
+      expect(t.tick).not.toBeNull()
+      expect(t.leader).toBeNull()
+    })
+
+    test('a bubble just off the mark still draws its straight leader', () => {
+      // The pill's bottom edge (496) is clear of the top of the underline's 1.5 pt stroke (494.75).
+      const clear = over(undefined, {}, 100, 3)
+      expect(clear.tag.y).toBeGreaterThan(494 + UNDERLINE_WIDTH / 2)
+      expect(clear.tag.y).toBeLessThan(500)
+      expect(clear.leader).toHaveLength(2)
+      expect(clear.leader?.[1]).toEqual({ x: 300, y: 494 })
+      const below = over(undefined, {}, 100, -30)
+      expect(below.leader).toHaveLength(2)
+    })
+  })
+
   test('parallel-leader staggering ignores it', () => {
     const word = { x: 300, y: 495, w: 40, h: 10 }
     const [a, m, b] = layout([

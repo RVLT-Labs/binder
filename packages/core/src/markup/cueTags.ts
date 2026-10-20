@@ -469,7 +469,26 @@ function layoutOne(
   const bar = barred ? barOf(c) : null
   const base = markTarget(c)
   const leader = movedTo
-    ? straightConnector(tag, movedTo, base)
+    ? straightConnector(tag, movedTo, base, [
+        ...underlines.map((u) => ({
+          x: u.x1,
+          y: u.y - UNDERLINE_WIDTH / 2,
+          w: u.x2 - u.x1,
+          h: UNDERLINE_WIDTH,
+        })),
+        ...fills,
+        ...(tick
+          ? [
+              {
+                x: tick.x - UNDERLINE_WIDTH / 2,
+                y: tick.y1,
+                w: UNDERLINE_WIDTH,
+                h: tick.y2 - tick.y1,
+              },
+            ]
+          : []),
+        ...(bar ? barBoxes(bar, c.triggerBoxes) : []),
+      ])
     : connector({
         left,
         tag,
@@ -527,17 +546,37 @@ function noteBoxUnder(tag: Box, text: string, left: boolean): Box {
 
 /**
  * A moved bubble's connector: one straight segment from the pill's centre (the opaque pill hides
- * that end, so the line meets its outline) to the mark. Null when the pill covers the mark.
+ * that end, so the line meets its outline) to the mark. Null when the pill covers the mark: the
+ * target point is inside it, or it touches any of the mark's drawn parts (`parts`: each underline,
+ * fill, tick, and a line or pointer's bar and word box) so a bubble dropped onto its own mark
+ * draws no line along it.
  */
 function straightConnector(
   tag: Box,
   centre: { x: number; y: number },
   target: { x: number; y: number } | null,
+  parts: readonly Box[],
 ): Array<{ x: number; y: number }> | null {
   if (!target) return null
   const covered =
-    target.x >= tag.x && target.x <= tag.x + tag.w && target.y >= tag.y && target.y <= tag.y + tag.h
+    (target.x >= tag.x &&
+      target.x <= tag.x + tag.w &&
+      target.y >= tag.y &&
+      target.y <= tag.y + tag.h) ||
+    parts.some((p) => boxesTouch(tag, p))
   return covered ? null : [{ x: centre.x, y: centre.y }, target]
+}
+
+/** A line or pointer's drawn parts as boxes: the bar (and a pointer's triangle) and the word it sits in. */
+function barBoxes(bar: NonNullable<CueTagLayout['bar']>, words: readonly Box[]): Box[] {
+  const top = bar.y2 + (bar.pointer ? POINTER_HEIGHT : 0)
+  const w = bar.pointer ? POINTER_WIDTH : BAR_WIDTH
+  return [{ x: bar.x - w / 2, y: bar.y1, w, h: top - bar.y1 }, ...words]
+}
+
+/** Whether two boxes overlap or touch. */
+function boxesTouch(a: Box, b: Box): boolean {
+  return a.x <= b.x + b.w && b.x <= a.x + a.w && a.y <= b.y + b.h && b.y <= a.y + a.h
 }
 
 /**

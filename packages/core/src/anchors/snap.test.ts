@@ -193,6 +193,10 @@ describe('snapRange', () => {
     })
   })
 
+  test('a non-finite word count is one word', () => {
+    expect(snapRange(layer, { x: 110, y: 706 }, Number.NaN)?.text.wordEnd).toBe(1)
+  })
+
   test('null when no line is in range', () => {
     expect(snapRange(layer, { x: 110, y: 400 }, 3)).toBeNull()
     expect(snapRange(layer, { x: 110, y: 718.5 }, 3)).toBeNull()
