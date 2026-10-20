@@ -549,3 +549,14 @@ test('moveCue of a highlight keeps its word count', async () => {
     text: { wordStart: 1, wordEnd: 2, quote: 'be or' },
   })
 })
+
+test('setBubble clamps an offset to the schema limits and ignores one that is not a number', async () => {
+  storedCue({ ...base, x: 86, y: 705 })
+  const session = renderSession()
+  await session.setBubble('c1', { dx: 99999, dy: -99999 })
+  expect(movedAnchor()?.tag).toEqual({ dx: 14400, dy: -14400 })
+  vi.mocked(updateCue).mockClear()
+  await session.setBubble('c1', { dx: Number.NaN, dy: 3 })
+  await session.setBubble('c1', { dx: 3, dy: Number.POSITIVE_INFINITY })
+  expect(updateCue).not.toHaveBeenCalled()
+})

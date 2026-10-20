@@ -1,7 +1,7 @@
 import { type CueTagLayout, helveticaBoldWidth, helveticaWidth } from '@binder/core'
 import type { WordLayer } from '@binder/shared'
 import { fireEvent, render } from '@testing-library/react'
-import { expect, test, vi } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { CueMarker, CueTrigger, cueAccessibleName } from './CueMarker'
 import { type LayoutCue, layoutPageCues } from './cueLayout'
 import { SvgText } from './SvgText'
@@ -608,4 +608,60 @@ test('the bar hit area stays 44 px wide on a coarse pointer, movable or not', ()
     </svg>,
   )
   expect(Number(container.querySelector('rect.cue-bar-hit')?.getAttribute('width'))).toBe(22)
+})
+
+describe('a finger needs 44 px to grab the mark of a selected cue', () => {
+  const hl = { ...bound, anchor: { ...bound.anchor, mark: 'highlight' as const } }
+  const trigger = (
+    c: LayoutCue,
+    props: Partial<Parameters<typeof CueTrigger>[0]> = {},
+    onPointerDown = vi.fn(),
+  ) => {
+    const view = render(
+      <svg aria-label="Page 1 markup">
+        <CueTrigger cue={c} tag={tagOf(c)} interactive onPointerDown={onPointerDown} {...props} />
+      </svg>,
+    )
+    return { ...view, onPointerDown }
+  }
+  const pads = (container: HTMLElement) => [...container.querySelectorAll('rect.cue-touch-hit')]
+
+  test('movable on a coarse pointer: each highlight fill and each word box gets a padded transparent rect, at least 44 screen px each way', () => {
+    for (const c of [hl, bound]) {
+      const zoom = 1.5
+      const { container, onPointerDown, unmount } = trigger(c, {
+        movable: true,
+        coarse: true,
+        zoom,
+      })
+      const found = pads(container)
+      expect(found.length).toBeGreaterThan(0)
+      for (const el of found) {
+        expect(Number(el.getAttribute('width')) * zoom).toBeGreaterThanOrEqual(44 - 1e-6)
+        expect(Number(el.getAttribute('height')) * zoom).toBeGreaterThanOrEqual(44 - 1e-6)
+        expect(el.getAttribute('fill')).toBe('transparent')
+      }
+      // It contains the visible box and takes the press.
+      const box = container.querySelector('rect.cue-fill, rect.cue-highlight') as SVGRectElement
+      const pad = found[0] as SVGRectElement
+      expect(Number(pad.getAttribute('x'))).toBeLessThanOrEqual(Number(box.getAttribute('x')))
+      expect(Number(pad.getAttribute('y'))).toBeLessThanOrEqual(Number(box.getAttribute('y')))
+      fireEvent.pointerDown(pad)
+      expect(onPointerDown).toHaveBeenCalledTimes(1)
+      unmount()
+    }
+  })
+
+  test('a fine pointer, or a cue that is not movable, gets no extra rect', () => {
+    for (const c of [hl, bound]) {
+      for (const props of [
+        { movable: true, coarse: false },
+        { movable: false, coarse: true },
+      ]) {
+        const { container, unmount } = trigger(c, props)
+        expect(pads(container)).toHaveLength(0)
+        unmount()
+      }
+    }
+  })
 })

@@ -183,6 +183,10 @@ export interface MarkupSessionProviderProps {
   children: ReactNode
 }
 
+/** The largest offset the anchor schema accepts, in page points. */
+const BUBBLE_LIMIT = 14400
+const limit = (n: number) => Math.max(-BUBBLE_LIMIT, Math.min(BUBBLE_LIMIT, n))
+
 function report(err: unknown) {
   pushNotice({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
 }
@@ -511,12 +515,15 @@ export function MarkupSessionProvider({
   const setBubble = useCallback(
     async (id: string, tag: BubbleOffset | null) => {
       try {
+        // The sync policy refuses an offset outside the schema's limits or one that is not a number.
+        if (tag && !(Number.isFinite(tag.dx) && Number.isFinite(tag.dy))) return
         const current = await cueForChange(id)
         if (!current?.anchor) return
         const { tag: _was, ...rest } = current.anchor
         const ctxNow = latest.current.ctx
         if (!ctxNow) return
-        await updateCue(db, ctxNow, id, { anchor: tag ? { ...rest, tag } : rest })
+        const limited = tag && { dx: limit(tag.dx), dy: limit(tag.dy) }
+        await updateCue(db, ctxNow, id, { anchor: limited ? { ...rest, tag: limited } : rest })
       } catch (err) {
         report(err)
       }

@@ -82,6 +82,8 @@ export interface CueMarkerProps {
   onPointerDown?: PointerEventHandler<SVGGElement>
   /** An arrow key on a movable marker: the bubble moves by this many page points (y up). */
   onNudge?: (dx: number, dy: number) => void
+  /** Focus left the marker. */
+  onBlur?: () => void
   /** Enter or Space on the focused tag: select it. */
   onActivate?: () => void
   /** The pointer entered or left the tag: its trigger words fill while it is over. */
@@ -163,10 +165,37 @@ export function CueTrigger({
     onPointerLeave: () => onHover?.(false),
   }
   const { bar } = tag
-  const hitWidth = ((coarse ?? coarsePointer()) ? BAR_HIT_COARSE_PX : BAR_HIT_FINE_PX) / (zoom || 1)
+  const isCoarse = coarse ?? coarsePointer()
+  const hitWidth = (isCoarse ? BAR_HIT_COARSE_PX : BAR_HIT_FINE_PX) / (zoom || 1)
+  // A finger needs 44 px to grab a selected cue's words: pad each box out to that, under the visible shapes.
+  const touchBoxes =
+    movable && isCoarse ? (tag.mark === 'highlight' ? tag.fills : tag.triggerBoxes) : []
+  const touchMin = BAR_HIT_COARSE_PX / (zoom || 1)
   return (
     // biome-ignore lint/a11y/noAriaHiddenOnFocusable: a plain SVG group is never focusable
     <g className="cue-trigger" aria-hidden="true" data-cue-trigger={cue.id} pointerEvents="none">
+      {touchBoxes.map((b, i) => {
+        const w = Math.max(b.w, touchMin)
+        const h = Math.max(b.h, touchMin)
+        return (
+          // biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut to dragging the cue; the tag is the keyboard control
+          <rect
+            // biome-ignore lint/suspicious/noArrayIndexKey: the boxes are positional, one per line
+            key={i}
+            className="cue-touch-hit"
+            x={b.x - (w - b.w) / 2}
+            y={b.y - (h - b.h) / 2}
+            width={w}
+            height={h}
+            fill="transparent"
+            style={hit.style}
+            onClick={hit.onClick}
+            onPointerDown={hit.onPointerDown}
+            onPointerEnter={hit.onPointerEnter}
+            onPointerLeave={hit.onPointerLeave}
+          />
+        )
+      })}
       {tag.fills.map((b, i) => (
         // biome-ignore lint/a11y/noStaticElementInteractions: the words are a pointer shortcut to selecting the cue; the tag is the keyboard control
         <rect
@@ -295,6 +324,7 @@ export function CueMarker({
   faded = false,
   onPointerDown,
   onNudge,
+  onBlur,
   onActivate,
   onHover,
 }: CueMarkerProps) {
@@ -332,6 +362,7 @@ export function CueMarker({
         opacity: faded ? 0.35 : undefined,
       }}
       onPointerDown={onPointerDown}
+      onBlur={onBlur}
       onPointerEnter={() => onHover?.(true)}
       onPointerLeave={() => onHover?.(false)}
     >

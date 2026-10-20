@@ -8,7 +8,7 @@ import {
   snapToCaret,
   wordBoxes,
 } from '@binder/core'
-import { type BubbleOffset, isCaretMark, type LayerRef, type WordLayer } from '@binder/shared'
+import { isCaretMark, type LayerRef, type WordLayer } from '@binder/shared'
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -39,6 +39,7 @@ import { endRelocate, useRelocating } from './relocate'
 import { clearSelection, select, useSelection } from './selection'
 import { isDragTool, useTool } from './tools'
 import { rowKey, useAnnotationGestures } from './useAnnotationGestures'
+import { hundredth, tagKey as storedTagKey, useBubbleNudge } from './useBubbleNudge'
 import { useWordLayer } from './wordLayers'
 
 export interface MarkupOverlayProps {
@@ -65,23 +66,8 @@ interface BubbleDrag {
   settle?: string
 }
 
-/** A nudge written but maybe not yet drawn: the next nudge adds to it rather than to the stale layout. */
-interface PendingNudge {
-  tag: BubbleOffset
-  /** The cue's stored tag when it was written, so it lapses once a different one has landed. */
-  from: string
-  at: number
-}
-
-/** How long a written nudge stands in for the layout while the write travels back through the local database. */
-const NUDGE_PENDING_MS = 1000
-
 /** The longest a dropped bubble's preview stands in for a write that has not shown up. */
 const SETTLE_MS = 1500
-
-const storedTagKey = (tag: BubbleOffset | undefined) => (tag ? `${tag.dx},${tag.dy}` : '')
-/** Offsets are kept to a hundredth of a point: finer is noise in the history and the sync. */
-const hundredth = (n: number) => Math.round(n * 100) / 100
 
 /** The page box (`[data-page-index]`) an overlay element sits in. */
 function sheetOf(el: Element): Element | null {
@@ -108,7 +94,6 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const [ghost, setGhost] = useState<Ghost | null>(null)
   /** The bubble being dragged, if any: its preview pill is drawn at the pointer. */
   const [bubbleDrag, setBubbleDrag] = useState<BubbleDrag | null>(null)
-  const pendingNudge = useRef(new Map<string, PendingNudge>())
   /** The pointer on this page, kept only while a line or pointer mark is being aimed (it draws the caret ghost). */
   const [aim, setAim] = useState<{ x: number; y: number } | null>(null)
   /** The cue the pointer is over (its tag or its trigger words): its words fill lightly. */
@@ -119,18 +104,33 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const pageIndex = page.index ?? 0
   const size = { width: page.width ?? 0, height: page.height ?? 0 }
   const cues = session.view.cuesByPage.get(pageIndex) ?? []
+  /** The page's cues as stored now, for a drag that ends long after it began. */
+  const liveCues = useRef(cues)
+  liveCues.current = cues
   const { markerSide, departments } = session
+  const selectedCue = selection?.table === 'cues' ? selection.id : null
+  // Arrow-key nudges: drawn at once, written once per burst.
+  const nudges = useBubbleNudge(cues, selectedCue, (id, tag) => void session.setBubble(id, tag))
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `nudges.version` changes when a target does
+  const drawnCues = useMemo(
+    () =>
+      cues.map((c) => {
+        const tag = nudges.targetOf(c.id)
+        return tag ? { ...c, anchor: { ...c.anchor, tag } } : c
+      }),
+    [cues, nudges.targetOf, nudges.version],
+  )
   // One layout for the page's tags, highlights and leaders: the same core code print stamps with.
   const tags = useMemo(
     () =>
       layoutPageCues(
-        cues,
+        drawnCues,
         words,
         { width: size.width, height: size.height },
         (id) => markerSide(id),
         (id) => departments.find((d) => d.id === id)?.sort_order ?? 0,
       ),
-    [cues, words, size.width, size.height, markerSide, departments],
+    [drawnCues, words, size.width, size.height, markerSide, departments],
   )
   /** Where the dragged bubble would land, laid out as the saved cue would be (full lead, clamped to the page). */
   const bubblePreview = useMemo(() => {
@@ -236,6 +236,8 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
     const layout = tags.get(cue.id)
     const sheet = sheetOf(e.currentTarget)
     if (!wasSelected || !session.canEditCue(cue) || !layout || !sheet) return
+    // A nudge still waiting for its write goes first, so the drop is the later change.
+    nudges.flush(cue.id)
     // The pill follows the pointer without jumping: it keeps the offset it was picked up at.
     const pick = pageOf(sheet, e.clientX, e.clientY)
     const grab = {
@@ -254,11 +256,14 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
       onDrop: (ev) => {
         // A drop off this page's sheet (another page, the gutter, outside the viewer) changes nothing.
         if (pageAt(ev.clientX, ev.clientY)?.pageIndex !== pageIndex) return
+        // A peer may have moved the cue (or its tag) mid-drag: the offset is against the anchor as it is now.
+        const live = liveCues.current.find((c) => c.id === cue.id)
+        if (!live) return
         const centre = centreAt(ev)
-        setBubbleDrag({ cueId: cue.id, centre, settle: storedTagKey(cue.anchor.tag) })
+        setBubbleDrag({ cueId: cue.id, centre, settle: storedTagKey(live.anchor.tag) })
         void session.setBubble(cue.id, {
-          dx: hundredth(centre.x - cue.anchor.x),
-          dy: hundredth(centre.y - cue.anchor.y),
+          dx: hundredth(centre.x - live.anchor.x),
+          dy: hundredth(centre.y - live.anchor.y),
         })
       },
       onStop: () => setBubbleDrag((d) => (d?.settle === undefined ? null : d)),
@@ -269,18 +274,11 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   function nudge(cue: CueRowWithDept, dx: number, dy: number) {
     const layout = tags.get(cue.id)
     if (!layout) return
-    const stored = storedTagKey(cue.anchor.tag)
-    const pending = pendingNudge.current.get(cue.id)
-    const live = pending && pending.from === stored && Date.now() - pending.at < NUDGE_PENDING_MS
-    const base = live
-      ? pending.tag
-      : {
-          dx: layout.tag.x + layout.tag.w / 2 - cue.anchor.x,
-          dy: layout.tag.y + layout.tag.h / 2 - cue.anchor.y,
-        }
-    const tag = { dx: hundredth(base.dx + dx), dy: hundredth(base.dy + dy) }
-    pendingNudge.current.set(cue.id, { tag, from: stored, at: Date.now() })
-    void session.setBubble(cue.id, tag)
+    const base = {
+      dx: layout.tag.x + layout.tag.w / 2 - cue.anchor.x,
+      dy: layout.tag.y + layout.tag.h / 2 - cue.anchor.y,
+    }
+    nudges.nudge(cue.id, base, dx, dy)
   }
 
   /** The mark (its words, fill or bar): an already selected cue drags across pages and re-places itself on drop. */
@@ -460,6 +458,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
               faded={bubbleDrag?.cueId === cue.id}
               onPointerDown={(e) => onMarkerDown(e, cue)}
               onNudge={(dx, dy) => nudge(cue, dx, dy)}
+              onBlur={() => nudges.flush(cue.id)}
               onActivate={() => select('cues', cue.id)}
               onHover={(over) => setHovered((h) => (over ? cue.id : h === cue.id ? null : h))}
             />

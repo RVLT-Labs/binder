@@ -272,6 +272,14 @@ const placed = {
   },
 }
 
+const sheetJsx = () => (
+  <div data-page-index="0">
+    <svg aria-label="Page 1 markup">
+      <MarkupOverlay page={page} words={words} zoom={1} />
+    </svg>
+  </div>
+)
+
 /** The tag the last `setBubble` call wrote. */
 const tagWritten = () => {
   const call = setBubble.mock.calls.at(-1) as unknown as [string, { dx: number; dy: number }]
@@ -364,32 +372,173 @@ describe('dragging a cue bubble', () => {
     expect(marker.getAttribute('aria-pressed')).toBe('true')
   })
 
-  test('the arrow keys nudge the drawn bubble from where it is, relative to the cue', () => {
-    select('cues', 'c1')
-    const { container } = mount([placed])
-    const marker = container.querySelector('[data-cue-id="c1"]') as SVGGElement
-    const c = pillCentre(container)
-    fireEvent.keyDown(marker, { key: 'ArrowDown' })
-    expect(tagWritten().dx).toBeCloseTo(c.x - 86, 1)
-    expect(tagWritten().dy).toBeCloseTo(c.y - 1 - 705, 1)
-    fireEvent.keyDown(marker, { key: 'ArrowRight', shiftKey: true })
-    // Two quick nudges before the first write has landed add up instead of replacing each other.
-    expect(tagWritten().dx).toBeCloseTo(c.x + 10 - 86, 1)
-    expect(tagWritten().dy).toBeCloseTo(c.y - 1 - 705, 1)
+  describe('arrow-key nudges are coalesced', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+    const pause = (ms: number) => act(() => void vi.advanceTimersByTime(ms))
+    const markerOf = (container: HTMLElement) =>
+      container.querySelector('[data-cue-id="c1"]') as SVGGElement
+    /** Mounts the page again with other stored cues, as a sync from the database would. */
+    const resync = (view: ReturnType<typeof mount>, cues: unknown[]) => {
+      mountSession(cues)
+      view.rerender(sheetJsx())
+    }
+
+    test('presses draw at once and are written once, 300 ms after the last, as the summed offset from where the bubble is drawn', () => {
+      select('cues', 'c1')
+      const view = mount([placed])
+      const marker = markerOf(view.container)
+      const c = pillCentre(view.container)
+      for (let i = 0; i < 5; i += 1) fireEvent.keyDown(marker, { key: 'ArrowDown' })
+      fireEvent.keyDown(marker, { key: 'ArrowRight', shiftKey: true })
+      // Drawn at the target already; nothing written yet.
+      expect(pillCentre(view.container).y).toBeCloseTo(c.y - 5, 1)
+      expect(pillCentre(view.container).x).toBeCloseTo(c.x + 10, 1)
+      expect(setBubble).not.toHaveBeenCalled()
+      pause(299)
+      expect(setBubble).not.toHaveBeenCalled()
+      pause(1)
+      expect(setBubble).toHaveBeenCalledTimes(1)
+      expect(tagWritten().dx).toBeCloseTo(c.x + 10 - 86, 1)
+      expect(tagWritten().dy).toBeCloseTo(c.y - 5 - 705, 1)
+      pause(5000)
+      expect(setBubble).toHaveBeenCalledTimes(1)
+    })
+
+    test('a later press restarts the wait, so a held key is one write', () => {
+      select('cues', 'c1')
+      const view = mount([placed])
+      const marker = markerOf(view.container)
+      for (let i = 0; i < 20; i += 1) {
+        fireEvent.keyDown(marker, { key: 'ArrowUp' })
+        pause(100)
+      }
+      expect(setBubble).not.toHaveBeenCalled()
+      pause(300)
+      expect(setBubble).toHaveBeenCalledTimes(1)
+    })
+
+    test('a stored tag that changes between presses neither loses nor undoes a step', () => {
+      select('cues', 'c1')
+      const view = mount([placed])
+      const marker = markerOf(view.container)
+      const c = pillCentre(view.container)
+      fireEvent.keyDown(marker, { key: 'ArrowDown' })
+      pause(300)
+      expect(setBubble).toHaveBeenCalledTimes(1)
+      const first = tagWritten()
+      // The first write lands and the row now holds it; two more presses follow.
+      resync(view, [{ ...placed, anchor: { ...placed.anchor, tag: first } }])
+      fireEvent.keyDown(marker, { key: 'ArrowDown' })
+      // Another stored change arrives in the middle of the burst (a peer, or the earlier write again).
+      resync(view, [{ ...placed, anchor: { ...placed.anchor, tag: { dx: 5, dy: 5 } } }])
+      fireEvent.keyDown(marker, { key: 'ArrowDown' })
+      pause(300)
+      expect(setBubble).toHaveBeenCalledTimes(2)
+      // The burst builds on the first write: two more steps down, never back up or lost.
+      expect(tagWritten().dx).toBeCloseTo(c.x - 86, 1)
+      expect(tagWritten().dy).toBeCloseTo(c.y - 3 - 705, 1)
+    })
+
+    test('the entry is dropped once the stored tag catches up, so a later nudge starts from the stored one', () => {
+      select('cues', 'c1')
+      const view = mount([placed])
+      const marker = markerOf(view.container)
+      fireEvent.keyDown(marker, { key: 'ArrowDown' })
+      pause(300)
+      const written = tagWritten()
+      resync(view, [{ ...placed, anchor: { ...placed.anchor, tag: written } }])
+      // A peer then moves the bubble elsewhere; the next press goes from there.
+      resync(view, [{ ...placed, anchor: { ...placed.anchor, tag: { dx: 100, dy: -50 } } }])
+      fireEvent.keyDown(marker, { key: 'ArrowUp' })
+      pause(300)
+      expect(tagWritten().dx).toBeCloseTo(100, 1)
+      expect(tagWritten().dy).toBeCloseTo(-49, 1)
+    })
+
+    test('blur writes the pending nudge at once', () => {
+      select('cues', 'c1')
+      const view = mount([placed])
+      const marker = markerOf(view.container)
+      fireEvent.keyDown(marker, { key: 'ArrowLeft' })
+      expect(setBubble).not.toHaveBeenCalled()
+      fireEvent.blur(marker)
+      expect(setBubble).toHaveBeenCalledTimes(1)
+      pause(1000)
+      expect(setBubble).toHaveBeenCalledTimes(1)
+    })
+
+    test('deselecting writes it, and so does unmounting and the page being hidden or closed', () => {
+      select('cues', 'c1')
+      let view = mount([placed])
+      fireEvent.keyDown(markerOf(view.container), { key: 'ArrowLeft' })
+      act(() => clearSelection())
+      expect(setBubble).toHaveBeenCalledTimes(1)
+      cleanup()
+
+      setBubble.mockClear()
+      select('cues', 'c1')
+      view = mount([placed])
+      fireEvent.keyDown(markerOf(view.container), { key: 'ArrowLeft' })
+      view.unmount()
+      expect(setBubble).toHaveBeenCalledTimes(1)
+
+      setBubble.mockClear()
+      view = mount([placed])
+      fireEvent.keyDown(markerOf(view.container), { key: 'ArrowLeft' })
+      act(() => void window.dispatchEvent(new Event('pagehide')))
+      expect(setBubble).toHaveBeenCalledTimes(1)
+      view.unmount()
+      expect(setBubble).toHaveBeenCalledTimes(1)
+
+      setBubble.mockClear()
+      view = mount([placed])
+      fireEvent.keyDown(markerOf(view.container), { key: 'ArrowLeft' })
+      const state = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      act(() => void document.dispatchEvent(new Event('visibilitychange')))
+      state.mockRestore()
+      expect(setBubble).toHaveBeenCalledTimes(1)
+    })
+
+    test('a bubble with a stored tag is drawn at the offset, and the nudge starts from there', () => {
+      select('cues', 'c1')
+      const tagged = { ...placed, anchor: { ...placed.anchor, tag: { dx: 100, dy: -50 } } }
+      const { container } = mount([tagged])
+      const c = pillCentre(container)
+      expect(c.x).toBeCloseTo(186)
+      expect(c.y).toBeCloseTo(655)
+      fireEvent.keyDown(markerOf(container), { key: 'ArrowUp' })
+      pause(300)
+      expect(tagWritten().dx).toBeCloseTo(100, 1)
+      expect(tagWritten().dy).toBeCloseTo(-49, 1)
+    })
+
+    test('a marker that is not selected ignores the keys', () => {
+      const { container } = mount([placed])
+      const c = pillCentre(container)
+      expect(fireEvent.keyDown(markerOf(container), { key: 'ArrowDown' })).toBe(true)
+      pause(1000)
+      expect(setBubble).not.toHaveBeenCalled()
+      expect(pillCentre(container)).toEqual(c)
+    })
   })
 
-  test('a bubble with a stored tag is drawn at the offset, and the nudge starts from there', () => {
+  test('a drop is measured against the cue as stored now, not as it was when the drag began', () => {
     select('cues', 'c1')
-    const tagged = { ...placed, anchor: { ...placed.anchor, tag: { dx: 100, dy: -50 } } }
-    const { container } = mount([tagged])
-    const c = pillCentre(container)
-    expect(c.x).toBeCloseTo(186)
-    expect(c.y).toBeCloseTo(655)
-    fireEvent.keyDown(container.querySelector('[data-cue-id="c1"]') as SVGGElement, {
-      key: 'ArrowUp',
-    })
-    expect(tagWritten().dx).toBeCloseTo(100, 1)
-    expect(tagWritten().dy).toBeCloseTo(-49, 1)
+    const view = mount([placed])
+    const { container } = view
+    pageUnderPointer(container, true)
+    const centre = pillCentre(container)
+    const down = client(centre.x, centre.y)
+    pointer('pointerdown', down.x, down.y, container.querySelector('[data-cue-id="c1"]') as Element)
+    const to = client(300, 400)
+    pointer('pointermove', to.x, to.y, window)
+    // A peer moves the cue's mark 20 points right and 10 down while the bubble is held.
+    mountSession([{ ...placed, anchor: { ...placed.anchor, x: 106, y: 695 } }])
+    view.rerender(sheetJsx())
+    pointer('pointerup', to.x, to.y, window)
+    expect(tagWritten().dx).toBeCloseTo(300 - 106, 1)
+    expect(tagWritten().dy).toBeCloseTo(400 - 695, 1)
   })
 })
 
