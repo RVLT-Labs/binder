@@ -1,4 +1,4 @@
-import { jsonEqual } from '../json/jsonEqual'
+import { anchorChangeKind } from './anchorChange'
 
 /** One change-log row, reduced to what the activity feed sentence needs. */
 export interface SummaryRow {
@@ -46,37 +46,6 @@ function touched(row: SummaryRow): Set<string> {
   return new Set([...Object.keys(row.after ?? {}), ...Object.keys(row.before ?? {})])
 }
 
-/** A line or pointer mark sits at a character position, and its stored x follows that position. */
-function isCaretMark(anchor: Record<string, unknown>): boolean {
-  return anchor.mark === 'line' || anchor.mark === 'pointer'
-}
-
-/** An anchor with the parts a restyle changes taken out: the mark, the caret offset, and (for a caret mark) x. */
-function withoutStyle(anchor: Record<string, unknown>, dropX: boolean): Record<string, unknown> {
-  const { mark: _mark, text, x: _x, ...rest } = anchor
-  const out: Record<string, unknown> = dropX ? rest : { ...rest, x: anchor.x }
-  if (text && typeof text === 'object') {
-    const { offset: _offset, ...plain } = text as Record<string, unknown>
-    out.text = plain
-  } else if (text !== undefined) {
-    out.text = text
-  }
-  return out
-}
-
-/**
- * Whether an anchor change only changed how the cue is marked: equal once the mark and the caret
- * offset are removed (and x too when either side is a line or pointer, whose x follows its
- * character offset).
- */
-function isRestyle(before: unknown, after: unknown): boolean {
-  if (!before || !after || typeof before !== 'object' || typeof after !== 'object') return false
-  const a = before as Record<string, unknown>
-  const b = after as Record<string, unknown>
-  const dropX = isCaretMark(a) || isCaretMark(b)
-  return jsonEqual(withoutStyle(a, dropX), withoutStyle(b, dropX))
-}
-
 /** The verbs one row contributes to; an update counts once per verb it triggers. */
 function verbsOf(row: SummaryRow): Verb[] {
   if (row.table === 'cues') {
@@ -84,8 +53,7 @@ function verbsOf(row: SummaryRow): Verb[] {
     if (row.op === 'delete') return ['deleted']
     const keys = touched(row)
     const verbs: Verb[] = []
-    if (keys.has('anchor'))
-      verbs.push(isRestyle(row.before?.anchor, row.after?.anchor) ? 'restyled' : 'moved')
+    if (keys.has('anchor')) verbs.push(anchorChangeKind(row.before?.anchor, row.after?.anchor))
     if (keys.has('major') || keys.has('minor')) verbs.push('renumbered')
     if (keys.has('label')) verbs.push('relabelled')
     for (const k of keys) {

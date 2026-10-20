@@ -176,3 +176,53 @@ describe('other tables', () => {
     ).toEqual(['Edited'])
   })
 })
+
+describe('a restyle reads as a restyle, not a move', () => {
+  const at = (extra: Record<string, unknown>, text?: Record<string, unknown>) => ({
+    ...anchor(2),
+    ...(text ? { text: { quote: 'or', wordStart: 2, wordEnd: 2, ...text } } : {}),
+    ...extra,
+  })
+  const lines = (before: unknown, after: unknown) =>
+    formatChange(entryOf({ before: { anchor: before }, after: { anchor: after } }), lx)
+
+  test('a mark change names both marks', () => {
+    expect(lines(at({}, {}), at({ mark: 'highlight' }, {}))).toEqual(['Mark Underline → Highlight'])
+    expect(
+      lines(at({ mark: 'highlight' }, {}), at({ mark: 'pointer', x: 14 }, { offset: 1 })),
+    ).toEqual(['Mark Highlight → Line with pointer'])
+    expect(
+      lines(at({ mark: 'line', x: 14 }, { offset: 1 }), at({ mark: 'line', x: 20 }, { offset: 2 })),
+    ).toEqual(['Restyled'])
+  })
+
+  test('only a caret offset change reads Restyled', () => {
+    expect(
+      lines(at({ mark: 'pointer' }, { offset: 0 }), at({ mark: 'pointer' }, { offset: 2 })),
+    ).toEqual(['Restyled'])
+  })
+
+  test('anchors held as JSON text read the same', () => {
+    expect(
+      lines(JSON.stringify(at({}, {})), JSON.stringify(at({ mark: 'line' }, { offset: 0 }))),
+    ).toEqual(['Mark Underline → Line'])
+  })
+
+  test('a real move, even of a styled cue, still reads Moved', () => {
+    expect(
+      lines(at({ mark: 'highlight' }, {}), { ...at({ mark: 'highlight' }, {}), pageIndex: 3 }),
+    ).toEqual(['Moved p.3 → p.4'])
+    expect(
+      lines(at({ mark: 'highlight' }, {}), { ...at({ mark: 'highlight' }, {}), y: 99 }),
+    ).toEqual(['Moved on p.3'])
+  })
+
+  test('an annotation anchor change is never a restyle', () => {
+    const e = entryOf({
+      table: 'annotations',
+      before: { anchor: anchor(2) },
+      after: { anchor: { ...anchor(2), y: 99 } },
+    })
+    expect(formatChange(e, lx)).toEqual(['Moved on p.3'])
+  })
+})

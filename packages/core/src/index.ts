@@ -24,6 +24,7 @@ export {
 } from './cues/numbering'
 export type { RenumberCue, RenumberResult } from './cues/renumber'
 export { renumberByBlocks } from './cues/renumber'
+export { anchorChangeKind } from './history/anchorChange'
 export type { SummaryRow } from './history/summarise'
 export { actorLabel, cardSentence, summariseBatch } from './history/summarise'
 export { columnEqual, jsonEqual } from './json/jsonEqual'

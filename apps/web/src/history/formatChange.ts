@@ -1,4 +1,4 @@
-import { formatCueNumber } from '@binder/core'
+import { anchorChangeKind, formatCueNumber, jsonEqual } from '@binder/core'
 import type { HistoryEntry, NumberFormat } from '@binder/shared'
 
 export interface ChangeContext {
@@ -54,6 +54,46 @@ function anchorLine(before: unknown, after: unknown): string {
   return `Moved p.${fromPage} → p.${toPage}`
 }
 
+const MARK_LABELS: Record<string, string> = {
+  underline: 'Underline',
+  highlight: 'Highlight',
+  line: 'Line',
+  pointer: 'Line with pointer',
+}
+
+/** The mark an anchor value carries by its label; an absent mark is the underline. */
+function markLabel(value: unknown): string {
+  let v = value
+  if (typeof v === 'string') {
+    try {
+      v = JSON.parse(v)
+    } catch {
+      return MARK_LABELS.underline as string
+    }
+  }
+  const mark = (v as { mark?: unknown } | null)?.mark
+  return (typeof mark === 'string' && MARK_LABELS[mark]) || (MARK_LABELS.underline as string)
+}
+
+/**
+ * A cue's anchor change: "Restyled" with the mark change when only the mark (or caret offset)
+ * differs, otherwise the move/place wording. The same rule the activity feed uses.
+ */
+function cueAnchorLine(before: unknown, after: unknown): string {
+  if (
+    !anchorOf(before) ||
+    !anchorOf(after) ||
+    anchorChangeKind(before, after) !== 'restyled' ||
+    // An anchor rewritten unchanged is no restyle: it keeps the move wording it always had.
+    jsonEqual(before, after)
+  ) {
+    return anchorLine(before, after)
+  }
+  const was = markLabel(before)
+  const now = markLabel(after)
+  return was === now ? 'Restyled' : `Mark ${was} → ${now}`
+}
+
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 function numberLine(before: Columns, after: Columns, ctx: ChangeContext): string {
@@ -105,7 +145,7 @@ function cueLines(before: Columns, after: Columns, keys: Set<string>, ctx: Chang
     for (const n of names) handled.add(n)
     return hit
   }
-  if (take('anchor')) lines.push(anchorLine(before.anchor, after.anchor))
+  if (take('anchor')) lines.push(cueAnchorLine(before.anchor, after.anchor))
   if (take('major', 'minor')) lines.push(numberLine(before, after, ctx))
   if (take('label')) lines.push(`Label "${text(before.label)}" → "${text(after.label)}"`)
   if (take('type')) lines.push(`Type ${text(before.type)} → ${text(after.type)}`)
