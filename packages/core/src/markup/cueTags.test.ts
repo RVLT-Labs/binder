@@ -463,11 +463,11 @@ describe('I4: cues on one line get parallel leaders 1.5 pt apart', () => {
 describe('I2: tags never leave the page or sit under the footer', () => {
   const FOOTER_TOP = 19
 
-  test('five cues on a line at y = 60 all end above the footer, in page order, without overlapping', () => {
+  test('five cues on a line at y = 40 all end above the footer, in page order, without overlapping', () => {
     const tags = layout(
       [0, 1, 2, 3, 4].map((i) =>
         cue(`c${i}`, {
-          y: 60,
+          y: 40,
           number: String(i + 1),
           sortKey: { department: i, major: i, minor: 0 },
         }),
@@ -478,9 +478,9 @@ describe('I2: tags never leave the page or sit under the footer', () => {
     for (const t of tags) expect(t.tag.y).toBeGreaterThanOrEqual(FOOTER_TOP)
     const down = [...tags].sort((p, q) => q.centreY - p.centreY)
     expect(down.map((t) => t.id)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4'])
-    // Spread around y = 60 (16 apart, 92 down to 28) the lowest tag's bottom edge is at 21, still
-    // above the footer, so nothing needs lifting; before they were swept down and lifted instead.
-    expect(down.map((t) => t.centreY)).toEqual([92, 76, 60, 44, 28])
+    // Spread around y = 40 (16 apart) they would run from 72 down to 8, the lowest tag's bottom
+    // edge at 1, under the footer (19): the whole stack is lifted 18 pt until it rests on it.
+    expect(down.map((t) => t.centreY)).toEqual([90, 74, 58, 42, 26])
     for (let i = 1; i < down.length; i++) {
       expect(
         (down[i - 1]?.tag.y ?? 0) - ((down[i]?.tag.y ?? 0) + TAG_HEIGHT),

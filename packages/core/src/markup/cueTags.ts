@@ -177,7 +177,8 @@ export interface CueTagLayout {
  * (centred so the group moves no further in total than it must). A tag with a note counts as the
  * tag plus the note's 9 points, so a tag never lands on a note. Groups that then overlap merge and
  * are centred again. The stack is held inside `bounds`: a group below `minY` is lifted to it, with
- * the tags above lifted in turn if they would overlap, and nothing goes above `maxY`. The result is in the order of `cues`.
+ * the tags above lifted in turn if they would overlap, and nothing goes above `maxY`. The result is
+ * in the order of `cues`.
  */
 export function layoutCueTags(input: {
   pageWidth: number
@@ -481,8 +482,8 @@ function noteBoxUnder(tag: Box, text: string, left: boolean): Box {
 /**
  * The connector from a tag to its mark, always at the mark's y so it never crosses a glyph. A tag
  * level with its line runs straight out, starting under the pill's curve so it meets the outline.
- * A tag spread off its line (above or below it) leaves at its own centre, turns in the gutter beside the text block,
- * and runs in to the mark.
+ * A tag spread off its line (above or below it) leaves at its own centre, turns in the gutter
+ * beside the text block, and runs in to the mark.
  */
 function connector(o: {
   left: boolean
