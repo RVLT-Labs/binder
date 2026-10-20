@@ -195,6 +195,27 @@ test("the Mark control shows the cue's mark and has four options named Underline
   row.anchor = null
 })
 
+test('the Mark options have no fixed height, so "Line with pointer" wraps instead of clipping', () => {
+  row.anchor = placedAnchor() as never
+  const { getByRole } = render(<CueEditor cueId="c1" />)
+  const radios = within(getByRole('radiogroup', { name: 'Mark' })).getAllByRole('radio')
+  expect(radios).toHaveLength(4)
+  for (const r of radios) {
+    const tokens = r.className.split(/\s+/)
+    // any height utility (at any breakpoint) must be h-auto; the floor is a min-height
+    expect(tokens.filter((t) => /(^|:)h-/.test(t) && !/(^|:)h-auto$/.test(t))).toEqual([])
+    expect(tokens).toContain('h-auto')
+    expect(tokens).toContain('md:h-auto')
+    expect(tokens).toContain('md:max-[1024px]:h-auto')
+    expect(tokens).toContain('whitespace-normal')
+    expect(tokens).toContain('leading-tight')
+    expect(tokens.some((t) => /(^|:)min-h-/.test(t))).toBe(true)
+  }
+  // the 44 px touch floor stays on the phone and on coarse pointers
+  expect(radios[3]?.className).toContain('min-h-11')
+  expect(radios[3]?.className).toContain('pointer-coarse:min-h-11')
+})
+
 test('a cue with no mark shows Underline', () => {
   row.anchor = placedAnchor() as never
   const { getByRole } = render(<CueEditor cueId="c1" />)

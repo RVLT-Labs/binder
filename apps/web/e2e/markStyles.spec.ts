@@ -227,6 +227,19 @@ test("change a cue's mark in the editor and see it redrawn", async ({ browser })
       await expect(mark.getByRole('radio', { name: 'Underline', exact: true })).toBeChecked()
       await expect(trigger(page, id).locator('line.cue-underline').first()).toBeAttached()
 
+      // At 1280 wide the editor panel is about 290 px: no Mark option may clip its label.
+      await page.setViewportSize({ width: 1280, height: 1000 })
+      for (const r of await mark.getByRole('radio').all()) {
+        const fit = await r.evaluate((el) => ({
+          h: el.scrollHeight - el.clientHeight,
+          w: el.scrollWidth - el.clientWidth,
+        }))
+        expect(fit.h, `${await r.textContent()} clipped vertically`).toBeLessThanOrEqual(1)
+        expect(fit.w, `${await r.textContent()} clipped sideways`).toBeLessThanOrEqual(1)
+      }
+      const pointerBox = await mark.getByRole('radio', { name: 'Line with pointer' }).boundingBox()
+      expect(pointerBox?.height ?? 0).toBeGreaterThan(30)
+
       const choose = (name: string) => mark.getByRole('radio', { name, exact: true }).click()
 
       await choose('Highlight')

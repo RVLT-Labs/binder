@@ -33,6 +33,18 @@ const MARKS: Array<{ value: CueMark; label: string }> = [
   { value: 'pointer', label: 'Line with pointer' },
 ]
 
+/**
+ * The Mark options sit four across in a panel as narrow as 290 px, so "Line with pointer" must be
+ * able to wrap: no fixed height (a minimum only, 44 px on the phone and on coarse pointers, 36 px
+ * on the tablet, 27 px on desktop) and wrapping text. The tablet step keeps 9 px padding, 12.5 px.
+ */
+export const MARK_ITEM_CLASS = [
+  'h-auto min-h-11 whitespace-normal py-1 text-center leading-tight',
+  'md:h-auto md:min-h-[27px]',
+  'md:max-[1024px]:h-auto md:max-[1024px]:min-h-9 md:max-[1024px]:px-[9px] md:max-[1024px]:text-[12.5px]',
+  'pointer-coarse:min-h-11',
+].join(' ')
+
 export interface CueEditorProps {
   cueId: string
   /** Phone: closes the drawer. Draws the red Done beside Delete (the mockup's sheet actions). */
@@ -222,7 +234,7 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
             options={MARKS}
             disabled={!editable || !cue.anchor}
             className="flex w-full [&>*]:flex-1"
-            itemClassName="md:max-[1024px]:h-9 md:max-[1024px]:px-[9px] md:max-[1024px]:text-[12.5px]"
+            itemClassName={MARK_ITEM_CLASS}
           />
         </Field>
         {quote}
