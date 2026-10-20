@@ -509,7 +509,14 @@ export function guardLocalDatabase<T extends object>(db: T, userId: string): T {
       }
       if (key === 'registerListener')
         return (callbacks: Record<string, unknown>) => {
-          check()
+          // React can reconnect passive effects after the provider revokes this facade.
+          // A stale subscription grants no capability: do not attach it to the shared SDK.
+          try {
+            check()
+          } catch {
+            invalidate()
+            return () => {}
+          }
           const dispose = value.call(target, handler(callbacks))
           closers.add(dispose)
           return () => {
