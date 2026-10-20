@@ -48,6 +48,8 @@ export {
 } from './markup/annotationLayout'
 export type { Caret } from './markup/caret'
 export { caretAt, caretX, clampOffset, snapToCaret } from './markup/caret'
+export type { MarkInputs } from './markup/cueMarks'
+export { markInputs, withMark } from './markup/cueMarks'
 export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
   LEADER_WIDTH,
