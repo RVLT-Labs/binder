@@ -288,7 +288,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
     })
   }
 
-  /** An arrow key on the focused bubble: it moves from where it is drawn now. */
+  /** An Alt+arrow on the focused bubble: it moves from where it is drawn now. */
   function nudge(cue: CueRowWithDept, dx: number, dy: number) {
     const layout = tags.get(cue.id)
     if (!layout) return

@@ -79,12 +79,12 @@ export interface CueMarkerProps {
   /** Where the tag goes: from `layoutPageCues`, shared with print. */
   tag: CueTagLayout
   selected: boolean
-  /** Drawn with a move cursor: the user may drag it, and the arrow keys nudge it. */
+  /** Drawn with a move cursor: the user may drag it, and Alt+arrow keys nudge it (plain arrows still turn the page). */
   movable?: boolean
   /** Drawn faded: its bubble is being dragged and a preview shows where it will land. */
   faded?: boolean
   onPointerDown?: PointerEventHandler<SVGGElement>
-  /** An arrow key on a movable marker: the bubble moves by this many page points (y up). */
+  /** An Alt+arrow on a movable marker: the bubble moves by this many page points (y up). */
   onNudge?: (dx: number, dy: number) => void
   /** Focus left the marker. */
   onBlur?: () => void
