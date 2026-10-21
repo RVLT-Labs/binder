@@ -6,6 +6,7 @@ import {
   degrees,
   fillAndStroke,
   fill as fillPath,
+  LineCapStyle,
   lineTo,
   moveTo,
   PDFDocument,
@@ -43,7 +44,6 @@ import {
   type CueTagLayout,
   HIGHLIGHT_OPACITY,
   HIGHLIGHT_RADIUS,
-  LEADER_WIDTH,
   layoutCueTags,
   NOTE_FONT_SIZE,
   POINTER_HEIGHT,
@@ -309,13 +309,18 @@ class DisplayedPage {
     y2: number,
     colour: ReturnType<typeof rgb>,
     width: number,
+    /** A dash pattern (on, off, ...) in points; absent is a plain stroke. */
+    dash?: number[],
+    /** Whether the ends are round. Absent keeps the default (round); false gives butt ends. */
+    round?: boolean,
   ) {
     this.page.drawLine({
       start: displayedToUser(this.frame, x1, y1),
       end: displayedToUser(this.frame, x2, y2),
       thickness: width,
       color: colour,
-      lineCap: 1,
+      dashArray: dash,
+      lineCap: round === false ? LineCapStyle.Butt : LineCapStyle.Round,
     })
   }
 
@@ -452,6 +457,7 @@ function layoutCues(
     caret: c.caret,
     anchorX: c.x,
     tag: c.tag,
+    connector: c.connector,
     sortKey: c.sortKey,
     // A moved bubble sits on the script, where a note would hide words.
     note: c.tag ? '' : toWinAnsi(notes.get(c.id)?.text ?? ''),
@@ -504,7 +510,10 @@ function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeo
   if (t.bar) drawBar(d, t.bar, colour)
   for (let i = 1; t.leader && i < t.leader.length; i++) {
     const [a, b] = [t.leader[i - 1], t.leader[i]] as Array<{ x: number; y: number }>
-    d.line(a.x, a.y, b.x, b.y, colour, LEADER_WIDTH)
+    // Each segment starts its pattern afresh. A solid connector keeps the default stroke exactly.
+    if (t.stroke.dash)
+      d.line(a.x, a.y, b.x, b.y, colour, t.stroke.width, t.stroke.dash, t.stroke.round)
+    else d.line(a.x, a.y, b.x, b.y, colour, t.stroke.width)
   }
 }
 

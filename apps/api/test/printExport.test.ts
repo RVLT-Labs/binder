@@ -74,6 +74,7 @@ const cueAt = (
   numberInk: '#1A1715',
   colour: AMBER,
   side: 'left',
+  connector: { width: 'thin', pattern: 'solid' },
   sortKey: { department: 0, major: Number.parseInt(number, 10) || 0, minor: 0 },
   triggerBoxes: [],
   mark: 'underline',

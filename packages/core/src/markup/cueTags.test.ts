@@ -5,6 +5,7 @@ import {
   barAt,
   type CueTagInput,
   type CueTagLayout,
+  connectorStroke,
   DEFAULT_MARGIN,
   FREE_BAR_HEIGHT,
   HIGHLIGHT_OPACITY,
@@ -13,6 +14,7 @@ import {
   HIGHLIGHT_RADIUS,
   LEADER_GUTTER,
   LEADER_STEP,
+  LEADER_WIDTH,
   layoutCueTags,
   NOTE_COLUMN_INSET,
   NOTE_FONT_SIZE,
@@ -1214,5 +1216,124 @@ describe('moved bubbles', () => {
     // ... and does not push the margin tags' leaders down: b is the second margin tag, one step.
     expect(a.leader?.at(-1)?.y).toBe(494)
     expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - LEADER_STEP)
+  })
+})
+
+describe('connector width and pattern', () => {
+  const word = { x: 300, y: 495, w: 40, h: 10 }
+  const sort = (department: number, major: number) => ({ department, major, minor: 0 })
+  const styled = (
+    id: string,
+    width: 'thin' | 'medium' | 'bold',
+    pattern: 'solid' | 'dashed' | 'dotted' = 'solid',
+    over: Partial<CueTagInput> = {},
+  ) =>
+    cue(id, { triggerBoxes: [word], connector: { width, pattern }, sortKey: sort(0, 1), ...over })
+
+  test('each width maps to 0.75, 1.5 and 2.5 pt', () => {
+    expect(LEADER_WIDTH).toBe(0.75)
+    expect(one(styled('a', 'thin')).stroke.width).toBe(0.75)
+    expect(one(styled('a', 'medium')).stroke.width).toBe(1.5)
+    expect(one(styled('a', 'bold')).stroke.width).toBe(2.5)
+  })
+
+  test('solid gives no dash and butt-or-default caps, dashed [4w, 2.5w], dotted round caps with [0, 2.5w]', () => {
+    expect(one(styled('a', 'bold', 'solid')).stroke).toEqual({
+      width: 2.5,
+      dash: null,
+      round: false,
+    })
+    expect(one(styled('a', 'medium', 'dashed')).stroke).toEqual({
+      width: 1.5,
+      dash: [6, 3.75],
+      round: false,
+    })
+    expect(one(styled('a', 'bold', 'dotted')).stroke).toEqual({
+      width: 2.5,
+      dash: [0, 6.25],
+      round: true,
+    })
+    expect(one(styled('a', 'thin', 'dashed')).stroke.dash).toEqual([3, 1.875])
+  })
+
+  test('connectorStroke is the same function the layout uses', () => {
+    expect(connectorStroke({ width: 'bold', pattern: 'dashed' })).toEqual(
+      one(styled('a', 'bold', 'dashed')).stroke,
+    )
+  })
+
+  test('no connector input behaves exactly as before: thin, solid, default y', () => {
+    const plain = one(cue('a', { triggerBoxes: [word] }))
+    expect(plain.stroke).toEqual({ width: 0.75, dash: null, round: false })
+    const explicit = one(styled('a', 'thin', 'solid', { sortKey: sort(0, 10) }))
+    expect(explicit.leader).toEqual(plain.leader)
+    expect(explicit.stroke).toEqual(plain.stroke)
+  })
+
+  test('the stroke does not move the tag, the marks or the leader path', () => {
+    const plain = one(cue('a', { triggerBoxes: [word] }))
+    const bold = one(styled('a', 'bold', 'dotted', { sortKey: sort(0, 10) }))
+    expect(bold.leader).toEqual(plain.leader)
+    expect(bold.tag).toEqual(plain.tag)
+    expect(bold.underlines).toEqual(plain.underlines)
+    expect(bold.outlineWidth).toBe(plain.outlineWidth)
+    expect(bold.dash).toBe(plain.dash)
+  })
+
+  test('parallel leaders of equal width step by max(1.5, w + 0.75)', () => {
+    const ys = (width: 'thin' | 'medium' | 'bold') =>
+      layout([
+        styled('a', width, 'solid', { sortKey: sort(0, 1) }),
+        styled('b', width, 'solid', { sortKey: sort(1, 2) }),
+        styled('c', width, 'solid', { sortKey: sort(2, 3) }),
+      ]).map((t) => t.leader?.at(-1)?.y)
+    expect(ys('thin')).toEqual([494, 492.5, 491])
+    // medium: 1.5 + 0.75 = 2.25
+    expect(ys('medium')).toEqual([494, 491.75, 489.5])
+    // bold: 2.5 + 0.75 = 3.25
+    expect(ys('bold')).toEqual([494, 490.75, 487.5])
+  })
+
+  test('mixed widths step by the pair formula, accumulated in placement order', () => {
+    const [a, b, c] = layout([
+      styled('a', 'thin', 'solid', { sortKey: sort(0, 1) }),
+      styled('b', 'bold', 'solid', { sortKey: sort(1, 2) }),
+      styled('c', 'thin', 'solid', { sortKey: sort(2, 3) }),
+    ]) as [CueTagLayout, CueTagLayout, CueTagLayout]
+    // thin then bold: (0.75 + 2.5) / 2 + 0.75 = 2.375; bold then thin: the same again.
+    expect(a.leader?.at(-1)?.y).toBe(494)
+    expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - 2.375)
+    expect(c.leader?.at(-1)?.y).toBeCloseTo(494 - 4.75)
+  })
+
+  test('thin leaders keep exactly the LEADER_STEP', () => {
+    const [a, b] = layout([
+      styled('a', 'thin', 'solid', { sortKey: sort(0, 1) }),
+      styled('b', 'thin', 'solid', { sortKey: sort(1, 2) }),
+    ]) as [CueTagLayout, CueTagLayout]
+    expect((a.leader?.at(-1)?.y ?? 0) - (b.leader?.at(-1)?.y ?? 0)).toBe(LEADER_STEP)
+  })
+
+  test('leaders on other lines or sides start afresh', () => {
+    const tags = layout([
+      styled('a', 'bold', 'solid', { y: 500 }),
+      styled('b', 'bold', 'solid', { y: 400, triggerBoxes: [{ ...word, y: 395 }] }),
+      styled('c', 'bold', 'solid', { side: 'right' }),
+    ])
+    expect(tags.map((t) => t.leader?.at(-1)?.y)).toEqual([494, 394, 494])
+  })
+
+  test('a moved bubble carries the stroke on its straight leader and takes no part in the stagger', () => {
+    const [a, m, b] = layout([
+      styled('a', 'bold', 'dashed', { sortKey: sort(0, 1) }),
+      styled('m', 'medium', 'dotted', { sortKey: sort(0, 2), tag: { dx: 0, dy: 60 } }),
+      styled('b', 'bold', 'dashed', { sortKey: sort(0, 3) }),
+    ]) as [CueTagLayout, CueTagLayout, CueTagLayout]
+    expect(m.moved).toBe(true)
+    expect(m.leader).toHaveLength(2)
+    expect(m.stroke).toEqual({ width: 1.5, dash: [0, 3.75], round: true })
+    expect(m.leader?.at(-1)?.y).toBe(494)
+    expect(a.stroke).toEqual({ width: 2.5, dash: [10, 6.25], round: false })
+    expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - 3.25)
   })
 })

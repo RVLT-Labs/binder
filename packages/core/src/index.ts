@@ -52,11 +52,12 @@ export type { Caret } from './markup/caret'
 export { caretAt, caretX, clampOffset, snapToCaret } from './markup/caret'
 export type { MarkInputs } from './markup/cueMarks'
 export { markInputs, withMark } from './markup/cueMarks'
-export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
+export type { ConnectorStroke, CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
   BAR_OVERHANG,
   BAR_WIDTH,
   barAt,
+  connectorStroke,
   FREE_BAR_HEIGHT,
   HIGHLIGHT_OPACITY,
   HIGHLIGHT_OPACITY_ACTIVE,

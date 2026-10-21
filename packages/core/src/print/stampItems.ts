@@ -3,9 +3,11 @@ import {
   type AnnotationFields,
   type AnnotationType,
   type BubbleOffset,
+  type ConnectorStyle,
   type CueFields,
   type CueMark,
   type CueType,
+  connectorStyle,
   type LayerRef,
   layerKey,
   type MarkerSide,
@@ -46,6 +48,8 @@ export type StampItem =
       colour: string
       /** The page margin the department's tags sit in. */
       side: MarkerSide
+      /** How the department's connector (bubble to mark) is drawn; thin and solid by default. */
+      connector: ConnectorStyle
       /** Crowded tags are laid out in this order: department sort order, then cue number. */
       sortKey: { department: number; major: number; minor: number }
       /** The trigger words' boxes, one per line; empty when unbound or the page's words are unknown. */
@@ -108,7 +112,7 @@ export interface StampInput {
     numberFormat: NumberFormat
     sortOrder: number
   }>
-  /** The show's settings: `markerSides` says which margin each department's tags sit in. */
+  /** The show's settings: `markerSides` says which margin each department's tags sit in and `connectorStyles` how their connectors are drawn. */
   settings: Record<string, unknown>
   /** The word layers of the pages that have a bound cue or highlight, by page index. */
   wordLayers: ReadonlyMap<number, WordLayer>
@@ -183,6 +187,7 @@ export function buildStampItems(input: StampInput): StampItem[] {
       numberInk: PAGE_INK,
       colour: dept.colour,
       side: markerSide(input.settings, dept.id),
+      connector: connectorStyle(input.settings, dept.id),
       sortKey: { department: dept.sortOrder, major: c.major, minor: c.minor },
       triggerBoxes,
       mark,

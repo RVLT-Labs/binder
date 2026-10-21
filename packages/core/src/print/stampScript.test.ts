@@ -49,6 +49,7 @@ test('stamping keeps every page box and rotation and draws the footer on each pa
         numberInk: '#1A1715',
         colour: '#F5A623',
         side: 'right',
+        connector: { width: 'thin', pattern: 'solid' },
         sortKey: { department: 0, major: 10, minor: 0 },
         triggerBoxes: [{ x: 60, y: 95, w: 30, h: 10 }],
         mark: 'underline',
@@ -70,6 +71,7 @@ test('stamping keeps every page box and rotation and draws the footer on each pa
         numberInk: '#1A1715',
         colour: '#F5A623',
         side: 'left',
+        connector: { width: 'thin', pattern: 'solid' },
         sortKey: { department: 0, major: 1, minor: 0 },
         triggerBoxes: [],
         mark: 'underline',
@@ -160,6 +162,7 @@ const cueItem = (number: string): Extract<StampItem, { kind: 'cue' }> => ({
   numberInk: '#1A1715',
   colour: '#F5A623',
   side: 'left',
+  connector: { width: 'thin', pattern: 'solid' },
   sortKey: { department: 0, major: 1, minor: 0 },
   triggerBoxes: [],
   mark: 'underline',
@@ -732,5 +735,90 @@ describe('a moved bubble', () => {
     expect(shrunk.map((t) => t.text)).not.toContain('SB LX')
     const moved = await stampedText([{ ...item, tag: { dx: 150, dy: 0 } }])
     expect(moved.map((t) => t.text)).toContain('SB LX')
+  })
+})
+
+describe('connector style', () => {
+  // A cue on the left with its words well inside the text block: a straight connector at the
+  // underline's y (194), from the tag to x 200.
+  const word = { x: 200, y: 195, w: 40, h: 10 }
+  const styled = (
+    connector: Extract<StampItem, { kind: 'cue' }>['connector'],
+    over: Partial<Extract<StampItem, { kind: 'cue' }>> = {},
+  ): Extract<StampItem, { kind: 'cue' }> => ({
+    ...cueItem('5'),
+    x: word.x,
+    y: 200,
+    triggerBoxes: [word],
+    textExtent: { minX: 60, maxX: 340 },
+    connector,
+    ...over,
+  })
+  /** The graphics state block (`q` ... `Q`) that strokes the segment ending at (200, 194). */
+  const block = (content: string) => {
+    const blocks = content.split(/\nq\n/)
+    const found = blocks.find((b) => /\n200 194 l\n/.test(`\n${b}`) && !/ 194 m\n240 194 l/.test(b))
+    if (!found) throw new Error(`no connector in ${content}`)
+    return found
+  }
+
+  test('a thin solid connector is the 0.75 pt line it always was: no dash array', async () => {
+    const b = block(await stampedContent([styled({ width: 'thin', pattern: 'solid' })]))
+    expect(b).toMatch(/0\.75 w/)
+    expect(b).toMatch(/\[\] 0 d/)
+    expect(b).toMatch(/\n1 J\n/)
+  })
+
+  test('a medium dashed connector is 1.5 pt wide with a [6 3.75] dash and butt caps', async () => {
+    const b = block(await stampedContent([styled({ width: 'medium', pattern: 'dashed' })]))
+    expect(b).toMatch(/1\.5 w/)
+    expect(b).toMatch(/\[6 3\.75\] 0 d/)
+    // Butt caps are the PDF default, so no cap operator is written at all.
+    expect(b).not.toMatch(/\n\d J\n/)
+  })
+
+  test('a bold dotted connector is 2.5 pt wide with a [0 6.25] dash and round caps', async () => {
+    const b = block(await stampedContent([styled({ width: 'bold', pattern: 'dotted' })]))
+    expect(b).toMatch(/2\.5 w/)
+    expect(b).toMatch(/\[0 6\.25\] 0 d/)
+    expect(b).toMatch(/\n1 J\n/)
+  })
+
+  test('the underline stays 1.5 pt and solid whatever the connector is', async () => {
+    const content = await stampedContent([styled({ width: 'bold', pattern: 'dotted' })])
+    const under = content.split(/\nq\n/).find((b) => / 194 m\n240 194 l/.test(b))
+    expect(under).toMatch(/1\.5 w/)
+    expect(under).toMatch(/\[\] 0 d/)
+  })
+
+  test('the bubble outline is unchanged by the connector style', async () => {
+    const outline = (content: string) => {
+      const i = content.indexOf(' c\n')
+      return content.slice(content.lastIndexOf('\nq\n', i), content.indexOf('\nQ', i))
+    }
+    const standby = { type: 'standby' as const, lead: 'SB LX', typeWord: 'SB' }
+    const plain = outline(
+      await stampedContent([styled({ width: 'thin', pattern: 'solid' }, standby)]),
+    )
+    const heavy = outline(
+      await stampedContent([styled({ width: 'bold', pattern: 'dotted' }, standby)]),
+    )
+    expect(heavy).toBe(plain)
+    // A standby outline is dashed [3 2] at 1 pt.
+    expect(plain).toMatch(/\[3 2\] 0 d/)
+    expect(plain).toMatch(/1 w/)
+    const warn = outline(
+      await stampedContent([styled({ width: 'bold', pattern: 'dashed' }, { type: 'warn' })]),
+    )
+    expect(warn).toMatch(/1\.5 w/)
+    expect(warn).not.toMatch(/ d\n/)
+  })
+
+  test('a moved bubble draws its straight leader with the stroke', async () => {
+    const content = await stampedContent([
+      styled({ width: 'medium', pattern: 'dotted' }, { tag: { dx: 0, dy: 80 } }),
+    ])
+    expect(content).toMatch(/\[0 3\.75\] 0 d/)
+    expect(content).toMatch(/1\.5 w/)
   })
 })

@@ -1,4 +1,12 @@
-import type { BubbleOffset, CueMark, CueType, MarkerSide, WordLayer } from '@binder/shared'
+import {
+  type BubbleOffset,
+  type ConnectorStyle,
+  type CueMark,
+  type CueType,
+  DEFAULT_CONNECTOR_STYLE,
+  type MarkerSide,
+  type WordLayer,
+} from '@binder/shared'
 import type { Caret } from './caret'
 import { helveticaBoldWidth, helveticaWidth } from './helvetica'
 import type { Box } from './markers'
@@ -38,7 +46,36 @@ export const POINTER_WIDTH = 6
 export const POINTER_HEIGHT = 5
 /** A line or pointer with no word to sit in is a free bar this tall, centred on the cue's y. */
 export const FREE_BAR_HEIGHT = 14
+/** The thin connector: today's line, and the default for a department with no style. */
 export const LEADER_WIDTH = 0.75
+/** The connector weights in points, by `ConnectorStyle.width`. */
+const CONNECTOR_WEIGHT = { thin: LEADER_WIDTH, medium: 1.5, bold: 2.5 } as const
+/** A dashed connector repeats a dash of this many weights and a gap of `CONNECTOR_GAP`. */
+const CONNECTOR_DASH = 4
+/** The gap between dashes or dots, in weights. */
+const CONNECTOR_GAP = 2.5
+/** Parallel leaders are kept at least this far apart beyond their own thickness, in points. */
+const LEADER_CLEARANCE = 0.75
+
+/** How a connector is stroked: its width, its dash pattern (null for solid) and whether caps are round. */
+export interface ConnectorStroke {
+  width: number
+  dash: number[] | null
+  round: boolean
+}
+
+/**
+ * The stroke a department's connector style draws with, in points. Solid is plain; dashed repeats a
+ * dash of 4w and a gap of 2.5w; dotted is a zero-length dash and a gap of 2.5w drawn with round caps,
+ * so each dot is a disc as wide as the line. The screen overlay and print stamping both read this.
+ */
+export function connectorStroke(style: ConnectorStyle): ConnectorStroke {
+  const w = CONNECTOR_WEIGHT[style.width] ?? LEADER_WIDTH
+  if (style.pattern === 'dashed')
+    return { width: w, dash: [CONNECTOR_DASH * w, CONNECTOR_GAP * w], round: false }
+  if (style.pattern === 'dotted') return { width: w, dash: [0, CONNECTOR_GAP * w], round: true }
+  return { width: w, dash: null, round: false }
+}
 /** A connector that has to jog turns in a gutter this far into the margin from the text block. */
 export const LEADER_GUTTER = 2
 export const TICK_HEIGHT = 11
@@ -125,6 +162,8 @@ export interface CueTagInput {
    * margin. A cue with a tag takes no part in the margin layout and shows no note.
    */
   tag?: BubbleOffset | null
+  /** The connector's width and pattern; absent is thin and solid, today's line. */
+  connector?: ConnectorStyle
   /** Cues on one line are ordered by department sort order, then cue number, then id. */
   sortKey: { department: number; major: number; minor: number }
 }
@@ -171,6 +210,8 @@ export interface CueTagLayout {
    * bubble's is one straight segment from the tag's centre to the mark (it may cross text).
    */
   leader: Array<{ x: number; y: number }> | null
+  /** How the leader is stroked (the cue's department's connector style). */
+  stroke: ConnectorStroke
 }
 
 /**
@@ -393,7 +434,10 @@ function markTarget(c: CueTagInput, nearX?: number): { x: number; y: number } | 
 
 /**
  * How far each leader sits below its natural y: cues on one side that trigger on the same line of
- * text get leaders LEADER_STEP apart, in placement order, so two rules never run along one y.
+ * text get leaders staggered in placement order, so two rules never run along one y. Each leader sits
+ * below the previous one on its side and line by the larger of `LEADER_STEP` and the pair's mean
+ * thickness plus `LEADER_CLEARANCE`, so heavy connectors do not merge (for thin ones that is
+ * exactly `LEADER_STEP`, and for equal widths `w + LEADER_CLEARANCE`).
  */
 function leaderOffsets(
   cues: readonly CueTagInput[],
@@ -415,8 +459,15 @@ function leaderOffsets(
         (cues[j] as CueTagInput).side === (cues[i] as CueTagInput).side &&
         targets[j] &&
         Math.abs((targets[j] as { y: number }).y - t.y) < SAME_LINE,
-    ).length
-    out[i] = earlier * LEADER_STEP
+    )
+    const prev = earlier.at(-1)
+    if (prev === undefined) continue
+    const gap =
+      (connectorStroke((cues[prev] as CueTagInput).connector ?? DEFAULT_CONNECTOR_STYLE).width +
+        connectorStroke((cues[i] as CueTagInput).connector ?? DEFAULT_CONNECTOR_STYLE).width) /
+        2 +
+      LEADER_CLEARANCE
+    out[i] = (out[prev] as number) + Math.max(LEADER_STEP, gap)
   }
   return out
 }
@@ -523,6 +574,7 @@ function layoutOne(
     underlines,
     tick,
     leader,
+    stroke: connectorStroke(c.connector ?? DEFAULT_CONNECTOR_STYLE),
   }
 }
 

@@ -84,6 +84,7 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       numberInk: '#1A1715',
       colour: '#F5A623',
       side: 'left',
+      connector: { width: 'thin', pattern: 'solid' },
       sortKey: { department: 0, major: 10, minor: 0 },
       triggerBoxes: [],
       mark: 'underline',
@@ -104,6 +105,7 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       numberInk: '#1A1715',
       colour: '#F5A623',
       side: 'left',
+      connector: { width: 'thin', pattern: 'solid' },
       sortKey: { department: 0, major: 14, minor: 50 },
       triggerBoxes: [],
       mark: 'underline',
@@ -218,6 +220,20 @@ test('a cue carries its department side from the show settings, left by default'
   expect(items.map((i) => (i.kind === 'cue' ? [i.side, i.sortKey.department] : null))).toEqual([
     ['left', 0],
     ['right', 20],
+  ])
+})
+
+test('a cue carries its department connector style; a department with no entry gets thin and solid', () => {
+  const items = buildStampItems({
+    ...base,
+    settings: { connectorStyles: { 'd-tm': { width: 'bold', pattern: 'dotted' } } },
+    layers: [dept('d-lx'), dept('d-tm')],
+    cues: [cue('a'), cue('b', { departmentId: 'd-tm' })],
+    annotations: [],
+  })
+  expect(items.map((i) => (i.kind === 'cue' ? i.connector : null))).toEqual([
+    { width: 'thin', pattern: 'solid' },
+    { width: 'bold', pattern: 'dotted' },
   ])
 })
 
