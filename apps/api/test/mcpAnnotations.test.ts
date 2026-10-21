@@ -170,6 +170,33 @@ describe('annotation tools', () => {
     expect(resultText(moved)).toMatch(/mark/)
   })
 
+  test('annotation tools refuse a bubble on the anchor: bubbles belong to cues', async () => {
+    const made = await callTool(viewer, 'create_annotation', {
+      showId: s.show.id,
+      layer: 'personal',
+      type: 'note',
+      text: 'no bubble here',
+      anchor: { ...place(2), bubble: { dx: 5, dy: 5 } },
+    })
+    expect(made.isError).toBe(true)
+    expect(resultText(made)).toMatch(/bubble/)
+    const kept = await callTool(viewer, 'create_annotation', {
+      showId: s.show.id,
+      layer: 'personal',
+      type: 'note',
+      text: 'plain',
+      anchor: place(2),
+    })
+    expect(kept.isError).toBeFalsy()
+    expect(kept.structuredContent?.anchor.tag).toBeUndefined()
+    const moved = await callTool(viewer, 'update_annotation', {
+      annotationId: kept.structuredContent?.id,
+      anchor: { ...place(3), bubble: { dx: 1, dy: 1 } },
+    })
+    expect(moved.isError).toBe(true)
+    expect(resultText(moved)).toMatch(/bubble/)
+  })
+
   test('permissions: the LX editor cannot draw on SND and a viewer cannot draw on a department', async () => {
     const onSnd = await callTool(lx, 'create_annotation', {
       showId: s.show.id,

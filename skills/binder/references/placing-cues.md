@@ -129,8 +129,18 @@ From `packages/core/src/markup/cueTags.ts` and `print/stampScript.ts`, the same 
 - `charOffset` counts characters from the start of the quote's first word: 0 is before it, the word's length is after its last character. To put a bar in a later word, start the `quote` at that word. `charOffset` is an error with `underline` or `highlight`, and `place_cue_at_text` rejects an offset past the end of the first word (`update_cue` clamps it).
 - A `line` or `pointer` ignores the rest of the quote for drawing; the quote is still what re-anchoring searches for after a revision.
 - A cue placed by **coordinates** (`create_cue` or `update_cue` with `anchor`, which accept `mark`) binds no word: a `line` or `pointer` is a free bar 14 pt tall centred on `(x, y)`, and an `underline` or `highlight` falls back to the short tick.
-- Marks belong to cues; annotation tools refuse a `mark`.
+- Marks belong to cues; annotation tools refuse a `mark` (and a `bubble`).
 - Read the mark back from `anchor.mark` (absent is `underline`) and, for a line or pointer, `anchor.text.offset`.
+
+### The bubble: in the margin, or moved
+
+By default the number bubble sits in the margin, level with the trigger line. It can be moved: the offset is stored as `anchor.tag` (`{dx, dy}` in points from the cue's point, `dx` right and `dy` up) and absent means the margin. Set it with `update_cue {bubble: {dx, dy}}` or when placing by coordinates (`create_cue` or `update_cue` `anchor: {…, bubble: {dx, dy}}`); `update_cue {bubble: null}` puts it back in the margin. `place_cue_at_text` takes no `bubble`: place the cue, then move its bubble.
+
+- Moving the bubble moves **only the bubble**. The cue stays on its words. In the app, dragging the bubble moves the bubble; moving the cue is dragging its **mark** (with the Select tool) or "Move to...". The arrow keys nudge a selected cue's bubble 1 pt (10 pt with Shift), and the cue editor's Bubble row says "In the margin" or "Moved" and has **Reset to margin**.
+- A moved bubble takes no part in the margin spread, is joined to its mark by one straight leader (none when it sits over its own mark), and **draws no note**. It prints where it was put, on screen and in the export.
+- A restyle (`mark`, `charOffset`) keeps the bubble where it was put. A new coordinate `anchor` replaces the whole anchor, so the bubble returns to the margin unless that anchor carries a `bubble`.
+- History reads a bubble change as "bubble moved" ("Bubble back in the margin" on a reset), and reverting it restores the old position.
+- Offsets are limited to ±14400 points; a bubble can be put anywhere on, or past the edge of, the page, so check it still lands on the paper. Read it back from `anchor.tag`.
 
 Every page of a marked-script export also carries a footer: `Show · Document v2 · LX, SND · export <id tail> · 2026-10-16 22:31`.
 

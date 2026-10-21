@@ -10,6 +10,7 @@ import {
 import {
   type Actor,
   type Anchor,
+  type BubbleOffset,
   CUE_MARKS,
   type CueMark,
   type CueNumber,
@@ -32,6 +33,20 @@ const SNIPPET_CONTEXT_WORDS = 4
 const MAX_AMBIGUOUS = 20
 /** The most characters into a word a line or pointer can sit; far beyond any real word. */
 export const MAX_CHAR_OFFSET = 1000
+/** The farthest a cue's bubble can sit from its mark, in PDF points, either way on each axis. */
+export const MAX_BUBBLE_OFFSET = 14400
+
+function checkBubble(bubble: BubbleOffset | null | undefined): void {
+  if (bubble === undefined || bubble === null) return
+  for (const axis of ['dx', 'dy'] as const) {
+    const v = bubble[axis]
+    if (typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) > MAX_BUBBLE_OFFSET) {
+      throw invalid(
+        `bubble.${axis} must be a number from -${MAX_BUBBLE_OFFSET} to ${MAX_BUBBLE_OFFSET} points`,
+      )
+    }
+  }
+}
 
 function checkMark(mark: CueMark | undefined): void {
   if (mark !== undefined && !CUE_MARKS.includes(mark)) {
@@ -50,26 +65,36 @@ function checkCharOffset(charOffset: number | undefined, mark: CueMark): void {
 /**
  * The anchor an `update_cue` call that restyles ends with: `current` (the cue's anchor now, null when
  * unplaced) or the new `change.anchor` (applied first), drawn with `change.mark` and/or a character
- * offset. `mark` defaults to the base anchor's own; the offset applies to the word at
- * `text.wordStart`, clamped to its length, and `x` follows the caret when the page's word layer can
- * be read (otherwise the change still applies). `invalid` when the cue is unplaced, when the call
- * also sets `anchor: null` (it would both unplace and restyle the cue), or when `charOffset` is
- * given and no word is bound or the mark is not a line or pointer.
+ * offset, and with its bubble moved by `change.bubble` (an offset from the anchor's point, in points;
+ * null puts it back in the margin by removing the `tag` key). `mark` defaults to the base anchor's own;
+ * the offset applies to the word at `text.wordStart`, clamped to its length, and `x` follows the caret
+ * when the page's word layer can be read (otherwise the change still applies). `invalid` when the cue
+ * is unplaced, when the call also sets `anchor: null` (it would both unplace and restyle the cue),
+ * when `charOffset` is given and no word is bound or the mark is not a line or pointer, or when a
+ * bubble offset is not a finite number within +/-14400 points.
  */
 export async function restyleAnchor(
   db: Executor,
   blobs: BlobStore,
   current: Anchor | null,
-  change: { anchor?: Anchor | null; mark?: CueMark; charOffset?: number },
+  change: {
+    anchor?: Anchor | null
+    mark?: CueMark
+    charOffset?: number
+    bubble?: BubbleOffset | null
+  },
 ): Promise<Anchor> {
   if (change.anchor === null) {
     throw invalid(
-      'this call both unplaces the cue (anchor: null) and restyles it (mark or charOffset); do one or the other',
+      'this call both unplaces the cue (anchor: null) and restyles it (mark, charOffset or bubble); do one or the other',
     )
   }
   const anchor = change.anchor ?? current
-  if (!anchor) throw invalid('the cue is unplaced; place it before changing its mark')
+  if (!anchor) {
+    throw invalid('the cue is unplaced; place it before changing its mark, charOffset or bubble')
+  }
   checkMark(change.mark)
+  checkBubble(change.bubble)
   const mark = change.mark ?? markOf(anchor)
   checkCharOffset(change.charOffset, mark)
   const bound = anchor.text !== undefined && anchor.text.wordStart >= 0
@@ -86,7 +111,12 @@ export async function restyleAnchor(
       layer = undefined
     }
   }
-  return withMark(anchor, mark, { layer, offset: change.charOffset })
+  const restyled = withMark(anchor, mark, { layer, offset: change.charOffset })
+  if (change.bubble === undefined) return restyled
+  const { tag: _drop, ...rest } = restyled
+  return change.bubble === null
+    ? rest
+    : { ...rest, tag: { dx: change.bubble.dx, dy: change.bubble.dy } }
 }
 
 export interface PlaceCueAtTextInput {

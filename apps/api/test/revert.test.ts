@@ -141,6 +141,29 @@ describe('revertChange: updates', () => {
     expect((await getCue(db, s.actors.owner, { cueId: cue.id })).anchor).toEqual(restyled)
   })
 
+  test('reverting a bubble move restores the old tag', async () => {
+    const s = await setupMarkupShow()
+    const db = s.deps.db
+    const base = anchorAt(s.docId, s.versionId, 1, 150, 700)
+    const first = { ...base, tag: { dx: -30, dy: 12 } }
+    const cue = await mkCue(s, s.actors.owner, 'LX', { anchor: first })
+    const second = { ...base, tag: { dx: 80, dy: -5 } }
+    await updateCue(db, s.actors.owner, { cueId: cue.id, patch: { anchor: second } })
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).anchor).toEqual(second)
+
+    const result = await revertChange(db, s.actors.editorLx, {
+      seq: await lastSeq(s, cue.id, 'update'),
+    })
+    expect(result).toMatchObject({ reverted: 1, skipped: [] })
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).anchor).toEqual(first)
+
+    // resetting the bubble to the margin (no tag) reverts to the tag it had
+    await updateCue(db, s.actors.owner, { cueId: cue.id, patch: { anchor: base } })
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).anchor?.tag).toBeUndefined()
+    await revertChange(db, s.actors.owner, { seq: await lastSeq(s, cue.id, 'update') })
+    expect((await getCue(db, s.actors.owner, { cueId: cue.id })).anchor).toEqual(first)
+  })
+
   test('a revert through MCP is logged with the agent', async () => {
     const s = await setupMarkupShow()
     const db = s.deps.db

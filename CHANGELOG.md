@@ -20,7 +20,17 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
     them when it moves a cue, so that cue goes back to an underline until the client is reloaded (Reload in
     the update prompt). Nothing is lost on the server for cues nobody moves.
 
+- A cue's number bubble can be moved off the margin. Drag the bubble of the selected cue to put it anywhere on
+  the page, or nudge it with the arrow keys (1 pt, 10 pt with Shift); the cue editor has a `Bubble` row that
+  says "In the margin" or "Moved" with a `Reset to margin` button. A moved bubble takes no part in the margin
+  spread, is joined to its mark by one straight leader, draws no note, and prints where it was put. History
+  reads it as "bubble moved". MCP: `update_cue` takes `bubble: {dx, dy}` (`null` resets it) and the
+  coordinates `anchor` of `create_cue` / `update_cue` accepts `bubble`. The offset is stored in the cue's
+  anchor as `tag`, so there is no migration.
+
 ### Changed
+- Dragging a cue's bubble no longer moves the cue; it moves only the bubble. To move the cue, drag its mark
+  (with the Select tool) or use "Move to...".
 - Crowded margin bubbles now spread up and down around their own lines instead of only drifting down the
   page, so each bubble stays near its line (two cues on one line sit 8 pt above and 8 pt below it). Tags that
   do not overlap stay level with their lines. The same layout runs on screen, in browser print and in server

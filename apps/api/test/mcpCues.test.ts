@@ -344,6 +344,128 @@ describe('cue tools', () => {
       expect(still.structuredContent?.anchor).toBeTruthy()
     })
 
+    test('update_cue bubble {dx,dy} stores tag; bubble null removes it', async () => {
+      const made = await place({ quote: 'bravo charlie delta' })
+      const before = made.structuredContent?.cue
+      const upd = await callTool(owner, 'update_cue', {
+        cueId: before.id,
+        bubble: { dx: -40, dy: 12.5 },
+      })
+      expect(upd.isError).toBeFalsy()
+      expect(upd.structuredContent?.anchor).toEqual({
+        ...before.anchor,
+        tag: { dx: -40, dy: 12.5 },
+      })
+
+      // the bubble moves again; the mark and the bound words stay
+      const hl = await callTool(owner, 'update_cue', {
+        cueId: before.id,
+        mark: 'highlight',
+        bubble: { dx: 5, dy: 6 },
+      })
+      expect(hl.structuredContent?.anchor).toMatchObject({
+        mark: 'highlight',
+        tag: { dx: 5, dy: 6 },
+        text: { quote: 'bravo charlie delta' },
+      })
+      // a restyle alone keeps the bubble where it was put
+      const keep = await callTool(owner, 'update_cue', { cueId: before.id, mark: 'underline' })
+      expect(keep.structuredContent?.anchor.tag).toEqual({ dx: 5, dy: 6 })
+
+      const reset = await callTool(owner, 'update_cue', { cueId: before.id, bubble: null })
+      expect(reset.isError).toBeFalsy()
+      expect(reset.structuredContent?.anchor).toEqual(before.anchor)
+      expect(Object.keys(reset.structuredContent?.anchor ?? {})).not.toContain('tag')
+
+      // resetting a bubble that is already in the margin changes nothing and logs nothing
+      const again = await callTool(owner, 'update_cue', { cueId: before.id, bubble: null })
+      expect(again.isError).toBeFalsy()
+      expect(again.structuredContent?.anchor).toEqual(before.anchor)
+    })
+
+    test('bubble on an unplaced cue is an error', async () => {
+      const unplaced = await callTool(owner, 'create_cue', { showId: s.show.id, department: 'LX' })
+      for (const bubble of [{ dx: 1, dy: 2 }, null]) {
+        const res = await callTool(owner, 'update_cue', {
+          cueId: unplaced.structuredContent?.id,
+          bubble,
+        })
+        expect(res.isError).toBe(true)
+        expect(resultText(res)).toMatch(/^invalid: .*unplaced.*bubble/)
+      }
+    })
+
+    test('a bubble offset beyond 14400 points is refused, at the limit it is accepted', async () => {
+      const made = await place({ quote: 'bravo charlie' })
+      const cueId = made.structuredContent?.cue.id
+      for (const bubble of [
+        { dx: 14401, dy: 0 },
+        { dx: 0, dy: -14401 },
+        { dx: -20000, dy: 20000 },
+      ]) {
+        const res = await callTool(owner, 'update_cue', { cueId, bubble })
+        expect(res.isError, JSON.stringify(bubble)).toBe(true)
+        expect(resultText(res)).toMatch(/14400/)
+      }
+      const still = await callTool(owner, 'get_cue', { cueId })
+      expect(still.structuredContent?.anchor.tag).toBeUndefined()
+      const edge = await callTool(owner, 'update_cue', { cueId, bubble: { dx: 14400, dy: -14400 } })
+      expect(edge.structuredContent?.anchor.tag).toEqual({ dx: 14400, dy: -14400 })
+    })
+
+    test('a coordinates placement with a bubble stores tag, on create and on update_cue anchor', async () => {
+      const made = await callTool(owner, 'create_cue', {
+        showId: s.show.id,
+        department: 'LX',
+        anchor: { documentId: s.docId, pageIndex: 0, x: 100, y: 200, bubble: { dx: 30, dy: -8 } },
+      })
+      expect(made.isError).toBeFalsy()
+      expect(made.structuredContent?.anchor).toMatchObject({
+        x: 100,
+        y: 200,
+        tag: { dx: 30, dy: -8 },
+      })
+      // the new anchor first, then the top-level bubble on top
+      const upd = await callTool(owner, 'update_cue', {
+        cueId: made.structuredContent?.id,
+        anchor: { documentId: s.docId, pageIndex: 1, x: 10, y: 20, bubble: { dx: 1, dy: 2 } },
+        bubble: { dx: 3, dy: 4 },
+      })
+      expect(upd.structuredContent?.anchor).toMatchObject({
+        pageIndex: 1,
+        x: 10,
+        y: 20,
+        tag: { dx: 3, dy: 4 },
+      })
+      // an anchor without a bubble puts the bubble back in the margin
+      const plain = await callTool(owner, 'update_cue', {
+        cueId: made.structuredContent?.id,
+        anchor: { documentId: s.docId, pageIndex: 1, x: 10, y: 20 },
+      })
+      expect(plain.structuredContent?.anchor.tag).toBeUndefined()
+      const far = await callTool(owner, 'create_cue', {
+        showId: s.show.id,
+        department: 'LX',
+        anchor: { documentId: s.docId, pageIndex: 0, x: 1, y: 2, bubble: { dx: 15000, dy: 0 } },
+      })
+      expect(far.isError).toBe(true)
+    })
+
+    test('update_cue with anchor null and a bubble says the call both unplaces and restyles', async () => {
+      const made = await place({ quote: 'bravo charlie' })
+      const id = made.structuredContent?.cue.id
+      const res = await callTool(owner, 'update_cue', {
+        cueId: id,
+        anchor: null,
+        bubble: { dx: 1, dy: 1 },
+      })
+      expect(resultText(res)).toMatch(/^invalid: .*unplaces.*restyles/)
+      const reset = await callTool(owner, 'update_cue', { cueId: id, anchor: null, bubble: null })
+      expect(resultText(reset)).toMatch(/^invalid: .*unplaces.*restyles/)
+      const still = await callTool(owner, 'get_cue', { cueId: id })
+      expect(still.structuredContent?.anchor).toBeTruthy()
+    })
+
     test('create_cue with a coordinates anchor and mark line makes a free bar (no text, no offset)', async () => {
       const made = await callTool(owner, 'create_cue', {
         showId: s.show.id,
