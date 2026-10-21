@@ -46,4 +46,4 @@ Jayden asked that crowded bubbles move "both up and down a bit around their own 
 
 ## Out of scope on purpose (Phase 1 only)
 
-Moving a highlight or underline with the margin tag re-creates an up-to-eight-word range until Phase 2's `snapRange`; an annotation highlight whose quote was cut at 400 characters now comes back `approximate` on re-anchor (follows from ruling 10).
+Moving a highlight or underline re-creates an up-to-eight-word range. (Correction made in Phase 2: Phase 2's `snapRange` fixed this for a HIGHLIGHT only, which now keeps its word count when moved by its mark; a ranged underline moved by its mark still re-snaps to up to eight words through `anchorAt`, as the plan specified.) An annotation highlight whose quote was cut at 400 characters now comes back `approximate` on re-anchor (follows from ruling 10).
