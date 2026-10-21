@@ -297,18 +297,24 @@ test('dragging the bubble moves only the bubble, Alt+arrow keys nudge it, and pl
 
     // A plain arrow on the focused tag is not a nudge: it turns the page, as it did before bubbles moved.
     const nudged = (await localCue(a.page, id))?.anchor?.tag
-    const goTo = a.page.getByLabel('Go to page')
-    await expect(goTo).toHaveValue('1')
+    const position = a.page.getByLabel('Page position')
+    await expect(position).toHaveText(/^1 \//)
     await marker(a.page, id).focus()
     await a.page.keyboard.press('ArrowRight')
-    await expect(goTo).toHaveValue('2')
+    await expect(position).toHaveText(/^2 \//)
     await a.page.waitForTimeout(600)
     expect((await localCue(a.page, id))?.anchor?.tag).toEqual(nudged)
-    // `]` brings focus back to the tag (the cue is selected); the arrow then turns the page again.
-    await a.page.keyboard.press(']')
+    // `]` walks to the cue, selects it and focuses its tag (and shows its page); the arrow then turns
+    // the page, not the bubble.
+    await a.page.keyboard.press('Escape')
+    for (let n = 0; n < 12; n += 1) {
+      await a.page.keyboard.press(']')
+      if ((await marker(a.page, id).getAttribute('aria-pressed')) === 'true') break
+    }
     await expect(marker(a.page, id)).toBeFocused()
-    await a.page.keyboard.press('ArrowLeft')
-    await expect(goTo).toHaveValue('1')
+    await expect(position).toHaveText(/^1 \//)
+    await a.page.keyboard.press('ArrowRight')
+    await expect(position).toHaveText(/^2 \//)
     await a.page.waitForTimeout(600)
     expect((await localCue(a.page, id))?.anchor?.tag).toEqual(nudged)
 
