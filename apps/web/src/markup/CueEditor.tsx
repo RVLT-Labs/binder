@@ -82,6 +82,7 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
   const number = formatCueNumber(cue.major, cue.minor, format)
   const reason = session.whyCantEdit(row)
   const editable = reason === null
+  const moved = cue.anchor?.tag !== undefined
   const choices = session.departments.filter(
     (d) =>
       d.id === cue.departmentId ||
@@ -243,6 +244,29 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
             className="flex w-full [&>*]:flex-1"
             itemClassName={MARK_ITEM_CLASS}
           />
+        </Field>
+        <Field label="Bubble">
+          {/* the state is a word, not a colour: "Moved" only once the bubble has been placed */}
+          <fieldset
+            aria-label="Bubble"
+            className="m-0 flex min-h-[27px] min-w-0 items-center border-0 p-0 justify-between gap-3 max-md:flex-col max-md:items-stretch max-md:gap-2"
+          >
+            <span className="text-[13px] text-ink-2 max-md:text-[14px]">
+              {moved ? 'Moved' : 'In the margin'}
+            </span>
+            {moved && (
+              <Button
+                type="button"
+                variant="line"
+                size="sm"
+                disabled={!editable}
+                className="pointer-coarse:min-h-11 max-md:w-full"
+                onClick={() => void session.setBubble(cueId, null)}
+              >
+                Reset to margin
+              </Button>
+            )}
+          </fieldset>
         </Field>
         {quote}
         {!phone && notesField}

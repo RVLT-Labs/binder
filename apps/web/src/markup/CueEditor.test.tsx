@@ -22,6 +22,7 @@ vi.mock('@powersync/react', () => ({
 const h = vi.hoisted(() => ({
   peers: [] as Array<{ userId: string; name: string }>,
   reason: null as string | null,
+  setBubble: vi.fn(async () => {}),
 }))
 vi.mock('./wordLayers', () => ({ loadWordLayer: vi.fn(async () => null) }))
 vi.mock('../presence/PresenceProvider', () => ({
@@ -37,6 +38,7 @@ vi.mock('./MarkupSession', () => ({
     whyCantEdit: () => h.reason,
     editContext: () => ({ showId: 's', userId: 'u', scope: { role: 'owner', departments: [] } }),
     removeCue: vi.fn(),
+    setBubble: h.setBubble,
   }),
 }))
 vi.mock('./mutations', async (original) => ({
@@ -335,5 +337,60 @@ test('the control is disabled for an unplaced cue and for a cue the user cannot 
     expect((r as HTMLButtonElement).disabled).toBe(true)
   }
   h.reason = null
+  row.anchor = null
+})
+
+test('the Bubble row says "In the margin" or "Moved"; Reset to margin appears only when moved and clears tag; it is disabled when the cue is read-only', () => {
+  // in the margin: a word, and no reset button
+  row.anchor = placedAnchor() as never
+  const margin = render(<CueEditor cueId="c1" />)
+  const group = margin.getByRole('group', { name: 'Bubble' })
+  expect(group.textContent).toBe('In the margin')
+  expect(margin.queryByRole('button', { name: 'Reset to margin' })).toBeNull()
+  // directly under Mark
+  const fields = [
+    ...margin
+      .getByRole('region', { name: 'Cue editor' })
+      .querySelectorAll('[role=radiogroup], fieldset[aria-label]'),
+  ]
+  expect(fields.map((g) => g.getAttribute('aria-label'))).toEqual(['Type', 'Mark', 'Bubble'])
+  margin.unmount()
+
+  // moved: the word changes and Reset to margin clears the tag
+  row.anchor = placedAnchor({ tag: { dx: 30, dy: -4 } }) as never
+  const moved = render(<CueEditor cueId="c1" />)
+  expect(moved.getByRole('group', { name: 'Bubble' }).textContent).toContain('Moved')
+  expect(moved.getByRole('group', { name: 'Bubble' }).textContent).not.toContain('In the margin')
+  const reset = moved.getByRole('button', { name: 'Reset to margin' }) as HTMLButtonElement
+  expect(reset.disabled).toBe(false)
+  fireEvent.click(reset)
+  expect(h.setBubble).toHaveBeenCalledWith('c1', null)
+  moved.unmount()
+
+  // read-only: the button is there but disabled, and nothing is written
+  h.reason = 'This layer is locked.'
+  const locked = render(<CueEditor cueId="c1" />)
+  expect(locked.getByRole('group', { name: 'Bubble' }).textContent).toContain('Moved')
+  const lockedReset = locked.getByRole('button', { name: 'Reset to margin' }) as HTMLButtonElement
+  expect(lockedReset.disabled).toBe(true)
+  fireEvent.click(lockedReset)
+  expect(h.setBubble).toHaveBeenCalledTimes(1)
+  h.reason = null
+  row.anchor = null
+})
+
+test('an unplaced cue has no bubble to move: the row says In the margin and offers no reset', () => {
+  row.anchor = null
+  const { getByRole, queryByRole } = render(<CueEditor cueId="c1" />)
+  expect(getByRole('group', { name: 'Bubble' }).textContent).toBe('In the margin')
+  expect(queryByRole('button', { name: 'Reset to margin' })).toBeNull()
+})
+
+test('Reset to margin is full width on a phone and a 44 px target on coarse pointers', () => {
+  row.anchor = placedAnchor({ tag: { dx: 1, dy: 1 } }) as never
+  const { getByRole } = render(<CueEditor cueId="c1" />)
+  const className = getByRole('button', { name: 'Reset to margin' }).className
+  expect(className).toContain('max-md:w-full')
+  expect(className).toContain('pointer-coarse:min-h-11')
   row.anchor = null
 })
