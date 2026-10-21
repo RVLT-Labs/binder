@@ -101,7 +101,7 @@ The same function draws and snaps, so what the preview shows is what is stored a
 
 ### Connector style
 
-`settings.connectorStyles` maps a department id to `{ width: 'thin' | 'medium' | 'bold', pattern: 'solid' | 'dashed' | 'dotted' }`. Read with `connectorStyle(settings, departmentId)` in `@binder/shared`; anything missing or malformed is `thin` and `solid`, which is today's 0.75 pt line.
+`settings.connectorStyles` maps a department id to `{ width: 'thin' | 'medium' | 'bold', pattern: 'solid' | 'dashed' | 'dotted' }`. Read with `connectorStyle(settings, departmentId)` in `@binder/shared`; each missing or malformed field falls back to its default on its own (`thin`, `solid`), so `{ width: 'bold' }` reads as bold and solid, and with nothing set a connector is `thin` and `solid`, which is today's 0.75 pt line.
 
 | Width | Weight `w` |
 |---|---|
