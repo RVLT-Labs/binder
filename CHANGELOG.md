@@ -17,8 +17,8 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   accept `mark`. History reads a mark change as "restyled". The data lives in the cue's `anchor` JSON (`mark`
   and `text.offset`), so there is no migration. Spec: `docs/superpowers/specs/2026-10-20-cue-marker-styles.md`.
   - Compatibility: a web client cached from before this change does not know the new anchor fields and drops
-    them when it moves a cue, so that cue goes back to an underline until the client is reloaded (Reload in
-    the update prompt). Nothing is lost on the server for cues nobody moves.
+    them when it moves a cue, so that cue goes back to an underline, and a moved bubble goes back to the
+    margin (the old client drops its `tag` too), until the client is reloaded (Reload in the update prompt). Nothing is lost on the server for cues nobody moves.
 
 - A cue's number bubble can be moved off the margin. Drag the bubble of the selected cue to put it anywhere on
   the page, or nudge it with Alt+arrow keys (1 pt, 10 pt with Shift; plain arrows still turn the page); the cue editor has a `Bubble` row that

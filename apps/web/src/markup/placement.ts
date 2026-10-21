@@ -25,8 +25,9 @@ export interface PlacementInput {
   /** The document's snap setting, after the session toggle. */
   snap: boolean
   /**
-   * A cue dropped by its margin tag: a pointer outside the line's extent starts the trigger at the
-   * line's first word (not the nearest), and the anchor's x follows the trigger's first word.
+   * A cue dropped by dragging its mark (the margin tag moves only the bubble now): a pointer outside
+   * the line's extent starts the trigger at the line's first word (not the nearest), and the anchor's
+   * x follows the trigger's first word.
    */
   firstWordOutside?: boolean
 }

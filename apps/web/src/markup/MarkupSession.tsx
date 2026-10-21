@@ -124,8 +124,8 @@ export interface MarkupSession extends AnnotationActions {
     words?: WordLayer | null,
   ): Promise<void>
   /**
-   * `dropped` is a cue dropped by its margin tag: a pointer outside the line's extent starts the
-   * trigger at the line's first word, not the nearest.
+   * `dropped` is a cue dropped by dragging its mark (the margin tag moves only the bubble): a pointer
+   * outside the line's extent starts the trigger at the line's first word, not the nearest.
    */
   moveCue(
     id: string,
