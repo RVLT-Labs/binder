@@ -123,18 +123,36 @@ async function uploaded(page: Page): Promise<void> {
     .toBe(0)
 }
 
-/** The show's settings text as this page's local database holds it. */
-const localSettings = (page: Page, showId: string) =>
-  page.evaluate(
-    async (id) =>
-      (
-        await window.__binder?.db.get<{ settings: string | null }>(
-          'SELECT settings FROM shows WHERE id = ?',
-          [id],
-        )
-      )?.settings ?? null,
-    showId,
-  )
+/**
+ * The show's settings text as this page's local database holds it: the text, or null when the
+ * column really is NULL. A show row that is not there (it has not synced to this page yet, or the
+ * local database is not up) THROWS, so "not synced" can never pass for "NULL" and be restored over
+ * the shared show's real settings.
+ */
+const localSettings = (page: Page, showId: string): Promise<string | null> =>
+  page.evaluate(async (id) => {
+    const db = window.__binder?.db
+    if (!db) throw new Error('the local database is not available on this page')
+    const row = await db.getOptional<{ settings: string | null }>(
+      'SELECT settings FROM shows WHERE id = ?',
+      [id],
+    )
+    if (!row) throw new Error(`show ${id} is not in this page's local database yet`)
+    return row.settings
+  }, showId)
+
+/** `localSettings`, waiting for the show row to arrive; throws if it never does. */
+async function originalSettings(page: Page, showId: string): Promise<string | null> {
+  const deadline = Date.now() + 30_000
+  for (;;) {
+    try {
+      return await localSettings(page, showId)
+    } catch (err) {
+      if (Date.now() > deadline) throw err
+      await page.waitForTimeout(250)
+    }
+  }
+}
 
 /** Page 1 of an exported PDF: its content stream operators as text. */
 async function firstPageContent(bytes: Buffer): Promise<string> {
@@ -197,7 +215,8 @@ test('an owner gives SND a bold dashed connector: the page draws it, the export 
   try {
     await withUsers(browser, ['owner'], async ([a]) => {
       const { page } = a
-      const original = await localSettings(page, sharedShow.id)
+      // A definite value (the text, or a real NULL) or a thrown error: never a guess to restore.
+      const original = await originalSettings(page, sharedShow.id)
       try {
         // The owner sets SND to bold and dashed on the settings page; LX is left alone.
         await page.goto(settingsUrl)
