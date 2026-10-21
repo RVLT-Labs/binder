@@ -129,7 +129,7 @@ The cue flyout (the one that holds the cue type) gains a **Mark** choice: Underl
 
 ### Dragging
 
-- **The bubble** (selected cues only, as today): drag moves only the bubble and writes `tag` on drop, with a live preview of the pill while dragging. A drop off the page changes nothing. With the bubble focused, the arrow keys nudge it 1 pt (10 pt with Shift), so it is keyboard-operable.
+- **The bubble** (selected cues only, as today): drag moves only the bubble and writes `tag` on drop, with a live preview of the pill while dragging. A drop off the page changes nothing. With the bubble focused, Alt+arrow keys nudge it 1 pt (10 pt with Shift), so it is keyboard-operable; plain arrows are not intercepted and still turn the page.
 - **The mark** (selected cues only): dragging the highlight, the underlined words or the bar re-places the cue with today's snapping (the old tag-drag behaviour, including the first-word rule), and keeps its `mark` and `tag`. On a touch screen the mark gets a 44 px hit area (`pointer-coarse`).
 - Moving a cue with "Move to..." (`relocate`) is unchanged.
 

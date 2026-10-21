@@ -221,7 +221,7 @@ test('dragging the cue to page 2 moves it for both users', async ({ browser }) =
   })
 })
 
-test('dragging the bubble moves only the bubble, and the arrow keys nudge it', async ({
+test('dragging the bubble moves only the bubble, Alt+arrow keys nudge it, and plain arrows still turn the page', async ({
   browser,
 }) => {
   await withUsers(browser, ['owner', 'sndEditor'], async ([a, b]) => {
@@ -270,20 +270,20 @@ test('dragging the bubble moves only the bubble, and the arrow keys nudge it', a
       .poll(async () => (await localCue(b.page, id))?.anchor?.tag, { timeout: 5_000 })
       .toEqual(tag)
 
-    // The keyboard: with the tag focused, ArrowDown three times and Shift+ArrowRight once.
+    // The keyboard: with the tag focused, Alt+ArrowDown three times and Alt+Shift+ArrowRight once.
     await marker(a.page, id).focus()
     const scrollTop = () =>
       a.page.evaluate(
         () => document.querySelector('[data-page-index="0"]')?.getBoundingClientRect().top ?? 0,
       )
     const top = await scrollTop()
-    await a.page.keyboard.press('ArrowDown')
+    await a.page.keyboard.press('Alt+ArrowDown')
     await expect
       .poll(async () => (await localCue(a.page, id))?.anchor?.tag?.dy)
       .toBeCloseTo((tag?.dy ?? 0) - 1, 1)
-    await a.page.keyboard.press('ArrowDown')
-    await a.page.keyboard.press('ArrowDown')
-    await a.page.keyboard.press('Shift+ArrowRight')
+    await a.page.keyboard.press('Alt+ArrowDown')
+    await a.page.keyboard.press('Alt+ArrowDown')
+    await a.page.keyboard.press('Alt+Shift+ArrowRight')
     await expect
       .poll(async () => (await localCue(a.page, id))?.anchor?.tag)
       .toEqual({
@@ -295,6 +295,24 @@ test('dragging the bubble moves only the bubble, and the arrow keys nudge it', a
     expect((await localCue(a.page, id))?.anchor?.x).toBe(before?.x)
     expect((await localCue(a.page, id))?.anchor?.y).toBe(before?.y)
 
+    // A plain arrow on the focused tag is not a nudge: it turns the page, as it did before bubbles moved.
+    const nudged = (await localCue(a.page, id))?.anchor?.tag
+    const goTo = a.page.getByLabel('Go to page')
+    await expect(goTo).toHaveValue('1')
+    await marker(a.page, id).focus()
+    await a.page.keyboard.press('ArrowRight')
+    await expect(goTo).toHaveValue('2')
+    await a.page.waitForTimeout(600)
+    expect((await localCue(a.page, id))?.anchor?.tag).toEqual(nudged)
+    // `]` brings focus back to the tag (the cue is selected); the arrow then turns the page again.
+    await a.page.keyboard.press(']')
+    await expect(marker(a.page, id)).toBeFocused()
+    await a.page.keyboard.press('ArrowLeft')
+    await expect(goTo).toHaveValue('1')
+    await a.page.waitForTimeout(600)
+    expect((await localCue(a.page, id))?.anchor?.tag).toEqual(nudged)
+
+    await marker(a.page, id).focus()
     await a.page.keyboard.press('Delete')
     await expect.poll(() => localCue(a.page, id)).toBeNull()
   })

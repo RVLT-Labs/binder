@@ -24,7 +24,11 @@ const SELECTION_WIDTH = 2
 const SELECTION_OFFSET = 3
 const SELECTION_RADIUS = 6
 
-/** A keyboard nudge of the bubble, in page points; Shift takes the larger step. Page space is y-up. */
+/**
+ * A keyboard nudge of the bubble, in page points: Alt+arrow, and Alt+Shift+arrow for the larger step.
+ * Alt is required because plain arrows turn the page and focus lands on a marker after `]` or a click,
+ * so a stray arrow must never pin a bubble off the margin. Page space is y-up.
+ */
 const NUDGE = 1
 const NUDGE_SHIFT = 10
 const NUDGES: Record<string, [number, number] | undefined> = {
@@ -338,9 +342,10 @@ export function CueMarker({
       aria-label={cueAccessibleName(cue)}
       aria-pressed={selected}
       onKeyDown={(e: KeyboardEvent<SVGGElement>) => {
-        const nudge = movable && onNudge ? NUDGES[e.key] : undefined
+        const nudge = movable && onNudge && e.altKey ? NUDGES[e.key] : undefined
         if (nudge) {
-          // The arrows move the bubble: the page must not scroll and no shortcut may also act.
+          // Alt+arrows move the bubble: the page must not scroll and no shortcut may also act.
+          // Plain arrows are not handled here and reach the viewer (page turn).
           e.preventDefault()
           e.stopPropagation()
           const step = e.shiftKey ? NUDGE_SHIFT : NUDGE

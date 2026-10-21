@@ -508,13 +508,13 @@ test('a cue with no word layer renders a tick (underline, highlight) or a free b
   }
 })
 
-test('arrow keys on a movable marker call onNudge by 1 pt, Shift by 10 pt, and do not scroll the page', () => {
+test('Alt+arrow keys on a movable marker call onNudge by 1 pt, Alt+Shift by 10 pt, and do not scroll the page', () => {
   const onNudge = vi.fn()
   const { container } = draw(cue, tagOf(cue), { selected: true, movable: true, onNudge })
   const button = container.querySelector('[data-cue-id="c1"]') as SVGGElement
   const press = (key: string, shiftKey = false) => {
     // fireEvent returns false when the default was prevented (the page does not scroll).
-    return fireEvent.keyDown(button, { key, shiftKey })
+    return fireEvent.keyDown(button, { key, shiftKey, altKey: true })
   }
   expect(press('ArrowRight')).toBe(false)
   expect(press('ArrowLeft')).toBe(false)
@@ -536,12 +536,29 @@ test('arrow keys on a movable marker call onNudge by 1 pt, Shift by 10 pt, and d
   ])
 })
 
-test('an arrow key does not reach a global shortcut handler above the marker', () => {
+test('plain and Shift arrow keys on a movable marker are left alone: they reach the viewer and nudge nothing', () => {
+  const onNudge = vi.fn()
+  const { container } = draw(cue, tagOf(cue), { selected: true, movable: true, onNudge })
+  const button = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+  const above = vi.fn()
+  document.addEventListener('keydown', above)
+  for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown']) {
+    // true: the default was not prevented, so the page turns as it always did.
+    expect(fireEvent.keyDown(button, { key })).toBe(true)
+    expect(fireEvent.keyDown(button, { key, shiftKey: true })).toBe(true)
+  }
+  document.removeEventListener('keydown', above)
+  expect(above).toHaveBeenCalledTimes(8)
+  expect(onNudge).not.toHaveBeenCalled()
+})
+
+test('an Alt+arrow key does not reach a global shortcut handler above the marker', () => {
   const above = vi.fn()
   const { container } = draw(cue, tagOf(cue), { selected: true, movable: true, onNudge: vi.fn() })
   document.addEventListener('keydown', above)
   fireEvent.keyDown(container.querySelector('[data-cue-id="c1"]') as SVGGElement, {
     key: 'ArrowDown',
+    altKey: true,
   })
   document.removeEventListener('keydown', above)
   expect(above).not.toHaveBeenCalled()
@@ -551,7 +568,7 @@ test('a marker that is not movable ignores them', () => {
   const onNudge = vi.fn()
   const { container } = draw(cue, tagOf(cue), { selected: true, movable: false, onNudge })
   const button = container.querySelector('[data-cue-id="c1"]') as SVGGElement
-  expect(fireEvent.keyDown(button, { key: 'ArrowDown' })).toBe(true)
+  expect(fireEvent.keyDown(button, { key: 'ArrowDown', altKey: true })).toBe(true)
   expect(onNudge).not.toHaveBeenCalled()
 })
 

@@ -21,7 +21,7 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
     the update prompt). Nothing is lost on the server for cues nobody moves.
 
 - A cue's number bubble can be moved off the margin. Drag the bubble of the selected cue to put it anywhere on
-  the page, or nudge it with the arrow keys (1 pt, 10 pt with Shift); the cue editor has a `Bubble` row that
+  the page, or nudge it with Alt+arrow keys (1 pt, 10 pt with Shift; plain arrows still turn the page); the cue editor has a `Bubble` row that
   says "In the margin" or "Moved" with a `Reset to margin` button. A moved bubble takes no part in the margin
   spread, is joined to its mark by one straight leader, draws no note, and prints where it was put. History
   reads it as "bubble moved". MCP: `update_cue` takes `bubble: {dx, dy}` (`null` resets it) and the
