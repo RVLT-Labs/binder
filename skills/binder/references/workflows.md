@@ -171,7 +171,7 @@ The user supplies a CSV with the columns of Binder's own cue sheet (`Cue, Type, 
 
 1. `list_organisations {}` → `organisationId`; `create_show {title, organisationId}` → `showId`. The seven default departments (`LX`, `SND`, `TM`, `VID`, `SM`, `STG`, `FLY`) are always created; there is no way to pick others at creation.
 2. Adjust departments: `update_department {departmentId, numberFormat, colour, hidden}`; `create_department {showId, code, name, colour}` for extra ones.
-3. `update_show {showId, settings: {...merged}}` for `paperSize`, `stampSet` and `markerSides` (read `get_show` first; `settings` replaces the whole object).
+3. `update_show {showId, settings: {...merged}}` for `paperSize`, `stampSet`, `markerSides` and `connectorStyles` (read `get_show` first; `settings` replaces the whole object).
 4. Upload the libretto (recipe 5 step 2 without `documentId`, with `kind: "libretto"` and `title`; over REST `snapToText` is not accepted, so set it with `update_document` afterwards if needed), poll until `ready`.
 5. Add people with `add_show_member {showId, email, role, departments}`; each one is confirm-gated, so show the summary and get a yes per member. Scope editors to their departments. The user must already exist in Binder.
 6. `list_show_members` to read back, and hand the user the `showId`.

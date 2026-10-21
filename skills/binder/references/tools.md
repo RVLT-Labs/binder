@@ -116,7 +116,7 @@ Changes title, status or settings. Hints: write, idempotent. Owners only. **Not 
 | `showId` | string | yes | |
 | `title` | string 1..200 | no | |
 | `status` | `prep` `rehearsal` `running` `archived` | no | Archiving makes the show read-only; only an owner changing `status` back can write to it after that. |
-| `settings` | object | no | Replaces **all** settings. Read `get_show` first and send the merged object. Keys the app reads: `paperSize` (`A4` or `Letter`), `stampSet` (string list), `markerSides` (`{<departmentId>: "left" | "right"}`). |
+| `settings` | object | no | Replaces **all** settings. Read `get_show` first and send the merged object. Keys the app reads: `paperSize` (`A4` or `Letter`), `stampSet` (string list), `markerSides` (`{<departmentId>: "left" | "right"}`), `connectorStyles` (`{<departmentId>: {"width": "thin" | "medium" | "bold", "pattern": "solid" | "dashed" | "dotted"}}`; a missing or malformed entry means thin and solid). |
 
 Returns the show row. A patch that changes nothing returns the current row and logs nothing. Errors: `forbidden: Forbidden` (not an owner), `forbidden: show is archived` (any other change to an archived show).
 

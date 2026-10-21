@@ -28,6 +28,15 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   coordinates `anchor` of `create_cue` / `update_cue` accepts `bubble`. The offset is stored in the cue's
   anchor as `tag`, so there is no migration.
 
+- A connector style per department. The owner picks a width (Thin 0.75 pt, the default, Medium 1.5 pt or Bold
+  2.5 pt) and a pattern (Solid, the default, Dashed or Dotted) for each department's connector, the line from
+  a cue's bubble to its mark, with the `Connector width` and `Connector pattern` controls in the Departments
+  section of Show settings; everyone else reads them as words. It draws the same on screen, in browser print
+  and in the server export. Parallel leaders on one line keep at least 1.5 pt apart, more when they are
+  heavier. MCP: `update_show` settings carry `connectorStyles`
+  (`{<departmentId>: {width, pattern}}`); a missing or malformed entry means thin and solid. The data lives
+  in the show's settings JSON, so there is no migration.
+
 ### Changed
 - Dragging a cue's bubble no longer moves the cue; it moves only the bubble. To move the cue, drag its mark
   (with the Select tool) or use "Move to...".

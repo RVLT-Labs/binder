@@ -27,7 +27,7 @@ Every show-scoped row carries `showId`, `createdAt`, `updatedAt`, `updatedBy`. D
 
 - A user gets a personal organisation on sign-up. Shows live in an organisation; `create_show` puts a show in `organisationId` or your first organisation.
 - `status`: `prep`, `rehearsal`, `running` or `archived`. **An archived show is read-only for everyone**, including owners and agents: every write returns `forbidden: show is archived`. The one exception is `update_show` with only `status` set to a non-archived value, by an owner. Exports still work on archived shows (printing a closed show is a reason to keep it). `list_shows` reports `inNow: []` and no presence for archived shows.
-- `settings` is free JSON the app reads a few keys from: `paperSize` (`A4` default, or `Letter`: cue sheets are laid out for it), `stampSet` (string list of stamp texts, default `Enter, Exit, Fly in, Fly out, Blackout, Standby, Go`), `markerSides` (`{<departmentId>: "right"}`; anything else means the left margin). `update_show` replaces the whole object.
+- `settings` is free JSON the app reads a few keys from: `paperSize` (`A4` default, or `Letter`: cue sheets are laid out for it), `stampSet` (string list of stamp texts, default `Enter, Exit, Fly in, Fly out, Blackout, Standby, Go`), `markerSides` (`{<departmentId>: "right"}`; anything else means the left margin), `connectorStyles` (`{<departmentId>: {"width": "thin" | "medium" | "bold", "pattern": "solid" | "dashed" | "dotted"}}`: how that department's connector, the line from a cue's bubble to its mark, is drawn; anything missing or malformed means thin and solid). `update_show` replaces the whole object.
 
 ## Members and roles
 
