@@ -82,7 +82,7 @@ The authoritative geometry is `docs/superpowers/specs/2026-10-15-cue-margin-mark
 
 - **Tag**: a pill in the margin, opaque white, 1 pt outline in the department colour: department code in the colour, cue number in bold page ink. Standby: dashed outline. Warn: 1.5 pt outline. Narrow margins drop the department code first, then the type word, never the number.
 - **Trigger**: the words the cue goes on, underlined 1.5 pt in the department colour. On screen only, a 10 % fill while the cue is selected or hovered. Print never fills.
-- **Leader**: 0.75 pt (thin, the default; a department can choose medium 1.5 pt or bold 2.5 pt, solid, dashed or dotted, in Show settings) at the underline's level, so it never crosses a glyph; a stacked tag jogs through a 2 pt gutter outside the text block.
+- **Leader**: 0.75 pt (thin, the default; a department can choose medium 1.5 pt or bold 2.5 pt, solid, dashed or dotted, in Show settings) at the underline's level, so a thin one never crosses a glyph (heavier ones staggered under a crowded line can touch the line below); a stacked tag jogs through a 2 pt gutter outside the text block.
 - **Side**: per department (`settings.markerSides`), default left.
 - **Selection**: the selected tag gets a 2 px red outline (red here is "active", not a department). Peer selection: 2 px in that person's colour.
 - **Annotations**: notes (left rule plus 12 % tint of their colour), stamps (outlined caps, slight rotation), shapes and arrows in their layer's colour.

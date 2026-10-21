@@ -34,7 +34,7 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   section of Show settings; everyone else reads them as words. It draws the same on screen, in browser print
   and in the server export. Parallel leaders on one line keep at least 1.5 pt apart, more when they are
   heavier. MCP: `update_show` settings carry `connectorStyles`
-  (`{<departmentId>: {width, pattern}}`); a missing or malformed entry means thin and solid. The data lives
+  (`{<departmentId>: {width, pattern}}`); each missing or invalid field falls back to its default (thin, solid). The data lives
   in the show's settings JSON, so there is no migration.
 
 ### Changed
@@ -54,6 +54,10 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   (the floor) instead of 10.5 px, and the opt-in Paper theme is retoned so every text pairing passes 4.5:1
   (`--ok`/`--green`, `--warn`, `--rep`, `--blue`, `--muted`, `--faint`, `--coral`, `--teal`, `--lime`). The dark
   theme is unchanged. Recorded in the `DESIGN.md` decisions log.
+- Changing a show setting twice in quick succession (a connector's width, then its pattern; or a marker side and
+  a connector style) no longer loses the first change: the settings editors read and write the show's settings
+  in one local transaction. Tab order on a department row now runs marker side, Hidden, then the connector
+  controls.
 
 ### Known issues
 Listed in full, with their fixes, in `docs/superpowers/records/2026-10-16-ui-restyle-rulings.md` under "Known
