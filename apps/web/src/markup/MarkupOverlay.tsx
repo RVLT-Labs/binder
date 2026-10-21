@@ -30,7 +30,7 @@ import {
 } from './AnnotationShape'
 import { BubblePreview, CueMarker, CueTrigger } from './CueMarker'
 import { layoutPageCues } from './cueLayout'
-import { useDragSlot } from './dragGesture'
+import { bubbleDragThreshold, useDragSlot } from './dragGesture'
 import { Handles } from './Handles'
 import { useMarkupSession } from './MarkupSession'
 import type { AnnotationRow, CueRowWithDept } from './markupView'
@@ -110,7 +110,21 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const { markerSide, departments } = session
   const selectedCue = selection?.table === 'cues' ? selection.id : null
   // Arrow-key nudges: drawn at once, written once per burst.
-  const nudges = useBubbleNudge(cues, selectedCue, (id, tag) => void session.setBubble(id, tag))
+  const nudges = useBubbleNudge(
+    cues,
+    selectedCue,
+    (id, tag) => void session.setBubble(id, tag, 'nudge'),
+  )
+  // Any other bubble write (Reset to margin in the editor) supersedes a nudge target still being drawn.
+  const { subscribeBubbleWrites } = session
+  const { forget } = nudges
+  useEffect(
+    () =>
+      subscribeBubbleWrites((id, from) => {
+        if (from !== 'nudge') forget(id)
+      }),
+    [subscribeBubbleWrites, forget],
+  )
   // biome-ignore lint/correctness/useExhaustiveDependencies: `nudges.version` changes when a target does
   const drawnCues = useMemo(
     () =>
@@ -238,6 +252,8 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
     if (!wasSelected || !session.canEditCue(cue) || !layout || !sheet) return
     // A nudge still waiting for its write goes first, so the drop is the later change.
     nudges.flush(cue.id)
+    // ...and then gives way: the drop, not the nudge, is what the stored tag will end up as.
+    nudges.forget(cue.id)
     // The pill follows the pointer without jumping: it keeps the offset it was picked up at.
     const pick = pageOf(sheet, e.clientX, e.clientY)
     const grab = {
@@ -251,6 +267,8 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
     slot.begin(cue.id, {
       pointerId: e.pointerId,
       start: { x: e.clientX, y: e.clientY },
+      // A finger drifts as it taps: it takes more travel than a mouse before the bubble moves.
+      threshold: bubbleDragThreshold(e.pointerType),
       capture: e.currentTarget,
       onMove: (ev) => setBubbleDrag({ cueId: cue.id, centre: centreAt(ev) }),
       onDrop: (ev) => {

@@ -32,7 +32,11 @@ const words: WordLayer = {
 }
 
 const placeCue = vi.fn(async () => {})
-const setBubble = vi.fn(async () => {})
+/** Who hears a bubble write, as the real session tells them (the overlay forgets a nudge a reset overrides). */
+const bubbleListeners = new Set<(id: string, from?: 'nudge') => void>()
+const setBubble = vi.fn(async (id: string, _tag: unknown, from?: 'nudge') => {
+  for (const fn of [...bubbleListeners]) fn(id, from)
+})
 const moveCue = vi.fn(async () => {})
 const placeCueRange = vi.fn(async () => {})
 let snap = true
@@ -58,6 +62,10 @@ function mountSession(cues: unknown[] = []) {
     placeCue,
     placeCueRange,
     setBubble,
+    subscribeBubbleWrites: (fn: (id: string, from?: 'nudge') => void) => {
+      bubbleListeners.add(fn)
+      return () => void bubbleListeners.delete(fn)
+    },
     moveCue,
   }
 }
@@ -81,9 +89,10 @@ function mount(cues: unknown[] = []) {
 }
 
 /** A pointer event as the handlers read it (jsdom has no PointerEvent). */
-function pointer(type: string, x: number, y: number, target: EventTarget) {
+function pointer(type: string, x: number, y: number, target: EventTarget, pointerType?: string) {
   const ev = new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true })
   Object.defineProperty(ev, 'pointerId', { value: 1 })
+  if (pointerType) Object.defineProperty(ev, 'pointerType', { value: pointerType })
   act(() => {
     target.dispatchEvent(ev)
   })
@@ -344,6 +353,34 @@ describe('dragging a cue bubble', () => {
     expect(document.querySelector('.cue-drag-ghost')).toBeNull()
   })
 
+  test('a finger needs about 8 px to drag a bubble, so a tap that drifts a little moves nothing; a mouse needs 3 px', () => {
+    select('cues', 'c1')
+    const { container } = mount([placed])
+    pageUnderPointer(container, true)
+    const marker = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+    const centre = pillCentre(container)
+    const down = client(centre.x, centre.y)
+    // A touch that drifts 5 px and lifts: a tap.
+    pointer('pointerdown', down.x, down.y, marker, 'touch')
+    pointer('pointermove', down.x + 5, down.y, window, 'touch')
+    expect(container.querySelector('.cue-bubble-preview')).toBeNull()
+    pointer('pointerup', down.x + 5, down.y, window, 'touch')
+    expect(setBubble).not.toHaveBeenCalled()
+    // Past 8 px it is a drag.
+    pointer('pointerdown', down.x, down.y, marker, 'touch')
+    pointer('pointermove', down.x + 9, down.y, window, 'touch')
+    expect(container.querySelector('.cue-bubble-preview')).not.toBeNull()
+    pointer('pointerup', down.x + 9, down.y, window, 'touch')
+    expect(setBubble).toHaveBeenCalledTimes(1)
+    setBubble.mockClear()
+    // A mouse starts at 3 px.
+    pointer('pointerdown', down.x, down.y, marker, 'mouse')
+    pointer('pointermove', down.x + 5, down.y, window, 'mouse')
+    expect(container.querySelector('.cue-bubble-preview')).not.toBeNull()
+    pointer('pointerup', down.x + 5, down.y, window, 'mouse')
+    expect(setBubble).toHaveBeenCalledTimes(1)
+  })
+
   test('a drop outside the page writes nothing', () => {
     select('cues', 'c1')
     const { container } = mount([placed])
@@ -454,6 +491,46 @@ describe('dragging a cue bubble', () => {
       pause(300)
       expect(tagWritten().dx).toBeCloseTo(100, 1)
       expect(tagWritten().dy).toBeCloseTo(-49, 1)
+    })
+
+    test('a drag that starts after a nudge was written draws the dragged bubble, not the stale nudge target', () => {
+      select('cues', 'c1')
+      const view = mount([placed])
+      pageUnderPointer(view.container, true)
+      const marker = markerOf(view.container)
+      for (let i = 0; i < 4; i += 1) fireEvent.keyDown(marker, { key: 'ArrowDown', altKey: true })
+      pause(300)
+      expect(setBubble).toHaveBeenCalledTimes(1)
+      const c = pillCentre(view.container)
+      // The nudge's write has not come back yet when the bubble is picked up and dropped elsewhere.
+      const down = client(c.x, c.y)
+      pointer('pointerdown', down.x, down.y, marker)
+      const to = client(300, 400)
+      pointer('pointermove', to.x, to.y, window)
+      pointer('pointerup', to.x, to.y, window)
+      expect(setBubble).toHaveBeenCalledTimes(2)
+      const dropped = tagWritten()
+      // The row now holds the drop; the nudge's own write never shows up as the stored tag.
+      resync(view, [{ ...placed, anchor: { ...placed.anchor, tag: dropped } }])
+      pause(100)
+      expect(pillCentre(view.container).x).toBeCloseTo(300, 1)
+      expect(pillCentre(view.container).y).toBeCloseTo(400, 1)
+    })
+
+    test('Reset to margin right after a nudge draws the bubble in the margin at once, not at the stale target', () => {
+      select('cues', 'c1')
+      const view = mount([placed])
+      const marker = markerOf(view.container)
+      const margin = pillCentre(view.container)
+      for (let i = 0; i < 4; i += 1) fireEvent.keyDown(marker, { key: 'ArrowDown', altKey: true })
+      pause(300)
+      expect(setBubble).toHaveBeenCalledTimes(1)
+      expect(pillCentre(view.container).y).toBeCloseTo(margin.y - 4, 1)
+      // The cue editor's button: the session clears the tag (the row never held the nudge).
+      act(() => void setBubble('c1', null))
+      resync(view, [placed])
+      pause(100)
+      expect(pillCentre(view.container)).toEqual(margin)
     })
 
     test('blur writes the pending nudge at once', () => {

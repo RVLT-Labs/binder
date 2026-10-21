@@ -366,9 +366,11 @@ function barOf(c: CueTagInput): { x: number; y1: number; y2: number; pointer: bo
 /**
  * Where a cue's mark ends: the left or right end of its first underline (or the padded outer edge
  * of a highlight's first fill, at the same y), the bar of a line or pointer (at the word's
- * underline y, or the bottom of a free bar), or the bottom of a tick.
+ * underline y, or the bottom of a free bar), or the bottom of a tick. A margin tag aims at the end on
+ * its department's side; a moved bubble (`nearX`, its centre) at whichever end of a multi-word underline
+ * or fill is nearest it by x, the department side on a tie. A bar and a tick are one point.
  */
-function markTarget(c: CueTagInput): { x: number; y: number } | null {
+function markTarget(c: CueTagInput, nearX?: number): { x: number; y: number } | null {
   const first = c.triggerBoxes[0]
   if (c.mark === 'line' || c.mark === 'pointer') {
     const bar = barOf(c)
@@ -376,10 +378,15 @@ function markTarget(c: CueTagInput): { x: number; y: number } | null {
   }
   if (first) {
     const pad = c.mark === 'highlight' ? HIGHLIGHT_PAD_X : 0
-    return {
-      x: c.side === 'left' ? first.x - pad : first.x + first.w + pad,
-      y: first.y - UNDERLINE_DROP,
-    }
+    const leftEnd = first.x - pad
+    const rightEnd = first.x + first.w + pad
+    const sideEnd = c.side === 'left' ? leftEnd : rightEnd
+    const otherEnd = c.side === 'left' ? rightEnd : leftEnd
+    const x =
+      nearX !== undefined && Math.abs(otherEnd - nearX) < Math.abs(sideEnd - nearX)
+        ? otherEnd
+        : sideEnd
+    return { x, y: first.y - UNDERLINE_DROP }
   }
   return { x: c.anchorX, y: c.y - TICK_BELOW }
 }
@@ -467,7 +474,7 @@ function layoutOne(
       ? { x: c.anchorX, y1: c.y - TICK_BELOW, y2: c.y - TICK_BELOW + TICK_HEIGHT }
       : null
   const bar = barred ? barOf(c) : null
-  const base = markTarget(c)
+  const base = markTarget(c, movedTo?.x)
   const leader = movedTo
     ? straightConnector(tag, movedTo, base, [
         ...underlines.map((u) => ({

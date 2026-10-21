@@ -138,7 +138,13 @@ export interface MarkupSession extends AnnotationActions {
    * page points, y up), or removes it when `tag` is null so the bubble goes back to the margin.
    * Nothing else in the anchor changes. The same rights checks as a move; an unplaced cue is left alone.
    */
-  setBubble(id: string, tag: BubbleOffset | null): Promise<void>
+  setBubble(id: string, tag: BubbleOffset | null, from?: 'nudge'): Promise<void>
+  /**
+   * Hears every `setBubble` call (as it starts) with the cue's id and where it came from: `'nudge'`
+   * for the overlay's own coalesced keyboard writes, nothing for any other (a drag, Reset to margin).
+   * Returns the unsubscribe.
+   */
+  subscribeBubbleWrites(fn: (id: string, from?: 'nudge') => void): () => void
   removeCue(id: string): Promise<void>
   /**
    * Puts a review item (a cue or annotation anchored to an older version) at a point of this
@@ -512,8 +518,14 @@ export function MarkupSessionProvider({
     [db, documentId, versionId, anchorFor, snapWords, cueForChange],
   )
 
+  const bubbleListeners = useRef(new Set<(id: string, from?: 'nudge') => void>())
+  const subscribeBubbleWrites = useCallback((fn: (id: string, from?: 'nudge') => void) => {
+    bubbleListeners.current.add(fn)
+    return () => void bubbleListeners.current.delete(fn)
+  }, [])
   const setBubble = useCallback(
-    async (id: string, tag: BubbleOffset | null) => {
+    async (id: string, tag: BubbleOffset | null, from?: 'nudge') => {
+      for (const fn of [...bubbleListeners.current]) fn(id, from)
       try {
         // The sync policy refuses an offset outside the schema's limits or one that is not a number.
         if (tag && !(Number.isFinite(tag.dx) && Number.isFinite(tag.dy))) return
@@ -615,6 +627,7 @@ export function MarkupSessionProvider({
     placeCueRange,
     moveCue,
     setBubble,
+    subscribeBubbleWrites,
     removeCue,
     relocate,
     showCue,

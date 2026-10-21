@@ -1,5 +1,10 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { startPointerDrag } from './dragGesture'
+import {
+  bubbleDragThreshold,
+  DRAG_THRESHOLD,
+  startPointerDrag,
+  TOUCH_BUBBLE_THRESHOLD,
+} from './dragGesture'
 
 function fire(type: string, pointerId: number, x: number, y: number, button = 0) {
   // jsdom has no PointerEvent: a MouseEvent with the pointer's id is what the handlers read.
@@ -86,4 +91,30 @@ test('stop() ends the drag at once and is safe to call twice', () => {
   expect(d.stop).toHaveBeenCalledOnce()
   fire('pointermove', 1, 150, 100)
   expect(d.move).not.toHaveBeenCalled()
+})
+
+test('a drag with its own threshold ignores moves inside it and drags past it', () => {
+  const calls = { move: vi.fn(), drop: vi.fn() }
+  stops.push(
+    startPointerDrag({
+      pointerId: 1,
+      start: { x: 100, y: 100 },
+      threshold: 8,
+      onMove: calls.move,
+      onDrop: calls.drop,
+    }),
+  )
+  // 5 px of finger jitter is more than the default 3 and less than 8: still a tap.
+  fire('pointermove', 1, 105, 100)
+  fire('pointerup', 1, 105, 100)
+  expect(calls.move).not.toHaveBeenCalled()
+  expect(calls.drop).not.toHaveBeenCalled()
+})
+
+test('a bubble drag needs about 8 px of travel from a finger and the usual 3 px from a mouse or pen', () => {
+  expect(TOUCH_BUBBLE_THRESHOLD).toBe(8)
+  expect(bubbleDragThreshold('touch')).toBe(TOUCH_BUBBLE_THRESHOLD)
+  expect(bubbleDragThreshold('mouse')).toBe(DRAG_THRESHOLD)
+  expect(bubbleDragThreshold('pen')).toBe(DRAG_THRESHOLD)
+  expect(bubbleDragThreshold('')).toBe(DRAG_THRESHOLD)
 })

@@ -3,11 +3,23 @@ import { useMemo, useRef } from 'react'
 /** Pointer travel, in CSS pixels, before a press becomes a drag. */
 export const DRAG_THRESHOLD = 3
 
+/**
+ * A finger on a bubble drifts as it taps: the bubble drag takes this much travel from a touch so a
+ * tap never writes a position. A mouse or pen keeps `DRAG_THRESHOLD`.
+ */
+export const TOUCH_BUBBLE_THRESHOLD = 8
+
+/** The travel before a bubble drag starts, for the kind of pointer that pressed it (`PointerEvent.pointerType`). */
+export function bubbleDragThreshold(pointerType: string | undefined): number {
+  return pointerType === 'touch' ? TOUCH_BUBBLE_THRESHOLD : DRAG_THRESHOLD
+}
+
 export interface PointerDragOptions {
   /** The pointer that started the drag: events from any other pointer are ignored. */
   pointerId: number
   /** Where it went down, in client pixels. */
   start: { x: number; y: number }
+  /** Travel, in CSS pixels, before the press becomes a drag; `DRAG_THRESHOLD` when absent. */
   threshold?: number
   /** Keeps the pointer's events on this element while it is pressed. */
   capture?: Element

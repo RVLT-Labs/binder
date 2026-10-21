@@ -1066,13 +1066,62 @@ describe('moved bubbles', () => {
   })
 
   test('its leader is one straight segment from the tag centre to the mark, even off the line', () => {
+    // The underline runs x 300 to 340. A bubble 60 to the right is nearest its right end ...
     const t = one(moved('a', { tag: { dx: 60, dy: -80 } }))
     const centre = { x: t.tag.x + t.tag.w / 2, y: t.centreY }
-    expect(t.leader).toEqual([centre, { x: 300, y: 494 }])
-    // Right-hand side tags get the same (the side does not matter).
+    expect(t.leader).toEqual([centre, { x: 340, y: 494 }])
+    // ... and one 60 to the left of it is nearest the left end, whichever side its department is on.
     const r = one(moved('b', { side: 'right', tag: { dx: -60, dy: 40 } }))
     expect(r.leader).toHaveLength(2)
-    expect(r.leader?.[1]).toEqual({ x: 340, y: 494 })
+    expect(r.leader?.[1]).toEqual({ x: 300, y: 494 })
+  })
+
+  describe('which end of the mark its leader aims at', () => {
+    // An underline (or highlight fill) from x 300 to 500; its first word starts the line.
+    const wide = { x: 300, y: 495, w: 200, h: 10 }
+    const aim = (over: Partial<CueTagInput>) =>
+      one(moved('a', { triggerBoxes: [wide], ...over })).leader?.at(-1)
+
+    test('a left-side cue whose bubble sits right of its underline aims at the right end, left of it at the left end', () => {
+      expect(aim({ side: 'left', tag: { dx: 260, dy: -40 } })).toEqual({ x: 500, y: 494 })
+      expect(aim({ side: 'left', tag: { dx: -60, dy: -40 } })).toEqual({ x: 300, y: 494 })
+      expect(aim({ side: 'right', tag: { dx: 260, dy: -40 } })).toEqual({ x: 500, y: 494 })
+      expect(aim({ side: 'right', tag: { dx: -60, dy: -40 } })).toEqual({ x: 300, y: 494 })
+    })
+
+    test('the nearer end wins by x distance, and a tie keeps the department side', () => {
+      // centre x = anchorX (300) + dx; ends at 300 and 500, middle 400
+      expect(aim({ side: 'left', tag: { dx: 80, dy: -40 } })).toEqual({ x: 300, y: 494 })
+      expect(aim({ side: 'left', tag: { dx: 120, dy: -40 } })).toEqual({ x: 500, y: 494 })
+      expect(aim({ side: 'left', tag: { dx: 100, dy: -40 } })).toEqual({ x: 300, y: 494 })
+      expect(aim({ side: 'right', tag: { dx: 100, dy: -40 } })).toEqual({ x: 500, y: 494 })
+    })
+
+    test('a highlight aims at the padded end nearest the bubble', () => {
+      const right = aim({ mark: 'highlight', side: 'left', tag: { dx: 260, dy: -40 } })
+      const left = aim({ mark: 'highlight', side: 'left', tag: { dx: -60, dy: -40 } })
+      expect(right?.x).toBeGreaterThan(500)
+      expect(left?.x).toBeLessThan(300)
+      expect(right?.y).toBe(494)
+    })
+
+    test('a line or pointer bar and an unbound tick are single points: the bubble side makes no difference', () => {
+      const caret = { x: 320, box: wide }
+      for (const dx of [-200, 400]) {
+        expect(aim({ mark: 'line', caret, anchorX: 320, tag: { dx, dy: 60 } })).toEqual({
+          x: 320,
+          y: 494,
+        })
+        expect(aim({ mark: 'pointer', caret, anchorX: 320, tag: { dx, dy: 60 } })?.x).toBe(320)
+        expect(aim({ triggerBoxes: [], anchorX: 300, tag: { dx, dy: 60 } })?.x).toBe(300)
+      }
+    })
+
+    test('a margin tag still aims at the end on its department side, wherever it is', () => {
+      const t = (side: 'left' | 'right') => one(cue('m', { side, triggerBoxes: [wide] }))
+      expect(t('left').leader?.at(-1)?.x).toBe(300)
+      expect(t('right').leader?.at(-1)?.x).toBe(500)
+    })
   })
 
   test('its leader ends at the bar of a line, the fill of a highlight and the tick of an unbound cue', () => {

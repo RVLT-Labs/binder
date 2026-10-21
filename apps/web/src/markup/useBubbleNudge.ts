@@ -31,6 +31,12 @@ export interface BubbleNudges {
   nudge(id: string, base: BubbleOffset, dx: number, dy: number): void
   /** Writes a cue's pending nudge now (all cues when no id). A no-op when nothing is pending. */
   flush(id?: string): void
+  /**
+   * Drops a cue's nudge target, pending write included: its bubble is drawn from the stored tag again.
+   * For a write that overrides the nudge (a drag, Reset to margin), which leaves the issued entry
+   * unable to ever match the stored tag.
+   */
+  forget(id: string): void
   /** Changes with every nudge, write and settle: a dependency for what is drawn from `targetOf`. */
   version: number
 }
@@ -139,5 +145,5 @@ export function useBubbleNudge(
   }, [flush])
 
   const targetOf = useCallback((id: string) => entries.current.get(id)?.tag, [])
-  return { targetOf, nudge, flush, version }
+  return { targetOf, nudge, flush, forget: drop, version }
 }
