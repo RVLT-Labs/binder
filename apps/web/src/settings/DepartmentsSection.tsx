@@ -164,7 +164,7 @@ const CONTROLS = 'grid grid-cols-[44px_1.05fr_1fr] items-end gap-2 md:contents'
  * carries its own label.
  */
 const CONNECTOR_ROW =
-  'grid gap-2 md:col-span-3 md:col-start-3 md:row-start-2 md:flex md:flex-wrap md:items-center md:gap-x-5 md:gap-y-1'
+  'grid gap-2 md:col-span-5 md:col-start-3 md:row-start-2 md:flex md:flex-wrap md:items-center md:gap-x-5 md:gap-y-1'
 /** One labelled connector control; the label sits over it on a phone and to its left in the table. */
 const CONNECTOR_FIELD = 'min-w-0 md:flex md:items-center md:gap-2'
 const CONNECTOR_LABEL = cn(FIELD_LABEL, 'mb-[3px] md:mb-0 md:whitespace-nowrap')
