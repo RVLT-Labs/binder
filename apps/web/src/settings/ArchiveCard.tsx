@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { SECTION_LABEL } from '../panel/fields'
 import { useConfirm } from '../shell/useConfirm'
+import { reactivateShow } from '../shows/reactivateShow'
 import { CARD } from './parts'
 
 /**
@@ -22,10 +23,10 @@ export function ArchiveCard({ showId }: { showId: string }) {
   const [error, setError] = useState<string | null>(null)
   const { confirm, dialog } = useConfirm('Archive this show?', 'Archive show')
 
-  async function setStatus(status: 'archived' | 'prep') {
+  async function write(change: () => Promise<unknown>) {
     setError(null)
     try {
-      await db.execute('UPDATE shows SET status = ? WHERE id = ?', [status, showId])
+      await change()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     }
@@ -55,14 +56,16 @@ export function ArchiveCard({ showId }: { showId: string }) {
           variant="line"
           className="shrink-0"
           onClick={async () => {
-            if (archived) return setStatus('prep')
+            if (archived) return write(() => reactivateShow(db, showId))
             const title = show?.title ? `“${show.title}”` : 'This show'
             if (
               await confirm(
                 `${title} becomes read-only for everyone. Exports still work and nothing is deleted. You can unarchive it here later.`,
               )
             )
-              await setStatus('archived')
+              await write(() =>
+                db.execute('UPDATE shows SET status = ? WHERE id = ?', ['archived', showId]),
+              )
           }}
         >
           {archived ? 'Unarchive show' : 'Archive show'}

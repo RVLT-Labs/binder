@@ -6,26 +6,30 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { render, waitFor } from '@testing-library/react'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import type { DocumentsData } from '../documents/useDocumentEntries'
 import { ShowOverview } from './ShowOverview'
 
 const docs = vi.hoisted(() => ({ value: null as unknown as DocumentsData }))
+const show = vi.hoisted(() => ({ status: 'prep', role: 'owner' as string | null }))
 
 vi.mock('@powersync/react', () => ({
+  usePowerSync: () => ({ execute: async () => ({}) }),
   useQuery: (sql: string) => ({
     data: sql.includes('FROM cues')
       ? [
           { id: 'a', department_id: 'lx', major: 12, minor: 0 },
           { id: 'b', department_id: 'lx', major: 12, minor: 0 },
         ]
-      : [{ title: 'Songs for a New World' }],
+      : [{ title: 'Songs for a New World', status: show.status }],
   }),
 }))
 vi.mock('../markup/useDepartments', () => ({
   useDepartments: () => [{ id: 'lx', code: 'LX', colour: '#C9811F', hidden: 0 }],
 }))
-vi.mock('../markup/useMembership', () => ({ useMembership: () => ({ role: 'owner' }) }))
+vi.mock('../markup/useMembership', () => ({
+  useMembership: () => (show.role ? { role: show.role } : null),
+}))
 vi.mock('../documents/useDocumentEntries', () => ({ useDocumentEntries: () => docs.value }))
 vi.mock('../documents/UploadProvider', () => ({
   useUpload: () => ({ canUpload: true, openUpload: () => {} }),
@@ -65,6 +69,11 @@ function headingsAt(view: ReturnType<typeof render>, width: 'phone' | 'wide') {
     .filter((h) => !h.closest(hidden))
     .map((h) => h.textContent)
 }
+
+beforeEach(() => {
+  show.status = 'prep'
+  show.role = 'owner'
+})
 
 async function renderOverview() {
   docs.value = {
@@ -146,4 +155,59 @@ test('the Review and Fix links come before the Scripts links on the phone and af
   expect(phoneReview?.compareDocumentPosition(scripts as Node)).toBe(
     Node.DOCUMENT_POSITION_FOLLOWING,
   )
+})
+
+test('an active show has no archived banner and its columns start on the first row', async () => {
+  const view = await renderOverview()
+  expect(view.container.querySelector('section[aria-label="Archived show"]')).toBeNull()
+  const columns = Array.from(view.container.querySelectorAll('[class*="min-[1025px]:col-start-"]'))
+  expect(columns).toHaveLength(2)
+  for (const column of columns) {
+    expect(column.className).toContain('min-[1025px]:row-start-1')
+    expect(column.className).not.toContain('row-start-2')
+  }
+})
+
+test('an archived show opens with the banner across the top, before everything else', async () => {
+  show.status = 'archived'
+  const view = await renderOverview()
+  const banner = view.container.querySelector('section[aria-label="Archived show"]')
+  expect(banner).not.toBeNull()
+  expect(banner?.textContent).toContain('This show is archived')
+  // The first thing a reader meets after the title, on every width.
+  const content = view.container.firstElementChild
+  expect(content?.querySelector('section')).toBe(banner)
+  // Across both columns on desktop, which then start on the second row.
+  expect(banner?.className).toContain('min-[1025px]:col-span-2')
+  expect(banner?.className).toContain('min-[1025px]:row-start-1')
+  const columns = Array.from(view.container.querySelectorAll('[class*="min-[1025px]:col-start-"]'))
+  expect(columns).toHaveLength(2)
+  for (const column of columns) expect(column.className).toContain('min-[1025px]:row-start-2')
+})
+
+test('the banner offers Reactivate to the owner and asks everyone else to ask one', async () => {
+  show.status = 'archived'
+  const owner = await renderOverview()
+  expect(owner.getByRole('button', { name: 'Reactivate show' })).toBeTruthy()
+  owner.unmount()
+
+  show.role = 'editor'
+  const editor = await renderOverview()
+  expect(editor.queryByRole('button', { name: 'Reactivate show' })).toBeNull()
+  expect(editor.getByRole('region', { name: 'Archived show' }).textContent).toContain(
+    'Ask an owner to reactivate it.',
+  )
+})
+
+test('an archived show keeps the same headings, so nothing but the banner is added', async () => {
+  show.status = 'archived'
+  const view = await renderOverview()
+  expect(headingsAt(view, 'wide')).toEqual([
+    'Scripts',
+    'Cue lists by department',
+    'Recent activity',
+    'In the binder now',
+    'Needs you',
+    'Offline',
+  ])
 })

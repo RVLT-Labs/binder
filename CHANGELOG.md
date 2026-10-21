@@ -37,6 +37,12 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   (`{<departmentId>: {width, pattern}}`); each missing or invalid field falls back to its default (thin, solid). The data lives
   in the show's settings JSON, so there is no migration.
 
+- Bring a show out of the archive from where you find it. An owner's archived card on the shows home now has
+  **Reactivate**, and an archived show's page opens with a banner (read-only for everyone, exports still work)
+  that gives the owner **Reactivate show** and tells everyone else to ask an owner. Reactivating returns the show
+  to prep, as the Archive card in Show settings always did, and the card moves up to Active under keyboard focus.
+  No server or MCP change: an owner changing `status` back was already the one write an archived show accepts.
+
 ### Changed
 - Dragging a cue's bubble no longer moves the cue; it moves only the bubble. To move the cue, drag its mark
   (with the Select tool) or use "Move to...".
@@ -49,6 +55,8 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   highlight whose quote is longer than eight words keeps its full range instead of shrinking.
 - A cue's underline range that was cut at 400 characters (a long drag with the cue tool) re-anchors as
   `approximate`, as a cut highlight does, instead of shrinking silently.
+- Archived cards on the shows home no longer have the rename pencil: the server refuses any change to an archived
+  show but its status, so a rename could not be saved. It comes back with the show.
 - Guard retained local CRUD completion handles and read callbacks against session changes; close
   Print when history restores Calling; reserve 44 px comparison/tool option fields and room in their containers.
 - Adopt canonical RVLT v1.3.0 authority and contrast roles, preserving Binder's fixed white page,

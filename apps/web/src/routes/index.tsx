@@ -8,9 +8,11 @@ import { useLastShowId } from '../shell/lastShow'
 import { useAccount } from '../shell/useAccount'
 import { firstName, greeting } from '../shows/greeting'
 import { NewShowDialog } from '../shows/NewShowDialog'
+import { reactivateShow } from '../shows/reactivateShow'
 import { ShowsHome } from '../shows/ShowsHome'
 import { useNow } from '../shows/useNow'
 import { useOrgName } from '../shows/useOrgName'
+import { useOwnedShowIds } from '../shows/useOwnedShowIds'
 import { useShowPulse } from '../shows/useShowPulse'
 import { useLocalLastActivity, useShowSummaries } from '../shows/useShowSummaries'
 
@@ -32,6 +34,7 @@ function HomePage() {
   )
   const lastShowId = useLastShowId(account.email)
   const orgName = useOrgName(account.email)
+  const ownedShowIds = useOwnedShowIds()
   const summaries = useShowSummaries()
   const pulse = useShowPulse()
   // The local scan is only the card's fallback for when the server's last change is missing.
@@ -65,6 +68,10 @@ function HomePage() {
         // Local write first; PowerSync queues it and uploads when online.
         onRename={async (showId, title) => {
           await db.execute('UPDATE shows SET title = ? WHERE id = ?', [title, showId])
+        }}
+        ownedShowIds={ownedShowIds}
+        onReactivate={async (showId) => {
+          await reactivateShow(db, showId)
         }}
       />
       {opener && <NewShowDialog returnFocusTo={opener} onClose={() => setOpener(null)} />}
