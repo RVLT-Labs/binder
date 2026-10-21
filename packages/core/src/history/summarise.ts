@@ -1,3 +1,5 @@
+import { anchorChangeKind } from './anchorChange'
+
 /** One change-log row, reduced to what the activity feed sentence needs. */
 export interface SummaryRow {
   table: string
@@ -16,6 +18,8 @@ type Verb =
   | 'retried'
   | 'removed'
   | 'moved'
+  | 'restyled'
+  | 'bubble moved'
   | 'renumbered'
   | 'relabelled'
   | 'edited'
@@ -30,6 +34,8 @@ const VERB_ORDER: readonly Verb[] = [
   'retried',
   'removed',
   'moved',
+  'restyled',
+  'bubble moved',
   'renumbered',
   'relabelled',
   'edited',
@@ -42,6 +48,11 @@ function touched(row: SummaryRow): Set<string> {
   return new Set([...Object.keys(row.after ?? {}), ...Object.keys(row.before ?? {})])
 }
 
+/** The verb for an anchor change kind: `bubble-moved` is spelt as the phrase "bubble moved". */
+function bubbleVerb(kind: ReturnType<typeof anchorChangeKind>): Verb {
+  return kind === 'bubble-moved' ? 'bubble moved' : kind
+}
+
 /** The verbs one row contributes to; an update counts once per verb it triggers. */
 function verbsOf(row: SummaryRow): Verb[] {
   if (row.table === 'cues') {
@@ -49,7 +60,8 @@ function verbsOf(row: SummaryRow): Verb[] {
     if (row.op === 'delete') return ['deleted']
     const keys = touched(row)
     const verbs: Verb[] = []
-    if (keys.has('anchor')) verbs.push('moved')
+    if (keys.has('anchor'))
+      verbs.push(bubbleVerb(anchorChangeKind(row.before?.anchor, row.after?.anchor)))
     if (keys.has('major') || keys.has('minor')) verbs.push('renumbered')
     if (keys.has('label')) verbs.push('relabelled')
     for (const k of keys) {

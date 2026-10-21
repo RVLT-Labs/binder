@@ -116,7 +116,7 @@ Changes title, status or settings. Hints: write, idempotent. Owners only. **Not 
 | `showId` | string | yes | |
 | `title` | string 1..200 | no | |
 | `status` | `prep` `rehearsal` `running` `archived` | no | Archiving makes the show read-only; only an owner changing `status` back can write to it after that. |
-| `settings` | object | no | Replaces **all** settings. Read `get_show` first and send the merged object. Keys the app reads: `paperSize` (`A4` or `Letter`), `stampSet` (string list), `markerSides` (`{<departmentId>: "left" | "right"}`). |
+| `settings` | object | no | Replaces **all** settings. Read `get_show` first and send the merged object. Keys the app reads: `paperSize` (`A4` or `Letter`), `stampSet` (string list), `markerSides` (`{<departmentId>: "left" | "right"}`), `connectorStyles` (`{<departmentId>: {"width": "thin" | "medium" | "bold", "pattern": "solid" | "dashed" | "dotted"}}`; each missing or invalid field falls back to its default, thin or solid). |
 
 Returns the show row. A patch that changes nothing returns the current row and logs nothing. Errors: `forbidden: Forbidden` (not an owner), `forbidden: show is archived` (any other change to an archived show).
 
@@ -270,7 +270,7 @@ Creates a cue, placed by coordinates or unplaced. Hints: write. Editor on the de
 | `type` | `go` `standby` `warn` | no | Default `go`. |
 | `notes` | string ≤10000 | no | Default `""`. |
 | `colour` | `#RRGGBB` or `null` | no | `null` (default) means the department colour. |
-| `anchor` | `{documentId, pageIndex, x, y}` | no | Placed on the document's **current** version with status `ok`. `x`, `y` 0..14400 points. |
+| `anchor` | `{documentId, pageIndex, x, y, mark?, bubble?}` | no | Placed on the document's **current** version with status `ok`. `x`, `y` 0..14400 points. `mark` is `underline` (the default, not stored), `highlight`, `line` or `pointer`. A coordinate anchor binds no word, so a `line` or `pointer` is a free bar at `(x, y)` (no `text`, no offset) and an `underline` or `highlight` falls back to a tick; use `place_cue_at_text` to mark words. Add `bubble: {dx, dy}` to draw the cue's number bubble off the margin (see `update_cue`). |
 
 Returns the cue. Errors: `invalid: unknown department: X`, `invalid: number must be a decimal like 14 or 14.5 (at most two decimals): X`, `invalid: anchor pageIndex N is beyond the P pages`, `invalid: the document has no current version`, `invalid: anchor does not point at a version of a document in this show` (a `documentId` from another show), `not_found: Document not found` (a document you cannot see), `forbidden: you cannot edit this layer`, `forbidden: show is archived`.
 
@@ -291,13 +291,15 @@ Anchors a new cue at the first word of a quoted line. Hints: write. Editor on th
 | `occurrence` | integer ≥1 | no | Which match to use when there are several: 1-based, in script (reading) order, counting every raw match of the pass that found any (exact matches when there are exact ones, else forgiving ones; overlapping matches each count). The `ambiguous` list shows the first 20, but `occurrence` can go beyond 20. |
 | `nearPageIndex` | integer ≥0 | no | With several matches: the one nearest this page (earlier wins a tie). |
 | `number`, `label`, `type`, `notes` | | no | As `create_cue`. No `colour` or `anchor`. |
+| `mark` | `underline` `highlight` `line` `pointer` | no | How the cue is drawn (see [placing-cues.md](placing-cues.md#how-a-cue-looks-on-the-page)). Default `underline`, which stores no `mark`. A `highlight` anchors the **whole** matched quote (up to 400 characters, cut on a word boundary) instead of its first 8 words. A `line` or `pointer` is a bar inside the quote's first word. |
+| `charOffset` | integer 0..1000 | no | Only with `line` or `pointer`: characters into the quote's **first word** where the bar sits, 0 being before its first character and the word's length after its last. Default 0. Stored as `anchor.text.offset`, with `anchor.x` at that character. |
 
 Returns one of:
 
-- `{status: "placed", cue, match: {pageIndex, snippet}}`: the cue, anchored on the current version at the first matched word's `x` and its line's centre `y`, with `anchor.text` holding the matched words (at most 8) and their indices.
+- `{status: "placed", cue, match: {pageIndex, snippet}}`: the cue, anchored on the current version at the first matched word's `x` (for a `line` or `pointer`, the bar's x) and its line's centre `y`, with `anchor.text` holding the matched words (at most 8, the whole quote for a `highlight`) and their indices.
 - `{status: "ambiguous", matches: [{occurrence, pageIndex, snippet}]}` (at most 20 listed): **nothing was written**. Call again with `occurrence` or `nearPageIndex`.
 
-Errors: `not_found: The quote was not found in "<title>"`, `not_found: Document not found` (a `documentId` of another show), `invalid: occurrence N: the quote appears M times`, `invalid: "<title>" has no current version`, `invalid: "<title>" is still being processed (queued); try again shortly`, `invalid: the show has no documents to place a cue in`, `invalid: unknown department: X`, `forbidden: you cannot edit this layer`.
+Errors: `not_found: The quote was not found in "<title>"`, `not_found: Document not found` (a `documentId` of another show), `invalid: occurrence N: the quote appears M times`, `invalid: "<title>" has no current version`, `invalid: "<title>" is still being processed (queued); try again shortly`, `invalid: the show has no documents to place a cue in`, `invalid: unknown department: X`, `invalid: charOffset only applies to a line or pointer mark`, `invalid: charOffset N is past the end of "word" (L characters)`, `forbidden: you cannot edit this layer`.
 
 ```json
 {"status":"ambiguous","matches":[
@@ -321,9 +323,12 @@ Changes any writable field. Hints: write, idempotent. Editor on the cue's layer 
 | `number` | string | no | As `create_cue`. |
 | `label`, `type`, `notes`, `colour` | | no | |
 | `department` | code or id | no | Moves the cue to another layer. |
-| `anchor` | `{documentId, pageIndex, x, y}` or `null` | no | `null` unplaces. A coordinate anchor replaces the whole anchor, **including any trigger words** (`anchor.text` is dropped), and is placed on the current version with status `ok`. |
+| `anchor` | `{documentId, pageIndex, x, y, mark?, bubble?}` or `null` | no | `null` unplaces. A coordinate anchor replaces the whole anchor, **including any trigger words** (`anchor.text` is dropped) and any earlier `mark` or `tag` (the bubble goes back to the margin unless the anchor carries a `bubble`), and is placed on the current version with status `ok`. |
+| `mark` | `underline` `highlight` `line` `pointer` | no | Restyles the cue where it stands: the quote and page are kept and the mark changes; `anchor.x` follows a line or pointer's character position (switching to a line moves `x` to the caret, and leaving a line keeps `x` where the caret was). Switching to `underline` removes the stored `mark`; away from `line` or `pointer` removes `text.offset`. With `anchor` too, the new anchor is applied first and `mark` on top of it; `anchor: null` with `mark`, `charOffset` or `bubble` is an error (it would unplace and restyle at once). Error on an unplaced cue. |
+| `charOffset` | integer 0..1000 | no | Moves a `line` or `pointer` to this character inside the first word of the anchor's quote (clamped to the word's length; `anchor.x` follows). Applies to the mark after this call, so `{mark: "line", charOffset: 3}` works in one call. |
+| `bubble` | `{dx, dy}` or `null` | no | Moves only the cue's number **bubble**, leaving the cue where it is: `dx` and `dy` are PDF points from the cue's point (`dx` right, `dy` up; each from -14400 to 14400) and are stored as `anchor.tag`. `null` puts the bubble back in the margin by removing `tag`. Without `bubble` a restyle or a charOffset keeps the bubble where it was put. With `anchor` too, the new anchor is applied first and `bubble` on top of it (the same `bubble` is also accepted inside `anchor`, as on `create_cue`). Error on an unplaced cue. A moved bubble draws on the page where it was put with one straight leader to its mark and no note, on screen and in print. |
 
-Returns the cue. Omitted fields are unchanged; a patch that changes nothing logs nothing. Errors as `create_cue`, plus `not_found: Cue not found`.
+Returns the cue. Omitted fields are unchanged; a patch that changes nothing logs nothing. Errors as `create_cue`, plus `not_found: Cue not found`, `invalid: the cue is unplaced; place it before changing its mark, charOffset or bubble`, `invalid: this call both unplaces the cue (anchor: null) and restyles it (mark, charOffset or bubble); do one or the other`, `invalid: bubble.dx must be a number from -14400 to 14400 points` (or `bubble.dy`; the schema also refuses an offset outside that range before the call runs), `invalid: charOffset needs a cue anchored to a word; this cue is not bound to any` (a coordinate-only or unbound anchor) and `invalid: charOffset only applies to a line or pointer mark`.
 
 ### `delete_cues`
 

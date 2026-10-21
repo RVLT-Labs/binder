@@ -1,4 +1,4 @@
-import { formatCueNumber } from '@binder/core'
+import { anchorChangeKind, formatCueNumber, jsonEqual } from '@binder/core'
 import type { HistoryEntry, NumberFormat } from '@binder/shared'
 
 export interface ChangeContext {
@@ -54,6 +54,62 @@ function anchorLine(before: unknown, after: unknown): string {
   return `Moved p.${fromPage} → p.${toPage}`
 }
 
+const MARK_LABELS: Record<string, string> = {
+  underline: 'Underline',
+  highlight: 'Highlight',
+  line: 'Line',
+  pointer: 'Line with pointer',
+}
+
+/** The mark an anchor value carries by its label; an absent mark is the underline. */
+function markLabel(value: unknown): string {
+  let v = value
+  if (typeof v === 'string') {
+    try {
+      v = JSON.parse(v)
+    } catch {
+      return MARK_LABELS.underline as string
+    }
+  }
+  const mark = (v as { mark?: unknown } | null)?.mark
+  return (typeof mark === 'string' && MARK_LABELS[mark]) || (MARK_LABELS.underline as string)
+}
+
+/** Whether an anchor value (an object or its JSON text) carries a bubble offset. */
+function hasTag(value: unknown): boolean {
+  let v = value
+  if (typeof v === 'string') {
+    try {
+      v = JSON.parse(v)
+    } catch {
+      return false
+    }
+  }
+  const tag = (v as { tag?: unknown } | null)?.tag
+  return typeof tag === 'object' && tag !== null
+}
+
+/**
+ * A cue's anchor change, read through the one rule the activity feed uses: "Bubble moved" (or
+ * "Bubble back in the margin") when only the bubble's offset changed, "Restyled" or the mark change
+ * when the mark did, otherwise the move/place wording.
+ */
+function cueAnchorLine(before: unknown, after: unknown): string {
+  // An anchor rewritten unchanged is neither: it keeps the move wording it always had.
+  if (!anchorOf(before) || !anchorOf(after) || jsonEqual(before, after)) {
+    return anchorLine(before, after)
+  }
+  const kind = anchorChangeKind(before, after)
+  if (kind === 'bubble-moved') {
+    return hasTag(after) ? 'Bubble moved' : 'Bubble back in the margin'
+  }
+  if (kind !== 'restyled') return anchorLine(before, after)
+  const was = markLabel(before)
+  const now = markLabel(after)
+  // Two marks that differ in the log can read alike here (an unknown mark reads as the underline).
+  return was === now ? 'Restyled' : `Mark ${was} → ${now}`
+}
+
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 function numberLine(before: Columns, after: Columns, ctx: ChangeContext): string {
@@ -105,7 +161,7 @@ function cueLines(before: Columns, after: Columns, keys: Set<string>, ctx: Chang
     for (const n of names) handled.add(n)
     return hit
   }
-  if (take('anchor')) lines.push(anchorLine(before.anchor, after.anchor))
+  if (take('anchor')) lines.push(cueAnchorLine(before.anchor, after.anchor))
   if (take('major', 'minor')) lines.push(numberLine(before, after, ctx))
   if (take('label')) lines.push(`Label "${text(before.label)}" → "${text(after.label)}"`)
   if (take('type')) lines.push(`Type ${text(before.type)} → ${text(after.type)}`)

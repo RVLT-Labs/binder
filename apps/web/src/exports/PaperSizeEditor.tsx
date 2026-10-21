@@ -2,6 +2,7 @@ import type { PaperSize } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
 import { useId } from 'react'
 import { cn } from '@/lib/utils'
+import { updateShowSettings } from '../markup/updateShowSettings'
 import { SECTION_LABEL } from '../panel/fields'
 import { SelectBox } from '../settings/parts'
 import { readPaperSize, withPaperSize } from './paperSize'
@@ -27,15 +28,9 @@ export function PaperSizeEditor({ showId, editable }: { showId: string; editable
   const ids = useId()
 
   async function save(next: PaperSize) {
-    // Read just before writing so a settings change made elsewhere is not overwritten.
-    const latest = await db.getOptional<{ settings: string | null }>(
-      'SELECT settings FROM shows WHERE id = ?',
-      [showId],
-    )
-    await db.execute('UPDATE shows SET settings = ? WHERE id = ?', [
-      withPaperSize(latest?.settings ?? settings, next),
-      showId,
-    ])
+    // Read and written in one transaction, so a settings change made elsewhere or a moment ago
+    // is not overwritten.
+    await updateShowSettings(db, showId, (current) => withPaperSize(current, next))
   }
 
   return (

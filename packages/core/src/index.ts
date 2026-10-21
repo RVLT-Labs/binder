@@ -4,7 +4,15 @@ export { compareReadingOrder } from './anchors/order'
 export type { QuoteMatch, StreamWord } from './anchors/quote'
 export { anchorAtMatch, buildWordStream, findQuote, normaliseForMatch } from './anchors/quote'
 export { reanchor, reanchorAll } from './anchors/reanchor'
-export { lineCentreY, snapToLine } from './anchors/snap'
+export {
+  cutQuote,
+  lineCentreY,
+  nearestLine,
+  rangeText,
+  snapRange,
+  snapToLine,
+  snapToWord,
+} from './anchors/snap'
 export type { VersionText } from './anchors/types'
 export type { CueListFlag, CueListRow } from './cues/cueList'
 export { cueListRows } from './cues/cueList'
@@ -17,6 +25,7 @@ export {
 } from './cues/numbering'
 export type { RenumberCue, RenumberResult } from './cues/renumber'
 export { renumberByBlocks } from './cues/renumber'
+export { anchorChangeKind } from './history/anchorChange'
 export type { SummaryRow } from './history/summarise'
 export { actorLabel, cardSentence, summariseBatch } from './history/summarise'
 export { columnEqual, jsonEqual } from './json/jsonEqual'
@@ -39,13 +48,28 @@ export {
   unboundSnippet,
   wrapText,
 } from './markup/annotationLayout'
-export type { CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
+export type { Caret } from './markup/caret'
+export { caretAt, caretX, clampOffset, snapToCaret } from './markup/caret'
+export type { MarkInputs } from './markup/cueMarks'
+export { markInputs, withMark } from './markup/cueMarks'
+export type { ConnectorStroke, CueTagInput, CueTagLayout, TextExtent } from './markup/cueTags'
 export {
+  BAR_OVERHANG,
+  BAR_WIDTH,
+  barAt,
+  connectorStroke,
+  FREE_BAR_HEIGHT,
+  HIGHLIGHT_OPACITY,
+  HIGHLIGHT_OPACITY_ACTIVE,
+  HIGHLIGHT_PAD_X,
+  HIGHLIGHT_RADIUS,
   LEADER_WIDTH,
   layoutCueTags,
   NOTE_FONT_SIZE,
   NOTE_HEIGHT,
   NOTE_MIN_COLUMN,
+  POINTER_HEIGHT,
+  POINTER_WIDTH,
   SELECTED_FILL_OPACITY,
   TAG_FONT_SIZE,
   TAG_RADIUS,

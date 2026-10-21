@@ -1,5 +1,12 @@
 import { z } from 'zod'
-import { type AnnotationType, COLOUR_RE } from './markup'
+import {
+  type AnnotationType,
+  COLOUR_RE,
+  CUE_MARKS,
+  type CueMark,
+  isCaretMark,
+  QUOTE_MAX_CHARS,
+} from './markup'
 
 /** Postgres rejects NUL in text and jsonb, so every string schema here refuses it. */
 const str = () => z.string().refine((s) => !s.includes('\u0000'), 'must not contain NUL')
@@ -8,21 +15,40 @@ const coord = () => z.number().finite().min(0).max(14400)
 
 const textAnchorSchema = z
   .object({
-    quote: str().min(1).max(400),
+    quote: str().min(1).max(QUOTE_MAX_CHARS),
     wordStart: z.number().int().min(-1),
     wordEnd: z.number().int().min(-1),
+    offset: z.number().int().min(0).max(1000).optional(),
   })
   .refine((t) => t.wordEnd >= t.wordStart, { message: 'wordEnd must be >= wordStart' })
 
-export const anchorSchema = z.object({
-  documentId: id(),
-  documentVersionId: id(),
-  pageIndex: z.number().int().min(0).max(100000),
-  x: coord(),
-  y: coord(),
-  text: textAnchorSchema.optional(),
-  status: z.enum(['ok', 'approximate', 'unresolved']),
+const bubbleOffsetSchema = z.object({
+  dx: z.number().finite().min(-14400).max(14400),
+  dy: z.number().finite().min(-14400).max(14400),
 })
+
+export const anchorSchema = z
+  .object({
+    documentId: id(),
+    documentVersionId: id(),
+    pageIndex: z.number().int().min(0).max(100000),
+    x: coord(),
+    y: coord(),
+    text: textAnchorSchema.optional(),
+    mark: z.enum(CUE_MARKS as [CueMark, ...CueMark[]]).optional(),
+    tag: bubbleOffsetSchema.optional(),
+    status: z.enum(['ok', 'approximate', 'unresolved']),
+  })
+  .superRefine((a, ctx) => {
+    if (a.text?.offset === undefined) return
+    if (a.text.wordStart < 0 || !a.mark || !isCaretMark(a.mark)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['text', 'offset'],
+        message: 'a text offset needs a bound word and a line or pointer mark',
+      })
+    }
+  })
 
 export const cueFieldsSchema = z.object({
   departmentId: id(),
@@ -107,6 +133,17 @@ export function annotationFieldsSchema(mode: 'create' | 'update') {
       for (const issue of geometry.error.issues) {
         ctx.addIssue({ code: 'custom', path: ['geometry', ...issue.path], message: issue.message })
       }
+    }
+    if (
+      a.anchor.mark !== undefined ||
+      a.anchor.tag !== undefined ||
+      a.anchor.text?.offset !== undefined
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['anchor'],
+        message: 'an annotation anchor takes no mark, tag or text offset',
+      })
     }
     const text = a.text.trim()
     if (a.type === 'note' && text.length === 0) {

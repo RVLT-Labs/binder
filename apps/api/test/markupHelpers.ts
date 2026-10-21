@@ -1,5 +1,8 @@
 import { type Db, documents, documentVersions, pages } from '@binder/db'
-import { type Actor, type Anchor, newId } from '@binder/shared'
+import { type Actor, type Anchor, newId, type WordLayer } from '@binder/shared'
+import { and, eq } from 'drizzle-orm'
+import type { BlobStore } from '../src/blob/BlobStore'
+import { pageWordsBlobKey } from '../src/blob/keys'
 import { addShowMember, type Department, listDepartments } from '../src/services'
 import { setupShow } from './documentHelpers'
 import { createTestUser } from './helpers'
@@ -91,4 +94,31 @@ export function anchorAt(
   y = 700,
 ): Anchor {
   return { documentId: docId, documentVersionId: versionId, pageIndex, x, y, status: 'ok' }
+}
+
+/** Gives one page of a ready version a word layer (the libretto fixture has none until processed). */
+export async function putWordLayer(
+  db: Db,
+  blobs: BlobStore,
+  versionId: string,
+  pageIndex: number,
+  layer: WordLayer,
+): Promise<void> {
+  const [version] = await db
+    .select({ showId: documentVersions.showId, documentId: documentVersions.documentId })
+    .from(documentVersions)
+    .where(eq(documentVersions.id, versionId))
+  if (!version) throw new Error('no such version')
+  const key = pageWordsBlobKey(version.showId, version.documentId, versionId, pageIndex)
+  await blobs.put(key, new TextEncoder().encode(JSON.stringify(layer)), 'application/json')
+  await db
+    .update(pages)
+    .set({ wordsKey: key })
+    .where(and(eq(pages.documentVersionId, versionId), eq(pages.index, pageIndex)))
+}
+
+/** A page of one line: `text` split on spaces, 45 points wide each, 50 apart from x 100, at y 700. */
+export function lineLayer(text: string, y = 700): WordLayer {
+  const words = text.split(' ').map((t, i) => ({ t, x: 100 + i * 50, y: y - 5, w: 45, h: 10 }))
+  return { words, lines: [words.map((_, i) => i)] }
 }

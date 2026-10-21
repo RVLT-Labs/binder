@@ -27,7 +27,7 @@ Every show-scoped row carries `showId`, `createdAt`, `updatedAt`, `updatedBy`. D
 
 - A user gets a personal organisation on sign-up. Shows live in an organisation; `create_show` puts a show in `organisationId` or your first organisation.
 - `status`: `prep`, `rehearsal`, `running` or `archived`. **An archived show is read-only for everyone**, including owners and agents: every write returns `forbidden: show is archived`. The one exception is `update_show` with only `status` set to a non-archived value, by an owner. Exports still work on archived shows (printing a closed show is a reason to keep it). `list_shows` reports `inNow: []` and no presence for archived shows.
-- `settings` is free JSON the app reads a few keys from: `paperSize` (`A4` default, or `Letter`: cue sheets are laid out for it), `stampSet` (string list of stamp texts, default `Enter, Exit, Fly in, Fly out, Blackout, Standby, Go`), `markerSides` (`{<departmentId>: "right"}`; anything else means the left margin). `update_show` replaces the whole object.
+- `settings` is free JSON the app reads a few keys from: `paperSize` (`A4` default, or `Letter`: cue sheets are laid out for it), `stampSet` (string list of stamp texts, default `Enter, Exit, Fly in, Fly out, Blackout, Standby, Go`), `markerSides` (`{<departmentId>: "right"}`; anything else means the left margin), `connectorStyles` (`{<departmentId>: {"width": "thin" | "medium" | "bold", "pattern": "solid" | "dashed" | "dotted"}}`: how that department's connector, the line from a cue's bubble to its mark, is drawn; each missing or invalid field falls back to its default, thin or solid). `update_show` replaces the whole object.
 
 ## Members and roles
 
@@ -77,7 +77,11 @@ An anchor:
 
 - `documentVersionId` says which version the position belongs to. A cue whose anchor is on a version other than the document's current one is "on an older version".
 - `status`: `ok`, `approximate` (re-anchoring matched loosely or fell back to position on a same-length script) or `unresolved` (page counts differ, or the page no longer exists). Only re-anchoring sets anything but `ok`.
-- `text` is the **text anchor**: the quoted words (at most 8 for a cue placed by text, up to 400 characters for a highlight) and their inclusive indices into that page's `words`. `wordStart: -1, wordEnd: -1` means "unbound": the quote is remembered but the words were not found on this version. A cue without `text` is a **positional anchor**: it survives revisions only by page and position.
+- `text` is the **text anchor**: the quoted words (at most 8 for a cue placed by text, up to 400 characters for a highlight, or for a cue whose `mark` is `highlight`) and their inclusive indices into that page's `words`. `wordStart: -1, wordEnd: -1` means "unbound": the quote is remembered but the words were not found on this version. A cue without `text` is a **positional anchor**: it survives revisions only by page and position.
+- `text.offset` (optional, cues only): a character boundary inside the word at `wordStart`, 0 being before its first character and the word's length after its last. Present only with a `mark` of `line` or `pointer` and a bound word; drawing clamps it to the word's current length.
+- `mark` (optional, cues only): `underline`, `highlight`, `line` or `pointer`. Absent means `underline`. A `line` or `pointer` is drawn as a bar at `text.offset`, with `x` at that character and `y` at the line's centre; on an anchor with no bound word it is a free bar at `(x, y)`. See [placing-cues.md](placing-cues.md#how-a-cue-looks-on-the-page).
+- `tag` (optional, cues only): `{dx, dy}` in points (`dy` up, each within ±14400): where the cue's number bubble sits relative to its anchor's `(x, y)`; absent means the bubble takes its place in the margin. Set it with `update_cue {bubble: {dx, dy}}` (or `bubble` inside a coordinate `anchor`); `bubble: null` removes the key. A moved bubble draws off the margin with one straight leader and no note. It is kept when a cue is moved by re-anchoring.
+- Annotations take none of `mark`, `tag` and `text.offset`: their anchors are refused with them.
 
 ## Cues
 

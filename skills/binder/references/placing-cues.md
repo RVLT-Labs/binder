@@ -109,11 +109,38 @@ From `packages/core/src/markup/cueTags.ts` and `print/stampScript.ts`, the same 
 ```
 
 - The **tag** sits flush in the margin of the department's side (`settings.markerSides[departmentId]`, left by default), level with the trigger line. It shows the department code (with `SB` or `W` for standby and warn) and the number in bold. When the margin is too narrow the code is dropped, then the type word, so the number always shows.
-- The **leader line** runs from the tag to the underline's end at the underline's `y`, so it never crosses a glyph. A tag pushed down by a crowded stack leaves at its own centre, turns in the gutter beside the text block and comes in at the line.
-- Tags on one side stack top to bottom; a tag that would overlap the one above is pushed 2 pt below it, and nothing goes under the footer.
-- The **trigger words** are underlined (1.5 pt) on each line they cover. A cue without trigger words gets a short vertical tick at its anchor instead.
+- The **leader line** runs from the tag to the underline's end at the underline's `y`, so a thin one never crosses a glyph (medium and bold ones staggered under a crowded line sit a little lower and can touch the line below). A tag spread above or below its line by a crowded stack leaves at its own centre, turns in the gutter beside the text block and comes in at the line. It is a 0.75 pt solid line by default; a department can set `settings.connectorStyles[departmentId]` to `{width, pattern}` with a `width` of `thin` (0.75 pt), `medium` (1.5 pt) or `bold` (2.5 pt) and a `pattern` of `solid`, `dashed` or `dotted`. The owner sets it per department on the show settings page, and it applies on screen, in browser print and in the server export. Each missing or invalid field falls back to its default (thin, solid), so `{"width": "bold"}` is bold and solid.
+- Tags on one side keep page order. Tags that crowd one another stack 2 pt apart and spread up and down around their own lines (two cues on one line sit just above and just below it); a tag that overlaps nothing stays level with its line. Nothing goes under the footer.
+- The **trigger words** are underlined (1.5 pt) on each line they cover. A cue without trigger words gets a short vertical tick at its anchor instead. That is the default `underline` mark; a cue can choose another with `anchor.mark` (see below).
 - The **note** is the whole `notes` text flattened to one line of 7 pt in the department colour directly under the tag, cut with `…` to the note column (margin less 8 pt); none when the margin is under 48 pt.
-- Several cues on one line get leaders 1.5 pt apart so they separate in black and white.
+- Several cues on one line get leaders at least 1.5 pt apart (more when their connectors are heavier) so they separate in black and white.
+
+### Marks: underline, highlight, line, pointer
+
+`mark` says how the cue marks its place; absent means `underline`. Set it with `place_cue_at_text {mark, charOffset}` or restyle a placed cue with `update_cue {mark, charOffset}` (the quote and page stay; `x` follows a line or pointer's character position, so switching to a line moves `x` to the caret and leaving a line keeps `x` at the old caret position).
+
+| Mark | Drawn as | Use it for |
+|---|---|---|
+| `underline` | The default: the trigger words underlined. | A cue that fires on a phrase. |
+| `highlight` | The whole quoted range filled with the department colour at about 28% (translucent, so the text still reads). `place_cue_at_text` anchors the **whole** matched quote, not the usual first eight words. | A cue that spans a passage, such as underscore or a held effect. Quote the passage in full. |
+| `line` | A thin vertical bar in the department colour at one character position inside the first word, a little taller than the word. | A cue on an exact syllable or breath: `charOffset` 3 puts it after the third character of the word. |
+| `pointer` | The same bar with a small triangle on top. | A line cue that should be easy to spot. |
+
+- `charOffset` counts characters from the start of the quote's first word: 0 is before it, the word's length is after its last character. To put a bar in a later word, start the `quote` at that word. `charOffset` is an error with `underline` or `highlight`, and `place_cue_at_text` rejects an offset past the end of the first word (`update_cue` clamps it).
+- A `line` or `pointer` ignores the rest of the quote for drawing; the quote is still what re-anchoring searches for after a revision.
+- A cue placed by **coordinates** (`create_cue` or `update_cue` with `anchor`, which accept `mark`) binds no word: a `line` or `pointer` is a free bar 14 pt tall centred on `(x, y)`, and an `underline` or `highlight` falls back to the short tick.
+- Marks belong to cues; annotation tools refuse a `mark` (and a `bubble`).
+- Read the mark back from `anchor.mark` (absent is `underline`) and, for a line or pointer, `anchor.text.offset`.
+
+### The bubble: in the margin, or moved
+
+By default the number bubble sits in the margin, level with the trigger line. It can be moved: the offset is stored as `anchor.tag` (`{dx, dy}` in points from the cue's point, `dx` right and `dy` up) and absent means the margin. Set it with `update_cue {bubble: {dx, dy}}` or when placing by coordinates (`create_cue` or `update_cue` `anchor: {…, bubble: {dx, dy}}`); `update_cue {bubble: null}` puts it back in the margin. `place_cue_at_text` takes no `bubble`: place the cue, then move its bubble.
+
+- Moving the bubble moves **only the bubble**. The cue stays on its words. In the app, dragging the bubble moves the bubble; moving the cue is dragging its **mark** (with the Select tool) or "Move to...". Alt+arrow keys nudge a selected cue's bubble 1 pt (10 pt with Shift; plain arrows still turn the page), and the cue editor's Bubble row says "In the margin" or "Moved" and has **Reset to margin**.
+- A moved bubble takes no part in the margin spread, is joined to its mark by one straight leader to the end of the mark nearest the bubble (none when it sits over its own mark), and **draws no note**. It prints where it was put, on screen and in the export.
+- A restyle (`mark`, `charOffset`) keeps the bubble where it was put. A new coordinate `anchor` replaces the whole anchor, so the bubble returns to the margin unless that anchor carries a `bubble`.
+- History reads a bubble change as "bubble moved" ("Bubble back in the margin" on a reset), and reverting it restores the old position.
+- Offsets are limited to ±14400 points; a bubble can be put anywhere on, or past the edge of, the page, so check it still lands on the paper. Read it back from `anchor.tag`.
 
 Every page of a marked-script export also carries a footer: `Show · Document v2 · LX, SND · export <id tail> · 2026-10-16 22:31`.
 

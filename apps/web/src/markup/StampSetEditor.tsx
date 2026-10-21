@@ -7,6 +7,7 @@ import { SECTION_LABEL } from '../panel/fields'
 import { ADD_ROW, Field } from '../settings/parts'
 import { CommitInput } from './CommitInput'
 import { checkStampName, readStamps, STAMP_NAME_MAX, withStamps } from './stampSettings'
+import { updateShowSettings } from './updateShowSettings'
 
 /**
  * The show's stamp set: what the stamp tool offers. The owner adds, renames and removes stamps; the
@@ -27,15 +28,9 @@ export function StampSetEditor({ showId, editable }: { showId: string; editable:
 
   async function save(next: string[]) {
     setError(null)
-    // Read just before writing so a settings change made elsewhere is not overwritten.
-    const latest = await db.getOptional<{ settings: string | null }>(
-      'SELECT settings FROM shows WHERE id = ?',
-      [showId],
-    )
-    await db.execute('UPDATE shows SET settings = ? WHERE id = ?', [
-      withStamps(latest?.settings ?? settings, next),
-      showId,
-    ])
+    // Read and written in one transaction, so a settings change made elsewhere or a moment ago
+    // is not overwritten.
+    await updateShowSettings(db, showId, (current) => withStamps(current, next))
   }
 
   function rename(index: number, value: string) {

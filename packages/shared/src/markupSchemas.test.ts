@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'vitest'
-import { DEFAULT_STAMPS, markerSide, paperSize, stampSet } from './markup'
+import {
+  connectorStyle,
+  DEFAULT_CONNECTOR_STYLE,
+  DEFAULT_STAMPS,
+  isCaretMark,
+  markerSide,
+  markOf,
+  paperSize,
+  stampSet,
+} from './markup'
 import {
   anchorSchema,
   annotationFieldsSchema,
@@ -233,4 +242,141 @@ describe('markerSide', () => {
     // An inherited key is not a department.
     expect(markerSide({ markerSides: {} }, 'constructor')).toBe('left')
   })
+})
+
+describe('connectorStyle', () => {
+  test('reads a valid entry; anything missing or malformed gives thin and solid', () => {
+    const thin = { width: 'thin', pattern: 'solid' }
+    expect(DEFAULT_CONNECTOR_STYLE).toEqual(thin)
+    expect(
+      connectorStyle({ connectorStyles: { d1: { width: 'bold', pattern: 'dotted' } } }, 'd1'),
+    ).toEqual({
+      width: 'bold',
+      pattern: 'dotted',
+    })
+    expect(connectorStyle({ connectorStyles: { d1: { width: 'medium' } } }, 'd1')).toEqual({
+      width: 'medium',
+      pattern: 'solid',
+    })
+    expect(connectorStyle({}, 'd1')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: { d1: { width: 'bold' } } }, 'd2')).toEqual(thin)
+    // A non-object settings, and non-object maps or entries.
+    expect(connectorStyle(null as never, 'd1')).toEqual(thin)
+    expect(connectorStyle('x' as never, 'd1')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: 'bold' }, 'd1')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: [{ width: 'bold' }] }, '0')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: { d1: 'bold' } }, 'd1')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: { d1: null } }, 'd1')).toEqual(thin)
+    // A bad width or pattern falls back on its own, keeping the other.
+    expect(
+      connectorStyle({ connectorStyles: { d1: { width: 'huge', pattern: 'dashed' } } }, 'd1'),
+    ).toEqual({ width: 'thin', pattern: 'dashed' })
+    expect(
+      connectorStyle({ connectorStyles: { d1: { width: 'bold', pattern: 'wavy' } } }, 'd1'),
+    ).toEqual({ width: 'bold', pattern: 'solid' })
+    expect(connectorStyle({ connectorStyles: { d1: { width: 2, pattern: 3 } } }, 'd1')).toEqual(
+      thin,
+    )
+    // Prototype keys are not departments.
+    expect(connectorStyle({ connectorStyles: {} }, '__proto__')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: {} }, 'constructor')).toEqual(thin)
+    expect(
+      connectorStyle(JSON.parse('{"connectorStyles":{"__proto__":{"width":"bold"}}}'), 'x'),
+    ).toEqual(thin)
+  })
+
+  test('returns a fresh object, so a caller cannot change the default', () => {
+    const a = connectorStyle({}, 'd1')
+    a.width = 'bold'
+    expect(connectorStyle({}, 'd1').width).toBe('thin')
+  })
+})
+
+const word = { quote: 'welcome', wordStart: 4, wordEnd: 4 }
+
+test('anchors accept mark, tag and a text offset on a line', () => {
+  const a = {
+    ...anchor,
+    mark: 'line',
+    tag: { dx: -30, dy: 12 },
+    text: { ...word, offset: 3 },
+  }
+  const r = anchorSchema.safeParse(a)
+  expect(r.success).toBe(true)
+  if (r.success) {
+    expect(r.data.mark).toBe('line')
+    expect(r.data.tag).toEqual({ dx: -30, dy: 12 })
+    expect(r.data.text?.offset).toBe(3)
+  }
+})
+
+test('a text offset needs a bound word and a line or pointer mark', () => {
+  const withOffset = { ...word, offset: 3 }
+  expect(anchorSchema.safeParse({ ...anchor, text: withOffset }).success).toBe(false)
+  expect(anchorSchema.safeParse({ ...anchor, mark: 'highlight', text: withOffset }).success).toBe(
+    false,
+  )
+  expect(
+    anchorSchema.safeParse({
+      ...anchor,
+      mark: 'line',
+      text: { ...withOffset, wordStart: -1, wordEnd: -1 },
+    }).success,
+  ).toBe(false)
+  expect(anchorSchema.safeParse({ ...anchor, mark: 'pointer', text: withOffset }).success).toBe(
+    true,
+  )
+})
+
+test('an unknown mark, a non-finite tag and a tag beyond 14400 are refused', () => {
+  expect(anchorSchema.safeParse({ ...anchor, mark: 'squiggle' }).success).toBe(false)
+  expect(anchorSchema.safeParse({ ...anchor, tag: { dx: Number.NaN, dy: 0 } }).success).toBe(false)
+  expect(
+    anchorSchema.safeParse({ ...anchor, tag: { dx: Number.POSITIVE_INFINITY, dy: 0 } }).success,
+  ).toBe(false)
+  expect(anchorSchema.safeParse({ ...anchor, tag: { dx: 14401, dy: 0 } }).success).toBe(false)
+  expect(anchorSchema.safeParse({ ...anchor, tag: { dx: 0, dy: -14401 } }).success).toBe(false)
+  expect(anchorSchema.safeParse({ ...anchor, tag: { dx: 14400, dy: -14400 } }).success).toBe(true)
+})
+
+test('annotations refuse mark, tag and text offset', () => {
+  const base = {
+    layerKind: 'personal',
+    layerId: 'u',
+    geometry: {},
+    style: {},
+  }
+  const note = { ...base, type: 'note', text: 'hi', anchor }
+  const hl = {
+    ...base,
+    type: 'highlight',
+    text: '',
+    anchor: { ...anchor, text: word },
+  }
+  for (const mode of ['create', 'update'] as const) {
+    const schema = annotationFieldsSchema(mode)
+    expect(schema.safeParse(note).success).toBe(true)
+    expect(schema.safeParse(hl).success).toBe(true)
+    for (const extra of [{ mark: 'line' }, { tag: { dx: 1, dy: 1 } }]) {
+      expect(schema.safeParse({ ...note, anchor: { ...anchor, ...extra } }).success).toBe(false)
+      expect(schema.safeParse({ ...hl, anchor: { ...hl.anchor, ...extra } }).success).toBe(false)
+    }
+    expect(
+      schema.safeParse({
+        ...hl,
+        anchor: { ...hl.anchor, mark: 'line', text: { ...word, offset: 2 } },
+      }).success,
+    ).toBe(false)
+  }
+})
+
+test('markOf treats a missing mark as underline and isCaretMark is line and pointer only', () => {
+  expect(markOf(undefined)).toBe('underline')
+  expect(markOf(null)).toBe('underline')
+  expect(markOf({})).toBe('underline')
+  expect(markOf({ mark: 'pointer' })).toBe('pointer')
+  expect(isCaretMark('line')).toBe(true)
+  expect(isCaretMark('pointer')).toBe(true)
+  expect(isCaretMark('underline')).toBe(false)
+  expect(isCaretMark('highlight')).toBe(false)
 })

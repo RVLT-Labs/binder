@@ -1,5 +1,18 @@
-import { compareReadingOrder, snapToLine, suggestCueNumber } from '@binder/core'
-import { type Anchor, type CueNumber, SNAP_DISTANCE_PT, type WordLayer } from '@binder/shared'
+import {
+  compareReadingOrder,
+  snapToCaret,
+  snapToLine,
+  snapToWord,
+  suggestCueNumber,
+} from '@binder/core'
+import {
+  type Anchor,
+  type CueMark,
+  type CueNumber,
+  isCaretMark,
+  SNAP_DISTANCE_PT,
+  type WordLayer,
+} from '@binder/shared'
 
 export interface PlacementInput {
   documentId: string
@@ -12,8 +25,9 @@ export interface PlacementInput {
   /** The document's snap setting, after the session toggle. */
   snap: boolean
   /**
-   * A cue dropped by its margin tag: a pointer outside the line's extent starts the trigger at the
-   * line's first word (not the nearest), and the anchor's x follows the trigger's first word.
+   * A cue dropped by dragging its mark (the margin tag moves only the bubble now): a pointer outside
+   * the line's extent starts the trigger at the line's first word (not the nearest), and the anchor's
+   * x follows the trigger's first word.
    */
   firstWordOutside?: boolean
 }
@@ -46,6 +60,29 @@ export function anchorAt({
   // A dropped cue's pointer was in the margin: its x is where its trigger starts instead.
   const first = firstWordOutside ? words?.words[snapped.text.wordStart] : undefined
   return { ...anchor, x: first?.x ?? anchor.x, y: snapped.y, text: snapped.text }
+}
+
+/**
+ * The anchor for a cue placed by hand with a chosen mark. Underline is `anchorAt` exactly (no `mark`
+ * key). Highlight takes the one word under the pointer, and a line or pointer sits at the character
+ * boundary nearest it; both need snapping on and a text line within `SNAP_DISTANCE_PT`. Without that a
+ * highlight is the unbound tick `anchorAt` gives, and a line a free bar, both at the pointer.
+ */
+export function markAnchorAt({ mark, ...input }: PlacementInput & { mark: CueMark }): Anchor {
+  if (mark === 'underline') return anchorAt(input)
+  const { documentId, documentVersionId, pageIndex, point, words, snap } = input
+  const plain: Anchor = {
+    documentId,
+    documentVersionId,
+    pageIndex,
+    x: point.x,
+    y: point.y,
+    status: 'ok',
+    mark,
+  }
+  if (!snap || !words) return plain
+  const snapped = isCaretMark(mark) ? snapToCaret(words, point) : snapToWord(words, point)
+  return snapped ? { ...plain, x: snapped.x, y: snapped.y, text: snapped.text } : plain
 }
 
 export interface NumberedCue {

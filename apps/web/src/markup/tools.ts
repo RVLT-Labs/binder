@@ -1,10 +1,12 @@
-import type { AnnotationType, CueType } from '@binder/shared'
+import type { AnnotationType, CueMark, CueType } from '@binder/shared'
 import { useSyncExternalStore } from 'react'
 
 export type Tool = 'select' | 'cue' | AnnotationType
 export interface ToolState {
   tool: Tool
   cueType: CueType
+  /** How the cue tool marks its words: underline, highlight, line or line with pointer. */
+  cueMark: CueMark
   /** The stamp the stamp tool places; null until one is chosen (the picker then offers its first). */
   stamp: string | null
   /** The highlight whose words the next word drag replaces ("Re-select words"). */
@@ -22,13 +24,20 @@ export const isDragTool = (tool: Tool): tool is DragTool =>
 export const isAnnotationTool = (tool: Tool): tool is AnnotationType =>
   tool !== 'select' && tool !== 'cue'
 
-let state: ToolState = { tool: 'select', cueType: 'go', stamp: null, rebind: null }
+let state: ToolState = {
+  tool: 'select',
+  cueType: 'go',
+  cueMark: 'underline',
+  stamp: null,
+  rebind: null,
+}
 const listeners = new Set<() => void>()
 
 function set(next: ToolState): void {
   if (
     next.tool === state.tool &&
     next.cueType === state.cueType &&
+    next.cueMark === state.cueMark &&
     next.stamp === state.stamp &&
     next.rebind === state.rebind
   )
@@ -40,6 +49,11 @@ function set(next: ToolState): void {
 /** Changes the tool and/or the type of cue it places; unspecified fields keep their value. */
 export function setTool(tool: Tool, cueType?: CueType): void {
   set({ ...state, tool, cueType: cueType ?? state.cueType, rebind: null })
+}
+
+/** Chooses how the cue tool marks its words; changing tool or cue type keeps it. */
+export function setCueMark(cueMark: CueMark): void {
+  set({ ...state, cueMark })
 }
 
 /** Chooses the stamp the stamp tool places. */

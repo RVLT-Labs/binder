@@ -4,11 +4,32 @@ export type NumberFormat = 'decimal' | 'point'
 export type CueType = 'go' | 'standby' | 'warn'
 export type AnchorStatus = 'ok' | 'approximate' | 'unresolved'
 
+/** How a cue marks its place in the script. An absent mark is `underline`. */
+export type CueMark = 'underline' | 'highlight' | 'line' | 'pointer'
+export const CUE_MARKS: readonly CueMark[] = ['underline', 'highlight', 'line', 'pointer']
+
+/** Where the cue bubble sits, in points from its default spot. */
+export interface BubbleOffset {
+  dx: number
+  dy: number
+}
+
+export function markOf(anchor: { mark?: CueMark } | null | undefined): CueMark {
+  return anchor?.mark ?? 'underline'
+}
+
+/** A line or pointer mark sits at a character position inside a word. */
+export function isCaretMark(m: CueMark): m is 'line' | 'pointer' {
+  return m === 'line' || m === 'pointer'
+}
+
 /** Word indices into the page's `words`, inclusive. -1 for both means "unbound". */
 export interface TextAnchor {
   quote: string
   wordStart: number
   wordEnd: number
+  /** Characters into the word at wordStart, for a line or pointer mark. */
+  offset?: number
 }
 
 export interface Anchor {
@@ -18,6 +39,8 @@ export interface Anchor {
   x: number
   y: number
   text?: TextAnchor
+  mark?: CueMark
+  tag?: BubbleOffset
   status: AnchorStatus
 }
 
@@ -75,6 +98,7 @@ export function parseLayerKey(k: string): LayerRef | null {
 
 export const SNAP_DISTANCE_PT = 12
 export const QUOTE_MAX_WORDS = 8
+export const QUOTE_MAX_CHARS = 400
 export const DEFAULT_BLOCK_SIZE = 10
 export const PERSONAL_LAYER_COLOUR = '#6B7280'
 export const DEFAULT_STAMPS = [
@@ -162,4 +186,52 @@ export function markerSide(settings: Record<string, unknown>, departmentId: stri
     ? (sides as Record<string, unknown>)[departmentId]
     : undefined
   return side === 'right' ? 'right' : 'left'
+}
+
+export type ConnectorWidth = 'thin' | 'medium' | 'bold'
+export type ConnectorPattern = 'solid' | 'dashed' | 'dotted'
+
+/** How a department's connector (the line from a cue's bubble to its mark) is drawn. */
+export interface ConnectorStyle {
+  width: ConnectorWidth
+  pattern: ConnectorPattern
+}
+
+/** Today's line: 0.75 pt, plain. */
+export const DEFAULT_CONNECTOR_STYLE: Readonly<ConnectorStyle> = Object.freeze({
+  width: 'thin',
+  pattern: 'solid',
+})
+
+const CONNECTOR_WIDTHS: readonly string[] = ['thin', 'medium', 'bold']
+const CONNECTOR_PATTERNS: readonly string[] = ['solid', 'dashed', 'dotted']
+
+/**
+ * A department's connector style: `settings.connectorStyles[departmentId]`, with a bad or missing
+ * width falling back to `thin` and a bad or missing pattern to `solid`. Anything malformed gives
+ * the default. Always a fresh object.
+ */
+export function connectorStyle(
+  settings: Record<string, unknown>,
+  departmentId: string,
+): ConnectorStyle {
+  const fallback: ConnectorStyle = { ...DEFAULT_CONNECTOR_STYLE }
+  if (!settings || typeof settings !== 'object') return fallback
+  const styles = settings.connectorStyles
+  if (!styles || typeof styles !== 'object' || Array.isArray(styles)) return fallback
+  const entry = Object.hasOwn(styles, departmentId)
+    ? (styles as Record<string, unknown>)[departmentId]
+    : undefined
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return fallback
+  const { width, pattern } = entry as Record<string, unknown>
+  return {
+    width:
+      typeof width === 'string' && CONNECTOR_WIDTHS.includes(width)
+        ? (width as ConnectorWidth)
+        : fallback.width,
+    pattern:
+      typeof pattern === 'string' && CONNECTOR_PATTERNS.includes(pattern)
+        ? (pattern as ConnectorPattern)
+        : fallback.pattern,
+  }
 }

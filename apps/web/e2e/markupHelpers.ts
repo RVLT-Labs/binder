@@ -111,3 +111,16 @@ export async function zoomOutTo(page: Page, percent = 67) {
     await page.getByRole('button', { name: 'Zoom out' }).click()
   }
 }
+
+/**
+ * A cue's mark on the page (the first hit rect of its trigger: the highlight fill, the underlined
+ * words' box, or the bar's hit area). Dragging it re-places the cue; the margin tag only moves the bubble.
+ * The mark takes the pointer only with the Select tool.
+ */
+export const triggerOf = (page: Page, cueId: string) =>
+  page.locator(`[data-cue-trigger="${cueId}"]`).locator('rect').first()
+
+/** Switches to the Select tool (the cue just placed stays selected). */
+export async function selectTool(page: Page) {
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+}

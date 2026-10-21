@@ -119,6 +119,26 @@ test('the cue type and stamp choices appear beside their tool while it is chosen
   expect([...stamp.options].map((o) => o.text)).toEqual(['Hold', 'Go'])
 })
 
+test('the cue flyout has a Cue mark choice beside Cue type, remembered across tools', () => {
+  render(<ToolStrip />)
+  fireEvent.click(screen.getByRole('button', { name: 'Cue tool' }))
+  const mark = screen.getByLabelText('Cue mark') as HTMLSelectElement
+  expect([...mark.options].map((o) => [o.value, o.text])).toEqual([
+    ['underline', 'Underline'],
+    ['highlight', 'Highlight'],
+    ['line', 'Line'],
+    ['pointer', 'Line with pointer'],
+  ])
+  expect(mark.value).toBe('underline')
+  fireEvent.change(mark, { target: { value: 'pointer' } })
+  fireEvent.change(screen.getByLabelText('Cue type'), { target: { value: 'warn' } })
+  expect((screen.getByLabelText('Cue mark') as HTMLSelectElement).value).toBe('pointer')
+  fireEvent.click(screen.getByRole('button', { name: 'Stamp tool' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Cue tool' }))
+  expect((screen.getByLabelText('Cue mark') as HTMLSelectElement).value).toBe('pointer')
+  fireEvent.change(screen.getByLabelText('Cue mark'), { target: { value: 'underline' } })
+})
+
 test('a disabled tool names its reason through aria-describedby on a .tool-hint', () => {
   session({ cueTarget: { disabled: 'This show is archived.' } })
   render(<ToolStrip />)

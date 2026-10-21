@@ -1,5 +1,5 @@
-import { formatCueNumber, markerLead, parseCueNumber } from '@binder/core'
-import type { CueFields, CueType } from '@binder/shared'
+import { formatCueNumber, markerLead, parseCueNumber, withMark } from '@binder/core'
+import { type CueFields, type CueMark, type CueType, markOf } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
 import { useId, useState } from 'react'
 import { ChevronDownIcon } from '@/components/icons'
@@ -16,6 +16,7 @@ import { useBreakpoint } from '../shell/useBreakpoint'
 import { CommitInput, leaveFieldOnEscape } from './CommitInput'
 import { useMarkupSession } from './MarkupSession'
 import { fromCueRow, updateCue } from './mutations'
+import { loadWordLayer } from './wordLayers'
 
 export const NUMBER_HINT = 'Cue numbers look like 10, 10.5, or 0.50.'
 
@@ -24,6 +25,25 @@ const TYPES: Array<{ value: CueType; label: string }> = [
   { value: 'standby', label: 'Standby' },
   { value: 'warn', label: 'Warn' },
 ]
+
+const MARKS: Array<{ value: CueMark; label: string }> = [
+  { value: 'underline', label: 'Underline' },
+  { value: 'highlight', label: 'Highlight' },
+  { value: 'line', label: 'Line' },
+  { value: 'pointer', label: 'Line with pointer' },
+]
+
+/**
+ * The Mark options sit four across in a panel as narrow as 290 px, so "Line with pointer" must be
+ * able to wrap: no fixed height (a minimum only, 44 px on the phone and on coarse pointers, 36 px
+ * on the tablet, 27 px on desktop) and wrapping text. The tablet step keeps 9 px padding, 12.5 px.
+ */
+export const MARK_ITEM_CLASS = [
+  'h-auto min-h-11 whitespace-normal py-1 text-center leading-tight',
+  'md:h-auto md:min-h-[27px]',
+  'md:max-[1024px]:h-auto md:max-[1024px]:min-h-9 md:max-[1024px]:px-[9px] md:max-[1024px]:text-[12.5px]',
+  'pointer-coarse:min-h-11',
+].join(' ')
 
 export interface CueEditorProps {
   cueId: string
@@ -62,6 +82,7 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
   const number = formatCueNumber(cue.major, cue.minor, format)
   const reason = session.whyCantEdit(row)
   const editable = reason === null
+  const moved = cue.anchor?.tag !== undefined
   const choices = session.departments.filter(
     (d) =>
       d.id === cue.departmentId ||
@@ -76,6 +97,27 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
     } catch (err) {
       pushNotice({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
     }
+  }
+
+  /**
+   * Switches how the cue marks its place; the range stays, and a line takes the caret's x (leaving a
+   * line keeps x where the caret was).
+   */
+  async function saveMark(mark: CueMark) {
+    const anchor = cue.anchor
+    if (!anchor || mark === markOf(anchor)) return
+    // The page's words belong to the version open in the viewer: another version's cue has none here.
+    const key =
+      anchor.documentVersionId === session.versionId
+        ? session.pages[anchor.pageIndex]?.words_key
+        : null
+    let layer = null
+    try {
+      layer = key ? await loadWordLayer(key) : null
+    } catch {
+      // a page whose words will not load still changes mark; withMark copes without a layer
+    }
+    await save({ anchor: withMark(anchor, mark, { layer }) })
   }
 
   function saveNumber(text: string) {
@@ -193,6 +235,40 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
           </Field>
           {!phone && layerField}
         </div>
+        <Field label="Mark">
+          <Segmented
+            aria-label="Mark"
+            value={markOf(cue.anchor)}
+            onValueChange={(mark) => void saveMark(mark as CueMark)}
+            options={MARKS}
+            disabled={!editable || !cue.anchor}
+            className="flex w-full [&>*]:flex-1"
+            itemClassName={MARK_ITEM_CLASS}
+          />
+        </Field>
+        <Field label="Bubble">
+          {/* the state is a word, not a colour: "Moved" only once the bubble has been placed */}
+          <fieldset
+            aria-label="Bubble"
+            className="m-0 flex min-h-[27px] min-w-0 items-center border-0 p-0 justify-between gap-3 max-md:flex-col max-md:items-stretch max-md:gap-2"
+          >
+            <span className="text-[13px] text-ink-2 max-md:text-[14px]">
+              {moved ? 'Moved' : 'In the margin'}
+            </span>
+            {moved && (
+              <Button
+                type="button"
+                variant="line"
+                size="sm"
+                disabled={!editable}
+                className="pointer-coarse:min-h-11 max-md:w-full"
+                onClick={() => void session.setBubble(cueId, null)}
+              >
+                Reset to margin
+              </Button>
+            )}
+          </fieldset>
+        </Field>
         {quote}
         {!phone && notesField}
         {phone && (

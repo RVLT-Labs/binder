@@ -125,6 +125,40 @@ describe('PUT', () => {
     expect(logs[0].clientTs?.toISOString()).toBe('2026-10-15T10:00:00.000Z')
   })
 
+  test('a cue upload carrying mark, tag and text.offset is accepted and the stored anchor keeps all three', async () => {
+    const { db, editor, editorSync, cueRow, docId, versionId, logRows } = await setup()
+    const id = newId()
+    const anchor = {
+      ...anchorAt(docId, versionId, 2),
+      mark: 'line',
+      tag: { dx: 12, dy: -4 },
+      text: { quote: 'bravo charlie', wordStart: 1, wordEnd: 2, offset: 3 },
+    }
+    const r = await applyCrudBatch(db, editorSync, {
+      batchId: `${editor.id}:mk-1`,
+      entries: [put('cues', id, cueRow({ anchor: JSON.stringify(anchor) }))],
+    })
+    expect(r).toEqual({ applied: 1, rejected: [] })
+    const [row] = await db.select().from(cues).where(eq(cues.id, id))
+    expect(row.anchor).toEqual(anchor)
+    expect((await logRows(id))[0].after).toMatchObject({ anchor })
+
+    // A restyle is a PATCH of the anchor; an offset without a line or pointer mark is refused.
+    const restyled = { ...anchor, mark: 'highlight', text: { ...anchor.text, offset: undefined } }
+    const p = await applyCrudBatch(db, editorSync, {
+      batchId: `${editor.id}:mk-2`,
+      entries: [
+        patch('cues', id, { anchor: JSON.stringify(restyled) }),
+        patch('cues', id, { anchor: JSON.stringify({ ...anchor, mark: 'highlight' }) }),
+      ],
+    })
+    expect(p.applied).toBe(1)
+    expect(p.rejected.map((x) => [x.index, x.reason])).toEqual([[1, 'invalid']])
+    const [after] = await db.select().from(cues).where(eq(cues.id, id))
+    expect(after.anchor).toMatchObject({ mark: 'highlight', tag: { dx: 12, dy: -4 } })
+    expect(after.anchor?.text?.offset).toBeUndefined()
+  })
+
   test('a replayed batch after a lost response applies once and logs once', async () => {
     const { db, editor, editorSync, cueRow, rowCount, logRows } = await setup()
     const id = newId()
@@ -909,6 +943,37 @@ describe('annotations', () => {
     ).toEqual({ applied: 1, rejected: [] })
     expect(await annRows(id)).toHaveLength(0)
     expect((await logRows(id)).map((l) => l.op)).toEqual(['insert', 'delete'])
+  })
+
+  test('an annotation upload carrying mark is refused', async () => {
+    const s = await setup()
+    const { db, viewer, viewerSync, annRow, annRows } = s
+    const anchor = anchorAt(s.docId, s.versionId, 1)
+    const row = (extra: Record<string, unknown>) =>
+      annRow({
+        layer_kind: 'personal',
+        layer_id: viewer.id,
+        anchor: JSON.stringify({ ...anchor, ...extra }),
+      })
+    const refused = newId()
+    const tagged = newId()
+    const ok = newId()
+    const r = await applyCrudBatch(db, viewerSync, {
+      batchId: `${viewer.id}:am-1`,
+      entries: [
+        put('annotations', refused, row({ mark: 'highlight' })),
+        put('annotations', tagged, row({ tag: { dx: 1, dy: 1 } })),
+        put('annotations', ok, row({})),
+      ],
+    })
+    expect(r.applied).toBe(1)
+    expect(r.rejected.map((x) => [x.index, x.reason])).toEqual([
+      [0, 'invalid'],
+      [1, 'invalid'],
+    ])
+    expect(await annRows(refused)).toHaveLength(0)
+    expect(await annRows(tagged)).toHaveLength(0)
+    expect(await annRows(ok)).toHaveLength(1)
   })
 
   test('a PUT of an unbound unresolved highlight (a personal undo re-insert) applies; an unbound approximate one is invalid', async () => {
