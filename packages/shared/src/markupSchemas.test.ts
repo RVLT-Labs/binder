@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'vitest'
-import { DEFAULT_STAMPS, isCaretMark, markerSide, markOf, paperSize, stampSet } from './markup'
+import {
+  connectorStyle,
+  DEFAULT_CONNECTOR_STYLE,
+  DEFAULT_STAMPS,
+  isCaretMark,
+  markerSide,
+  markOf,
+  paperSize,
+  stampSet,
+} from './markup'
 import {
   anchorSchema,
   annotationFieldsSchema,
@@ -232,6 +241,54 @@ describe('markerSide', () => {
     expect(markerSide({ markerSides: { d1: 3 } }, 'd1')).toBe('left')
     // An inherited key is not a department.
     expect(markerSide({ markerSides: {} }, 'constructor')).toBe('left')
+  })
+})
+
+describe('connectorStyle', () => {
+  test('reads a valid entry; anything missing or malformed gives thin and solid', () => {
+    const thin = { width: 'thin', pattern: 'solid' }
+    expect(DEFAULT_CONNECTOR_STYLE).toEqual(thin)
+    expect(
+      connectorStyle({ connectorStyles: { d1: { width: 'bold', pattern: 'dotted' } } }, 'd1'),
+    ).toEqual({
+      width: 'bold',
+      pattern: 'dotted',
+    })
+    expect(connectorStyle({ connectorStyles: { d1: { width: 'medium' } } }, 'd1')).toEqual({
+      width: 'medium',
+      pattern: 'solid',
+    })
+    expect(connectorStyle({}, 'd1')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: { d1: { width: 'bold' } } }, 'd2')).toEqual(thin)
+    // A non-object settings, and non-object maps or entries.
+    expect(connectorStyle(null as never, 'd1')).toEqual(thin)
+    expect(connectorStyle('x' as never, 'd1')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: 'bold' }, 'd1')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: [{ width: 'bold' }] }, '0')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: { d1: 'bold' } }, 'd1')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: { d1: null } }, 'd1')).toEqual(thin)
+    // A bad width or pattern falls back on its own, keeping the other.
+    expect(
+      connectorStyle({ connectorStyles: { d1: { width: 'huge', pattern: 'dashed' } } }, 'd1'),
+    ).toEqual({ width: 'thin', pattern: 'dashed' })
+    expect(
+      connectorStyle({ connectorStyles: { d1: { width: 'bold', pattern: 'wavy' } } }, 'd1'),
+    ).toEqual({ width: 'bold', pattern: 'solid' })
+    expect(connectorStyle({ connectorStyles: { d1: { width: 2, pattern: 3 } } }, 'd1')).toEqual(
+      thin,
+    )
+    // Prototype keys are not departments.
+    expect(connectorStyle({ connectorStyles: {} }, '__proto__')).toEqual(thin)
+    expect(connectorStyle({ connectorStyles: {} }, 'constructor')).toEqual(thin)
+    expect(
+      connectorStyle(JSON.parse('{"connectorStyles":{"__proto__":{"width":"bold"}}}'), 'x'),
+    ).toEqual(thin)
+  })
+
+  test('returns a fresh object, so a caller cannot change the default', () => {
+    const a = connectorStyle({}, 'd1')
+    a.width = 'bold'
+    expect(connectorStyle({}, 'd1').width).toBe('thin')
   })
 })
 

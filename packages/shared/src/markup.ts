@@ -187,3 +187,51 @@ export function markerSide(settings: Record<string, unknown>, departmentId: stri
     : undefined
   return side === 'right' ? 'right' : 'left'
 }
+
+export type ConnectorWidth = 'thin' | 'medium' | 'bold'
+export type ConnectorPattern = 'solid' | 'dashed' | 'dotted'
+
+/** How a department's connector (the line from a cue's bubble to its mark) is drawn. */
+export interface ConnectorStyle {
+  width: ConnectorWidth
+  pattern: ConnectorPattern
+}
+
+/** Today's line: 0.75 pt, plain. */
+export const DEFAULT_CONNECTOR_STYLE: Readonly<ConnectorStyle> = Object.freeze({
+  width: 'thin',
+  pattern: 'solid',
+})
+
+const CONNECTOR_WIDTHS: readonly string[] = ['thin', 'medium', 'bold']
+const CONNECTOR_PATTERNS: readonly string[] = ['solid', 'dashed', 'dotted']
+
+/**
+ * A department's connector style: `settings.connectorStyles[departmentId]`, with a bad or missing
+ * width falling back to `thin` and a bad or missing pattern to `solid`. Anything malformed gives
+ * the default. Always a fresh object.
+ */
+export function connectorStyle(
+  settings: Record<string, unknown>,
+  departmentId: string,
+): ConnectorStyle {
+  const fallback: ConnectorStyle = { ...DEFAULT_CONNECTOR_STYLE }
+  if (!settings || typeof settings !== 'object') return fallback
+  const styles = settings.connectorStyles
+  if (!styles || typeof styles !== 'object' || Array.isArray(styles)) return fallback
+  const entry = Object.hasOwn(styles, departmentId)
+    ? (styles as Record<string, unknown>)[departmentId]
+    : undefined
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return fallback
+  const { width, pattern } = entry as Record<string, unknown>
+  return {
+    width:
+      typeof width === 'string' && CONNECTOR_WIDTHS.includes(width)
+        ? (width as ConnectorWidth)
+        : fallback.width,
+    pattern:
+      typeof pattern === 'string' && CONNECTOR_PATTERNS.includes(pattern)
+        ? (pattern as ConnectorPattern)
+        : fallback.pattern,
+  }
+}
