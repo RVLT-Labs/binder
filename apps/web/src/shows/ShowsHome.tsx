@@ -1,5 +1,5 @@
 import type { ShowLastChange, ShowPresence } from '@binder/shared'
-import type { MouseEvent } from 'react'
+import { type MouseEvent, useEffect, useRef } from 'react'
 import { SectionHeading } from '@/components/SectionHeading'
 import { Button } from '@/components/ui/button'
 import { RowsSkeleton } from '@/components/ui/skeleton'
@@ -33,6 +33,10 @@ export interface ShowsHomeProps {
   /** Start a new show; gets the button that was pressed, so focus can come back to it. */
   onNewShow: (opener: HTMLElement) => void
   onRename: (showId: string, title: string) => void | Promise<void>
+  /** The ids of the shows the signed-in user owns; only their archived cards offer Reactivate. */
+  ownedShowIds?: ReadonlySet<string>
+  /** Brings an archived show back. Without it no card offers Reactivate. */
+  onReactivate?: (showId: string) => void | Promise<void>
 }
 
 /**
@@ -52,7 +56,9 @@ const stackPerson = (p: ShowPresence['people'][number]): StackPerson => ({
 
 /**
  * The shows home (DESIGN §6): a greeting, the active shows as cards, the archived ones beneath as
- * dashed, muted cards. With no active show it is one Kalam line and a way to start one.
+ * dashed, muted cards. With no active show it is one Kalam line and a way to start one. An owner's
+ * archived card has Reactivate; the card then moves up to Active and takes focus there, since the
+ * button that was pressed has gone with the archived card.
  */
 export function ShowsHome({
   shows,
@@ -66,9 +72,22 @@ export function ShowsHome({
   now,
   onNewShow,
   onRename,
+  ownedShowIds,
+  onReactivate,
 }: ShowsHomeProps) {
   const active = shows.filter((s) => s.status !== 'archived')
   const archived = shows.filter((s) => s.status === 'archived')
+
+  // The show that was just reactivated, until its card shows up among the active ones.
+  const activeList = useRef<HTMLUListElement>(null)
+  const reactivated = useRef<string | null>(null)
+  useEffect(() => {
+    const id = reactivated.current
+    if (!id || !shows.some((s) => s.id === id && s.status !== 'archived')) return
+    reactivated.current = null
+    const links = activeList.current?.querySelectorAll<HTMLAnchorElement>('a') ?? []
+    for (const link of links) if (link.getAttribute('href')?.endsWith(`/${id}`)) link.focus()
+  }, [shows])
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col">
@@ -113,7 +132,7 @@ export function ShowsHome({
                 </Button>
               </div>
             ) : (
-              <ul aria-label="Active shows" className={GRID}>
+              <ul ref={activeList} aria-label="Active shows" className={GRID}>
                 {active.map((show) => (
                   <ShowCard
                     key={show.id}
@@ -145,6 +164,19 @@ export function ShowsHome({
                     toReview={summaries?.get(show.id)?.toReview}
                     now={now}
                     onRename={(title) => onRename(show.id, title)}
+                    onReactivate={
+                      onReactivate && ownedShowIds?.has(show.id)
+                        ? async () => {
+                            reactivated.current = show.id
+                            try {
+                              await onReactivate(show.id)
+                            } catch (err) {
+                              reactivated.current = null
+                              throw err
+                            }
+                          }
+                        : undefined
+                    }
                   />
                 ))}
               </ul>

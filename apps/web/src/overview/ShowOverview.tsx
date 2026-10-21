@@ -15,6 +15,7 @@ import { useOfflineSummary } from '../offline/useOfflineSummary'
 import type { ShowRow } from '../powersync/schema'
 import { BinderPresence } from '../presence/Avatars'
 import { TopBarActions } from '../shell/TopBarSlots'
+import { ArchivedBanner } from './ArchivedBanner'
 import { DepartmentCards } from './DepartmentCards'
 import { documentNames } from './documentNames'
 import { NeedsYou } from './NeedsYou'
@@ -41,11 +42,15 @@ const FOOTER_LINK = cn('rounded-sm text-[12px] text-muted hover:text-ink', focus
  * and then Scripts, Cue lists, In the binder now, Offline, so Needs you is rendered twice, once for
  * each arrangement, and the one that does not apply is `hidden` (out of the accessibility tree
  * too). Grid placement, never `order`.
+ *
+ * An archived show opens with a banner across the top (read-only, and the owner's way back); the
+ * two columns then start on the grid's second row.
  */
 export function ShowOverview({ showId }: { showId: string }) {
-  const { data: shows } = useQuery<Pick<ShowRow, 'title'>>('SELECT title FROM shows WHERE id = ?', [
-    showId,
-  ])
+  const { data: shows } = useQuery<Pick<ShowRow, 'title' | 'status'>>(
+    'SELECT title, status FROM shows WHERE id = ?',
+    [showId],
+  )
   const departments = useDepartments(showId)
   const membership = useMembership(showId)
   const documents = useDocumentEntries(showId)
@@ -109,14 +114,28 @@ export function ShowOverview({ showId }: { showId: string }) {
   const failed = documents.entries.filter((e) => e.kind === 'failed').length
   const ready = documents.entries.filter((e) => e.kind === 'ready').length
   const needs = { showId, review, duplicates: duplicateNotes, failed }
+  const archived = shows[0]?.status === 'archived'
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-[22px] max-md:gap-3 md:-my-1 min-[1025px]:grid min-[1025px]:grid-cols-[minmax(0,1fr)_340px] min-[1025px]:items-start min-[1025px]:gap-x-7">
       <h1 className="sr-only">{shows[0]?.title}</h1>
 
+      {archived && (
+        <ArchivedBanner
+          showId={showId}
+          userRole={membership?.role ?? null}
+          className="min-[1025px]:col-span-2 min-[1025px]:row-start-1"
+        />
+      )}
+
       <NeedsYou {...needs} variant="phone" className="md:hidden" />
 
-      <div className="flex min-w-0 flex-col gap-[22px] min-[1025px]:col-start-1 min-[1025px]:row-start-1 max-md:gap-3">
+      <div
+        className={cn(
+          'flex min-w-0 flex-col gap-[22px] max-md:gap-3 min-[1025px]:col-start-1',
+          archived ? 'min-[1025px]:row-start-2' : 'min-[1025px]:row-start-1',
+        )}
+      >
         <section aria-labelledby="scripts-heading" className="flex flex-col gap-2.5">
           <SectionHeading id="scripts-heading">Scripts</SectionHeading>
           {documents.loading ? (
@@ -152,7 +171,12 @@ export function ShowOverview({ showId }: { showId: string }) {
         <RecentActivity showId={showId} className="max-md:hidden" />
       </div>
 
-      <div className="flex min-w-0 flex-col gap-4 max-md:gap-3 min-[1025px]:col-start-2 min-[1025px]:row-start-1">
+      <div
+        className={cn(
+          'flex min-w-0 flex-col gap-4 max-md:gap-3 min-[1025px]:col-start-2',
+          archived ? 'min-[1025px]:row-start-2' : 'min-[1025px]:row-start-1',
+        )}
+      >
         <BinderPresence showId={showId} />
         <NeedsYou {...needs} variant="aside" className="max-md:hidden" />
         <OfflineCard

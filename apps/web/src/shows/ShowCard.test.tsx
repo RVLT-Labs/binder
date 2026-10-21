@@ -257,3 +257,43 @@ test('with no avatars the foot may wrap, and so may the empty-show chip beside t
     'flex-wrap',
   )
 })
+
+const archivedShow = () => show({ status: 'archived' })
+
+test('an archived card has no rename button: the server refuses to rename an archived show', async () => {
+  await renderCard({ show: archivedShow() })
+  expect(screen.queryByRole('button', { name: /^Rename / })).toBeNull()
+  // Without a way back (not an owner) the card has no button at all.
+  expect(within(screen.getByRole('listitem')).queryByRole('button')).toBeNull()
+})
+
+test('an active card keeps its rename button and never offers Reactivate', async () => {
+  await renderCard({ onReactivate: vi.fn() })
+  expect(screen.getByRole('button', { name: 'Rename Songs for a New World' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /^Reactivate/ })).toBeNull()
+})
+
+test('an owner’s archived card offers Reactivate, named for the show, above the card’s link', async () => {
+  const onReactivate = vi.fn(async () => {})
+  await renderCard({ show: archivedShow(), onReactivate })
+  const button = screen.getByRole('button', { name: 'Reactivate Songs for a New World' })
+  expect(button.textContent).toBe('Reactivate')
+  // The card's whole-card link sits under it, as it does under the rename button.
+  expect(button.className).toContain('z-10')
+  expect(button.className).toContain('min-h-11')
+  fireEvent.click(button)
+  expect(onReactivate).toHaveBeenCalledTimes(1)
+  // The title is still the card's link.
+  expect(screen.getByRole('link', { name: 'Songs for a New World' }).getAttribute('href')).toBe(
+    '/shows/s1',
+  )
+})
+
+test('a Reactivate that fails says so on the card instead of failing silently', async () => {
+  const onReactivate = vi.fn(async () => {
+    throw new Error('database is locked')
+  })
+  await renderCard({ show: archivedShow(), onReactivate })
+  fireEvent.click(screen.getByRole('button', { name: /^Reactivate / }))
+  expect((await screen.findByRole('alert')).textContent).toBe('database is locked')
+})

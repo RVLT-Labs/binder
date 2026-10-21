@@ -7,7 +7,16 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 
 ## [Unreleased]
 
+### Added
+- Bring a show out of the archive from where you find it. An owner's archived card on the shows home now has
+  **Reactivate**, and an archived show's page opens with a banner (read-only for everyone, exports still work)
+  that gives the owner **Reactivate show** and tells everyone else to ask an owner. Reactivating returns the show
+  to prep, as the Archive card in Show settings always did, and the card moves up to Active under keyboard focus.
+  No server or MCP change: an owner changing `status` back was already the one write an archived show accepts.
+
 ### Changed
+- Archived cards on the shows home no longer have the rename pencil: the server refuses any change to an archived
+  show but its status, so a rename could not be saved. It comes back with the show.
 - Guard retained local CRUD completion handles and read callbacks against session changes; close
   Print when history restores Calling; reserve 44 px comparison/tool option fields and room in their containers.
 - Adopt canonical RVLT v1.3.0 authority and contrast roles, preserving Binder's fixed white page,

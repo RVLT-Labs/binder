@@ -28,6 +28,11 @@ export interface ShowCardProps {
   now?: Date
   /** Called with the trimmed new title, only when it is not empty and differs from the old one. */
   onRename: (title: string) => void | Promise<void>
+  /**
+   * Brings an archived show back. Pass it only for an owner: it is what draws the Reactivate
+   * button, and an active card never shows one.
+   */
+  onReactivate?: () => void | Promise<void>
 }
 
 // The mockup's `.show-card`: radius 20, padding 16, gap 10, at least 168 px high (phone: 14, 8, none).
@@ -60,6 +65,9 @@ export function ShowRenameButton({ title, onClick }: { title: string; onClick: (
  * The foot says who has the show open (their avatars) and the newest change with its time; offline,
  * or before the first answer, it says "Updated ..." from the local rows and draws no avatars. An
  * archived card has neither. The show has no opening date or phase, so the pill is Active or Archived.
+ *
+ * An archived show cannot be renamed (the server refuses any change but its status), so its card has
+ * no rename button; an owner gets "Reactivate" in its place, and the rename comes back with the show.
  */
 export function ShowCard({
   show,
@@ -71,11 +79,22 @@ export function ShowCard({
   localActivityAt,
   now = new Date(),
   onRename,
+  onReactivate,
 }: ShowCardProps) {
   const archived = show.status === 'archived'
   const title = show.title ?? ''
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const [reactivateError, setReactivateError] = useState<string | null>(null)
+
+  async function reactivate() {
+    setReactivateError(null)
+    try {
+      await onReactivate?.()
+    } catch (err) {
+      setReactivateError(err instanceof Error ? err.message : 'Something went wrong')
+    }
+  }
 
   function save(e: FormEvent) {
     e.preventDefault()
@@ -129,21 +148,41 @@ export function ShowCard({
     >
       <div
         className={cn(
-          '-my-2.5 flex items-center justify-between gap-2',
-          archived && 'max-md:order-2 max-md:-my-2',
+          'flex items-center justify-between gap-2',
+          // The rename button and Reactivate are 44 px targets in a 20 px row; the negative margin
+          // gives the height back. An archived card with neither needs none.
+          (!archived || onReactivate) && '-my-2.5',
+          archived && 'max-md:order-2',
+          archived && onReactivate && 'max-md:-my-2',
         )}
       >
         <Badge status={archived ? 'neutral' : 'ok'}>
           {!archived && <span aria-hidden className="size-1.5 rounded-full bg-current" />}
           {archived ? 'Archived' : 'Active'}
         </Badge>
-        <ShowRenameButton
-          title={title}
-          onClick={() => {
-            setDraft(title)
-            setEditing(true)
-          }}
-        />
+        {archived ? (
+          onReactivate && (
+            <Button
+              type="button"
+              variant="line"
+              size="sm"
+              aria-label={`Reactivate ${title}`}
+              // Above the card's whole-card link, as the rename button is.
+              className="z-10"
+              onClick={reactivate}
+            >
+              Reactivate
+            </Button>
+          )
+        ) : (
+          <ShowRenameButton
+            title={title}
+            onClick={() => {
+              setDraft(title)
+              setEditing(true)
+            }}
+          />
+        )}
       </div>
 
       <h3
@@ -163,6 +202,12 @@ export function ShowCard({
           {title}
         </Link>
       </h3>
+
+      {reactivateError && (
+        <p role="alert" className="m-0 text-[12px] text-ink-2 max-md:order-3 max-md:basis-full">
+          {reactivateError}
+        </p>
+      )}
 
       {archived ? (
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12.5px] text-muted max-md:hidden">

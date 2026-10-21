@@ -5,7 +5,8 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { type ReactNode, useState } from 'react'
 import { expect, test, vi } from 'vitest'
 import type { ShowRow } from '../powersync/schema'
 import { ShowsHome, type ShowsHomeProps } from './ShowsHome'
@@ -13,22 +14,24 @@ import { ShowsHome, type ShowsHomeProps } from './ShowsHome'
 const row = (id: string, title: string, status = 'active'): ShowRow =>
   ({ id, title, status, updated_at: '2026-10-16T11:00:00Z' }) as ShowRow
 
+const homeProps = (onNewShow: ShowsHomeProps['onNewShow']): ShowsHomeProps => ({
+  shows: [],
+  loading: false,
+  cueCounts: {},
+  greeting: 'Good evening, Jayden.',
+  now: new Date('2026-10-16T12:00:00Z'),
+  onNewShow,
+  onRename: async () => {},
+})
+
 async function renderHome(props: Partial<ShowsHomeProps> = {}) {
   const onNewShow = vi.fn<(opener: HTMLElement) => void>()
-  const root = createRootRoute({
-    component: () => (
-      <ShowsHome
-        shows={[]}
-        loading={false}
-        cueCounts={{}}
-        greeting="Good evening, Jayden."
-        now={new Date('2026-10-16T12:00:00Z')}
-        onNewShow={onNewShow}
-        onRename={async () => {}}
-        {...props}
-      />
-    ),
-  })
+  await renderInRouter(<ShowsHome {...homeProps(onNewShow)} {...props} />)
+  return { onNewShow }
+}
+
+async function renderInRouter(node: ReactNode) {
+  const root = createRootRoute({ component: () => node })
   const router = createRouter({
     routeTree: root.addChildren([
       createRoute({ getParentRoute: () => root, path: '/' }),
@@ -38,7 +41,6 @@ async function renderHome(props: Partial<ShowsHomeProps> = {}) {
   })
   render(<RouterProvider router={router} />)
   await screen.findByRole('heading', { name: 'Shows' })
-  return { onNewShow }
 }
 
 test('names the page Shows and greets the person', async () => {
@@ -126,4 +128,77 @@ test("passes each show's people and last change to its card, and none to archive
   expect(active.textContent).toContain('LX relabelled 3 cues')
   const archived = screen.getByRole('list', { name: 'Archived shows' })
   expect(within(archived).queryByRole('img')).toBeNull()
+})
+
+const archivedShows = () => [
+  row('a', 'Little Women'),
+  row('b', 'American Idiot', 'archived'),
+  row('c', 'Next to Normal', 'archived'),
+]
+
+test('only an owner’s archived card offers Reactivate, and an active card never does', async () => {
+  await renderHome({
+    shows: archivedShows(),
+    ownedShowIds: new Set(['a', 'b']),
+    onReactivate: vi.fn(),
+  })
+  const archived = screen.getByRole('list', { name: 'Archived shows' })
+  expect(within(archived).getByRole('button', { name: 'Reactivate American Idiot' })).toBeTruthy()
+  expect(within(archived).queryByRole('button', { name: 'Reactivate Next to Normal' })).toBeNull()
+  const active = screen.getByRole('list', { name: 'Active shows' })
+  expect(within(active).queryByRole('button', { name: /^Reactivate/ })).toBeNull()
+})
+
+test('no card offers Reactivate before the memberships are known or without a handler', async () => {
+  await renderHome({ shows: archivedShows(), onReactivate: vi.fn() })
+  expect(screen.queryByRole('button', { name: /^Reactivate/ })).toBeNull()
+  document.body.innerHTML = ''
+  await renderHome({ shows: archivedShows(), ownedShowIds: new Set(['b', 'c']) })
+  expect(screen.queryByRole('button', { name: /^Reactivate/ })).toBeNull()
+})
+
+test('Reactivate hands back the show’s id', async () => {
+  const onReactivate = vi.fn(async () => {})
+  await renderHome({ shows: archivedShows(), ownedShowIds: new Set(['c']), onReactivate })
+  fireEvent.click(screen.getByRole('button', { name: 'Reactivate Next to Normal' }))
+  await waitFor(() => expect(onReactivate).toHaveBeenCalledWith('c'))
+})
+
+test('a reactivated card moves up to Active and takes focus there', async () => {
+  function Harness() {
+    const [shows, setShows] = useState(archivedShows())
+    return (
+      <ShowsHome
+        {...homeProps(() => {})}
+        shows={shows}
+        ownedShowIds={new Set(['b', 'c'])}
+        // the local write: the show row changes and the page re-renders from it
+        onReactivate={async (id) => {
+          setShows((all) => all.map((s) => (s.id === id ? { ...s, status: 'prep' } : s)))
+        }}
+      />
+    )
+  }
+  await renderInRouter(<Harness />)
+  fireEvent.click(screen.getByRole('button', { name: 'Reactivate American Idiot' }))
+  const active = screen.getByRole('list', { name: 'Active shows' })
+  await waitFor(() =>
+    expect(within(active).getByRole('link', { name: 'American Idiot' })).toBeTruthy(),
+  )
+  expect(document.activeElement).toBe(within(active).getByRole('link', { name: 'American Idiot' }))
+  // the other archived show stays where it was
+  const archived = screen.getByRole('list', { name: 'Archived shows' })
+  expect(within(archived).getByRole('link', { name: 'Next to Normal' })).toBeTruthy()
+  expect(within(archived).queryByRole('link', { name: 'American Idiot' })).toBeNull()
+})
+
+test('a Reactivate that fails leaves focus alone and the card where it was', async () => {
+  const onReactivate = vi.fn(async () => {
+    throw new Error('nope')
+  })
+  await renderHome({ shows: archivedShows(), ownedShowIds: new Set(['b']), onReactivate })
+  fireEvent.click(screen.getByRole('button', { name: 'Reactivate American Idiot' }))
+  await screen.findByRole('alert')
+  const archived = screen.getByRole('list', { name: 'Archived shows' })
+  expect(within(archived).getByRole('link', { name: 'American Idiot' })).toBeTruthy()
 })
