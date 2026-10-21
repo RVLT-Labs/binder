@@ -3,6 +3,7 @@ import { usePowerSync, useQuery } from '@powersync/react'
 import { Segmented } from '@/components/ui/segmented'
 import { readConnectorStyle, withConnectorStyle } from './connectorStyleSettings'
 import { readMarkerSide, withMarkerSide } from './markerSideSettings'
+import { updateShowSettings } from './updateShowSettings'
 
 const SIDES: Array<{ value: MarkerSide; label: string }> = [
   { value: 'left', label: 'Left' },
@@ -30,15 +31,9 @@ export function useMarkerSides(showId: string): {
   return {
     sideOf: (departmentId) => readMarkerSide(settings, departmentId),
     async setSide(departmentId, side) {
-      // Read just before writing so a settings change made elsewhere is not overwritten.
-      const latest = await db.getOptional<{ settings: string | null }>(
-        'SELECT settings FROM shows WHERE id = ?',
-        [showId],
-      )
-      await db.execute('UPDATE shows SET settings = ? WHERE id = ?', [
-        withMarkerSide(latest?.settings ?? settings, departmentId, side),
-        showId,
-      ])
+      // Read and written in one transaction, so a settings change made elsewhere or a moment ago
+      // is not overwritten.
+      await updateShowSettings(db, showId, (current) => withMarkerSide(current, departmentId, side))
     },
   }
 }
@@ -108,20 +103,14 @@ export function useConnectorStyles(showId: string): {
   return {
     styleOf: (departmentId) => readConnectorStyle(settings, departmentId),
     async setStyle(departmentId, change) {
-      // Read just before writing so a settings change made elsewhere is not overwritten, and
-      // choosing a width keeps the pattern as it is now.
-      const latest = await db.getOptional<{ settings: string | null }>(
-        'SELECT settings FROM shows WHERE id = ?',
-        [showId],
-      )
-      const text = latest?.settings ?? settings
-      await db.execute('UPDATE shows SET settings = ? WHERE id = ?', [
-        withConnectorStyle(text, departmentId, {
-          ...readConnectorStyle(text, departmentId),
+      // Read and written in one transaction, so a settings change made elsewhere or a moment ago
+      // is not overwritten, and choosing a width keeps the pattern as it is now.
+      await updateShowSettings(db, showId, (current) =>
+        withConnectorStyle(current, departmentId, {
+          ...readConnectorStyle(current, departmentId),
           ...change,
         }),
-        showId,
-      ])
+      )
     },
   }
 }
