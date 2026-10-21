@@ -66,7 +66,8 @@ function checkCharOffset(charOffset: number | undefined, mark: CueMark): void {
  * The anchor an `update_cue` call that restyles ends with: `current` (the cue's anchor now, null when
  * unplaced) or the new `change.anchor` (applied first), drawn with `change.mark` and/or a character
  * offset, and with its bubble moved by `change.bubble` (an offset from the anchor's point, in points;
- * null puts it back in the margin by removing the `tag` key). `mark` defaults to the base anchor's own;
+ * null puts it back in the margin by removing the `tag` key; a bubble given without `mark` or
+ * `charOffset` changes only the `tag`, never the mark, `x` or the word offset). `mark` defaults to the base anchor's own;
  * the offset applies to the word at `text.wordStart`, clamped to its length, and `x` follows the caret
  * when the page's word layer can be read (otherwise the change still applies). `invalid` when the cue
  * is unplaced, when the call also sets `anchor: null` (it would both unplace and restyle the cue),
@@ -95,6 +96,18 @@ export async function restyleAnchor(
   }
   checkMark(change.mark)
   checkBubble(change.bubble)
+  const withBubble = (a: Anchor): Anchor => {
+    if (change.bubble === undefined) return a
+    const { tag: _drop, ...rest } = a
+    return change.bubble === null
+      ? rest
+      : { ...rest, tag: { dx: change.bubble.dx, dy: change.bubble.dy } }
+  }
+  // A bubble alone (no mark, no character offset) is only the tag: the mark is not re-drawn, so a
+  // bar's `x` and the word offset stay exactly as stored and no word layer is read.
+  if (change.bubble !== undefined && change.mark === undefined && change.charOffset === undefined) {
+    return withBubble(anchor)
+  }
   const mark = change.mark ?? markOf(anchor)
   checkCharOffset(change.charOffset, mark)
   const bound = anchor.text !== undefined && anchor.text.wordStart >= 0
@@ -111,12 +124,7 @@ export async function restyleAnchor(
       layer = undefined
     }
   }
-  const restyled = withMark(anchor, mark, { layer, offset: change.charOffset })
-  if (change.bubble === undefined) return restyled
-  const { tag: _drop, ...rest } = restyled
-  return change.bubble === null
-    ? rest
-    : { ...rest, tag: { dx: change.bubble.dx, dy: change.bubble.dy } }
+  return withBubble(withMark(anchor, mark, { layer, offset: change.charOffset }))
 }
 
 export interface PlaceCueAtTextInput {

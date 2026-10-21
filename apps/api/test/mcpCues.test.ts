@@ -1,5 +1,5 @@
 import { caretX } from '@binder/core'
-import { changeLog } from '@binder/db'
+import { changeLog, cues } from '@binder/db'
 import type { Client } from '@modelcontextprotocol/client'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
@@ -190,6 +190,8 @@ describe('cue tools', () => {
   })
 
   describe('marks', () => {
+    const logCount = async (rowId: string) =>
+      (await s.deps.db.select().from(changeLog).where(eq(changeLog.rowId, rowId))).length
     const place = (args: Record<string, unknown>) =>
       callTool(owner, 'place_cue_at_text', {
         showId: s.show.id,
@@ -378,9 +380,50 @@ describe('cue tools', () => {
       expect(Object.keys(reset.structuredContent?.anchor ?? {})).not.toContain('tag')
 
       // resetting a bubble that is already in the margin changes nothing and logs nothing
+      const logsBefore = await logCount(before.id)
       const again = await callTool(owner, 'update_cue', { cueId: before.id, bubble: null })
       expect(again.isError).toBeFalsy()
       expect(again.structuredContent?.anchor).toEqual(before.anchor)
+      expect(await logCount(before.id)).toBe(logsBefore)
+    })
+
+    test('a bubble-only update_cue touches only the tag: a line cue whose x is off its caret keeps x, text and mark', async () => {
+      const made = await place({ quote: 'bravo charlie', mark: 'line', charOffset: 3 })
+      const before = made.structuredContent?.cue
+      const id = before.id as string
+      // The stored x is deliberately not where the caret is (a hand-placed bar or an older write).
+      const off = { ...before.anchor, x: 171.5 }
+      await s.deps.db.update(cues).set({ anchor: off }).where(eq(cues.id, id))
+      const logsBefore = await logCount(id)
+
+      const upd = await callTool(owner, 'update_cue', { cueId: id, bubble: { dx: 20, dy: -9 } })
+      expect(upd.isError).toBeFalsy()
+      expect(upd.structuredContent?.anchor).toEqual({ ...off, tag: { dx: 20, dy: -9 } })
+      expect(upd.structuredContent?.anchor.x).toBe(171.5)
+
+      // A reset of the bubble leaves them as they were too, and each write reads as a bubble move.
+      const reset = await callTool(owner, 'update_cue', { cueId: id, bubble: null })
+      expect(reset.structuredContent?.anchor).toEqual(off)
+      expect(await logCount(id)).toBe(logsBefore + 2)
+      const feed = await callTool(owner, 'get_activity', { showId: s.show.id, limit: 2 })
+      const summaries = (feed.structuredContent?.groups ?? []).map(
+        (g: { summary: string }) => g.summary,
+      )
+      expect(summaries).toEqual(['bubble moved 1 LX cue', 'bubble moved 1 LX cue'])
+
+      // With an anchor too, the anchor is applied first and only the tag is added on top of it.
+      const both = await callTool(owner, 'update_cue', {
+        cueId: id,
+        anchor: { documentId: s.docId, pageIndex: 2, x: 33, y: 44, mark: 'line' },
+        bubble: { dx: 1, dy: 2 },
+      })
+      expect(both.structuredContent?.anchor).toMatchObject({
+        pageIndex: 2,
+        x: 33,
+        y: 44,
+        mark: 'line',
+        tag: { dx: 1, dy: 2 },
+      })
     })
 
     test('bubble on an unplaced cue is an error', async () => {
