@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { claimTestAccount } from '../../test/localAccount'
 import { KeepOfflineSwitch } from './KeepOfflineSwitch'
 import type { ShowStatus } from './runner'
 import { publishKeepOfflineStatus } from './status'
@@ -21,6 +22,7 @@ async function renderOn(next?: ReadonlyMap<string, ShowStatus>) {
 }
 
 beforeEach(async () => {
+  claimTestAccount('u1')
   await clearOfflinePrefs('u1')
   await loadOfflinePrefs('u1')
   publishKeepOfflineStatus(new Map())

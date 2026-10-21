@@ -2,6 +2,7 @@ import type * as core from '@binder/core'
 import type { LayerRef, PrintOptions } from '@binder/shared'
 import { PDFDocument } from 'pdf-lib'
 import { beforeEach, expect, test, vi } from 'vitest'
+import { activateLocalUser, guardLocalDatabase } from '../auth/localWork'
 import { clearNotices } from '../components/noticeStore'
 import type { EditContext } from '../markup/mutations'
 import type { PendingExport } from './outbox'
@@ -21,6 +22,9 @@ vi.mock('@binder/core', async (importOriginal) => {
 
 beforeEach(() => {
   clearNotices()
+  localStorage.setItem('binder.localDbOwner', 'user-me')
+  localStorage.setItem('binder.localDbDevice', 'export-test-ticket')
+  activateLocalUser('user-me')
   stamp.calls = []
 })
 
@@ -123,29 +127,36 @@ const annotations = [
 ]
 
 function fakeDb(cueRows: unknown[] = cues): ExportDb {
-  return {
-    async getAll<T>(sql: string): Promise<T[]> {
-      const rows = (() => {
-        if (sql.includes('FROM shows'))
-          return [{ title: 'Pirates: A/B', settings: '{"markerSides":{"d-snd":"right"}}' }]
-        if (sql.includes('FROM documents')) return [{ title: 'Libretto' }]
-        if (sql.includes('FROM document_versions'))
-          return [
-            { version_number: 2, searchable_key: 'shows/show-1/v1/searchable.pdf', page_count: 2 },
-          ]
-        if (sql.includes('FROM departments')) return departments
-        if (sql.includes('FROM cues')) return cueRows
-        if (sql.includes('FROM annotations')) return annotations
-        if (sql.includes('FROM pages'))
-          return [
-            { index: 0, words_key: 'w0' },
-            { index: 1, words_key: 'w1' },
-          ]
-        throw new Error(`unexpected query ${sql}`)
-      })()
-      return rows as T[]
+  return guardLocalDatabase(
+    {
+      async getAll<T>(sql: string): Promise<T[]> {
+        const rows = (() => {
+          if (sql.includes('FROM shows'))
+            return [{ title: 'Pirates: A/B', settings: '{"markerSides":{"d-snd":"right"}}' }]
+          if (sql.includes('FROM documents')) return [{ title: 'Libretto' }]
+          if (sql.includes('FROM document_versions'))
+            return [
+              {
+                version_number: 2,
+                searchable_key: 'shows/show-1/v1/searchable.pdf',
+                page_count: 2,
+              },
+            ]
+          if (sql.includes('FROM departments')) return departments
+          if (sql.includes('FROM cues')) return cueRows
+          if (sql.includes('FROM annotations')) return annotations
+          if (sql.includes('FROM pages'))
+            return [
+              { index: 0, words_key: 'w0' },
+              { index: 1, words_key: 'w1' },
+            ]
+          throw new Error(`unexpected query ${sql}`)
+        })()
+        return rows as T[]
+      },
     },
-  }
+    'user-me',
+  )
 }
 
 async function sourcePdf(): Promise<Uint8Array> {
@@ -446,4 +457,66 @@ test('an unusable range or file name stops the export before anything is downloa
 test('file names drop characters no platform allows and stay short', () => {
   expect(exportFilename(['A/B', 'C:D', 'E*F?'])).toBe('A-B - C-D - E-F-.pdf')
   expect(exportFilename(['x'.repeat(400)]).length).toBe(200)
+})
+
+test('B13 sign-out waits for an export already generating before counting and warning', async () => {
+  const { signOutAndClear } = await import('../auth/signOut')
+  const source = await sourcePdf()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(source as BlobPart)),
+  )
+  function deferred<T>() {
+    let resolve!: (value: T) => void
+    const promise = new Promise<T>((done) => {
+      resolve = done
+    })
+    return { promise, resolve }
+  }
+  const wait = deferred<null>()
+  const started = deferred<void>()
+  const queued: PendingExport[] = []
+  const generating = runPrintExport(
+    fakeDb(),
+    ctx,
+    { documentId: 'doc-1', versionId: 'v1', layers: [{ kind: 'department', id: 'd-lx' }] },
+    {
+      download: vi.fn(),
+      enqueue: async (p) => {
+        queued.push(p)
+      },
+      loadWords: async () => {
+        started.resolve()
+        return wait.promise
+      },
+    },
+  )
+  await started.promise
+  const signOut = vi.fn(async () => ({ error: null }))
+  const clear = vi.fn(async () => {
+    queued.length = 0
+  })
+  const confirm = vi.fn(() => false)
+  const signingOut = signOutAndClear({
+    signOut,
+    pendingUploads: async () => 0,
+    pendingExports: async () => queued.length,
+    confirm,
+    clearOutbox: clear,
+    clearLocalData: clear,
+    clearOfflinePrefs: clear,
+    stopOfflineRunner: clear,
+    stopExportRunner: clear,
+    clearCache: vi.fn(),
+    toLogin: clear,
+  })
+  await new Promise((r) => setTimeout(r, 20))
+  const requestedWhileGenerating = signOut.mock.calls.length
+  wait.resolve(null)
+  await generating
+  await signingOut
+  expect(requestedWhileGenerating).toBe(0)
+  expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/1 pending export/))
+  expect(queued).toHaveLength(1)
+  expect(clear).not.toHaveBeenCalled()
 })

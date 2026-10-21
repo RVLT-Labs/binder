@@ -1,10 +1,13 @@
 import { beforeEach, expect, test, vi } from 'vitest'
+import { activateLocalUser, guardLocalDatabase } from '../auth/localWork'
 import { claimLocalDb, deviceId, type LocalDb, writeOwner } from './ownership'
 
 const OWNER_KEY = 'binder.localDbOwner'
 
-function fakeDb(rowsIn: string[] = []) {
+function fakeDb(rowsIn: string[] = [], clientId = 'same-live-database') {
   const db = {
+    waitForReady: vi.fn(async () => {}),
+    getClientId: vi.fn(async () => clientId),
     getAll: vi.fn(async (sql: string) =>
       rowsIn.some((table) => sql.includes(`"${table}"`)) ? [{ x: 1 }] : [],
     ),
@@ -14,6 +17,65 @@ function fakeDb(rowsIn: string[] = []) {
 }
 
 beforeEach(() => localStorage.clear())
+
+test('awaits SDK initialization before querying the persistent identity or claiming ownership', async () => {
+  let initialize!: () => void
+  let ready = false
+  const initialization = new Promise<void>((resolve) => {
+    initialize = () => {
+      ready = true
+      resolve()
+    }
+  })
+  // Installed SDK boundary: construction starts initialization; getAll waits for it,
+  // but getClientId queries bucket storage directly, before ps_kv exists if not ready.
+  const db = {
+    ...fakeDb(),
+    waitForReady: vi.fn(() => initialization),
+    getClientId: vi.fn(async () => {
+      if (!ready) throw new Error('powersync_client_id: no such table: ps_kv')
+      return 'initialized-file'
+    }),
+    getAll: vi.fn(async () => {
+      await initialization
+      return []
+    }),
+  }
+  const clearForeign = vi.fn(async () => {})
+  const claiming = claimLocalDb(db, 'u1', clearForeign)
+  // Attach rejection handling immediately so RED does not produce an unhandled rejection.
+  const outcome = claiming.then(
+    () => null,
+    (error: unknown) => error,
+  )
+  try {
+    await Promise.resolve()
+    expect(db.getClientId).not.toHaveBeenCalled()
+    expect(db.getAll).not.toHaveBeenCalled()
+    expect(clearForeign).not.toHaveBeenCalled()
+    expect(localStorage.length).toBe(0)
+  } finally {
+    initialize()
+    await outcome
+  }
+  expect(await outcome).toBeNull()
+  expect(db.getClientId).toHaveBeenCalledOnce()
+  expect(localStorage.getItem('binder.localDbClient')).toBe('initialized-file')
+  expect(localStorage.getItem(OWNER_KEY)).toBe('u1')
+  expect(db.disconnectAndClear).not.toHaveBeenCalled()
+})
+
+test('propagates initialization failure without querying identity or changing ownership', async () => {
+  const db = fakeDb()
+  const error = new Error('SQLite initialization failed')
+  db.waitForReady.mockRejectedValue(error)
+  const clearForeign = vi.fn(async () => {})
+  await expect(claimLocalDb(db, 'u1', clearForeign)).rejects.toBe(error)
+  expect(db.getClientId).not.toHaveBeenCalled()
+  expect(db.getAll).not.toHaveBeenCalled()
+  expect(clearForeign).not.toHaveBeenCalled()
+  expect(localStorage.length).toBe(0)
+})
 
 test('keeps the database when it belongs to the signed-in user', async () => {
   localStorage.setItem(OWNER_KEY, 'u1')
@@ -115,7 +177,26 @@ test('claiming an empty database mints a new device id, so a recreated database 
   // restarts at 1): the old id would repeat batch ids the server has already applied.
   await claimLocalDb(fakeDb(['shows']), 'u1')
   const first = deviceId()
-  await claimLocalDb(fakeDb(), 'u1')
+  await claimLocalDb(fakeDb([], 'recreated-database'), 'u1')
   expect(deviceId()).not.toBe(first)
   expect(deviceId()).toMatch(UUID)
+})
+
+test('R4 two empty same-owner claims keep the first facade editable after initial sync', async () => {
+  const rows: string[] = []
+  const first = {
+    ...fakeDb(rows),
+    execute: vi.fn(async () => 'saved'),
+  }
+  await claimLocalDb(first, 'u1')
+  activateLocalUser('u1')
+  const facade = guardLocalDatabase(first, 'u1')
+  const originalTicket = deviceId()
+  await claimLocalDb(fakeDb(), 'u1') // second tab, same live SQLite file, still waiting for sync
+  rows.push('shows')
+  await expect(facade.execute()).resolves.toBe('saved')
+  expect(deviceId()).toBe(originalTicket)
+  await claimLocalDb(fakeDb(['shows']), 'u2')
+  await expect(facade.execute()).rejects.toThrow(/session has changed/)
+  expect(first.execute).toHaveBeenCalledOnce()
 })

@@ -55,7 +55,7 @@ export function DepartmentSwitch({
             <>
               {d.colour && <Swatch colour={deptChrome(d.colour)} className="md:hidden" />}
               {d.code}
-              <span className="font-mono text-[12px] font-medium text-faint tabular-nums">
+              <span className="font-mono text-[12px] font-medium text-muted tabular-nums">
                 {d.count}
               </span>
             </>
@@ -172,7 +172,7 @@ export function FilterBox({
         className={cn(
           inline
             ? 'w-14 rounded-[5px] bg-transparent px-1 text-[12px] text-ink outline-none placeholder:text-muted focus:w-40 focus-visible:ring-2 focus-visible:ring-red'
-            : 'h-12 w-full rounded-[12px] border-2 border-input bg-paper px-3.5 text-[16px] text-ink placeholder:text-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red',
+            : 'h-12 w-full rounded-[12px] border-2 border-input bg-paper px-3.5 text-[16px] text-ink placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red',
           '[&::-webkit-search-cancel-button]:appearance-none',
         )}
       />

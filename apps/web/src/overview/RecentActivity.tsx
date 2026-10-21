@@ -37,7 +37,7 @@ export function ActivityLine({ group }: { group: ActivityGroup }) {
       </span>
       <time
         dateTime={group.at}
-        className="shrink-0 font-mono text-[11.5px] tabular-nums text-faint"
+        className="shrink-0 font-mono text-[11.5px] tabular-nums text-muted"
       >
         {formatClock(group.at)}
       </time>

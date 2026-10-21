@@ -45,7 +45,7 @@ export function Segmented({
         if (next) onValueChange(next)
       }}
       className={cn(
-        'inline-flex items-center overflow-hidden rounded-[12px] border-2 border-line-2 md:rounded-[9px]',
+        'inline-flex items-center gap-2 overflow-hidden rounded-[12px] border-2 border-line-2 md:rounded-[9px]',
         className,
       )}
     >
@@ -56,7 +56,7 @@ export function Segmented({
           role="radio"
           aria-checked={option.value === value}
           className={cn(
-            'inline-flex h-11 min-w-11 items-center justify-center gap-1.5 px-3 font-sans text-[14px] font-semibold text-muted transition-colors md:h-[27px] md:px-2.5 md:text-[12px]',
+            'inline-flex h-11 min-h-11 min-w-11 items-center justify-center gap-1.5 px-3 font-sans text-[14px] font-semibold text-muted transition-colors md:h-[27px] md:px-2.5 md:text-[12px]',
             'hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red',
             'disabled:cursor-not-allowed disabled:opacity-45',
             'data-[state=on]:bg-elev data-[state=on]:text-ink',

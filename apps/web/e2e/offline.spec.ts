@@ -94,9 +94,9 @@ test('make available offline, go offline, reload, view and search', async ({ pag
   await page.getByRole('button', { name: 'Calling mode' }).click()
   const strip = page.getByRole('region', { name: 'Calling', exact: true })
   await expect(strip).toContainText(`p.${pageNumber} / ${PAGES}`)
-  await expect(page.getByRole('region', { name: 'Calling status' })).toContainText(
-    'offline, cached',
-  )
+  await expect(
+    page.getByRole('region', { name: 'Calling status' }).getByLabel('Sync status'),
+  ).toHaveText('Offline')
   await expect(toolbar).toHaveCount(0)
   await expect.poll(() => hasInk(sheet.locator('canvas')), { timeout: 15_000 }).toBe(true)
   await page.keyboard.press('g')

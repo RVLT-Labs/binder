@@ -44,29 +44,29 @@ describe('Button looks (mockup _head.html .btn)', () => {
   it('is 30 / 26 px at 768 and up, 44 px on a phone, with a 44 px hit area on a tablet', () => {
     const def = cls({})
     expect(def).toContain('h-11')
-    expect(def).toContain('md:h-[30px]')
+    expect(def).toContain('md:before:h-[30px]')
     expect(def).toContain('md:px-3')
     expect(def).toContain('md:text-[13px]')
-    expect(def).toContain('md:after:-inset-y-[7px]')
+    expect(def).toContain('min-h-11')
     const sm = cls({ size: 'sm' })
     expect(sm).toContain('h-11')
-    expect(sm).toContain('md:h-[26px]')
+    expect(sm).toContain('md:before:h-[26px]')
     expect(sm).toContain('md:px-[9px]')
     expect(sm).toContain('md:text-[12px]')
-    expect(sm).toContain('md:after:-inset-y-[9px]')
+    expect(sm).toContain('min-h-11')
     const lg = cls({ size: 'lg' })
     expect(lg).toContain('h-12')
     expect(lg).toContain('text-[16px]')
-    expect(lg).toContain('md:h-10')
+    expect(lg).toContain('md:before:h-10')
     expect(lg).toContain('md:text-[14px]')
   })
 
   it('primary is red with a 2px red border and the sticker shadow', () => {
     const c = cls({ variant: 'primary' })
-    expect(c).toContain('bg-red')
-    expect(c).toContain('border-red')
+    expect(c).toContain('bg-primary')
+    expect(c).toContain('border-primary')
     expect(c).toContain('shadow-sticker')
-    expect(c).toContain('active:shadow-lit')
+    expect(c).toContain('active:before:shadow-lit')
   })
 
   it('the outlined button is card-filled with a 2px outline and no ink inversion on hover', () => {
@@ -226,18 +226,23 @@ describe('form controls and chrome (mockup _head.html)', () => {
 
   it('Checkbox: 16 px, radius 5, paper fill, ink when checked (never red)', () => {
     const c = first(<Checkbox aria-label="c" />).className
-    for (const token of ['size-4', 'rounded-[5px]', 'bg-paper', 'data-[state=checked]:bg-ink']) {
+    for (const token of [
+      'size-4',
+      'rounded-[5px]',
+      'bg-paper',
+      'data-[state=checked]:before:bg-ink',
+    ]) {
       expect(c).toContain(token)
     }
     expect(c).not.toContain('bg-red')
     // 40 px hit area with a mouse; 44 px on a touch screen (carry from F2c).
-    expect(c).toContain('after:-inset-[14px]')
-    expect(c).toContain('pointer-coarse:after:-inset-4')
+    expect(c.split(' ')).toContain('size-11')
+    expect(c).not.toContain('after:-inset')
   })
 
   it('Switch: 52 x 32, green when on (never red)', () => {
     const c = first(<Switch aria-label="s" />).className
-    for (const token of ['h-8', 'w-[52px]', 'data-[state=checked]:bg-ok']) {
+    for (const token of ['h-8', 'w-[52px]', 'data-[state=checked]:before:bg-ok']) {
       expect(c).toContain(token)
     }
     expect(c).not.toContain('bg-red')

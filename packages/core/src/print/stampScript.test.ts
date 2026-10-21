@@ -185,7 +185,7 @@ const annotationItem = (type: 'note' | 'stamp', text: string): StampItem => ({
   wordBoxes: [],
 })
 
-test('the tag number is drawn in the page ink #1A1715, not the department colour', async () => {
+test('B05 the entire tag label prints in page ink with Helvetica metrics', async () => {
   const content = await stampedContent([cueItem('77')])
   // The colour set (rg) before the number's Tj, and before the lead's.
   const colourBefore = (hexText: string) => {
@@ -195,6 +195,9 @@ test('the tag number is drawn in the page ink #1A1715, not the department colour
     return [m[1], m[2], m[3]].map((v) => Math.round(Number(v) * 255))
   }
   expect(colourBefore('3737')).toEqual([0x1a, 0x17, 0x15])
+  expect(colourBefore('4C58')).toEqual([0x1a, 0x17, 0x15])
+  expect(content).toMatch(/\/Helvetica[-\d]* 9 Tf/)
+  expect(content).toMatch(/\/Helvetica-Bold[-\d]* 9 Tf/)
 })
 
 test('a printed note is a tinted block with a left bar and no outline, text in page ink', async () => {

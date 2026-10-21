@@ -1,3 +1,5 @@
+import { captureLocalCacheWork } from '../auth/localWork'
+
 const CACHE_NAME = 'blobs-v1'
 
 /** The URL the API serves a blob key at. */
@@ -19,24 +21,29 @@ async function openCache(): Promise<Cache | null> {
  * change and a cached copy never goes stale. Only 200 responses are cached.
  */
 export async function fetchBlob(url: string): Promise<Response> {
+  const lifecycle = captureLocalCacheWork()
+  lifecycle.checkClaim()
   const cache = await openCache()
   if (cache) {
     try {
       const hit = await cache.match(url)
-      if (hit) return hit
+      if (hit) {
+        lifecycle.checkClaim()
+        return hit
+      }
     } catch {
       // Fall through to the network.
     }
   }
   const res = await fetch(url, { credentials: 'include' })
   if (cache && res.status === 200) {
-    // Not awaited: the caller reads the body while the copy is stored. A full disk only costs a refetch.
-    void (async () => {
-      try {
-        await cache.put(url, res.clone())
-      } catch {}
-    })()
+    // Await the copy so the lifecycle lock covers the actual put. Quota/busy failures
+    // still permit viewing from the network; an invalid claim never delivers its response.
+    try {
+      await lifecycle.commit(() => cache.put(url, res.clone()))
+    } catch {}
   }
+  lifecycle.checkClaim()
   return res
 }
 
@@ -56,11 +63,18 @@ export async function isBlobCached(url: string): Promise<boolean> {
  * fetchBlob it waits for the copy to be stored and throws when it cannot be, so the caller knows
  * the blob really is available offline. Resolves to what it did.
  */
-export async function storeBlob(url: string): Promise<'cached' | 'fetched'> {
+export async function storeBlob(
+  url: string,
+  lifecycle = captureLocalCacheWork(),
+): Promise<'cached' | 'fetched'> {
+  lifecycle.check()
   const cache = await openCache()
   if (!cache) throw new Error('this browser cannot store files for offline use')
   try {
-    if (await cache.match(url)) return 'cached'
+    if (await cache.match(url)) {
+      lifecycle.check()
+      return 'cached'
+    }
   } catch {
     // Treated as a miss; the put below decides whether storing works.
   }
@@ -69,7 +83,7 @@ export async function storeBlob(url: string): Promise<'cached' | 'fetched'> {
     void res.body?.cancel()
     throw new Error(`the server answered ${res.status}`)
   }
-  await cache.put(url, res)
+  await lifecycle.commit(() => cache.put(url, res))
   return 'fetched'
 }
 
@@ -84,9 +98,10 @@ export async function cachedBlobPaths(): Promise<Set<string>> {
 
 /** Stores a response under `url` in the blob cache; throws when it cannot (no Cache API, full disk). */
 export async function putBlobResponse(url: string, res: Response): Promise<void> {
+  const lifecycle = captureLocalCacheWork()
   const cache = await openCache()
   if (!cache) throw new Error('this browser cannot store files for offline use')
-  await cache.put(url, res)
+  await lifecycle.commit(() => cache.put(url, res))
 }
 
 /** Deletes every cached blob whose path starts with `pathPrefix` (e.g. one show's documents). */

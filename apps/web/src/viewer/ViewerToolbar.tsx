@@ -15,18 +15,20 @@ export interface ViewerToolbarProps {
   onGoToPage: (pageNumber: number) => void
   /** The page input, so the `g` shortcut can focus it. */
   pageInputRef?: Ref<HTMLInputElement>
-  /** `touch` is the phone's: every control at least 44 px. */
+  /** Visual density only; every control reserves at least 44 px at every breakpoint. */
   size?: 'compact' | 'touch'
   className?: string
 }
 
+const targetSize = { minWidth: 44, minHeight: 44 }
+
 const control = (size: 'compact' | 'touch') =>
   cn(
-    'inline-flex items-center justify-center rounded-[6px] font-sans text-[11.5px] font-semibold text-ink-2',
-    'hover:bg-elev hover:text-ink disabled:cursor-not-allowed disabled:opacity-45',
+    "relative isolate inline-flex items-center justify-center rounded-[6px] before:pointer-events-none before:absolute before:inset-x-0 before:top-1/2 before:-z-10 before:-translate-y-1/2 before:rounded-[inherit] before:content-[''] font-sans text-[11.5px] font-semibold text-ink-2",
+    'hover:before:bg-elev hover:text-ink disabled:cursor-not-allowed disabled:opacity-45',
     focusRing,
     'focus-visible:ring-offset-paper-2',
-    size === 'touch' ? 'h-11 min-w-11 px-1' : 'h-6 min-w-6 px-1.5',
+    size === 'touch' ? 'h-11 before:h-11 px-1' : 'h-11 before:h-6 px-1.5',
   )
 
 /**
@@ -57,7 +59,11 @@ export function ViewerToolbar({
   }
 
   return (
-    <div className={cn('flex items-center gap-1', className)} role="toolbar" aria-label="Viewer">
+    <div
+      className={cn('flex flex-wrap items-center gap-2', className)}
+      role="toolbar"
+      aria-label="Viewer"
+    >
       <output
         className="page-position px-1 font-mono text-[11.5px] tabular-nums text-ink-2"
         aria-label="Page position"
@@ -68,6 +74,7 @@ export function ViewerToolbar({
       <form onSubmit={go} className="go-to-page">
         <input
           ref={pageInputRef}
+          style={targetSize}
           aria-label="Go to page"
           placeholder="Page"
           inputMode="numeric"
@@ -76,11 +83,11 @@ export function ViewerToolbar({
           value={target}
           onChange={(e) => setTarget(e.target.value)}
           className={cn(
-            'w-14 rounded-[6px] border border-line-2 bg-card px-2 font-mono text-[11.5px] tabular-nums text-ink placeholder:font-sans placeholder:text-faint',
+            'w-14 rounded-[6px] border border-input bg-card px-2 font-mono text-[11.5px] tabular-nums text-ink placeholder:font-sans placeholder:text-muted',
             focusRing,
             'focus-visible:ring-offset-paper-2',
             // 16 px on a phone: a smaller field makes iOS zoom the page when it takes focus.
-            touch ? 'h-11 text-[16px]' : 'h-6',
+            touch ? 'h-11 text-[16px]' : 'h-11',
           )}
         />
       </form>
@@ -91,6 +98,7 @@ export function ViewerToolbar({
         disabled={zoom <= MIN_ZOOM}
         aria-label="Zoom out"
         className={control(size)}
+        style={targetSize}
       >
         <Minus className="size-3.5" strokeWidth={2} aria-hidden />
       </button>
@@ -107,6 +115,7 @@ export function ViewerToolbar({
         disabled={zoom >= MAX_ZOOM}
         aria-label="Zoom in"
         className={control(size)}
+        style={targetSize}
       >
         <Plus className="size-3.5" strokeWidth={2} aria-hidden />
       </button>
@@ -115,6 +124,7 @@ export function ViewerToolbar({
         onClick={onFitWidth}
         aria-label={touch ? 'Fit width' : undefined}
         className={control(size)}
+        style={targetSize}
       >
         {/* Icon only on a phone, where the row has no room for the words. */}
         {touch ? <MoveHorizontal className="size-4" strokeWidth={2} aria-hidden /> : 'Fit width'}

@@ -134,6 +134,7 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
     <Field label="Number" htmlFor={`${ids}-number`}>
       <CommitInput
         id={`${ids}-number`}
+        inputMode="decimal"
         className="font-mono tabular-nums"
         value={number}
         onCommit={saveNumber}
@@ -178,7 +179,7 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
         style={{ borderColor: department?.colour ?? undefined }}
       >
         “{cue.anchor.text.quote}”{' '}
-        <span className="whitespace-nowrap text-faint">p.{cue.anchor.pageIndex + 1}</span>
+        <span className="whitespace-nowrap text-muted">p.{cue.anchor.pageIndex + 1}</span>
       </p>
     </Field>
   )
@@ -303,7 +304,7 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
               Done
             </Button>
           ) : (
-            edited && <span className="text-[12px] text-faint">{edited}</span>
+            edited && <span className="text-[12px] text-muted">{edited}</span>
           )}
         </div>
       </fieldset>

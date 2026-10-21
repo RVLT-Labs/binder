@@ -1,3 +1,4 @@
+import { captureLocalCacheWork } from '../../auth/localWork'
 import { blobUrlsForShow, type ShowBlobRows } from '../prefetch'
 
 /**
@@ -170,6 +171,7 @@ interface Plan {
 }
 
 export function createKeepOfflineRunner(deps: RunnerDeps): KeepOfflineRunner {
+  const lifecycle = captureLocalCacheWork()
   let stopped = false
   let enabled: string[] = []
   let localShows: ReadonlySet<string> | null = null
@@ -234,13 +236,16 @@ export function createKeepOfflineRunner(deps: RunnerDeps): KeepOfflineRunner {
     for (const id of gone) {
       showAborts.get(id)?.abort()
       showAborts.delete(id)
-      enabled = enabled.filter((e) => e !== id)
-      setStatus(id, null)
       try {
-        await deps.deleteShowBlobs(id)
-        await deps.dropPreference(id)
+        await lifecycle.commit(async () => {
+          await deps.deleteShowBlobs(id)
+          await deps.dropPreference(id)
+        })
+        enabled = enabled.filter((e) => e !== id)
+        setStatus(id, null)
       } catch (err) {
         console.error(`could not drop show ${id} from keep-offline`, err)
+        if (!stopped) scheduleRetry()
       }
     }
   }
@@ -314,7 +319,7 @@ export function createKeepOfflineRunner(deps: RunnerDeps): KeepOfflineRunner {
           }
           // Not raced: a put that has begun is awaited, so `stop()` resolves only once nothing can
           // still write to the cache. Its body comes from the aborted fetch, so it ends quickly.
-          await deps.putBlob(url, res)
+          await lifecycle.commit(() => deps.putBlob(url, res))
           p.stored++
           anyStored = true
           publish(p, 'working')
@@ -382,6 +387,12 @@ export function createKeepOfflineRunner(deps: RunnerDeps): KeepOfflineRunner {
 
   function schedule(): void {
     if (stopped) return
+    try {
+      lifecycle.checkClaim()
+    } catch {
+      void stop()
+      return
+    }
     clearRetry()
     if (running) {
       again = true
@@ -404,6 +415,24 @@ export function createKeepOfflineRunner(deps: RunnerDeps): KeepOfflineRunner {
       }
     })()
   }
+
+  async function stop() {
+    stopped = true
+    unsubscribe()
+    clearRetry()
+    if (syncTimer !== undefined) clearTimeout(syncTimer)
+    syncTimer = undefined
+    passAbort?.abort()
+    for (const c of showAborts.values()) c.abort()
+    showAborts.clear()
+    await running?.catch(() => {})
+    statuses = new Map()
+    emit()
+  }
+
+  const unsubscribe = lifecycle.subscribe(() => {
+    void stop()
+  })
 
   return {
     update(input) {
@@ -448,18 +477,7 @@ export function createKeepOfflineRunner(deps: RunnerDeps): KeepOfflineRunner {
       backoffStep = 0
       schedule()
     },
-    async stop() {
-      stopped = true
-      clearRetry()
-      if (syncTimer !== undefined) clearTimeout(syncTimer)
-      syncTimer = undefined
-      passAbort?.abort()
-      for (const c of showAborts.values()) c.abort()
-      showAborts.clear()
-      await running?.catch(() => {})
-      statuses = new Map()
-      emit()
-    },
+    stop,
     whenIdle: () => running ?? Promise.resolve(),
     getStatus: () => statuses,
     subscribe(listener) {

@@ -31,8 +31,7 @@ function useClock(): string {
 
 /**
  * The slim status line above the page (DESIGN §9): the red "Calling" pill, show and document with
- * its version, the time, and the sync state. Offline and cached is the normal state here, so it
- * reads as calm text, never as an error. On a phone the pill is its dot and the line is 11 px mono.
+ * its version, the time, and the sync state. Network state alone never proves PDF cache readiness. Offline reads as calm text. On a phone the pill is its dot and the line is 11 px mono.
  */
 export function CallingStatusLine({ show, document }: { show: string; document: string }) {
   const phone = useBreakpoint() === 'phone'
@@ -41,7 +40,7 @@ export function CallingStatusLine({ show, document }: { show: string; document: 
   return (
     <section
       aria-label="Calling status"
-      className="flex h-[34px] shrink-0 items-center justify-between gap-3 px-[18px] text-[12px] text-faint max-md:font-mono max-md:text-[11px]"
+      className="flex h-[34px] shrink-0 items-center justify-between gap-3 px-[18px] text-[12px] text-muted max-md:font-mono max-md:text-[11px]"
     >
       <span className="flex min-w-0 items-center gap-2.5">
         {phone ? (
@@ -75,7 +74,7 @@ export function CallingStatusLine({ show, document }: { show: string; document: 
               aria-hidden
               className="size-[7px] rounded-full bg-muted shadow-[0_0_0_2px_var(--muted-soft)]"
             />
-            offline, cached
+            Offline
           </output>
         )}
       </span>

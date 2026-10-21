@@ -104,7 +104,7 @@ describe('CallingStrip', () => {
     render(strip())
     const region = screen.getByRole('region', { name: 'Calling' })
     expect(region.textContent).toContain('p.1 / 43')
-    expect(region.textContent).toMatch(/Next LX\s+12\s+Ship deck wash in/)
+    expect(region.textContent).toMatch(/Next from page top LX\s+12\s+Ship deck wash in/)
     const page = within(region).getByText(/^p\.1/)
     expect(page.className).toContain('font-mono')
   })
@@ -340,12 +340,12 @@ describe('CallingView', () => {
     render(<CallingView page={0} pageCount={43} onExit={vi.fn()} />)
     const strip = screen.getByRole('region', { name: 'Calling' })
     expect(strip.textContent).toContain('p.1 / 43')
-    expect(strip.textContent).toMatch(/Next LX\s+12\s+Ship deck wash in/)
+    expect(strip.textContent).toMatch(/Next from page top LX\s+12\s+Ship deck wash in/)
     cleanup()
     setSession({ kind: 'personal', id: 'me' })
     render(<CallingView page={1} pageCount={43} onExit={vi.fn()} />)
     expect(screen.getByRole('region', { name: 'Calling' }).textContent).toMatch(
-      /Next LX\s+13\s+Sunrise/,
+      /Next from page top LX\s+13\s+Sunrise/,
     )
   })
 
@@ -618,4 +618,91 @@ describe('ModeAnnouncer', () => {
     expect(screen.getAllByRole('status')).toHaveLength(1)
     expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite')
   })
+})
+
+it('B15 labels Next as relative to the page top without inventing a called-cue cursor', () => {
+  render(
+    <CallingStrip
+      page={1}
+      pages={3}
+      next={{ department: 'LX', number: '12', colour: '#C9811F', label: 'Synthetic' }}
+      onPrev={vi.fn()}
+      onNext={vi.fn()}
+      onGoTo={vi.fn()}
+      onExit={vi.fn()}
+    />,
+  )
+  expect(screen.getByRole('region', { name: 'Calling' }).textContent).toContain(
+    'Next from page top LX',
+  )
+})
+
+it('B15 ambiguous cue numbers do not silently jump to another department or duplicate', () => {
+  const onGo = vi.fn()
+  render(
+    <GoToKeypad
+      cues={[CUES[2], { ...CUES[2], id: 'duplicate', departmentId: 'snd' }]}
+      departments={[LX, SND]}
+      pageCount={43}
+      onGo={onGo}
+      onCancel={vi.fn()}
+    />,
+  )
+  press('1', '2')
+  expect(goDisabled()).toBe(true)
+  expect(screen.getByRole('dialog').textContent).toMatch(/multiple cues.*page/i)
+  fireEvent.keyDown(screen.getByLabelText('Cue number'), { key: 'Enter' })
+  expect(onGo).not.toHaveBeenCalled()
+})
+
+it('B17 department words use theme-aware ink and hue remains on the swatch', () => {
+  render(
+    <CallingStrip
+      page={1}
+      pages={3}
+      next={{ department: 'LX', number: '12', colour: '#C9811F', label: 'Synthetic' }}
+      onPrev={vi.fn()}
+      onNext={vi.fn()}
+      onGoTo={vi.fn()}
+      onExit={vi.fn()}
+    />,
+  )
+  const words = screen.getByText('Next from page top LX')
+  expect(words.style.color).toBe('')
+  expect(words.className).toContain('text-ink')
+  expect((words.querySelector('[aria-hidden]') as HTMLElement).style.background).toBe(
+    'rgb(201, 129, 31)',
+  )
+})
+
+it('B17 keypad match words use ink with a separate department swatch', () => {
+  render(
+    <GoToKeypad
+      cues={CUES}
+      departments={[LX, SND]}
+      pageCount={43}
+      onGo={vi.fn()}
+      onCancel={vi.fn()}
+    />,
+  )
+  press('1', '2')
+  const words = screen.getByText('LX 12')
+  expect(words.style.color).toBe('')
+  expect(words.className).toContain('text-ink')
+  expect(document.querySelector('[data-department-swatch]')).toBeTruthy()
+})
+
+it('B09 keypad keeps its 56px action faces and reserves 44px recent navigation targets', () => {
+  render(
+    <GoToKeypad
+      cues={CUES}
+      departments={[LX, SND]}
+      pageCount={43}
+      recent={[{ key: 'page-1', label: 'p.1', target: { kind: 'page', index: 0 } }]}
+      onGo={vi.fn()}
+      onCancel={vi.fn()}
+    />,
+  )
+  expect(screen.getByRole('button', { name: 'Go' }).className).toContain('before:h-14')
+  expect(screen.getByRole('button', { name: 'p.1' }).className).toContain('min-h-11')
 })

@@ -11,6 +11,23 @@ export interface LoginFormProps {
   onSignedIn: () => Promise<void>
 }
 
+export function MagicLinkButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      style={{ minHeight: 44, minWidth: 44 }}
+      className={cn(
+        'mx-auto inline-flex min-h-11 items-center rounded-sm px-3 text-[14px] font-semibold text-ink-2 underline decoration-line-2 underline-offset-[3px] hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 md:min-h-0 md:px-0 md:text-[13px]',
+        focusRing,
+      )}
+    >
+      Email me a link instead
+    </button>
+  )
+}
+
 export function LoginForm({ magicLink, onSignedIn }: LoginFormProps) {
   const emailId = useId()
   const passwordId = useId()
@@ -79,25 +96,13 @@ export function LoginForm({ magicLink, onSignedIn }: LoginFormProps) {
           <Button type="submit" size="lg" className="w-full" disabled={busy || !password}>
             Sign in
           </Button>
-          {magicLink && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={sendLink}
-              className={cn(
-                'mx-auto inline-flex min-h-11 items-center rounded-sm px-3 text-[14px] font-semibold text-ink-2 underline decoration-line-2 underline-offset-[3px] hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 md:min-h-0 md:px-0 md:text-[13px]',
-                focusRing,
-              )}
-            >
-              Email me a link instead
-            </button>
-          )}
+          {magicLink && <MagicLinkButton disabled={busy} onClick={sendLink} />}
         </div>
       </form>
       {message && (
         <p
           role="status"
-          className={cn('text-center text-[13px]', message.failed ? 'text-red' : 'text-ink-2')}
+          className={cn('text-center text-[13px]', message.failed ? 'text-t-out' : 'text-ink-2')}
         >
           {message.text}
         </p>

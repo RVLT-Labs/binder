@@ -1,4 +1,5 @@
 import { ApiError, api } from '../api/client'
+import { captureLocalAccountWork } from '../auth/localWork'
 import { type FlushResult, flushOutbox } from './outbox'
 
 /** How long a failed or partial flush waits before it tries again on its own. */
@@ -6,17 +7,20 @@ export const RETRY_MS = 30_000
 
 /**
  * Flushes the outbox of whoever the server says is signed in. Asking the server (rather than
- * trusting the remembered user) means a file is only ever sent under the session it belongs to: if
- * another user signed in on this device, their outbox is the one that flushes, never the previous
- * user's. Never rejects. Resolves to `null` when nothing could be asked (offline) or nobody is
- * signed in, and `'retry'` when the server could not be asked right now or the run itself failed
+ * trusting the remembered user) and checking the original local claim keeps a delayed /me reply
+ * from selecting another account's queue. The upload also carries an expected server account.
+ * Never rejects. Resolves to `null` when nothing could be asked (offline) or nobody is signed in, and `'retry'` when the server could not be asked right now or the run itself failed
  * (storage trouble), so the caller should try again later.
  */
 export async function flushForSession(): Promise<FlushResult | 'retry' | null> {
   if (!navigator.onLine) return null
   let userId: string
   try {
+    const claim = captureLocalAccountWork()
     userId = (await api.get<{ user: { id: string } }>('/me')).user.id
+    claim.checkClaim()
+    if (userId !== claim.userId)
+      throw new Error('The server account changed during the export flush.')
   } catch (err) {
     return err instanceof ApiError && err.status === 401 ? null : 'retry'
   }

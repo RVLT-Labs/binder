@@ -73,12 +73,12 @@ export function ActivityRow({ group, textId, describedBy, disabled, onRevert }: 
           )}{' '}
           {group.summary}
         </div>
-        <div className="activity-meta mt-0.5 text-[12px] text-faint">{metaOf(group)}</div>
+        <div className="activity-meta mt-0.5 text-[12px] text-muted">{metaOf(group)}</div>
       </div>
       <div className="flex items-center gap-3.5 max-md:contents">
         <time
           dateTime={group.at}
-          className="font-mono text-[11.5px] whitespace-nowrap text-faint tabular-nums max-md:col-start-3 max-md:row-start-1 max-md:pt-0.5"
+          className="font-mono text-[11.5px] whitespace-nowrap text-muted tabular-nums max-md:col-start-3 max-md:row-start-1 max-md:pt-0.5"
         >
           {formatClock(group.at)}
         </time>

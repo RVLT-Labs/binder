@@ -14,6 +14,7 @@ import type {
 } from '@powersync/web'
 import { UpdateType } from '@powersync/web'
 import { ApiError, api } from '../api/client'
+import { assertDatabaseOwner, runDatabaseWork } from '../auth/localWork'
 import { pushNotice } from '../components/noticeStore'
 import { deviceId } from './ownership'
 import { rowLabel } from './rowLabel'
@@ -46,13 +47,29 @@ export function toCrudEntries(crud: CrudEntry[]): CrudEntryWire[] {
 }
 
 export class ApiConnector implements PowerSyncBackendConnector {
+  private readonly uploadNamespace: string
+
+  constructor(
+    private readonly claimDb: object,
+    private readonly userId: string,
+  ) {
+    assertDatabaseOwner(claimDb, userId)
+    this.uploadNamespace = deviceId()
+  }
+
+  private checkClaim(): void {
+    assertDatabaseOwner(this.claimDb, this.userId)
+  }
+
   async fetchCredentials(): Promise<PowerSyncCredentials | null> {
+    this.checkClaim()
     try {
       const { token, expiresAt, endpoint } = await api.get<{
         token: string
         expiresAt: string
         endpoint: string
-      }>('/sync/token')
+      }>('/sync/token', { expectedUserId: this.userId })
+      this.checkClaim()
       return { endpoint, token, expiresAt: new Date(expiresAt) }
     } catch (err) {
       // Signed out: PowerSync stops trying. Anything else (offline, 5xx) throws so it retries.
@@ -61,22 +78,34 @@ export class ApiConnector implements PowerSyncBackendConnector {
     }
   }
 
-  async uploadData(db: CommonPowerSyncDatabase): Promise<void> {
+  uploadData(db: CommonPowerSyncDatabase): Promise<void> {
+    // The SDK supplies its raw database and disconnect can stop waiting without cancelling us.
+    // Register the WHOLE callback before the first SDK/network await. Never nest facade locks.
+    return runDatabaseWork(this.claimDb, this.userId, () => this.uploadClaimedData(db))
+  }
+
+  private async uploadClaimedData(db: CommonPowerSyncDatabase): Promise<void> {
     const tx = await db.getNextCrudTransaction()
+    this.checkClaim()
     if (!tx) return
     // Device-scoped (the server logs it as `${userId}:${batchId}`); the grammar is [A-Za-z0-9_-].
-    const batchId = `${deviceId()}-${tx.transactionId ?? newId()}`
+    const batchId = `${this.uploadNamespace}-${tx.transactionId ?? newId()}`
     const chunks = toUploadChunks(toCrudEntries(tx.crud))
     const rejected: SyncRejection[] = []
     // In order, one at a time. Non-2xx throws before `complete()`, so PowerSync keeps the whole
     // transaction queued and retries it; the server recognises chunks it already applied and skips them.
     for (const [index, entries] of chunks.entries()) {
+      this.checkClaim()
       const body: SyncUploadRequest = { batchId, chunk: { index, count: chunks.length }, entries }
-      const response = await api.post<SyncUploadResponse>('/sync/upload', body)
+      const response = await api.post<SyncUploadResponse>('/sync/upload', body, {
+        expectedUserId: this.userId,
+      })
+      this.checkClaim()
       rejected.push(...response.rejected)
     }
     // Named from the local rows, which are still there until the transaction completes.
     const labels = await Promise.all(rejected.map((r) => rowLabel(db, r.table, r.id)))
+    this.checkClaim()
     rejected.forEach((r, i) => {
       pushNotice({
         kind: 'rejection',
@@ -84,6 +113,8 @@ export class ApiConnector implements PowerSyncBackendConnector {
       })
     })
     // Rejected entries are dropped locally; the sync stream then restores the server's value.
+    this.checkClaim()
     await tx.complete()
+    this.checkClaim()
   }
 }

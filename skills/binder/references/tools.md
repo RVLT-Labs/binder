@@ -207,14 +207,14 @@ Adds a department. Hints: write. Owners only.
 | `showId` | string | yes | |
 | `code` | string | yes | 1 to 8 ASCII letters or digits, starting with a letter (`/^[A-Z][A-Z0-9]{0,7}$/` after trimming and upper-casing: `props` becomes `PROPS`). |
 | `name` | string 1..60 | yes | |
-| `colour` | `#RRGGBB` | yes | |
+| `colour` | `#RRGGBB` | yes | At least 3:1 mark contrast on white; outside ΔE76 20 of RVLT red. |
 | `numberFormat` | `decimal` `point` | no | Default `decimal`. |
 
 Returns the department row; `sortOrder` is the show's highest plus 10. Errors: `conflict: A department with code X already exists`, schema error on a bad code or colour, `forbidden: Forbidden`.
 
 ### `update_department`
 
-Renames, recolours, reorders or hides a department, or changes its code or number format. Hints: write, idempotent. Owners only. Departments are never deleted: hide one and its cues stay.
+Renames, recolours, reorders or hides a department, or changes its code or number format. New colour values require at least 3:1 mark contrast on white and must stay outside ΔE76 20 of RVLT red. Unchanged legacy colours remain valid on unrelated edits; they are never silently recoloured. Hints: write, idempotent. Owners only. Departments are never deleted: hide one and its cues stay.
 
 | Parameter | Type | Required |
 |---|---|---|

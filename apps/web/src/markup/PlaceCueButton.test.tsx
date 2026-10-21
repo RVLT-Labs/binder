@@ -30,7 +30,8 @@ test('it is a red button at least 56 px high that says Place cue', () => {
   render(<PlaceCueButton />)
   const button = screen.getByRole('button', { name: 'Place cue' })
   expect(button.className).toContain('h-14')
-  expect(button.className).toContain('bg-red')
+  expect(button.className).toContain('before:h-14')
+  expect(button.className).toContain('before:bg-primary')
 })
 
 test('it places a cue at the middle of the visible page, of the chosen type, through placeCue', () => {

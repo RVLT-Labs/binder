@@ -13,7 +13,7 @@ export function TabBar({ showId, pathname }: { showId: string; pathname: string 
   const tab = (active: boolean) =>
     cn(
       'flex min-h-11 flex-1 flex-col items-center justify-center gap-[3px] text-[11px] font-semibold leading-none',
-      active ? 'text-red' : 'text-muted',
+      active ? 'text-red-text' : 'text-muted',
       focusRing,
     )
   return (

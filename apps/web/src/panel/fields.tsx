@@ -47,7 +47,7 @@ export function SelectField({
       <select
         {...props}
         className={cn(
-          'h-12 w-full appearance-none rounded-[12px] border-2 border-input bg-paper pr-8 pl-3.5 text-[16px] text-ink',
+          'h-12 min-h-11 min-w-11 w-full appearance-none rounded-[12px] border-2 border-input bg-paper pr-8 pl-3.5 text-[16px] text-ink',
           'md:h-[30px] md:rounded-[9px] md:pr-7 md:pl-[9px] md:text-[13px] md:max-[1024px]:h-10 md:max-[1024px]:text-[14px]',
           swatch && 'pl-9 font-semibold md:pl-7',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper',

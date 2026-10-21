@@ -418,7 +418,7 @@ function TagPill({ cue, tag }: { cue: MarkerCue; tag: CueTagLayout }) {
           className="cue-tag-lead"
           x={tag.leadX}
           y={tag.centreY}
-          fill={colour}
+          fill={INK}
           fontFamily={FONT_FAMILY}
           fontSize={TAG_FONT_SIZE}
           dominantBaseline="central"

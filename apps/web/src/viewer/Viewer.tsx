@@ -418,6 +418,7 @@ export function Viewer({
       pageCount={pages.length}
       onGoToPage={(n) => goTo(n - 1)}
       pageInputRef={pageInput}
+      // Density changes the face only; compact tablet/desktop targets also reserve 44 px.
       size={phone ? 'touch' : 'compact'}
       className="flex-wrap"
     />

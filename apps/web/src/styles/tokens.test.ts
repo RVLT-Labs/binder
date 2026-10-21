@@ -61,3 +61,56 @@ test('the Paper theme is retoned so text passes 4.5:1 (rvlt-designlanguage v1.2.
     expect(light).toContain(decl)
   }
 })
+
+test('B02 white-on-red actions use canonical action-red while artwork keeps core red', async () => {
+  const { buttonVariants } = await import('../components/ui/button')
+  const { badgeVariants } = await import('../components/ui/badge')
+  expect(tokens).toContain('--action-red: #d6323a')
+  expect(tokens).toContain('--action-red: #c12229')
+  expect(tokens).toContain('--color-action-red: var(--action-red)')
+  for (const role of ['primary', 'destructive', 'sidebar-primary']) {
+    expect(tokens).toContain(`--${role}: var(--action-red)`)
+  }
+  for (const variant of ['primary', 'halo'] as const) {
+    expect(buttonVariants({ variant }).split(' ')).toContain('before:bg-primary')
+  }
+  expect(badgeVariants({ status: 'primary' }).split(' ')).toContain('bg-primary')
+  const tool = readFileSync(join(import.meta.dirname, '../markup/ToolStrip.tsx'), 'utf8')
+  expect(tool).toContain('aria-pressed:bg-primary')
+  expect(tool).not.toContain('aria-pressed:bg-red ')
+})
+
+test('B04 controls have their own canonical 3:1 boundary role', () => {
+  expect(tokens).toContain('--control-line: #857a69')
+  expect(tokens).toContain('--control-line: var(--ink)')
+  expect(tokens).toContain('--input: var(--control-line)')
+  for (const file of ['checkbox', 'switch']) {
+    const source = readFileSync(join(import.meta.dirname, `../components/ui/${file}.tsx`), 'utf8')
+    expect(source).toContain('border-input')
+    expect(source).not.toContain('border-border')
+  }
+  for (const file of ['markup/ToolStrip', 'viewer/ViewerToolbar', 'revisions/VersionSwitcher']) {
+    expect(readFileSync(join(import.meta.dirname, `../${file}.tsx`), 'utf8')).toContain(
+      'border-input',
+    )
+  }
+})
+
+test('B10 red words, errors and information pills use supported text roles', async () => {
+  const { badgeVariants } = await import('../components/ui/badge')
+  expect(tokens).toContain('--red-text: #ee5a5f')
+  expect(tokens).toContain('--info: #82a8f3')
+  expect(tokens).toContain('--info: #2a65d0')
+  expect(tokens).toContain('--color-red-text: var(--red-text)')
+  expect(tokens).toContain('--color-info: var(--info)')
+  expect(badgeVariants({ status: 'info' })).toContain('text-info')
+  expect(readFileSync(join(import.meta.dirname, '../shell/TabBar.tsx'), 'utf8')).toContain(
+    'text-red-text',
+  )
+  expect(readFileSync(join(import.meta.dirname, '../auth/LoginForm.tsx'), 'utf8')).toContain(
+    "message.failed ? 'text-t-out'",
+  )
+  expect(readFileSync(join(import.meta.dirname, '../panel/ContextPanel.tsx'), 'utf8')).toContain(
+    'text-info',
+  )
+})

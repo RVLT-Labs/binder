@@ -124,7 +124,7 @@ function ExportsPage() {
         <section aria-label="Made with Binder" className="flex flex-col gap-3.5">
           <h2 className={cn(SECTION_LABEL, 'mt-2')}>
             <span>
-              Made with Binder <span className="font-normal text-faint">· newest first</span>
+              Made with Binder <span className="font-normal text-muted">· newest first</span>
             </span>
           </h2>
           <ul className={cn(card, 'm-0 list-none p-0')} aria-label="Exports">

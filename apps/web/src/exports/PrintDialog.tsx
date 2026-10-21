@@ -9,7 +9,15 @@ import {
   validateExportFilename,
 } from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
-import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
+import {
+  type ButtonHTMLAttributes,
+  type FormEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { PrintIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -51,14 +59,28 @@ export function selectionSummary(
 const HEADING = 'text-[11px] font-semibold text-muted'
 
 /** `.dx-cb-row`: 28 px rows (44 on a phone) with a 10 px gap. */
-const ROW = 'flex min-h-11 items-center gap-2.5 md:min-h-0 md:h-7'
+const ROW = 'flex min-h-11 items-center gap-2.5'
 /** `.dx-link`: a blue 12.5 px / 600 text link. */
 const PRESET =
   'rounded-sm text-[12.5px] font-semibold text-blue max-md:min-h-11 max-md:min-w-11 max-md:px-1'
+/** Link artwork stays compact; the actual button reserves its independent two-axis target. */
+export function PrintPresetButton({
+  className,
+  style,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      {...props}
+      type="button"
+      className={cn(PRESET, focusRing, className)}
+      style={{ ...style, minHeight: 44, minWidth: 44 }}
+    />
+  )
+}
+
 /** On a phone the label fills its 44 px row, so a tap anywhere on the row toggles it. */
 const LABEL_FILL = 'max-md:flex max-md:items-center max-md:self-stretch'
-/** The checkbox's invisible hit area reaches 44 px (its default is 40 inside the 2 px border). */
-const CHECK_HIT = 'after:-inset-4'
 
 const INFO_SQL = `
   SELECT d.title AS doc_title, v.version_number AS version_number, v.page_count AS page_count,
@@ -277,22 +299,18 @@ export function PrintDialog({
                   aria-label="Presets"
                   className="print-presets m-0 flex gap-3 border-0 p-0"
                 >
-                  <button
-                    type="button"
+                  <PrintPresetButton
                     aria-label="Calling script: all layers"
-                    className={cn(PRESET, focusRing)}
                     onClick={() => setPicked(new Set(callingScript(departments).map(layerKey)))}
                   >
                     All
-                  </button>
-                  <button
-                    type="button"
+                  </PrintPresetButton>
+                  <PrintPresetButton
                     disabled={!personal}
-                    className={cn(PRESET, focusRing)}
                     onClick={() => setPicked(new Set(personal ? [layerKey(personal)] : []))}
                   >
                     Only mine
-                  </button>
+                  </PrintPresetButton>
                 </fieldset>
               </div>
               <div>
@@ -302,7 +320,7 @@ export function PrintDialog({
                   return (
                     <div key={d.id} className={ROW}>
                       <Checkbox
-                        className={CHECK_HIT}
+                        className="shrink-0"
                         id={id}
                         checked={picked.has(layerKey(layer))}
                         onCheckedChange={(on) => toggle(layer, on === true)}
@@ -328,7 +346,7 @@ export function PrintDialog({
                 {personal && (
                   <div className={ROW}>
                     <Checkbox
-                      className={CHECK_HIT}
+                      className="shrink-0"
                       id={`${ids}-personal`}
                       checked={includesPersonal}
                       onCheckedChange={(on) => toggle(personal, on === true)}
@@ -343,7 +361,7 @@ export function PrintDialog({
                     >
                       Personal<span className="sr-only"> layer</span>
                     </Label>
-                    <span aria-hidden className="text-[12px] text-faint">
+                    <span aria-hidden className="text-[12px] text-muted">
                       only you
                     </span>
                     <span className="ml-auto font-mono text-[12px] tabular-nums text-muted">
@@ -435,7 +453,7 @@ export function PrintDialog({
                 ).map(([key, label, on, set]) => (
                   <div key={key} className={ROW}>
                     <Checkbox
-                      className={CHECK_HIT}
+                      className="shrink-0"
                       id={`${ids}-${key}`}
                       checked={on}
                       onCheckedChange={(next) => set(next === true)}

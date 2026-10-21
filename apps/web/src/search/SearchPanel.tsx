@@ -144,7 +144,7 @@ export function SearchPanel({
         <div className="relative min-w-0 flex-1">
           <SearchIcon
             aria-hidden
-            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint"
+            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted"
           />
           <Input
             ref={(el) => {
@@ -165,7 +165,7 @@ export function SearchPanel({
           <button
             type="button"
             aria-label="Close search"
-            className="grid size-8 shrink-0 place-items-center rounded-[8px] text-muted hover:bg-elev hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red max-md:size-11"
+            className="relative isolate grid size-8 shrink-0 place-items-center rounded-[8px] text-muted hover:before:bg-elev hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red max-md:size-11 [@media(pointer:coarse)]:size-11 before:pointer-events-none before:absolute before:top-1/2 before:left-1/2 before:-z-10 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-[inherit] before:content-[''] md:before:size-8"
             onClick={onClose}
           >
             <CloseIcon aria-hidden className="size-4" />
@@ -188,17 +188,17 @@ export function SearchPanel({
       {hits.length > 0 && query.trim() !== '' && (
         <ol
           aria-label="Search results"
-          className="search-results m-0 max-h-[min(50dvh,22rem)] list-none overflow-y-auto p-0"
+          className="search-results m-0 max-h-[min(50dvh,22rem)] list-none overflow-y-auto p-0 [@media(pointer:coarse)]:space-y-2"
         >
           {hits.map((hit, i) => (
             <li key={`${hit.pageIndex}:${hit.lineIndex}:${hit.wordStart}`}>
               <button
                 type="button"
-                className="search-result grid w-full gap-0.5 rounded-[8px] px-2 py-1.5 text-left text-[12.5px] text-ink hover:bg-elev focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red aria-[current=true]:bg-elev max-md:min-h-11"
+                className="search-result grid w-full gap-0.5 rounded-[8px] px-2 py-1.5 text-left text-[12.5px] text-ink hover:bg-elev focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red aria-[current=true]:bg-elev max-md:min-h-11 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
                 aria-current={i === active ? 'true' : undefined}
                 onClick={() => onActivate(i)}
               >
-                <span className="search-result-page font-mono text-[11px] text-faint">
+                <span className="search-result-page font-mono text-[11px] text-muted">
                   Page {hit.pageIndex + 1}
                 </span>
                 <span className="search-result-snippet text-ink-2">{hit.snippet}</span>

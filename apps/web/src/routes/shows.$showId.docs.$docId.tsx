@@ -152,6 +152,18 @@ function DocumentPage() {
   const viewerReady = ready && Boolean(version?.searchable_key) && pages.length > 0
   /** Only a ready version can be called: there is nothing to show before its pages are in. */
   const inCalling = calling && viewerReady
+  // History can restore Calling without using setCalling. Retained menu/palette callbacks
+  // must read the current mode, and an open Print must not return when Calling ends.
+  const callingNow = useRef(inCalling)
+  callingNow.current = inCalling
+  const openPrint = useCallback((opener: HTMLElement | null) => {
+    if (callingNow.current) return
+    printOpener.current = opener
+    setPrinting(true)
+  }, [])
+  useEffect(() => {
+    if (inCalling) setPrinting(false)
+  }, [inCalling])
   // While Calling covers the screen the shell's rail and bars are out of reach (focus and readers).
   useEffect(() => {
     setShellInert(inCalling)
@@ -284,7 +296,7 @@ function DocumentPage() {
     controlProps && (
       <DocumentControls
         {...controlProps}
-        print={ready ? <PrintButton /> : null}
+        print={ready && !inCalling ? <PrintButton /> : null}
         onCalling={ready && viewerReady ? () => setCalling(true) : null}
         onGoToPage={ready ? () => viewer.current?.focusPageInput() : null}
         onRenumber={
@@ -297,14 +309,7 @@ function DocumentPage() {
                 })
             : null
         }
-        onPrint={
-          ready
-            ? (opener) => {
-                printOpener.current = opener
-                setPrinting(true)
-              }
-            : null
-        }
+        onPrint={ready && !inCalling ? openPrint : null}
         history={ready?.history}
         viewerOwnsPhoneBar={Boolean(ready)}
       />
@@ -367,10 +372,7 @@ function DocumentPage() {
             documentId={doc.id}
             versionId={version.id}
             pageCount={pages.length}
-            onPrint={(opener) => {
-              printOpener.current = opener
-              setPrinting(true)
-            }}
+            onPrint={openPrint}
             calling={inCalling}
             onToggleCalling={() => setCalling(!inCalling)}
           />
@@ -391,7 +393,7 @@ function DocumentPage() {
             }
           />
           {!inCalling && controls({ history: <UndoRedoButtons /> })}
-          {printing && (
+          {!inCalling && printing && (
             <PrintDialog
               documentId={doc.id}
               versionId={version.id}
@@ -409,15 +411,12 @@ function DocumentPage() {
             renderOverlay={renderOverlay}
             thumbnails={thumbnails}
             phoneItems={
-              controlProps
+              controlProps && !inCalling
                 ? (close, opener) =>
                     documentMenuItems(
                       {
                         ...controlProps,
-                        onPrint: (el) => {
-                          printOpener.current = el
-                          setPrinting(true)
-                        },
+                        onPrint: openPrint,
                         // the phone's menu is the only way in: there is no bar button or ⇧C
                         onCalling: () => setCalling(true),
                       },

@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 
 /* ----------------------------------------------------------------------------
- * Binder tokens. Chrome tokens are RVLT Flow's generated theme (espresso dark by
- * default, .light = Paper, opt-in) from ~/rvltflow/gearflow/src/app/globals.css,
+ * Binder tokens. Chrome tokens adopt RVLT Design Language v1.3.0 (espresso dark by
+ * default, .light = Paper, opt-in), pinned in DESIGN.md,
  * minus Flow-only tokens Binder has no use for (warehouse display, gaff tape,
  * wordmark font, accordion keyframes). The page and department tokens are Binder's own (DESIGN.md 4.2-4.3).
  * Tailwind v4: direct hex / var() aliases, mapped to utilities in @theme inline.
@@ -22,6 +22,10 @@
   --line: #332c24;
   --line-2: #473e32;
   --red: #e0363d;
+  --action-red: #d6323a;
+  --red-text: #ee5a5f;
+  --info: #82a8f3;
+  --control-line: #857a69;
   --red-700: #b21f26;
   --red-soft: rgba(224, 54, 61, 0.16);
   --ok: #4fd888;
@@ -87,16 +91,16 @@
   --card-foreground: var(--ink);
   --popover: var(--card);
   --popover-foreground: var(--ink);
-  --primary: var(--red);
+  --primary: var(--action-red);
   --primary-foreground: #fff;
   --secondary: var(--paper-2);
   --secondary-foreground: var(--ink);
   --muted-foreground: var(--muted);
   --accent: var(--elev);
   --accent-foreground: var(--ink);
-  --destructive: var(--red);
+  --destructive: var(--action-red);
   --destructive-foreground: #fff;
-  --input: var(--border);
+  --input: var(--control-line);
   --ring: var(--red);
   --cream: #f5efe2;
   --cream-ink: #1d1a15;
@@ -108,7 +112,7 @@
      var() resolves at the consuming element, so .light overrides flow through. */
   --sidebar: var(--paper-2);
   --sidebar-foreground: var(--ink-2);
-  --sidebar-primary: var(--red);
+  --sidebar-primary: var(--action-red);
   --sidebar-primary-foreground: #fff;
   --sidebar-accent: var(--elev);
   --sidebar-accent-foreground: var(--ink);
@@ -131,6 +135,10 @@
   --line: #e4dac3;
   --line-2: #d8ccb0;
   --red: #c12229;
+  --action-red: #c12229;
+  --red-text: #c12229;
+  --info: #2a65d0;
+  --control-line: var(--ink);
   --red-700: #9c1b21;
   --red-soft: #fbe7e3;
   --ok: #007d36;
@@ -183,6 +191,9 @@
   --color-line: var(--line);
   --color-line-2: var(--line-2);
   --color-red: var(--red);
+  --color-action-red: var(--action-red);
+  --color-red-text: var(--red-text);
+  --color-info: var(--info);
   --color-red-700: var(--red-700);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
@@ -252,6 +263,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-control-line: var(--control-line);
   --color-ring: var(--ring);
   /* sidebar (app shell rail) → bg-sidebar, text-sidebar-foreground, border-sidebar-border… */
   --color-sidebar: var(--sidebar);

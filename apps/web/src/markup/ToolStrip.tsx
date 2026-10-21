@@ -22,12 +22,12 @@ const BUTTON = cn(
   'focus-visible:ring-offset-card',
   'disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-muted',
   // The active tool is red (DESIGN 8): live state, never decoration.
-  'aria-pressed:bg-red aria-pressed:text-primary-foreground aria-pressed:shadow-stk aria-pressed:hover:bg-red aria-pressed:hover:text-primary-foreground',
+  'aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:shadow-stk aria-pressed:hover:bg-primary aria-pressed:hover:text-primary-foreground',
 )
 /** The glyph: 19 px, and 17 px in the desktop's 34 px button (a mouse, above 1024 px). */
 const GLYPH = 'size-[19px] pointer-fine:min-[1025px]:size-[17px]'
 const FIELD = cn(
-  'h-9 rounded-[8px] border-2 border-line-2 bg-card px-2.5 font-sans text-[13px] text-ink',
+  'h-11 min-h-11 min-w-11 max-w-full rounded-[8px] border-2 border-input bg-card px-2.5 font-sans text-[13px] text-ink',
   focusRing,
   'focus-visible:ring-offset-elev',
   'disabled:cursor-not-allowed disabled:opacity-45',
@@ -93,9 +93,13 @@ function Flyout({ floating, children }: { floating: boolean; children: ReactNode
       setAt((was) => (was && was.top === top && was.left === left ? was : { top, left }))
     }
     measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    if (self.current) observer?.observe(self.current)
+    if (self.current?.parentElement) observer?.observe(self.current.parentElement)
     window.addEventListener('resize', measure)
     document.addEventListener('scroll', measure, true)
     return () => {
+      observer?.disconnect()
       window.removeEventListener('resize', measure)
       document.removeEventListener('scroll', measure, true)
     }
@@ -105,7 +109,7 @@ function Flyout({ floating, children }: { floating: boolean; children: ReactNode
       ref={self}
       className={cn(
         'z-20 rounded-[12px] border-2 border-line-2 bg-elev p-1.5 shadow-card',
-        floating ? 'fixed -translate-y-1/2' : 'absolute top-full left-0 mt-1',
+        floating ? 'fixed max-w-[calc(100vw-6rem)] -translate-y-1/2' : 'mt-2 max-w-full',
       )}
       style={floating && at ? at : undefined}
     >
@@ -164,45 +168,29 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
       </button>
     )
     return (
-      <div key={t} className="relative">
+      <div key={t} className="relative min-w-0 max-w-full">
         <Tip floating={floating} label={label} keyHint={key}>
           {button}
         </Tip>
         {t === 'cue' && tool === 'cue' && !off && (
-          <Flyout floating={floating}>
-            <select
-              aria-label="Cue type"
-              value={cueType}
-              className={FIELD}
-              onChange={(e) => setTool('cue', e.target.value as CueType)}
-            >
-              <option value="go">Go</option>
-              <option value="standby">Standby</option>
-              <option value="warn">Warn</option>
-            </select>
-            <select
-              aria-label="Cue mark"
-              value={cueMark}
-              className={cn(FIELD, 'ml-1.5')}
-              onChange={(e) => setCueMark(e.target.value as CueMark)}
-            >
-              <option value="underline">Underline</option>
-              <option value="highlight">Highlight</option>
-              <option value="line">Line</option>
-              <option value="pointer">Line with pointer</option>
-            </select>
-          </Flyout>
+          <ToolFlyout
+            floating={floating}
+            tool="cue"
+            cueType={cueType}
+            onCueTypeChange={(type) => setTool('cue', type)}
+            cueMark={cueMark}
+            onCueMarkChange={setCueMark}
+          />
         )}
         {t === 'stamp' && tool === 'stamp' && (
-          <Flyout floating={floating}>
-            <StampPicker
-              stamps={session.stamps}
-              value={stamp}
-              onChange={setStamp}
-              disabled={annotationDisabled !== null}
-              className={FIELD}
-            />
-          </Flyout>
+          <ToolFlyout
+            floating={floating}
+            tool="stamp"
+            stamps={session.stamps}
+            stamp={stamp}
+            onStampChange={setStamp}
+            disabled={annotationDisabled !== null}
+          />
         )}
       </div>
     )
@@ -224,7 +212,7 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
         aria-label="Markup tools"
         className={cn(
           // `.tools`: the card fill, a 2 px outline, radius 12, padding 6, gap 4, at 12 / 18 on the stage
-          'markup-tools m-0 flex min-w-0 items-center gap-1 rounded-[12px] border-2 border-line-2 bg-card p-1.5 shadow-card',
+          'markup-tools m-0 flex min-w-0 items-center gap-1 rounded-[12px] border-2 border-line-2 bg-card p-1.5 shadow-card pointer-coarse:gap-2',
           floating
             ? 'absolute top-[18px] left-3 z-10 max-h-[calc(100%-2.25rem)] flex-col overflow-y-auto [scrollbar-width:none]'
             : 'flex-wrap',
@@ -283,5 +271,63 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
         </div>
       )}
     </TooltipProvider>
+  )
+}
+
+/** Stateless native fields and the actual flyout container, also usable without a local session. */
+export function ToolFlyout(
+  props: { floating: boolean } & (
+    | {
+        tool: 'cue'
+        cueType: CueType
+        onCueTypeChange: (type: CueType) => void
+        cueMark: CueMark
+        onCueMarkChange: (mark: CueMark) => void
+      }
+    | {
+        tool: 'stamp'
+        stamps: string[]
+        stamp: string | null
+        onStampChange: (stamp: string) => void
+        disabled?: boolean
+      }
+  ),
+) {
+  return (
+    <Flyout floating={props.floating}>
+      {props.tool === 'cue' ? (
+        <>
+          <select
+            aria-label="Cue type"
+            value={props.cueType}
+            className={FIELD}
+            onChange={(e) => props.onCueTypeChange(e.target.value as CueType)}
+          >
+            <option value="go">Go</option>
+            <option value="standby">Standby</option>
+            <option value="warn">Warn</option>
+          </select>
+          <select
+            aria-label="Cue mark"
+            value={props.cueMark}
+            className={cn(FIELD, 'ml-1.5')}
+            onChange={(e) => props.onCueMarkChange(e.target.value as CueMark)}
+          >
+            <option value="underline">Underline</option>
+            <option value="highlight">Highlight</option>
+            <option value="line">Line</option>
+            <option value="pointer">Line with pointer</option>
+          </select>
+        </>
+      ) : (
+        <StampPicker
+          stamps={props.stamps}
+          value={props.stamp}
+          onChange={props.onStampChange}
+          disabled={props.disabled}
+          className={FIELD}
+        />
+      )}
+    </Flyout>
   )
 }

@@ -68,3 +68,36 @@ describe('ColourField', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 })
+
+it('B09 presets and native colour picker reserve real nonoverlapping 44px slots', () => {
+  render(<ColourField label="LX colour" value="#C9811F" onChange={vi.fn()} />)
+  fireEvent.click(screen.getByRole('button', { name: 'LX colour' }))
+  for (const radio of screen.getAllByRole('radio')) {
+    expect(radio.parentElement?.className).toContain('size-11')
+  }
+  expect(screen.getByLabelText('LX colour: pick any colour').className).not.toContain(
+    'md:size-[30px]',
+  )
+})
+
+it('B11 Custom colour has a visible, associated label', () => {
+  const { input } = open()
+  const label = screen.getByText('Custom colour', { selector: 'label' }) as HTMLLabelElement
+  expect(label.htmlFor).toBe(input.id)
+  expect(label.hidden).toBe(false)
+})
+
+it('B14 rejects a new mark below 3:1 against the fixed white page', () => {
+  const { input, onChange } = open()
+  fireEvent.change(input, { target: { value: '#FFFFFF' } })
+  expect(screen.getByRole('alert').textContent).toMatch(/3:1.*white page/i)
+  expect(onChange).not.toHaveBeenCalled()
+})
+
+it('B14 opening and blurring a legacy colour preserves its value with a clear warning', () => {
+  const { input, onChange } = open(vi.fn(), '#FFFFFF')
+  expect(screen.getByRole('status').textContent).toMatch(/existing colour.*3:1/i)
+  fireEvent.blur(input)
+  expect(onChange).not.toHaveBeenCalled()
+  expect(input.value).toBe('#FFFFFF')
+})

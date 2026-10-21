@@ -394,3 +394,12 @@ test('Reset to margin is full width on a phone and a 44 px target on coarse poin
   expect(className).toContain('pointer-coarse:min-h-11')
   row.anchor = null
 })
+
+test('B11 cue-number entry requests a decimal keyboard without changing decimal parsing', () => {
+  const { getByLabelText } = render(<CueEditor cueId="c1" />)
+  const input = getByLabelText('Number')
+  expect(input.getAttribute('inputmode')).toBe('decimal')
+  fireEvent.change(input, { target: { value: '12.5' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(updateCue).toHaveBeenCalledWith({}, expect.anything(), 'c1', { major: 12, minor: 50 })
+})

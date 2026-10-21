@@ -24,3 +24,6 @@ fixtures/public/generated/
 # Local dev logs and packaged skill zips
 *.log
 /skills.zip
+
+# Local audit input, remediation logs and generated verification artifacts.
+/.remediation/
