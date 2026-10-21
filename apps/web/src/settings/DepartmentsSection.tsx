@@ -319,6 +319,16 @@ function EditableRow({
           />
         </div>
       </div>
+      <div className="flex items-center gap-2 max-md:order-1 max-md:min-h-11 md:col-start-7 md:row-start-1">
+        <Checkbox
+          id={hiddenId}
+          checked={department.hidden === 1}
+          onCheckedChange={(on) => save.mutate({ hidden: on === true })}
+        />
+        <label htmlFor={hiddenId} className="text-[13px] text-ink-2 md:sr-only">
+          Hidden
+        </label>
+      </div>
       <div className={CONNECTOR_ROW}>
         <div className={CONNECTOR_FIELD}>
           <div className={CONNECTOR_LABEL}>Connector width</div>
@@ -339,20 +349,10 @@ function EditableRow({
           />
         </div>
       </div>
-      <div className="flex items-center gap-2 max-md:min-h-11 md:col-start-7 md:row-start-1">
-        <Checkbox
-          id={hiddenId}
-          checked={department.hidden === 1}
-          onCheckedChange={(on) => save.mutate({ hidden: on === true })}
-        />
-        <label htmlFor={hiddenId} className="text-[13px] text-ink-2 md:sr-only">
-          Hidden
-        </label>
-      </div>
       {error && (
         <p
           role="alert"
-          className="m-0 text-[12px] text-ink-2 md:col-span-full md:row-start-3 md:pb-2"
+          className="m-0 text-[12px] text-ink-2 max-md:order-2 md:col-span-full md:row-start-3 md:pb-2"
         >
           {error}
         </p>

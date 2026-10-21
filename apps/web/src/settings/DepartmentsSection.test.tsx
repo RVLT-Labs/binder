@@ -151,3 +151,23 @@ test('a non-owner reads the connector style as words, with no controls', () => {
   expect(rows[1]).toContain('Thin')
   expect(rows[1]).toContain('Solid')
 })
+
+test('a card reads in tab order: name, colour, number format, marker side, Hidden, then the connector controls', () => {
+  renderSection(true)
+  const inDom = [
+    screen.getByLabelText('LX name'),
+    screen.getByRole('button', { name: 'LX colour' }),
+    screen.getByRole('radiogroup', { name: 'LX number format' }),
+    screen.getByRole('radiogroup', { name: 'LX marker side' }),
+    screen.getAllByLabelText('Hidden')[0],
+    screen.getByRole('radiogroup', { name: 'LX connector width' }),
+    screen.getByRole('radiogroup', { name: 'LX connector pattern' }),
+  ]
+  // Each element comes after the one before it in the document (and so in the tab order).
+  for (let i = 1; i < inDom.length; i++) {
+    expect(
+      inDom[i - 1].compareDocumentPosition(inDom[i]) & Node.DOCUMENT_POSITION_FOLLOWING,
+      `${i}`,
+    ).toBeTruthy()
+  }
+})
