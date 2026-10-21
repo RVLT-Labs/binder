@@ -1,4 +1,13 @@
-import type { CueType, MarkerSide, WordLayer } from '@binder/shared'
+import {
+  type BubbleOffset,
+  type ConnectorStyle,
+  type CueMark,
+  type CueType,
+  DEFAULT_CONNECTOR_STYLE,
+  type MarkerSide,
+  type WordLayer,
+} from '@binder/shared'
+import type { Caret } from './caret'
 import { helveticaBoldWidth, helveticaWidth } from './helvetica'
 import type { Box } from './markers'
 
@@ -23,7 +32,50 @@ export const UNDERLINE_WIDTH = 1.5
 export const UNDERLINE_DROP = 1
 /** The on-screen fill of a selected or hovered cue's trigger words. */
 export const SELECTED_FILL_OPACITY = 0.1
+/** A highlight is the trigger words' boxes filled at this opacity (more when its cue is active). */
+export const HIGHLIGHT_OPACITY = 0.28
+export const HIGHLIGHT_OPACITY_ACTIVE = 0.4
+export const HIGHLIGHT_RADIUS = 2
+/** A highlight's fill reaches this far past each side of the word box. */
+export const HIGHLIGHT_PAD_X = 1
+/** A line or pointer is a bar this thick, reaching this far above and below the word box. */
+export const BAR_WIDTH = 1.5
+export const BAR_OVERHANG = 3
+/** A pointer's triangle (drawn by the renderers), this wide and this tall. */
+export const POINTER_WIDTH = 6
+export const POINTER_HEIGHT = 5
+/** A line or pointer with no word to sit in is a free bar this tall, centred on the cue's y. */
+export const FREE_BAR_HEIGHT = 14
+/** The thin connector: today's line, and the default for a department with no style. */
 export const LEADER_WIDTH = 0.75
+/** The connector weights in points, by `ConnectorStyle.width`. */
+const CONNECTOR_WEIGHT = { thin: LEADER_WIDTH, medium: 1.5, bold: 2.5 } as const
+/** A dashed connector repeats a dash of this many weights and a gap of `CONNECTOR_GAP`. */
+const CONNECTOR_DASH = 4
+/** The gap between dashes or dots, in weights. */
+const CONNECTOR_GAP = 2.5
+/** Parallel leaders are kept at least this far apart beyond their own thickness, in points. */
+const LEADER_CLEARANCE = 0.75
+
+/** How a connector is stroked: its width, its dash pattern (null for solid) and whether caps are round. */
+export interface ConnectorStroke {
+  width: number
+  dash: number[] | null
+  round: boolean
+}
+
+/**
+ * The stroke a department's connector style draws with, in points. Solid is plain; dashed repeats a
+ * dash of 4w and a gap of 2.5w; dotted is a zero-length dash and a gap of 2.5w drawn with round caps,
+ * so each dot is a disc as wide as the line. The screen overlay and print stamping both read this.
+ */
+export function connectorStroke(style: ConnectorStyle): ConnectorStroke {
+  const w = CONNECTOR_WEIGHT[style.width] ?? LEADER_WIDTH
+  if (style.pattern === 'dashed')
+    return { width: w, dash: [CONNECTOR_DASH * w, CONNECTOR_GAP * w], round: false }
+  if (style.pattern === 'dotted') return { width: w, dash: [0, CONNECTOR_GAP * w], round: true }
+  return { width: w, dash: null, round: false }
+}
 /** A connector that has to jog turns in a gutter this far into the margin from the text block. */
 export const LEADER_GUTTER = 2
 export const TICK_HEIGHT = 11
@@ -84,7 +136,7 @@ export function tagWidth(lead: string, number: string): number {
 
 export interface CueTagInput {
   id: string
-  /** The cue's anchor y: the tag is level with it unless it collides with the tag above. */
+  /** The cue's anchor y: the tag is level with it unless it is crowded by another tag. */
   y: number
   side: MarkerSide
   /** The department half of the tag (`LX`, `SB LX`, `W LX`). */
@@ -97,10 +149,21 @@ export interface CueTagInput {
   type: CueType
   /** The trigger words' boxes, one per line; empty when the cue is unbound or its words unknown. */
   triggerBoxes: readonly Box[]
-  /** The cue's anchor x: where an unbound cue's tick stands. */
+  /** The cue's anchor x: where an unbound cue's tick (or a free bar) stands. */
   anchorX: number
+  /** How the trigger is drawn; absent is an underline. */
+  mark?: CueMark
+  /** For a line or pointer: where the bar stands and the word it sits in; null or absent when unbound. */
+  caret?: Caret | null
   /** The cue's note, printed in one line under the tag; empty or absent for none. */
   note?: string
+  /**
+   * Where the user dragged the bubble: its centre sits at `(anchorX + dx, y + dy)` instead of in the
+   * margin. A cue with a tag takes no part in the margin layout and shows no note.
+   */
+  tag?: BubbleOffset | null
+  /** The connector's width and pattern; absent is thin and solid, today's line. */
+  connector?: ConnectorStyle
   /** Cues on one line are ordered by department sort order, then cue number, then id. */
   sortKey: { department: number; major: number; minor: number }
 }
@@ -108,10 +171,12 @@ export interface CueTagInput {
 export interface CueTagLayout {
   id: string
   side: MarkerSide
+  /** True for a bubble dragged off the margin (the input had a `tag`). */
+  moved: boolean
   /** A standby's outline is dashed. */
   dash: boolean
   outlineWidth: number
-  /** The tag's vertical centre: the cue's y, or lower when stacked under another tag. */
+  /** The tag's vertical centre: the cue's y, or above or below it when crowded by other tags. */
   centreY: number
   /** What the tag shows after fitting the margin: the lead (empty when dropped) and the number. */
   lead: string
@@ -128,15 +193,25 @@ export interface CueTagLayout {
   numberX: number
   /** The trigger words' boxes, one per line: what a selected cue fills on screen. */
   triggerBoxes: Box[]
-  /** The underline under each trigger box. */
+  /** How the trigger is drawn. */
+  mark: CueMark
+  /** A highlight's fills: the trigger boxes padded by `HIGHLIGHT_PAD_X` on each side. */
+  fills: Box[]
+  /** A line or pointer's bar (`y1` the bottom, `y2` the top, as `tick`); null for the other marks. */
+  bar: { x: number; y1: number; y2: number; pointer: boolean } | null
+  /** The underline under each trigger box (underline mark only). */
   underlines: Array<{ x1: number; x2: number; y: number }>
   /** An unbound cue's mark at its anchor. */
   tick: { x: number; y1: number; y2: number } | null
   /**
-   * The connector from the tag to the first underline (or tick) as a polyline of square joins, or
-   * null when they already meet. It always runs at the underline's y so it never crosses a glyph.
+   * The connector from the tag to the mark (the first underline or tick, the outer edge of a
+   * highlight's first fill, or a line or pointer's bar) as a polyline of square joins, or null when
+   * they already meet. It always runs at the underline's y so it never crosses a glyph. A moved
+   * bubble's is one straight segment from the tag's centre to the mark (it may cross text).
    */
   leader: Array<{ x: number; y: number }> | null
+  /** How the leader is stroked (the cue's department's connector style). */
+  stroke: ConnectorStroke
 }
 
 /**
@@ -145,12 +220,19 @@ export interface CueTagLayout {
  * the margin sheds its department code, then its type word, and only as a last resort overlaps the
  * text.
  *
- * Down each side tags are placed top to bottom in page order (higher y first, ties by department,
- * number, id). A tag stays level with its own line unless it would overlap the tag just above it;
- * then it is pushed down to 2 points below that one. A tag with a note counts as the tag plus the
- * note's 9 points, so a tag never lands on a note. Finally the stack is held inside `bounds`: a
- * tag below `minY` is lifted to it, and the tags above are lifted in turn if they would overlap;
- * nothing goes above `maxY`. The result is in the order of `cues`.
+ * Down each side tags keep their page order (higher y first, ties by department, number, id). A tag
+ * stays level with its own line unless it would overlap a neighbour; tags that crowd one another
+ * form a group, stacked 2 points apart in that order and spread up and down around their lines
+ * (centred so the group moves no further in total than it must). A tag with a note counts as the
+ * tag plus the note's 9 points, so a tag never lands on a note. Groups that then overlap merge and
+ * are centred again. The stack is held inside `bounds`: a group below `minY` is lifted to it, with
+ * the tags above lifted in turn if they would overlap, and nothing goes above `maxY`. The result is
+ * in the order of `cues`.
+ *
+ * A cue with a `tag` is a moved bubble and sits outside all of this: its centre is
+ * `(anchorX + dx, y + dy)`, held inside the page width and `bounds`; it shows the full lead and no
+ * note, joins its mark with one straight segment, and neither the stack nor the leader stagger
+ * counts it.
  */
 export function layoutCueTags(input: {
   pageWidth: number
@@ -175,9 +257,12 @@ export function layoutCueTags(input: {
     left: textEdges.left - NOTE_COLUMN_INSET,
     right: pageWidth - textEdges.right - NOTE_COLUMN_INSET,
   }
-  const notes = cues.map((c) => fitNote(c.note, columns[c.side]))
+  const isMoved = cues.map((c) => c.tag != null)
+  const notes = cues.map((c, i) => (isMoved[i] ? null : fitNote(c.note, columns[c.side])))
   const noteExtra = notes.map((n) => (n ? NOTE_HEIGHT : 0))
-  const fitted = cues.map((c) => {
+  const fitted = cues.map((c, i) => {
+    // A moved bubble is not in the margin, so it keeps its whole lead.
+    if (isMoved[i]) return { lead: c.lead, w: tagWidth(c.lead, c.number) }
     const room = (c.side === 'left' ? left : pageWidth - right) - TAG_EDGE
     // The department goes first, then the type word: the outline carries the type, but a word is
     // what survives a photocopy.
@@ -190,7 +275,7 @@ export function layoutCueTags(input: {
   for (const side of ['left', 'right'] as const) {
     const order = cues
       .map((_, i) => i)
-      .filter((i) => (cues[i] as CueTagInput).side === side)
+      .filter((i) => !isMoved[i] && (cues[i] as CueTagInput).side === side)
       .sort((a, b) => comparePlacement(cues[a] as CueTagInput, cues[b] as CueTagInput))
     order.forEach((i, k) => {
       rank.set(i, k)
@@ -199,21 +284,53 @@ export function layoutCueTags(input: {
   }
   const targets = cues.map((c) => markTarget(c))
   const offsets = leaderOffsets(cues, targets, rank)
-  return cues.map((c, i) =>
-    layoutOne(
+  return cues.map((c, i) => {
+    const { lead, w } = fitted[i] as { lead: string; w: number }
+    const movedTo = c.tag ? movedCentre(c, c.tag, w, pageWidth, bounds) : null
+    return layoutOne(
       c,
-      (fitted[i] as { lead: string }).lead,
-      (fitted[i] as { w: number }).w,
+      lead,
+      w,
       notes[i] ?? null,
-      centres[i] as number,
+      movedTo ? movedTo.y : (centres[i] as number),
       pageWidth,
       textEdges,
       offsets[i] as number,
-    ),
-  )
+      movedTo,
+    )
+  })
 }
 
-/** Sweeps one side's tags (indices in placement order) down the page, then holds them in bounds. */
+/**
+ * Where a moved bubble's centre goes: the anchor plus its offset, held so the whole pill is inside
+ * the page width and the vertical bounds (the same limits margin tags keep to).
+ */
+function movedCentre(
+  c: CueTagInput,
+  tag: BubbleOffset,
+  w: number,
+  pageWidth: number,
+  bounds: { minY: number; maxY: number },
+): { x: number; y: number } {
+  const half = TAG_HEIGHT / 2
+  return {
+    x: Math.max(w / 2, Math.min(pageWidth - w / 2, c.anchorX + tag.dx)),
+    y: Math.min(bounds.maxY - half, Math.max(bounds.minY + half, c.y + tag.dy)),
+  }
+}
+
+/**
+ * Places one side's tags (indices in placement order, top of the page first) so crowded ones spread
+ * up and down around their own lines.
+ *
+ * Every tag starts as a group of its own, level with its cue. A group's members are stacked in
+ * placement order, `TAG_HEIGHT + TAG_GAP` apart (plus a noted tag's `NOTE_HEIGHT`), and the stack is
+ * centred where its members want to be: the position that minimises the total distance they move,
+ * which is the one where the displacements add up to nothing. When a group's lowest tag overlaps the
+ * next group's highest, the two merge and the merged stack is centred again, until nothing overlaps
+ * (pool-adjacent-violators). A group is held inside `bounds` as part of placing it: lifted off the
+ * footer, kept below the top of the page, so what it then overlaps merges in as well.
+ */
 function stackSide(
   order: number[],
   cues: readonly CueTagInput[],
@@ -223,32 +340,50 @@ function stackSide(
   bounds: { minY: number; maxY: number },
 ) {
   const step = TAG_HEIGHT + TAG_GAP
-  let above: number | undefined
-  for (const i of order) {
-    const y = (cues[i] as CueTagInput).y
-    const below = above === undefined ? 0 : (extra[above] as number)
-    centres[i] =
-      above !== undefined && y > (centres[above] as number) - TAG_HEIGHT - below
-        ? (centres[above] as number) - step - below
-        : y
-    above = i
-  }
-  // Bottom up: lift what is below the floor, and whatever it then overlaps, in turn.
-  for (let k = order.length - 1; k >= 0; k--) {
-    const i = order[k] as number
-    // A note hangs below its tag, so the tag is lifted that much further off the floor.
-    const floor = bounds.minY + TAG_HEIGHT / 2 + (extra[i] as number)
-    if ((centres[i] as number) < floor) centres[i] = floor
-    const up = order[k - 1]
-    if (up === undefined) continue
-    const held = extra[up] as number
-    if ((centres[up] as number) - (centres[i] as number) < TAG_HEIGHT + held) {
-      centres[up] = (centres[i] as number) + step + held
-    }
-  }
-  // Nothing leaves the page at the top, even if a dense cluster has to overlap there.
   const ceiling = bounds.maxY - TAG_HEIGHT / 2
-  for (const i of order) if ((centres[i] as number) > ceiling) centres[i] = ceiling
+  // A note hangs below its tag, so the tag is lifted that much further off the floor.
+  const floorOf = (i: number) => bounds.minY + TAG_HEIGHT / 2 + (extra[i] as number)
+  interface Group {
+    members: number[]
+    /** Where each member sits below the group's first tag (0 for the first). */
+    offsets: number[]
+    /** The first (highest) tag's centre. */
+    top: number
+  }
+  const place = (members: number[]): Group => {
+    const offsets: number[] = []
+    let offset = 0
+    let wanted = 0
+    members.forEach((i, k) => {
+      if (k > 0) offset += step + (extra[members[k - 1] as number] as number)
+      offsets.push(offset)
+      wanted += (cues[i] as CueTagInput).y + offset
+    })
+    // The lowest tag is the one the footer can reach; the highest is the one the page top can.
+    const lowest = members[members.length - 1] as number
+    const lowestOffset = offsets[offsets.length - 1] as number
+    const top = Math.min(Math.max(wanted / members.length, floorOf(lowest) + lowestOffset), ceiling)
+    return { members, offsets, top }
+  }
+  const bottomOf = (g: Group) => g.top - (g.offsets[g.offsets.length - 1] as number)
+  const groups: Group[] = []
+  for (const i of order) {
+    let group = place([i])
+    for (let prev = groups[groups.length - 1]; prev; prev = groups[groups.length - 1]) {
+      const held = extra[prev.members[prev.members.length - 1] as number] as number
+      if (bottomOf(prev) - group.top >= TAG_HEIGHT + held) break
+      groups.pop()
+      group = place([...prev.members, ...group.members])
+    }
+    groups.push(group)
+  }
+  for (const g of groups) {
+    g.members.forEach((i, k) => {
+      // A cluster too big for the room between the footer and the top cannot be spread; it still
+      // stays on the page, overlapping, rather than leave it.
+      centres[i] = Math.min(ceiling, Math.max(g.top - (g.offsets[k] as number), floorOf(i)))
+    })
+  }
 }
 
 /** The order tags take down a side: higher on the page first, then department, number, id. */
@@ -256,17 +391,53 @@ function comparePlacement(a: CueTagInput, b: CueTagInput): number {
   return b.y - a.y || compareKeys(a, b)
 }
 
-/** Where a cue's mark ends: the left or right end of its first underline, or the bottom of its tick. */
-function markTarget(c: CueTagInput): { x: number; y: number } | null {
+/** A line or pointer's bar at a caret: the word's height plus the overhang, `y1` the bottom, `y2` the top. */
+export function barAt(caret: Caret): { x: number; y1: number; y2: number } {
+  const b = caret.box
+  return { x: caret.x, y1: b.y - BAR_OVERHANG, y2: b.y + b.h + BAR_OVERHANG }
+}
+
+/** A line or pointer's bar: at the caret (`barAt`), or free at the anchor. */
+function barOf(c: CueTagInput): { x: number; y1: number; y2: number; pointer: boolean } {
+  const pointer = c.mark === 'pointer'
+  if (c.caret) return { ...barAt(c.caret), pointer }
+  return { x: c.anchorX, y1: c.y - FREE_BAR_HEIGHT / 2, y2: c.y + FREE_BAR_HEIGHT / 2, pointer }
+}
+
+/**
+ * Where a cue's mark ends: the left or right end of its first underline (or the padded outer edge
+ * of a highlight's first fill, at the same y), the bar of a line or pointer (at the word's
+ * underline y, or the bottom of a free bar), or the bottom of a tick. A margin tag aims at the end on
+ * its department's side; a moved bubble (`nearX`, its centre) at whichever end of a multi-word underline
+ * or fill is nearest it by x, the department side on a tie. A bar and a tick are one point.
+ */
+function markTarget(c: CueTagInput, nearX?: number): { x: number; y: number } | null {
   const first = c.triggerBoxes[0]
-  if (first)
-    return { x: c.side === 'left' ? first.x : first.x + first.w, y: first.y - UNDERLINE_DROP }
+  if (c.mark === 'line' || c.mark === 'pointer') {
+    const bar = barOf(c)
+    return { x: bar.x, y: c.caret ? c.caret.box.y - UNDERLINE_DROP : bar.y1 }
+  }
+  if (first) {
+    const pad = c.mark === 'highlight' ? HIGHLIGHT_PAD_X : 0
+    const leftEnd = first.x - pad
+    const rightEnd = first.x + first.w + pad
+    const sideEnd = c.side === 'left' ? leftEnd : rightEnd
+    const otherEnd = c.side === 'left' ? rightEnd : leftEnd
+    const x =
+      nearX !== undefined && Math.abs(otherEnd - nearX) < Math.abs(sideEnd - nearX)
+        ? otherEnd
+        : sideEnd
+    return { x, y: first.y - UNDERLINE_DROP }
+  }
   return { x: c.anchorX, y: c.y - TICK_BELOW }
 }
 
 /**
  * How far each leader sits below its natural y: cues on one side that trigger on the same line of
- * text get leaders LEADER_STEP apart, in placement order, so two rules never run along one y.
+ * text get leaders staggered in placement order, so two rules never run along one y. Each leader sits
+ * below the previous one on its side and line by the larger of `LEADER_STEP` and the pair's mean
+ * thickness plus `LEADER_CLEARANCE`, so heavy connectors do not merge (for thin ones that is
+ * exactly `LEADER_STEP`, and for equal widths `w + LEADER_CLEARANCE`).
  */
 function leaderOffsets(
   cues: readonly CueTagInput[],
@@ -274,7 +445,11 @@ function leaderOffsets(
   rank: Map<number, number>,
 ): number[] {
   const out = cues.map(() => 0)
-  const sorted = cues.map((_, i) => i).sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
+  // A moved bubble has no rank: it neither is staggered nor staggers the leaders of the others.
+  const sorted = cues
+    .map((_, i) => i)
+    .filter((i) => rank.has(i))
+    .sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
   for (const i of sorted) {
     const t = targets[i]
     if (!t) continue
@@ -284,8 +459,15 @@ function leaderOffsets(
         (cues[j] as CueTagInput).side === (cues[i] as CueTagInput).side &&
         targets[j] &&
         Math.abs((targets[j] as { y: number }).y - t.y) < SAME_LINE,
-    ).length
-    out[i] = earlier * LEADER_STEP
+    )
+    const prev = earlier.at(-1)
+    if (prev === undefined) continue
+    const gap =
+      (connectorStroke((cues[prev] as CueTagInput).connector ?? DEFAULT_CONNECTOR_STYLE).width +
+        connectorStroke((cues[i] as CueTagInput).connector ?? DEFAULT_CONNECTOR_STYLE).width) /
+        2 +
+      LEADER_CLEARANCE
+    out[i] = (out[prev] as number) + Math.max(LEADER_STEP, gap)
   }
   return out
 }
@@ -308,9 +490,11 @@ function layoutOne(
   pageWidth: number,
   textEdges: { left: number; right: number },
   leaderDrop: number,
+  /** A moved bubble's centre; null for a tag in the margin. */
+  movedTo: { x: number; y: number } | null,
 ): CueTagLayout {
   const left = c.side === 'left'
-  const x = left ? TAG_EDGE : pageWidth - TAG_EDGE - w
+  const x = movedTo ? movedTo.x - w / 2 : left ? TAG_EDGE : pageWidth - TAG_EDGE - w
   const tag: Box = { x, y: centre - TAG_HEIGHT / 2, w, h: TAG_HEIGHT }
   const noteBox = note
     ? {
@@ -320,26 +504,60 @@ function layoutOne(
     : null
   const leadX = x + TAG_PAD
   const numberX = lead === '' ? leadX : leadX + helveticaWidth(lead, TAG_FONT_SIZE) + TAG_TEXT_GAP
-  const underlines = c.triggerBoxes.map((b) => ({
-    x1: b.x,
-    x2: b.x + b.w,
-    y: b.y - UNDERLINE_DROP,
-  }))
-  const first = underlines[0]
-  const tick = first
-    ? null
-    : { x: c.anchorX, y1: c.y - TICK_BELOW, y2: c.y - TICK_BELOW + TICK_HEIGHT }
-  const base = markTarget(c)
-  const leader = connector({
-    left,
-    tag,
-    centre,
-    target: base ? { x: base.x, y: base.y - leaderDrop } : null,
-    gutter: left ? textEdges.left - LEADER_GUTTER : textEdges.right + LEADER_GUTTER,
-  })
+  const mark = c.mark ?? 'underline'
+  const barred = mark === 'line' || mark === 'pointer'
+  const underlines =
+    mark === 'underline'
+      ? c.triggerBoxes.map((b) => ({ x1: b.x, x2: b.x + b.w, y: b.y - UNDERLINE_DROP }))
+      : []
+  const fills =
+    mark === 'highlight'
+      ? c.triggerBoxes.map((b) => ({
+          x: b.x - HIGHLIGHT_PAD_X,
+          y: b.y,
+          w: b.w + 2 * HIGHLIGHT_PAD_X,
+          h: b.h,
+        }))
+      : []
+  // A tick stands where a mark has no word to sit on: an unbound underline or highlight.
+  const tick =
+    !barred && c.triggerBoxes.length === 0
+      ? { x: c.anchorX, y1: c.y - TICK_BELOW, y2: c.y - TICK_BELOW + TICK_HEIGHT }
+      : null
+  const bar = barred ? barOf(c) : null
+  const base = markTarget(c, movedTo?.x)
+  const leader = movedTo
+    ? straightConnector(tag, movedTo, base, [
+        ...underlines.map((u) => ({
+          x: u.x1,
+          y: u.y - UNDERLINE_WIDTH / 2,
+          w: u.x2 - u.x1,
+          h: UNDERLINE_WIDTH,
+        })),
+        ...fills,
+        ...(tick
+          ? [
+              {
+                x: tick.x - UNDERLINE_WIDTH / 2,
+                y: tick.y1,
+                w: UNDERLINE_WIDTH,
+                h: tick.y2 - tick.y1,
+              },
+            ]
+          : []),
+        ...(bar ? barBoxes(bar, c.triggerBoxes) : []),
+      ])
+    : connector({
+        left,
+        tag,
+        centre,
+        target: base ? { x: base.x, y: base.y - leaderDrop } : null,
+        gutter: left ? textEdges.left - LEADER_GUTTER : textEdges.right + LEADER_GUTTER,
+      })
   return {
     id: c.id,
     side: c.side,
+    moved: movedTo !== null,
     dash: c.type === 'standby',
     outlineWidth: c.type === 'warn' ? TAG_OUTLINE_WARN : TAG_OUTLINE,
     centreY: centre,
@@ -350,9 +568,13 @@ function layoutOne(
     leadX,
     numberX,
     triggerBoxes: c.triggerBoxes.map((b) => ({ ...b })),
+    mark,
+    fills,
+    bar,
     underlines,
     tick,
     leader,
+    stroke: connectorStroke(c.connector ?? DEFAULT_CONNECTOR_STYLE),
   }
 }
 
@@ -382,10 +604,45 @@ function noteBoxUnder(tag: Box, text: string, left: boolean): Box {
 }
 
 /**
+ * A moved bubble's connector: one straight segment from the pill's centre (the opaque pill hides
+ * that end, so the line meets its outline) to the mark. Null when the pill covers the mark: the
+ * target point is inside it, or it touches any of the mark's drawn parts (`parts`: each underline,
+ * fill, tick, and a line or pointer's bar and word box) so a bubble dropped onto its own mark
+ * draws no line along it.
+ */
+function straightConnector(
+  tag: Box,
+  centre: { x: number; y: number },
+  target: { x: number; y: number } | null,
+  parts: readonly Box[],
+): Array<{ x: number; y: number }> | null {
+  if (!target) return null
+  const covered =
+    (target.x >= tag.x &&
+      target.x <= tag.x + tag.w &&
+      target.y >= tag.y &&
+      target.y <= tag.y + tag.h) ||
+    parts.some((p) => boxesTouch(tag, p))
+  return covered ? null : [{ x: centre.x, y: centre.y }, target]
+}
+
+/** A line or pointer's drawn parts as boxes: the bar (and a pointer's triangle) and the word it sits in. */
+function barBoxes(bar: NonNullable<CueTagLayout['bar']>, words: readonly Box[]): Box[] {
+  const top = bar.y2 + (bar.pointer ? POINTER_HEIGHT : 0)
+  const w = bar.pointer ? POINTER_WIDTH : BAR_WIDTH
+  return [{ x: bar.x - w / 2, y: bar.y1, w, h: top - bar.y1 }, ...words]
+}
+
+/** Whether two boxes overlap or touch. */
+function boxesTouch(a: Box, b: Box): boolean {
+  return a.x <= b.x + b.w && b.x <= a.x + a.w && a.y <= b.y + b.h && b.y <= a.y + a.h
+}
+
+/**
  * The connector from a tag to its mark, always at the mark's y so it never crosses a glyph. A tag
  * level with its line runs straight out, starting under the pill's curve so it meets the outline.
- * A tag pushed off its line leaves at its own centre, turns in the gutter beside the text block,
- * and runs in to the mark.
+ * A tag spread off its line (above or below it) leaves at its own centre, turns in the gutter
+ * beside the text block, and runs in to the mark.
  */
 function connector(o: {
   left: boolean

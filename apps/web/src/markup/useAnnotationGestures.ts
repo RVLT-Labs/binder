@@ -1,8 +1,9 @@
-import type { WordLayer } from '@binder/shared'
+import type { TextAnchor, WordLayer } from '@binder/shared'
 import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
+  useRef,
   useState,
 } from 'react'
 import { type ShapeAnnotation, toShapeAnnotation } from './AnnotationShape'
@@ -18,6 +19,7 @@ import type { DragSlot } from './dragGesture'
 import type { MarkupSession } from './MarkupSession'
 import type { AnnotationRow } from './markupView'
 import { toPagePoint } from './pagePoint'
+import { isRelocating } from './relocate'
 import { chosenStamp } from './StampPicker'
 import { select } from './selection'
 import { endRebind, isDragTool, useTool } from './tools'
@@ -36,6 +38,8 @@ export type Preview =
       geometry: Record<string, number>
     }
   | { kind: 'draft'; shape: ShapeAnnotation }
+  /** The words a cue-tool drag has covered so far. */
+  | { kind: 'range'; text: TextAnchor }
 
 /** How long a finished gesture's preview stays if the stored row never changes (a refused write). */
 const SETTLE_MS = 400
@@ -59,7 +63,7 @@ export interface GestureEnv {
  * a handle. Each gesture writes once, on release; until the write lands the page shows its preview.
  */
 export function useAnnotationGestures({ pageIndex, size, words, session, slot, root }: GestureEnv) {
-  const { tool, stamp, rebind } = useTool()
+  const { tool, cueType, cueMark, stamp, rebind } = useTool()
   const [preview, setPreview] = useState<Preview | null>(null)
   const annotating = !('disabled' in session.annotationTarget)
 
@@ -86,11 +90,74 @@ export function useAnnotationGestures({ pageIndex, size, words, session, slot, r
     )
   }, [])
 
-  /** A press on the empty page with a dragging tool (or "Re-select words") active. */
+  /** Set when a cue-tool drag placed its range, so the click that follows the release places nothing more. */
+  const dragPlaced = useRef(false)
+  /** True once, right after a cue-tool drag placed a range: the page's click handler skips that click. */
+  const consumeDragClick = useCallback(() => {
+    const was = dragPlaced.current
+    dragPlaced.current = false
+    return was
+  }, [])
+  const cueRange =
+    tool === 'cue' &&
+    !('disabled' in session.cueTarget) &&
+    // With Snap off a press-and-drag is not a range: the click places an unbound tick, as before.
+    session.snap &&
+    (cueMark === 'underline' || cueMark === 'highlight')
+
+  /**
+   * A press on the page with the cue tool in underline or highlight mode: a drag past the threshold
+   * selects the words it covers, shown as a preview, and the release places one cue on them. A press
+   * and release without a drag is left to the click, which places as it always did.
+   */
+  const beginCueRange = useCallback(
+    (e: ReactPointerEvent<SVGElement>, from: Point, mark: 'underline' | 'highlight') => {
+      if (!words) return
+      const rangeTo = (ev: { clientX: number; clientY: number }) => {
+        const to = toPoint(ev.clientX, ev.clientY)
+        return to ? wordRangeFromDrag(words, from, to, { wholeQuote: true }) : null
+      }
+      let settled = false
+      slot.begin(null, {
+        pointerId: e.pointerId,
+        start: { x: e.clientX, y: e.clientY },
+        capture: e.currentTarget,
+        onMove: (ev) => {
+          const text = rangeTo(ev)
+          setPreview(text ? { kind: 'range', text } : null)
+        },
+        onDrop: (ev) => {
+          const text = rangeTo(ev)
+          if (!text) return
+          settled = true
+          dragPlaced.current = true
+          settle(
+            { kind: 'range', text },
+            session.placeCueRange(pageIndex, text, cueType, mark, words),
+          )
+        },
+        onStop: () => {
+          if (!settled) setPreview(null)
+        },
+      })
+    },
+    [words, toPoint, slot, session, pageIndex, cueType, settle],
+  )
+
+  /** A press on the empty page with a dragging tool (or "Re-select words") active, or the cue tool. */
   const onSurfaceDown = useCallback(
     (e: ReactPointerEvent<SVGElement>) => {
+      dragPlaced.current = false
       const drawing = annotating && isDragTool(tool) ? tool : null
-      if (e.button !== 0 || (!drawing && !rebind)) return
+      if (e.button !== 0) return
+      if (!drawing && !rebind) {
+        // A touch screen keeps its scroll: only a mouse or pen drags a range.
+        if (!cueRange || isRelocating() || e.pointerType === 'touch') return
+        const start = toPoint(e.clientX, e.clientY)
+        if (start && (cueMark === 'underline' || cueMark === 'highlight'))
+          beginCueRange(e, start, cueMark)
+        return
+      }
       // No native text selection or image drag under a drawing gesture.
       e.preventDefault()
       const from = toPoint(e.clientX, e.clientY)
@@ -172,7 +239,20 @@ export function useAnnotationGestures({ pageIndex, size, words, session, slot, r
         },
       })
     },
-    [annotating, tool, rebind, toPoint, words, pageIndex, session, slot, settle],
+    [
+      annotating,
+      tool,
+      rebind,
+      cueRange,
+      cueMark,
+      beginCueRange,
+      toPoint,
+      words,
+      pageIndex,
+      session,
+      slot,
+      settle,
+    ],
   )
 
   /** A click that places a note or stamp where it lands; null when the active tool is neither. */
@@ -309,5 +389,13 @@ export function useAnnotationGestures({ pageIndex, size, words, session, slot, r
     [beginEdit, session, toPoint],
   )
 
-  return { preview, onSurfaceDown, onShapeDown, onHandleDown, placeByClick, toPoint }
+  return {
+    preview,
+    onSurfaceDown,
+    onShapeDown,
+    onHandleDown,
+    placeByClick,
+    consumeDragClick,
+    toPoint,
+  }
 }

@@ -1,6 +1,12 @@
-import { parseCueNumber } from '@binder/core'
+import { parseCueNumber, withMark } from '@binder/core'
 import type { Actor } from '@binder/shared'
-import { type Anchor, type CueFields, cueFieldsSchema } from '@binder/shared'
+import {
+  type Anchor,
+  CUE_MARKS,
+  type CueFields,
+  type CueMark,
+  cueFieldsSchema,
+} from '@binder/shared'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import { invalid } from '../../errors'
@@ -15,6 +21,7 @@ import {
   updateCue,
 } from '../../services'
 import type { Executor } from '../../services/executor'
+import { MAX_BUBBLE_OFFSET, MAX_CHAR_OFFSET, restyleAnchor } from '../../services/placement'
 import { CONFIRM_DESCRIPTION, CONFIRM_THRESHOLD, confirmationRequired } from '../confirm'
 import type { McpContext } from '../context'
 import { guarded, jsonResult, pageArgs, paginate } from '../results'
@@ -33,11 +40,48 @@ const NUMBER_DESCRIPTION =
   'The cue number as text with at most two decimals, like "14" or "14.5" (14.50 is the same). ' +
   'Omit on create to take the next number from the neighbours in script order.'
 
+const markEnum = z.enum(CUE_MARKS as [CueMark, ...CueMark[]])
+const MARK_DESCRIPTION =
+  'How the cue marks its place in the script: underline (the default), highlight (a translucent ' +
+  'fill over the whole quote), line (a vertical bar at a character position) or pointer (a bar ' +
+  'with a small triangle on top).'
+const CHAR_OFFSET_DESCRIPTION =
+  'Only with mark line or pointer: how many characters into the first word of the anchor the bar ' +
+  `sits, from 0 (before the first character) up to the word's length (after its last); at most ` +
+  `${MAX_CHAR_OFFSET}. Default 0.`
+
+const bubbleOffset = z.object({
+  dx: z
+    .number()
+    .finite()
+    .min(-MAX_BUBBLE_OFFSET)
+    .max(MAX_BUBBLE_OFFSET)
+    .describe('PDF points to the right of the cue mark (negative: left).'),
+  dy: z
+    .number()
+    .finite()
+    .min(-MAX_BUBBLE_OFFSET)
+    .max(MAX_BUBBLE_OFFSET)
+    .describe('PDF points above the cue mark (negative: below); y grows upwards.'),
+})
+const BUBBLE_DESCRIPTION =
+  "Where the cue's number bubble sits, as an offset from the cue's point (x, y) in PDF points " +
+  `(each at most ${MAX_BUBBLE_OFFSET} either way). Without it the bubble sits in the page margin, ` +
+  'level with its line. A moved bubble draws on the page where it was put, joined to its mark by ' +
+  'a straight line, without its note. Cues only.'
+
 export const placement = z.object({
   documentId: id('document'),
   pageIndex: z.number().int().min(0).max(100000).describe('Zero-based page index.'),
   x: z.number().finite().min(0).max(14400).describe('PDF points from the left.'),
   y: z.number().finite().min(0).max(14400).describe('PDF points from the bottom.'),
+  mark: markEnum
+    .optional()
+    .describe(
+      `${MARK_DESCRIPTION} A placement by coordinates binds no word, so a line or pointer is a ` +
+        'free bar at (x, y) and an underline or highlight falls back to a tick. Cues only.',
+    ),
+  bubble: bubbleOffset.optional().describe(BUBBLE_DESCRIPTION),
 })
 export type Placement = z.infer<typeof placement>
 
@@ -56,7 +100,10 @@ export async function resolveDepartment(
 export async function anchorFor(db: Executor, actor: Actor, p: Placement): Promise<Anchor> {
   const { document } = await getDocument(db, actor, { documentId: p.documentId })
   if (!document.currentVersionId) throw invalid('the document has no current version')
-  return { ...p, documentVersionId: document.currentVersionId, status: 'ok' }
+  const { mark, bubble, ...point } = p
+  const anchor: Anchor = { ...point, documentVersionId: document.currentVersionId, status: 'ok' }
+  const marked = mark ? withMark(anchor, mark) : anchor
+  return bubble ? { ...marked, tag: { dx: bubble.dx, dy: bubble.dy } } : marked
 }
 
 function numberOf(text: string): { major: number; minor: number } {
@@ -153,7 +200,8 @@ export function registerCueTools(server: McpServer, mcp: McpContext): void {
         'a script without pixel coordinates. Quote the text as it appears in the document ' +
         '(case, punctuation and a hyphenated line end are forgiven when there is no exact match). ' +
         'The document defaults to the libretto. Returns {status: "placed", cue, match} with the ' +
-        'cue anchored at the first word of the quote. If the quote appears more than once nothing ' +
+        'cue anchored at the first word of the quote (mark highlight: over the whole quote; mark ' +
+        'line or pointer: a bar at charOffset characters into the first word). If the quote appears more than once nothing ' +
         'is written and you get {status: "ambiguous", matches: [{occurrence, pageIndex, snippet}]}: ' +
         'call again with occurrence (1-based, from that list) or nearPageIndex (the occurrence ' +
         'nearest that page). A quote that is nowhere in the document is an error. Without a ' +
@@ -186,6 +234,22 @@ export function registerCueTools(server: McpServer, mcp: McpContext): void {
         label: fields.label.optional(),
         type: fields.type.optional(),
         notes: fields.notes.optional(),
+        mark: markEnum
+          .optional()
+          .describe(
+            `${MARK_DESCRIPTION} A highlight covers the whole matched quote, not just its first ` +
+              'eight words.',
+          ),
+        charOffset: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_CHAR_OFFSET)
+          .optional()
+          .describe(
+            `${CHAR_OFFSET_DESCRIPTION} An error with underline or highlight, or past the end of ` +
+              'the first word of the quote.',
+          ),
       }),
       annotations: CREATE,
     },
@@ -249,8 +313,17 @@ export function registerCueTools(server: McpServer, mcp: McpContext): void {
       title: 'Update cue',
       description:
         'Changes a cue: its number, label, type, notes, colour, department (needs edit rights on ' +
-        'both layers) or anchor ({documentId, pageIndex, x, y}; null makes it unplaced). Fields ' +
-        'you omit are unchanged. Returns the cue.',
+        'both layers) or anchor ({documentId, pageIndex, x, y, mark?}; null makes it unplaced). ' +
+        'mark and charOffset restyle the cue where it stands, keeping its quote: mark switches ' +
+        'between underline, highlight, line and pointer, and charOffset moves a line or pointer ' +
+        'within the first word of its anchor (x follows). With an anchor too, the new anchor is ' +
+        'applied first and mark, charOffset and bubble on top of it (anchor null with them is an ' +
+        'error). A new anchor without a bubble puts the bubble back in the margin. bubble moves ' +
+        "only the cue's number bubble, as an offset from its mark, leaving the cue where it is " +
+        '(bubble null puts it back in the margin). mark, charOffset and bubble are errors on an ' +
+        'unplaced cue, and charOffset is an error on a cue bound to no word or without a line or ' +
+        'pointer mark. ' +
+        'Fields you omit are unchanged. Returns the cue.',
       inputSchema: z.object({
         cueId: id('cue'),
         number: z.string().optional().describe(NUMBER_DESCRIPTION),
@@ -260,23 +333,53 @@ export function registerCueTools(server: McpServer, mcp: McpContext): void {
         colour: fields.colour.optional(),
         department: z.string().min(1).optional().describe(DEPARTMENT_DESCRIPTION),
         anchor: placement.nullable().optional(),
+        bubble: bubbleOffset
+          .nullable()
+          .optional()
+          .describe(
+            `${BUBBLE_DESCRIPTION} Applied to the cue's current (or new) anchor; null puts the ` +
+              'bubble back in the margin. An error on an unplaced cue.',
+          ),
+        mark: markEnum
+          .optional()
+          .describe(`${MARK_DESCRIPTION} Applied to the cue's current (or new) anchor.`),
+        charOffset: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_CHAR_OFFSET)
+          .optional()
+          .describe(
+            `${CHAR_OFFSET_DESCRIPTION} Clamped to the word. An error on a cue bound to no word, ` +
+              'or one whose mark is not a line or pointer.',
+          ),
       }),
       annotations: UPDATE,
     },
-    guarded(async ({ cueId, number, department, anchor, ...rest }, ctx) => {
-      const actor = mcp.actor(ctx)
-      const current = await getCue(db, actor, { cueId })
-      const patch: Partial<CueFields> = { ...rest }
-      if (number !== undefined) Object.assign(patch, numberOf(number))
-      if (department !== undefined) {
-        patch.departmentId = await resolveDepartment(db, actor, current.showId, department)
-      }
-      if (anchor !== undefined) {
-        patch.anchor = anchor === null ? null : await anchorFor(db, actor, anchor)
-      }
-      await updateCue(db, actor, { cueId, patch })
-      return jsonResult(await getCue(db, actor, { cueId }))
-    }),
+    guarded(
+      async ({ cueId, number, department, anchor, mark, charOffset, bubble, ...rest }, ctx) => {
+        const actor = mcp.actor(ctx)
+        const current = await getCue(db, actor, { cueId })
+        const patch: Partial<CueFields> = { ...rest }
+        if (number !== undefined) Object.assign(patch, numberOf(number))
+        if (department !== undefined) {
+          patch.departmentId = await resolveDepartment(db, actor, current.showId, department)
+        }
+        if (anchor !== undefined) {
+          patch.anchor = anchor === null ? null : await anchorFor(db, actor, anchor)
+        }
+        if (mark !== undefined || charOffset !== undefined || bubble !== undefined) {
+          patch.anchor = await restyleAnchor(db, blobs, current.anchor, {
+            anchor: patch.anchor,
+            mark,
+            charOffset,
+            bubble,
+          })
+        }
+        await updateCue(db, actor, { cueId, patch })
+        return jsonResult(await getCue(db, actor, { cueId }))
+      },
+    ),
   )
 
   server.registerTool(

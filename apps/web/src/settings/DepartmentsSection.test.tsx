@@ -6,10 +6,16 @@ import { DepartmentsSection, firstUnusedColour } from './DepartmentsSection'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() }))
 vi.mock('../api/client', () => ({ api }))
+const show = vi.hoisted(() => ({ settings: null as string | null }))
 vi.mock('@powersync/react', () => ({
-  usePowerSync: () => ({ execute: vi.fn(), getOptional: vi.fn(async () => ({ settings: null })) }),
+  usePowerSync: () => ({
+    execute: vi.fn(),
+    getOptional: vi.fn(async () => ({ settings: show.settings })),
+  }),
   useQuery: (sql: string) => ({
-    data: sql.includes('FROM cues') ? [{ department_id: 'd-lx', n: 61 }] : [{ settings: null }],
+    data: sql.includes('FROM cues')
+      ? [{ department_id: 'd-lx', n: 61 }]
+      : [{ settings: show.settings }],
   }),
 }))
 
@@ -39,6 +45,7 @@ function renderSection(editable: boolean, departments = DEPARTMENTS) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  show.settings = null
   api.patch.mockResolvedValue({})
   api.post.mockResolvedValue({})
 })
@@ -116,4 +123,51 @@ test('a non-owner reads the table and has no controls', () => {
   expect(row).toContain('10.50')
   expect(row).toContain('Left')
   expect(row).toContain('hidden')
+})
+
+test('the owner has a connector width and pattern control on every department card', () => {
+  show.settings = '{"connectorStyles":{"d-snd":{"width":"bold","pattern":"dashed"}}}'
+  renderSection(true)
+  expect(screen.getByRole('radiogroup', { name: 'LX connector width' })).toBeTruthy()
+  expect(screen.getByRole('radiogroup', { name: 'LX connector pattern' })).toBeTruthy()
+  const bold = within(screen.getByRole('radiogroup', { name: 'SND connector width' })).getByRole(
+    'radio',
+    { name: 'Bold' },
+  )
+  expect(bold.getAttribute('aria-checked')).toBe('true')
+  const dashed = within(
+    screen.getByRole('radiogroup', { name: 'SND connector pattern' }),
+  ).getByRole('radio', { name: 'Dashed' })
+  expect(dashed.getAttribute('aria-checked')).toBe('true')
+})
+
+test('a non-owner reads the connector style as words, with no controls', () => {
+  show.settings = '{"connectorStyles":{"d-lx":{"width":"bold","pattern":"dashed"}}}'
+  renderSection(false, [dept({}), dept({ id: 'd-snd', code: 'SND', name: 'Sound' })])
+  expect(screen.queryAllByRole('radio')).toHaveLength(0)
+  const rows = screen.getAllByRole('listitem').map((li) => li.textContent ?? '')
+  expect(rows[0]).toContain('Bold')
+  expect(rows[0]).toContain('Dashed')
+  expect(rows[1]).toContain('Thin')
+  expect(rows[1]).toContain('Solid')
+})
+
+test('a card reads in tab order: name, colour, number format, marker side, Hidden, then the connector controls', () => {
+  renderSection(true)
+  const inDom = [
+    screen.getByLabelText('LX name'),
+    screen.getByRole('button', { name: 'LX colour' }),
+    screen.getByRole('radiogroup', { name: 'LX number format' }),
+    screen.getByRole('radiogroup', { name: 'LX marker side' }),
+    screen.getAllByLabelText('Hidden')[0],
+    screen.getByRole('radiogroup', { name: 'LX connector width' }),
+    screen.getByRole('radiogroup', { name: 'LX connector pattern' }),
+  ]
+  // Each element comes after the one before it in the document (and so in the tab order).
+  for (let i = 1; i < inDom.length; i++) {
+    expect(
+      inDom[i - 1].compareDocumentPosition(inDom[i]) & Node.DOCUMENT_POSITION_FOLLOWING,
+      `${i}`,
+    ).toBeTruthy()
+  }
 })

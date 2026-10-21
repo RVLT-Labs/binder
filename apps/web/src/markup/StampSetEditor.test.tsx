@@ -9,6 +9,9 @@ let settings: string | null
 const db = {
   execute: vi.fn(async (_sql: string, _params: unknown[]) => {}),
   getOptional: vi.fn(async () => ({ settings })),
+  // The settings writers read and write inside one write transaction.
+  writeTransaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
+    fn({ getOptional: db.getOptional, execute: db.execute }),
 }
 vi.mock('@powersync/react', () => ({
   usePowerSync: () => db,

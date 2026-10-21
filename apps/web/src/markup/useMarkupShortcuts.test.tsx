@@ -1,10 +1,13 @@
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { setTool, useTool } from './tools'
+import { setCueMark, setTool, useTool } from './tools'
 import { isEditableTarget, modalIsOpen, useMarkupShortcuts } from './useMarkupShortcuts'
 
+const placeCue = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('./MarkupSession', () => ({
   useMarkupSession: () => ({
+    placeCue,
+    hover: { current: { pageIndex: 1, point: { x: 5, y: 6 } } },
     showId: 's1',
     versionReadOnly: null,
     annotationTarget: { layer: { kind: 'department', id: 'lx' } },
@@ -79,4 +82,15 @@ test('with a modal dialog open, keys pressed on its checkbox do not reach the ma
   dialog.removeAttribute('open')
   press(document.body, 'a')
   expect(tool).toBe('arrow')
+})
+
+test('the c shortcut places with the current mark', () => {
+  render(<Harness />)
+  act(() => {
+    setTool('cue', 'warn')
+    setCueMark('pointer')
+  })
+  press(document.body, 'c')
+  expect(placeCue).toHaveBeenCalledWith(1, { x: 5, y: 6 }, 'warn', undefined, 'pointer')
+  act(() => setCueMark('underline'))
 })

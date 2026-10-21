@@ -2,8 +2,12 @@ import {
   type Anchor,
   type AnnotationFields,
   type AnnotationType,
+  type BubbleOffset,
+  type ConnectorStyle,
   type CueFields,
+  type CueMark,
   type CueType,
+  connectorStyle,
   type LayerRef,
   layerKey,
   type MarkerSide,
@@ -14,6 +18,8 @@ import {
 } from '@binder/shared'
 import { formatCueNumber } from '../cues/numbering'
 import { DEFAULT_NOTE_FONT, DEFAULT_STAMP_FONT, DEFAULT_STROKE } from '../markup/annotationLayout'
+import type { Caret } from '../markup/caret'
+import { markInputs } from '../markup/cueMarks'
 import { type TextExtent, textExtent } from '../markup/cueTags'
 import { type Box, markerLead, markerTypeWord } from '../markup/markers'
 import { wordBoxes } from '../markup/wordBoxes'
@@ -42,10 +48,18 @@ export type StampItem =
       colour: string
       /** The page margin the department's tags sit in. */
       side: MarkerSide
+      /** How the department's connector (bubble to mark) is drawn; thin and solid by default. */
+      connector: ConnectorStyle
       /** Crowded tags are laid out in this order: department sort order, then cue number. */
       sortKey: { department: number; major: number; minor: number }
       /** The trigger words' boxes, one per line; empty when unbound or the page's words are unknown. */
       triggerBoxes: Box[]
+      /** How the trigger is marked: underlined, highlighted, or a line or pointer at a character. */
+      mark: CueMark
+      /** A line or pointer's character boundary; null for the other marks, unbound, or no words. */
+      caret: Caret | null
+      /** Where the bubble was dragged to, from the anchor; null when it sits in the margin. */
+      tag: BubbleOffset | null
       /** The page's text block, which tags stay out of; null when its words are unknown. */
       textExtent: TextExtent | null
     }
@@ -82,7 +96,7 @@ export interface StampInclude {
   standbyWarn?: boolean
   /** False draws no annotations (highlights, notes, shapes, stamps). */
   annotations?: boolean
-  /** False prints no cue note under the tags. */
+  /** False prints no cue note under the tags (a moved bubble never prints one). */
   cueNotes?: boolean
 }
 
@@ -98,7 +112,7 @@ export interface StampInput {
     numberFormat: NumberFormat
     sortOrder: number
   }>
-  /** The show's settings: `markerSides` says which margin each department's tags sit in. */
+  /** The show's settings: `markerSides` says which margin each department's tags sit in and `connectorStyles` how their connectors are drawn. */
   settings: Record<string, unknown>
   /** The word layers of the pages that have a bound cue or highlight, by page index. */
   wordLayers: ReadonlyMap<number, WordLayer>
@@ -159,6 +173,7 @@ export function buildStampItems(input: StampInput): StampItem[] {
     const dept = departments.get(c.departmentId)
     if (!dept) continue
     const words = input.wordLayers.get(c.anchor.pageIndex)
+    const { mark, triggerBoxes, caret } = markInputs(words, c.anchor)
     items.push({
       kind: 'cue',
       id: c.id,
@@ -172,12 +187,17 @@ export function buildStampItems(input: StampInput): StampItem[] {
       numberInk: PAGE_INK,
       colour: dept.colour,
       side: markerSide(input.settings, dept.id),
+      connector: connectorStyle(input.settings, dept.id),
       sortKey: { department: dept.sortOrder, major: c.major, minor: c.minor },
-      triggerBoxes: words && c.anchor.text ? wordBoxes(words, c.anchor.text) : [],
+      triggerBoxes,
+      mark,
+      caret,
+      tag: c.anchor.tag ?? null,
       textExtent: textExtent(words),
     })
     const note = c.notes.replace(/\s+/g, ' ').trim()
-    if (include.cueNotes && note !== '') {
+    // A bubble moved onto the script draws no note: it would hide the words under it.
+    if (include.cueNotes && note !== '' && !c.anchor.tag) {
       items.push({
         kind: 'cue-note',
         cueId: c.id,

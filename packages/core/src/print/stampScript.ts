@@ -1,10 +1,12 @@
 import type { PaperSize } from '@binder/shared'
 import {
   appendBezierCurve,
+  BlendMode,
   closePath,
   degrees,
   fillAndStroke,
   fill as fillPath,
+  LineCapStyle,
   lineTo,
   moveTo,
   PDFDocument,
@@ -37,11 +39,15 @@ import {
   wrapText,
 } from '../markup/annotationLayout'
 import {
+  BAR_WIDTH,
   type CueTagInput,
   type CueTagLayout,
-  LEADER_WIDTH,
+  HIGHLIGHT_OPACITY,
+  HIGHLIGHT_RADIUS,
   layoutCueTags,
   NOTE_FONT_SIZE,
+  POINTER_HEIGHT,
+  POINTER_WIDTH,
   TAG_FONT_SIZE,
   TAG_RADIUS,
   UNDERLINE_WIDTH,
@@ -130,6 +136,15 @@ function colourOf(hex: string) {
   return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255)
 }
 
+/**
+ * A rounded rectangle as an SVG path with its top-left corner at the origin, y pointing down (as
+ * `drawSvgPath` reads it), `w` wide, `h` tall, corners of radius `r`.
+ */
+function roundedRectPath(w: number, h: number, r: number): string {
+  const k = r * 0.5523
+  return `M ${r} 0 L ${w - r} 0 C ${w - r + k} 0 ${w} ${r - k} ${w} ${r} L ${w} ${h - r} C ${w} ${h - r + k} ${w - r + k} ${h} ${w - r} ${h} L ${r} ${h} C ${r - k} ${h} 0 ${h - r + k} 0 ${h - r} L 0 ${r} C 0 ${r - k} ${r - k} 0 ${r} 0 Z`
+}
+
 /** Draws in displayed space on one page: every point and rotation goes through the page frame. */
 class DisplayedPage {
   private readonly turn
@@ -194,17 +209,33 @@ class DisplayedPage {
       cx + dx * Math.cos(rad) - dy * Math.sin(rad),
       cy + dx * Math.sin(rad) + dy * Math.cos(rad),
     )
-    const k = r * 0.5523
-    const path = `M ${r} 0 L ${w - r} 0 C ${w - r + k} 0 ${w} ${r - k} ${w} ${r} L ${w} ${h - r} C ${w} ${h - r + k} ${w - r + k} ${h} ${w - r} ${h} L ${r} ${h} C ${r - k} ${h} 0 ${h - r + k} 0 ${h - r} L 0 ${r} C 0 ${r - k} ${r - k} 0 ${r} 0 Z`
-    this.page.drawSvgPath(path, {
-      x: corner.x,
-      y: corner.y,
-      rotate: degrees(this.frame.rotation + angle),
+    this.svgRoundedRect(corner, angle, w, h, r, {
       color: o.fill,
       opacity: o.fillOpacity,
       borderColor: o.stroke,
       borderWidth: o.strokeWidth,
       borderOpacity: 1,
+    })
+  }
+
+  /**
+   * A rounded rectangle through `drawSvgPath`, which keeps opacity and blend mode in an ExtGState.
+   * `corner` is its top-left corner in user space; it is turned `angle` degrees on top of the
+   * page's own rotation.
+   */
+  private svgRoundedRect(
+    corner: { x: number; y: number },
+    angle: number,
+    w: number,
+    h: number,
+    r: number,
+    o: Parameters<PDFPage['drawSvgPath']>[1],
+  ) {
+    this.page.drawSvgPath(roundedRectPath(w, h, r), {
+      ...o,
+      x: corner.x,
+      y: corner.y,
+      rotate: degrees(this.frame.rotation + angle),
     })
   }
 
@@ -232,6 +263,7 @@ class DisplayedPage {
       stroke?: ReturnType<typeof rgb>
       strokeWidth?: number
       dash?: number[]
+      blendMode?: BlendMode
     },
   ) {
     const p = displayedToUser(this.frame, x, y)
@@ -246,6 +278,7 @@ class DisplayedPage {
       borderColor: o.stroke,
       borderWidth: o.stroke ? (o.strokeWidth ?? 1) : 0,
       borderDashArray: o.dash,
+      blendMode: o.blendMode,
     })
   }
 
@@ -276,17 +309,27 @@ class DisplayedPage {
     y2: number,
     colour: ReturnType<typeof rgb>,
     width: number,
+    /** A dash pattern (on, off, ...) in points; absent is a plain stroke. */
+    dash?: number[],
+    /** Whether the ends are round. Absent keeps the default (round); false gives butt ends. */
+    round?: boolean,
   ) {
     this.page.drawLine({
       start: displayedToUser(this.frame, x1, y1),
       end: displayedToUser(this.frame, x2, y2),
       thickness: width,
       color: colour,
-      lineCap: 1,
+      dashArray: dash,
+      lineCap: round === false ? LineCapStyle.Butt : LineCapStyle.Round,
     })
   }
 
-  /** A white-or-coloured rounded rectangle, filled and/or outlined, in displayed space. */
+  /**
+   * A white-or-coloured rounded rectangle, filled and/or outlined, in displayed space. A fill with
+   * `fillOpacity` or a `blendMode` set (even to 1 or Normal) is drawn through the page's graphics
+   * state (an ExtGState) and takes no outline: `stroke`, `strokeWidth` and `dash` are ignored there.
+   * Without them it is plain path operators and may be outlined.
+   */
   roundedRect(
     x: number,
     y: number,
@@ -295,11 +338,21 @@ class DisplayedPage {
     r: number,
     o: {
       fill?: ReturnType<typeof rgb>
+      fillOpacity?: number
       stroke?: ReturnType<typeof rgb>
       strokeWidth?: number
       dash?: number[]
+      blendMode?: BlendMode
     },
   ) {
+    if (o.fill && (o.blendMode !== undefined || o.fillOpacity !== undefined)) {
+      this.blendedRoundedRect(x, y, w, h, r, {
+        fill: o.fill,
+        fillOpacity: o.fillOpacity,
+        blendMode: o.blendMode,
+      })
+      return
+    }
     const k = r * 0.5523
     const u = (dx: number, dy: number) => displayedToUser(this.frame, dx, dy)
     const corner = (c1: [number, number], c2: [number, number], to: [number, number]) => {
@@ -327,6 +380,28 @@ class DisplayedPage {
       both ? fillAndStroke() : o.fill ? fillPath() : strokePath(),
       popGraphicsState(),
     )
+  }
+
+  /** `roundedRect` for a fill that is translucent or blended (fill only): pdf-lib keeps those in an ExtGState. */
+  private blendedRoundedRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    radius: number,
+    o: {
+      fill: ReturnType<typeof rgb>
+      fillOpacity?: number
+      blendMode?: BlendMode
+    },
+  ) {
+    // drawSvgPath's origin is the shape's top-left corner with y pointing down.
+    const corner = displayedToUser(this.frame, x, y + h)
+    this.svgRoundedRect(corner, 0, w, h, Math.min(radius, w / 2, h / 2), {
+      color: o.fill,
+      opacity: o.fillOpacity,
+      blendMode: o.blendMode,
+    })
   }
 
   /** A filled polygon through displayed points. */
@@ -358,8 +433,9 @@ interface PlacedCue {
 
 /**
  * The cues of one page, laid out together so crowded tags stack inside the page, clear of the
- * footer. Underlines and connectors go down first, under the annotations as on screen; the opaque
- * tags go on last. Print never fills the trigger words: the script stays as it was, underlined.
+ * footer. Fills, underlines, bars and connectors go down first, under the annotations as on
+ * screen; the opaque tags go on last. Only a highlight mark fills the trigger words, translucently
+ * and multiplied, so the script text stays black; the other marks leave the script as it was.
  */
 function layoutCues(
   pageWidth: number,
@@ -377,9 +453,14 @@ function layoutCues(
     typeWord: c.typeWord,
     number: toWinAnsi(c.number),
     triggerBoxes: c.triggerBoxes,
+    mark: c.mark,
+    caret: c.caret,
     anchorX: c.x,
+    tag: c.tag,
+    connector: c.connector,
     sortKey: c.sortKey,
-    note: toWinAnsi(notes.get(c.id)?.text ?? ''),
+    // A moved bubble sits on the script, where a note would hide words.
+    note: c.tag ? '' : toWinAnsi(notes.get(c.id)?.text ?? ''),
   }))
   const layouts = layoutCueTags({
     pageWidth,
@@ -397,12 +478,42 @@ function layoutCues(
 
 const noteColourOf = (note: CueNoteItem | undefined) => (note ? colourOf(note.colour) : null)
 
+/** A pointer's triangle sits above the bar's top and points down at it. */
+function drawBar(
+  d: DisplayedPage,
+  bar: NonNullable<CueTagLayout['bar']>,
+  colour: ReturnType<typeof rgb>,
+) {
+  d.line(bar.x, bar.y1, bar.x, bar.y2, colour, BAR_WIDTH)
+  if (!bar.pointer) return
+  const top = bar.y2 + POINTER_HEIGHT
+  d.polygon(
+    [
+      [bar.x, bar.y2],
+      [bar.x - POINTER_WIDTH / 2, top],
+      [bar.x + POINTER_WIDTH / 2, top],
+    ],
+    colour,
+  )
+}
+
 function drawTrigger(d: DisplayedPage, t: CueTagLayout, colour: ReturnType<typeof rgb>) {
+  // Multiply keeps black script text black under the tint; the fill is translucent too.
+  for (const f of t.fills)
+    d.roundedRect(f.x, f.y, f.w, f.h, HIGHLIGHT_RADIUS, {
+      fill: colour,
+      fillOpacity: HIGHLIGHT_OPACITY,
+      blendMode: BlendMode.Multiply,
+    })
   for (const u of t.underlines) d.line(u.x1, u.y, u.x2, u.y, colour, UNDERLINE_WIDTH)
   if (t.tick) d.line(t.tick.x, t.tick.y1, t.tick.x, t.tick.y2, colour, UNDERLINE_WIDTH)
+  if (t.bar) drawBar(d, t.bar, colour)
   for (let i = 1; t.leader && i < t.leader.length; i++) {
     const [a, b] = [t.leader[i - 1], t.leader[i]] as Array<{ x: number; y: number }>
-    d.line(a.x, a.y, b.x, b.y, colour, LEADER_WIDTH)
+    // Each segment starts its pattern afresh. A solid connector keeps the default stroke exactly.
+    if (t.stroke.dash)
+      d.line(a.x, a.y, b.x, b.y, colour, t.stroke.width, t.stroke.dash, t.stroke.round)
+    else d.line(a.x, a.y, b.x, b.y, colour, t.stroke.width)
   }
 }
 

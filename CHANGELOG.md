@@ -7,7 +7,48 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 
 ## [Unreleased]
 
+### Added
+- Cue mark styles. A cue is drawn as an underline (as before, and the default), a highlight (a translucent
+  fill in the department colour, 28% and 40% while selected), a line (a bar on a character boundary, so a cue
+  can sit in the middle of a word) or a line with a pointer. The mark is chosen per cue: a `Cue mark` choice
+  beside the type in the cue tool's flyout, and a `Mark` control in the cue editor. The highlight prints too
+  (a multiply-blended fill, so black text stays black); this relaxes the old "print never fills" rule for the
+  highlight only. MCP: `place_cue_at_text` takes `mark` and `charOffset`, and `create_cue` / `update_cue`
+  accept `mark`. History reads a mark change as "restyled". The data lives in the cue's `anchor` JSON (`mark`
+  and `text.offset`), so there is no migration. Spec: `docs/superpowers/specs/2026-10-20-cue-marker-styles.md`.
+  - Compatibility: a web client cached from before this change does not know the new anchor fields and drops
+    them when it moves a cue, so that cue goes back to an underline, and a moved bubble goes back to the
+    margin (the old client drops its `tag` too), until the client is reloaded (Reload in the update prompt). Nothing is lost on the server for cues nobody moves.
+
+- A cue's number bubble can be moved off the margin. Drag the bubble of the selected cue to put it anywhere on
+  the page, or nudge it with Alt+arrow keys (1 pt, 10 pt with Shift; plain arrows still turn the page); the cue editor has a `Bubble` row that
+  says "In the margin" or "Moved" with a `Reset to margin` button. A moved bubble takes no part in the margin
+  spread, is joined to its mark by one straight leader, draws no note, and prints where it was put. History
+  reads it as "bubble moved". MCP: `update_cue` takes `bubble: {dx, dy}` (`null` resets it) and the
+  coordinates `anchor` of `create_cue` / `update_cue` accepts `bubble`. The offset is stored in the cue's
+  anchor as `tag`, so there is no migration.
+
+- A connector style per department. The owner picks a width (Thin 0.75 pt, the default, Medium 1.5 pt or Bold
+  2.5 pt) and a pattern (Solid, the default, Dashed or Dotted) for each department's connector, the line from
+  a cue's bubble to its mark, with the `Connector width` and `Connector pattern` controls in the Departments
+  section of Show settings; everyone else reads them as words. It draws the same on screen, in browser print
+  and in the server export. Parallel leaders on one line keep at least 1.5 pt apart, more when they are
+  heavier. MCP: `update_show` settings carry `connectorStyles`
+  (`{<departmentId>: {width, pattern}}`); each missing or invalid field falls back to its default (thin, solid). The data lives
+  in the show's settings JSON, so there is no migration.
+
 ### Changed
+- Dragging a cue's bubble no longer moves the cue; it moves only the bubble. To move the cue, drag its mark
+  (with the Select tool) or use "Move to...".
+- Crowded margin bubbles now spread up and down around their own lines instead of only drifting down the
+  page, so each bubble stays near its line (two cues on one line sit 8 pt above and 8 pt below it). Tags that
+  do not overlap stay level with their lines. The same layout runs on screen, in browser print and in server
+  export, so crowded bubbles in existing shows sit slightly differently on screen and on paper than before;
+  nothing stored changes.
+- Re-anchoring after a script revision no longer shortens a matched quote to eight words, so an annotation
+  highlight whose quote is longer than eight words keeps its full range instead of shrinking.
+- A cue's underline range that was cut at 400 characters (a long drag with the cue tool) re-anchors as
+  `approximate`, as a cut highlight does, instead of shrinking silently.
 - Guard retained local CRUD completion handles and read callbacks against session changes; close
   Print when history restores Calling; reserve 44 px comparison/tool option fields and room in their containers.
 - Adopt canonical RVLT v1.3.0 authority and contrast roles, preserving Binder's fixed white page,
@@ -26,6 +67,10 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   (the floor) instead of 10.5 px, and the opt-in Paper theme is retoned so every text pairing passes 4.5:1
   (`--ok`/`--green`, `--warn`, `--rep`, `--blue`, `--muted`, `--faint`, `--coral`, `--teal`, `--lime`). The dark
   theme is unchanged. Recorded in the `DESIGN.md` decisions log.
+- Changing a show setting twice in quick succession (a connector's width, then its pattern; or a marker side and
+  a connector style) no longer loses the first change: the settings editors read and write the show's settings
+  in one local transaction. Tab order on a department row now runs marker side, Hidden, then the connector
+  controls.
 
 ### Known issues
 Listed in full, with their fixes, in `docs/superpowers/records/2026-10-16-ui-restyle-rulings.md` under "Known
@@ -35,6 +80,12 @@ issues and open follow-ups". The ones worth knowing:
 - The offline banner takes layout space, so the document stage shifts by about 56 px when the network flaps.
 - In Calling mode the strip's page counter lags after a keypad jump until the next scroll.
 - On an archived show, the phone script keeps a disabled Place cue button whose tooltip covers script text.
+- A highlight or underline whose quote was cut at 400 characters and whose range crosses a page is not flagged
+  `approximate` when a revision re-anchors it, so it can shrink to the part that fits without landing in the
+  review list.
+- On a touch screen the cue tool places a cue with a tap: a finger cannot drag a range because the page scrolls.
+  To highlight several words use an Apple Pencil, or place an underline and switch its Mark to Highlight in the
+  cue editor.
 
 ## 2026-10-17: fixes, license and housekeeping (`d8ecf93`)
 

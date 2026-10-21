@@ -42,6 +42,14 @@ const GEOMETRY_DESCRIPTION =
 
 /** The anchor point, plus the quote a highlight is bound to. */
 const annotationPlacement = placement.extend({
+  mark: z
+    .never({ error: 'annotations take no mark; only cues do' })
+    .optional()
+    .describe('Not accepted: marks belong to cues, not annotations.'),
+  bubble: z
+    .never({ error: 'annotations take no bubble; only cues do' })
+    .optional()
+    .describe('Not accepted: bubbles belong to cues, not annotations.'),
   text: z
     .object({
       quote: fields.anchor.shape.text.unwrap().shape.quote,

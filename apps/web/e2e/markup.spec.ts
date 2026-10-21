@@ -3,7 +3,17 @@ import type { Anchor } from '@binder/shared'
 import { expect, type Page, test } from '@playwright/test'
 import { NO_DEPARTMENT_HINT } from '../src/markup/activeDepartment'
 import { readRun, storageStateFor } from './env'
-import { clickAt, clientPoint, type Line, lineOf, pageText, withUsers } from './markupHelpers'
+import {
+  clickAt,
+  clientPoint,
+  type Line,
+  lineOf,
+  pageText,
+  selectTool,
+  triggerOf,
+  withUsers,
+  zoomOutTo,
+} from './markupHelpers'
 
 /**
  * Cue markup on the short libretto (three text pages) that global setup uploaded. Every write goes
@@ -181,9 +191,10 @@ test('dragging the cue to page 2 moves it for both users', async ({ browser }) =
     const page2 = lineOf((await pageText(a.page, 1)).words, 1)
     const id = await placeWithTool(a.page, 0, page1)
 
-    // Drag the selected marker onto a line of page 2.
-    const from = await marker(a.page, id).boundingBox()
-    if (!from) throw new Error('marker not on screen')
+    // Drag the selected cue's mark (its underlined words) onto a line of page 2.
+    await selectTool(a.page)
+    const from = await triggerOf(a.page, id).boundingBox()
+    if (!from) throw new Error('mark not on screen')
     const to = await clientPoint(a.page, 1, page2.x, page2.centre + 4)
     await a.page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await a.page.mouse.down()
@@ -207,6 +218,109 @@ test('dragging the cue to page 2 moves it for both users', async ({ browser }) =
       .toEqual(moved)
     await expect(b.page.locator(`[data-page-index="1"] [data-cue-id="${id}"]`)).toBeVisible()
     await expect(b.page.locator(`[data-page-index="0"] [data-cue-id="${id}"]`)).toHaveCount(0)
+  })
+})
+
+test('dragging the bubble moves only the bubble, Alt+arrow keys nudge it, and plain arrows still turn the page', async ({
+  browser,
+}) => {
+  await withUsers(browser, ['owner', 'sndEditor'], async ([a, b]) => {
+    await a.page.getByLabel('Active layer LX').check()
+    await zoomOutTo(a.page)
+    const { words } = await pageText(a.page, 0)
+    const id = await placeWithTool(a.page, 0, lineOf(words, 3))
+    await expect(marker(b.page, id)).toBeVisible({ timeout: 5_000 })
+    const before = (await localCue(a.page, id))?.anchor
+    expect(before?.tag).toBeUndefined()
+    const centreOf = async (page: Page) => {
+      const box = await marker(page, id).locator('rect.cue-tag-body').boundingBox()
+      if (!box) throw new Error('tag not on screen')
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    }
+
+    // Drag the selected tag onto the text a good way from its line.
+    const start = await centreOf(a.page)
+    const target = await clientPoint(a.page, 0, 300, lineOf(words, 8).centre)
+    await a.page.mouse.move(start.x, start.y)
+    await a.page.mouse.down()
+    await a.page.mouse.move(target.x, target.y, { steps: 12 })
+    // Mid-drag the pill is previewed at the pointer; the cue's mark has not moved.
+    await expect(a.page.locator('.cue-bubble-preview')).toHaveCount(1)
+    await expect(a.page.locator('.cue-drag-ghost')).toHaveCount(0)
+    await a.page.mouse.up()
+
+    // Only the tag changed: x, y, text and everything else are as placed.
+    await expect.poll(async () => (await localCue(a.page, id))?.anchor?.tag).toBeDefined()
+    const after = (await localCue(a.page, id))?.anchor
+    const { tag, ...rest } = after ?? ({} as Anchor)
+    expect(rest).toEqual(before)
+    expect(after?.x).toBe(before?.x)
+    expect(after?.y).toBe(before?.y)
+    expect(after?.text).toEqual(before?.text)
+    // The pill is now drawn where it was dropped (it was picked up by its centre).
+    await expect(a.page.locator('.cue-bubble-preview')).toHaveCount(0)
+    await expect
+      .poll(async () => {
+        const c = await centreOf(a.page)
+        return Math.hypot(c.x - target.x, c.y - target.y)
+      })
+      .toBeLessThan(2)
+    // B draws it there too, with the same tag.
+    await expect
+      .poll(async () => (await localCue(b.page, id))?.anchor?.tag, { timeout: 5_000 })
+      .toEqual(tag)
+
+    // The keyboard: with the tag focused, Alt+ArrowDown three times and Alt+Shift+ArrowRight once.
+    await marker(a.page, id).focus()
+    const scrollTop = () =>
+      a.page.evaluate(
+        () => document.querySelector('[data-page-index="0"]')?.getBoundingClientRect().top ?? 0,
+      )
+    const top = await scrollTop()
+    await a.page.keyboard.press('Alt+ArrowDown')
+    await expect
+      .poll(async () => (await localCue(a.page, id))?.anchor?.tag?.dy)
+      .toBeCloseTo((tag?.dy ?? 0) - 1, 1)
+    await a.page.keyboard.press('Alt+ArrowDown')
+    await a.page.keyboard.press('Alt+ArrowDown')
+    await a.page.keyboard.press('Alt+Shift+ArrowRight')
+    await expect
+      .poll(async () => (await localCue(a.page, id))?.anchor?.tag)
+      .toEqual({
+        dx: expect.closeTo((tag?.dx ?? 0) + 10, 1),
+        dy: expect.closeTo((tag?.dy ?? 0) - 3, 1),
+      })
+    expect(await scrollTop()).toBe(top)
+    // Still the same cue, still not moved.
+    expect((await localCue(a.page, id))?.anchor?.x).toBe(before?.x)
+    expect((await localCue(a.page, id))?.anchor?.y).toBe(before?.y)
+
+    // A plain arrow on the focused tag is not a nudge: it turns the page, as it did before bubbles moved.
+    const nudged = (await localCue(a.page, id))?.anchor?.tag
+    const position = a.page.getByLabel('Page position')
+    await expect(position).toHaveText(/^1 \//)
+    await marker(a.page, id).focus()
+    await a.page.keyboard.press('ArrowRight')
+    await expect(position).toHaveText(/^2 \//)
+    await a.page.waitForTimeout(600)
+    expect((await localCue(a.page, id))?.anchor?.tag).toEqual(nudged)
+    // `]` walks to the cue, selects it and focuses its tag (and shows its page); the arrow then turns
+    // the page, not the bubble.
+    await a.page.keyboard.press('Escape')
+    for (let n = 0; n < 12; n += 1) {
+      await a.page.keyboard.press(']')
+      if ((await marker(a.page, id).getAttribute('aria-pressed')) === 'true') break
+    }
+    await expect(marker(a.page, id)).toBeFocused()
+    await expect(position).toHaveText(/^1 \//)
+    await a.page.keyboard.press('ArrowRight')
+    await expect(position).toHaveText(/^2 \//)
+    await a.page.waitForTimeout(600)
+    expect((await localCue(a.page, id))?.anchor?.tag).toEqual(nudged)
+
+    await marker(a.page, id).focus()
+    await a.page.keyboard.press('Delete')
+    await expect.poll(() => localCue(a.page, id)).toBeNull()
   })
 })
 
@@ -241,8 +355,8 @@ test("B (SND only) cannot drag A's LX cue and has SND and personal as the only a
     await expect(editor.getByRole('button', { name: 'Delete cue' })).toBeDisabled()
 
     // Dragging does nothing: no ghost, and the anchor stays put on both devices.
-    const from = await marker(b.page, id).boundingBox()
-    if (!from) throw new Error('marker not on screen')
+    const from = await triggerOf(b.page, id).boundingBox()
+    if (!from) throw new Error('mark not on screen')
     await b.page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await b.page.mouse.down()
     await b.page.mouse.move(from.x + 40, from.y + 120, { steps: 8 })
@@ -593,9 +707,10 @@ test('a drag ends cleanly when a collaborator deletes the cue mid-drag', async (
     const id = await placeWithTool(a.page, 0, lineOf((await pageText(a.page, 0)).words, 14))
     await expect(marker(b.page, id)).toBeVisible({ timeout: 5_000 })
 
-    // A picks the selected marker up and holds it.
-    const from = await marker(a.page, id).boundingBox()
-    if (!from) throw new Error('marker not on screen')
+    // A picks the selected cue's mark up and holds it.
+    await selectTool(a.page)
+    const from = await triggerOf(a.page, id).boundingBox()
+    if (!from) throw new Error('mark not on screen')
     await a.page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await a.page.mouse.down()
     await a.page.mouse.move(from.x + 60, from.y + 80, { steps: 6 })

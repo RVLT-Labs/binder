@@ -1,15 +1,27 @@
 import { describe, expect, test } from 'vitest'
 import {
+  BAR_OVERHANG,
+  BAR_WIDTH,
+  barAt,
   type CueTagInput,
   type CueTagLayout,
+  connectorStroke,
   DEFAULT_MARGIN,
+  FREE_BAR_HEIGHT,
+  HIGHLIGHT_OPACITY,
+  HIGHLIGHT_OPACITY_ACTIVE,
+  HIGHLIGHT_PAD_X,
+  HIGHLIGHT_RADIUS,
   LEADER_GUTTER,
   LEADER_STEP,
+  LEADER_WIDTH,
   layoutCueTags,
   NOTE_COLUMN_INSET,
   NOTE_FONT_SIZE,
   NOTE_HEIGHT,
   NOTE_MIN_COLUMN,
+  POINTER_HEIGHT,
+  POINTER_WIDTH,
   TAG_EDGE,
   TAG_FONT_SIZE,
   TAG_GAP,
@@ -103,7 +115,7 @@ describe('placement in the margin', () => {
   })
 })
 
-describe('crowding: a collision sweep down the page, in page order', () => {
+describe('crowding: tags stack in page order, 2 points apart', () => {
   const sort = (department: number, major: number, minor = 0) => ({ department, major, minor })
 
   test('tags that do not collide stay exactly on their lines', () => {
@@ -111,7 +123,7 @@ describe('crowding: a collision sweep down the page, in page order', () => {
     expect(tags.map((t) => t.centreY)).toEqual([500, 484, 400])
   })
 
-  test('a tag that would overlap the one above is pushed to 2 points below it, flush at the same x', () => {
+  test('overlapping tags are stacked 2 points apart in page order, flush at the same x, centred around their lines', () => {
     const [a, b, c] = layout([
       cue('a', { sortKey: sort(0, 10) }),
       cue('b', { y: 500, number: '2', sortKey: sort(1, 2) }),
@@ -120,13 +132,16 @@ describe('crowding: a collision sweep down the page, in page order', () => {
     if (!a || !b || !c) throw new Error('tags')
     expect([a.tag.x, b.tag.x, c.tag.x]).toEqual([4, 4, 4])
     expect(TAG_GAP).toBe(2)
-    expect(a.centreY).toBe(500)
-    expect(b.centreY).toBe(500 - (TAG_HEIGHT + TAG_GAP))
-    expect(c.centreY).toBe(500 - 2 * (TAG_HEIGHT + TAG_GAP))
+    // Lines at 500, 500, 498; stacked 16 apart the group wants its first tag at the mean of
+    // 500 + 0, 500 + 16 and 498 + 32, so the three move no further in total than they must.
+    const top = (500 + 516 + 530) / 3
+    expect(a.centreY).toBeCloseTo(top)
+    expect(b.centreY).toBeCloseTo(top - (TAG_HEIGHT + TAG_GAP))
+    expect(c.centreY).toBeCloseTo(top - 2 * (TAG_HEIGHT + TAG_GAP))
     expect(a.tag.y - (b.tag.y + b.tag.h)).toBeCloseTo(TAG_GAP)
   })
 
-  test('on the right they stack in the right margin, ending 4 points inside the edge', () => {
+  test('on the right they stack in the right margin, ending 4 points inside the edge, around their line', () => {
     const [a, b] = layout([
       cue('a', { side: 'right', sortKey: sort(0, 10) }),
       cue('b', { side: 'right', y: 500, number: '11', sortKey: sort(0, 11) }),
@@ -134,7 +149,8 @@ describe('crowding: a collision sweep down the page, in page order', () => {
     if (!a || !b) throw new Error('tags')
     expect(a.tag.x + a.tag.w).toBeCloseTo(WIDTH - 4)
     expect(b.tag.x + b.tag.w).toBeCloseTo(WIDTH - 4)
-    expect(b.centreY).toBe(500 - (TAG_HEIGHT + TAG_GAP))
+    expect(a.centreY).toBe(500 + (TAG_HEIGHT + TAG_GAP) / 2)
+    expect(b.centreY).toBe(500 - (TAG_HEIGHT + TAG_GAP) / 2)
   })
 
   test('on one line the order is department sort order, then cue number, then id, whatever the input order', () => {
@@ -157,17 +173,18 @@ describe('crowding: a collision sweep down the page, in page order', () => {
       cue('snd5', { y: 400, number: '5', sortKey: sort(1, 5) }),
     ])
     if (!lx10 || !lx11 || !snd5) throw new Error('tags')
-    // Page order: line A's two tags first (LX then SND), line B's below both.
-    expect(lx10.centreY).toBe(400)
-    expect(snd5.centreY).toBe(384)
+    // Page order: line A's two tags first (LX then SND), line B's below both. The three crowd, so
+    // they are one group stacked 16 apart around the mean of 400, 416 and 420 (= 412).
+    expect(lx10.centreY).toBe(412)
+    expect(snd5.centreY).toBe(396)
     expect(lx11.centreY).toBeLessThan(snd5.centreY)
-    expect(lx11.centreY).toBe(368)
+    expect(lx11.centreY).toBe(380)
     // Never in the wrong order down the margin.
     const down = [lx10, snd5, lx11].map((t) => t.centreY)
     expect(down).toEqual([...down].sort((p, q) => q - p))
   })
 
-  test('I1: dense consecutive lines keep their order and drift only as far as they must', () => {
+  test('I1: dense consecutive lines keep their order and drift only as far as they must, around their lines', () => {
     const lines = [400, 388, 376, 364, 352, 340]
     const tags = layout(lines.map((y, i) => cue(`c${i}`, { y, number: String(i) })))
     const centres = tags.map((t) => t.centreY)
@@ -175,8 +192,10 @@ describe('crowding: a collision sweep down the page, in page order', () => {
     for (let i = 1; i < centres.length; i++) {
       expect((centres[i - 1] as number) - (centres[i] as number)).toBeGreaterThanOrEqual(TAG_HEIGHT)
     }
-    // 12 pt lines: each tag is pushed to 16 below the one above, so the drift is 4 pt a line.
-    expect(centres).toEqual([400, 384, 368, 352, 336, 320])
+    // 12 pt lines: the tags are 16 apart, so the drift is 4 pt a line, shared out above and below
+    // the lines: the first tag rises 10 and the last falls 10, and the total displacement is zero.
+    expect(centres).toEqual([410, 394, 378, 362, 346, 330])
+    expect(centres.reduce((sum, c, i) => sum + c - (lines[i] as number), 0)).toBe(0)
   })
 
   test('tags a full height apart, or on opposite sides, do not stack', () => {
@@ -184,20 +203,234 @@ describe('crowding: a collision sweep down the page, in page order', () => {
     expect(tags.map((t) => t.centreY)).toEqual([500, 500 - TAG_HEIGHT, 500])
   })
 
-  test('a stacked tag keeps its own connector, which leaves its own tag and jogs to its own underline', () => {
+  test('a stacked tag keeps its own connector, which leaves its own tag and jogs to its own underline when the tag is out of reach', () => {
     const boxes = [{ x: 300, y: 495, w: 40, h: 10 }]
     const [a, b] = layout([
       cue('a', { triggerBoxes: boxes, sortKey: sort(0, 1) }),
       cue('b', { triggerBoxes: boxes, y: 500, sortKey: sort(0, 2) }),
     ])
     if (!a || !b) throw new Error('tags')
-    // The tag on its own line runs straight out to its underline.
-    expect(a.leader?.map((p) => p.y)).toEqual([494, 494])
-    // The pushed one leaves its tag at the tag's centre and meets the underline in the gutter.
-    expect(b.leader?.[0]).toEqual({ x: expect.closeTo(b.tag.x + b.tag.w), y: b.centreY })
-    expect(b.leader).toHaveLength(4)
+    // Two cues on the line at 500 spread to 508 and 492. The lower tag still reaches its underline
+    // and runs straight out (at the second cue's parallel leader y, 1.5 pt below the first).
     expect(b.centreY).toBeLessThan(a.centreY)
+    expect(b.leader?.map((p) => p.y)).toEqual([492.5, 492.5])
+    // The one spread above leaves its own tag at the tag's centre and meets its underline in the gutter.
+    expect(a.leader?.[0]).toEqual({ x: expect.closeTo(a.tag.x + a.tag.w), y: a.centreY })
+    expect(a.leader).toHaveLength(4)
+    expect(a.leader?.at(-1)?.y).toBe(494)
+    expect(a.underlines[0]?.y).toBe(494)
     expect(b.underlines[0]?.y).toBe(494)
+  })
+})
+
+describe('spreading: crowded tags spread up and down around their own lines', () => {
+  const sort = (department: number, major: number, minor = 0) => ({ department, major, minor })
+  const STEP = TAG_HEIGHT + TAG_GAP
+  /** n cues of one department on one line, in cue-number order. */
+  const onLine = (n: number, y = 500, over: Partial<CueTagInput> = {}) =>
+    Array.from({ length: n }, (_, i) =>
+      cue(`c${i}`, { y, number: String(i + 1), sortKey: sort(0, i + 1), ...over }),
+    )
+
+  test('tags that do not overlap stay exactly on their lines', () => {
+    const tags = layout([cue('a', { y: 500 }), cue('b', { y: 484 }), cue('c', { y: 400 })])
+    expect(tags.map((t) => t.centreY)).toEqual([500, 484, 400])
+    // Two clusters far apart and a lone tag between them: the lone tag does not move.
+    const apart = layout([
+      ...onLine(2, 700),
+      cue('mid', { y: 600, sortKey: sort(0, 50) }),
+      ...onLine(2, 500).map((c) => ({ ...c, id: `x${c.id}` })),
+    ])
+    expect(apart.find((t) => t.id === 'mid')?.centreY).toBe(600)
+  })
+
+  test('two cues on one line end up 8 pt above and 8 pt below it, the higher in placement order above', () => {
+    const [a, b] = layout(onLine(2))
+    expect(a?.centreY).toBe(508)
+    expect(b?.centreY).toBe(492)
+    expect((a?.centreY ?? 0) - (b?.centreY ?? 0)).toBe(STEP)
+  })
+
+  test('three on one line are 16 pt apart centred on the line', () => {
+    const [a, b, c] = layout(onLine(3))
+    expect([a?.centreY, b?.centreY, c?.centreY]).toEqual([516, 500, 484])
+    // Tag centres 16 apart: the gap between neighbouring pills is 2 pt.
+    expect((a?.tag.y ?? 0) - ((b?.tag.y ?? 0) + TAG_HEIGHT)).toBeCloseTo(TAG_GAP)
+  })
+
+  test("a group's unconstrained total displacement is zero", () => {
+    const cases = [
+      onLine(4),
+      onLine(5, 300),
+      [cue('a', { y: 500, sortKey: sort(0, 1) }), cue('b', { y: 497, sortKey: sort(0, 2) })],
+      [
+        cue('a', { y: 500, sortKey: sort(0, 1) }),
+        cue('b', { y: 492, sortKey: sort(0, 2) }),
+        cue('c', { y: 480, sortKey: sort(0, 3) }),
+        cue('d', { y: 479, sortKey: sort(0, 4) }),
+      ],
+    ]
+    for (const cues of cases) {
+      const tags = layout(cues)
+      const moved = tags.reduce((sum, t, i) => sum + (t.centreY - (cues[i] as CueTagInput).y), 0)
+      expect(moved).toBeCloseTo(0, 9)
+    }
+  })
+
+  test('groups that overlap after centring merge and re-centre (a lone tag between two clusters)', () => {
+    // Two on a line at 520 and two on a line at 480, 40 apart, and one at 500 between them.
+    // Each pair spreads to +/-8, which would overlap the middle tag; all five become one group.
+    const cues = [
+      cue('a1', { y: 520, sortKey: sort(0, 1) }),
+      cue('a2', { y: 520, sortKey: sort(0, 2) }),
+      cue('m', { y: 500, sortKey: sort(0, 3) }),
+      cue('b1', { y: 480, sortKey: sort(0, 4) }),
+      cue('b2', { y: 480, sortKey: sort(0, 5) }),
+    ]
+    const tags = layout(cues)
+    const down = tags.map((t) => t.centreY)
+    for (let i = 1; i < down.length; i++)
+      expect((down[i - 1] as number) - (down[i] as number)).toBeCloseTo(STEP)
+    // The merged group is centred: the middle tag, which is on the middle line, stays level.
+    expect(down[2]).toBeCloseTo(500)
+    expect(down.reduce((s, y, i) => s + y - (cues[i] as CueTagInput).y, 0)).toBeCloseTo(0)
+  })
+
+  test('placement order is kept: a tag earlier in the order is never below the next', () => {
+    const cues = [
+      cue('a', { y: 400, sortKey: sort(0, 1) }),
+      cue('b', { y: 396, sortKey: sort(0, 2) }),
+      cue('c', { y: 392, sortKey: sort(0, 3) }),
+      cue('d', { y: 350, sortKey: sort(0, 4) }),
+      cue('e', { y: 349, sortKey: sort(0, 5) }),
+    ]
+    const tags = layout(cues)
+    for (let i = 1; i < tags.length; i++)
+      expect((tags[i - 1] as CueTagLayout).centreY).toBeGreaterThan(
+        (tags[i] as CueTagLayout).centreY,
+      )
+  })
+
+  test('within a group the spacing is exactly TAG_HEIGHT + TAG_GAP (+ NOTE_HEIGHT under a noted tag) and between groups tags never overlap', () => {
+    const cues = [
+      cue('a', { y: 600, sortKey: sort(0, 1) }),
+      cue('b', { y: 598, sortKey: sort(0, 2), note: 'Ride the pad' }),
+      cue('c', { y: 597, sortKey: sort(0, 3) }),
+      cue('d', { y: 500, sortKey: sort(0, 4) }),
+      cue('e', { y: 499, sortKey: sort(0, 5) }),
+      cue('f', { y: 400, sortKey: sort(0, 6) }),
+    ]
+    const [a, b, c, d, e, f] = layout(cues) as CueTagLayout[] as [
+      CueTagLayout,
+      CueTagLayout,
+      CueTagLayout,
+      CueTagLayout,
+      CueTagLayout,
+      CueTagLayout,
+    ]
+    expect(a.centreY - b.centreY).toBeCloseTo(STEP)
+    expect(b.centreY - c.centreY).toBeCloseTo(STEP + NOTE_HEIGHT)
+    expect(d.centreY - e.centreY).toBeCloseTo(STEP)
+    expect(f.centreY).toBe(400)
+    // Between groups: c's bottom edge is far above d's top edge.
+    for (const [hi, lo] of [
+      [c, d],
+      [e, f],
+    ] as const)
+      expect(hi.centreY - lo.centreY).toBeGreaterThanOrEqual(TAG_HEIGHT)
+  })
+
+  test('a group near the footer is lifted off it, a group at the top is held on the page, and a cluster squeezed between them still stays on the page', () => {
+    const floor = 19
+    const near = layout(onLine(3, 22), WIDE, { minY: floor, maxY: 800 })
+    // Spread around 22 the lowest would sit at 6, under the footer: the stack is lifted 20 pt.
+    expect(near.map((t) => t.centreY)).toEqual([58, 42, 26])
+    for (const t of near) expect(t.tag.y).toBeGreaterThanOrEqual(floor)
+    // Lifted just enough: the lowest tag rests on the footer.
+    expect(Math.min(...near.map((t) => t.tag.y))).toBeCloseTo(floor)
+    expect(near.map((t) => t.id)).toEqual(['c0', 'c1', 'c2'])
+    expect(near[0]?.centreY).toBeGreaterThan(near[1]?.centreY ?? 0)
+    expect(near[1]?.centreY).toBeGreaterThan(near[2]?.centreY ?? 0)
+    const top = layout(onLine(3, 797), WIDE, { minY: 0, maxY: 800 })
+    for (const t of top) expect(t.tag.y + t.tag.h).toBeLessThanOrEqual(800)
+    expect(Math.max(...top.map((t) => t.tag.y + t.tag.h))).toBeCloseTo(800)
+    const squeezed = layout(onLine(5, 40), WIDE, { minY: 19, maxY: 70 })
+    for (const t of squeezed) {
+      expect(t.tag.y).toBeGreaterThanOrEqual(19)
+      expect(t.tag.y + t.tag.h).toBeLessThanOrEqual(70)
+    }
+  })
+
+  test('input order does not matter', () => {
+    const cues = [
+      ...onLine(3, 500),
+      cue('x', { y: 497, number: '9', sortKey: sort(1, 9) }),
+      cue('y', { y: 300, number: '8', sortKey: sort(0, 8) }),
+    ]
+    const byId = (list: CueTagInput[]) =>
+      Object.fromEntries(layout(list).map((t) => [t.id, t.centreY]))
+    const forward = byId(cues)
+    expect(byId([...cues].reverse())).toEqual(forward)
+    expect(byId([cues[3], cues[0], cues[4], cues[2], cues[1]] as CueTagInput[])).toEqual(forward)
+  })
+
+  test('right-side tags spread the same way, and the two sides are independent', () => {
+    const left = layout(onLine(3))
+    const right = layout(onLine(3, 500, { side: 'right' }))
+    expect(right.map((t) => t.centreY)).toEqual(left.map((t) => t.centreY))
+    for (const t of right) expect(t.tag.x + t.tag.w).toBeCloseTo(WIDTH - 4)
+    const both = layout([...onLine(3), cue('r', { side: 'right', y: 500 })])
+    expect(both[3]?.centreY).toBe(500)
+    expect(both.slice(0, 3).map((t) => t.centreY)).toEqual([516, 500, 484])
+  })
+
+  test('any mix of lines keeps the order and never overlaps tags or notes (a seeded scatter)', () => {
+    let seed = 12345
+    const next = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648
+      return seed / 2147483648
+    }
+    for (let round = 0; round < 40; round++) {
+      const n = 2 + Math.floor(next() * 14)
+      const cues = Array.from({ length: n }, (_, i) =>
+        cue(`c${i}`, {
+          y: 200 + Math.round(next() * 300),
+          number: String(i),
+          sortKey: sort(0, i),
+          note: next() < 0.3 ? 'Ride the pad' : undefined,
+        }),
+      )
+      const tags = layout(cues, WIDE, { minY: 0, maxY: 2000 }) as CueTagLayout[]
+      const down = [...tags].sort((p, q) => q.centreY - p.centreY)
+      for (let i = 1; i < down.length; i++) {
+        const upper = down[i - 1] as CueTagLayout
+        const lower = down[i] as CueTagLayout
+        const held = upper.note ? NOTE_HEIGHT : 0
+        expect(upper.centreY - lower.centreY).toBeGreaterThanOrEqual(TAG_HEIGHT + held - 1e-9)
+      }
+      // The order down the page is placement order: higher line first, then cue number.
+      const placement = [...cues].sort((p, q) => q.y - p.y || p.sortKey.major - q.sortKey.major)
+      expect(down.map((t) => t.id)).toEqual(placement.map((c) => c.id))
+    }
+  })
+
+  test('a spread tag keeps its connector: it leaves its own tag and jogs to its own underline, above or below the line', () => {
+    const boxes = [{ x: 300, y: 495, w: 40, h: 10 }]
+    const tags = layout(
+      [1, 2, 3, 4].map((n) => cue(`c${n}`, { triggerBoxes: boxes, sortKey: sort(0, n) })),
+    ) as CueTagLayout[]
+    const [a, , , d] = tags as [CueTagLayout, CueTagLayout, CueTagLayout, CueTagLayout]
+    // Four on the line at 500 sit at 524, 508, 492 and 476; the underline is at y = 494.
+    expect(tags.map((t) => t.centreY)).toEqual([524, 508, 492, 476])
+    // The first is above the line and the last below it, both out of reach: each leaves its own
+    // tag at its centre and jogs through the gutter to its own underline.
+    for (const t of [a, d]) {
+      expect(t.leader?.[0]).toEqual({ x: expect.closeTo(t.tag.x + t.tag.w), y: t.centreY })
+      expect(t.leader).toHaveLength(4)
+      expect(t.underlines[0]?.y).toBe(494)
+    }
+    // Parallel leaders still rank by placement order, 1.5 pt apart.
+    expect(tags.map((t) => t.leader?.at(-1)?.y)).toEqual([494, 492.5, 491, 489.5])
   })
 })
 
@@ -232,11 +465,11 @@ describe('I4: cues on one line get parallel leaders 1.5 pt apart', () => {
 describe('I2: tags never leave the page or sit under the footer', () => {
   const FOOTER_TOP = 19
 
-  test('five cues on a line at y = 60 all end above the footer, in page order, without overlapping', () => {
+  test('five cues on a line at y = 40 all end above the footer, in page order, without overlapping', () => {
     const tags = layout(
       [0, 1, 2, 3, 4].map((i) =>
         cue(`c${i}`, {
-          y: 60,
+          y: 40,
           number: String(i + 1),
           sortKey: { department: i, major: i, minor: 0 },
         }),
@@ -247,6 +480,9 @@ describe('I2: tags never leave the page or sit under the footer', () => {
     for (const t of tags) expect(t.tag.y).toBeGreaterThanOrEqual(FOOTER_TOP)
     const down = [...tags].sort((p, q) => q.centreY - p.centreY)
     expect(down.map((t) => t.id)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4'])
+    // Spread around y = 40 (16 apart) they would run from 72 down to 8, the lowest tag's bottom
+    // edge at 1, under the footer (19): the whole stack is lifted 18 pt until it rests on it.
+    expect(down.map((t) => t.centreY)).toEqual([90, 74, 58, 42, 26])
     for (let i = 1; i < down.length; i++) {
       expect(
         (down[i - 1]?.tag.y ?? 0) - ((down[i]?.tag.y ?? 0) + TAG_HEIGHT),
@@ -572,6 +808,9 @@ describe('cue notes', () => {
       cue('b', { y: 500, note: NOTE, sortKey: { department: 0, major: 11, minor: 0 } }),
       cue('c', { y: 495, sortKey: { department: 0, major: 12, minor: 0 } }),
     ]) as [CueTagLayout, CueTagLayout, CueTagLayout]
+    // The three crowd into one group, centred on where they want to be: a at 500, b at 500 and c at
+    // 495 stacked 25 and 25 apart (a and b carry notes) want their first tag at (500 + 525 + 545) / 3.
+    expect(a.centreY).toBeCloseTo((500 + 525 + 545) / 3)
     const noteA = a.note as NonNullable<CueTagLayout['note']>
     // b starts 2 pt under a's note, not under a's tag.
     expect(b.tag.y + b.tag.h).toBeCloseTo(noteA.box.y - TAG_GAP)
@@ -607,5 +846,494 @@ describe('cue notes', () => {
       CueTagLayout,
     ]
     expect(t.note?.box.y).toBeGreaterThanOrEqual(19)
+  })
+})
+
+describe('cue marks: highlight, line and pointer', () => {
+  const word = { x: 300, y: 495, w: 40, h: 10 }
+  const caret = { x: 320, box: word }
+
+  test('barAt is the bar at a caret: the word box plus the overhang each side', () => {
+    expect(barAt({ x: 40, box: { x: 30, y: 495, w: 20, h: 10 } })).toEqual({
+      x: 40,
+      y1: 495 - BAR_OVERHANG,
+      y2: 505 + BAR_OVERHANG,
+    })
+  })
+
+  test('the mark constants', () => {
+    expect(HIGHLIGHT_OPACITY).toBe(0.28)
+    expect(HIGHLIGHT_OPACITY_ACTIVE).toBe(0.4)
+    expect(HIGHLIGHT_RADIUS).toBe(2)
+    expect(HIGHLIGHT_PAD_X).toBe(1)
+    expect(BAR_WIDTH).toBe(1.5)
+    expect(BAR_OVERHANG).toBe(3)
+    expect(POINTER_WIDTH).toBe(6)
+    expect(POINTER_HEIGHT).toBe(5)
+    expect(FREE_BAR_HEIGHT).toBe(14)
+  })
+
+  test('underline: a cue with no mark is an underline, with no fills and no bar', () => {
+    const t = one(cue('a', { triggerBoxes: [word] }))
+    expect(t.mark).toBe('underline')
+    expect(t.fills).toEqual([])
+    expect(t.bar).toBeNull()
+    expect(t.underlines).toHaveLength(1)
+    expect(one(cue('a', { mark: 'underline', triggerBoxes: [word] }))).toEqual(t)
+  })
+
+  test('highlight: one padded fill per trigger box, no underlines, no tick; the leader ends at the first box outer edge', () => {
+    const low = { x: 100, y: 475, w: 60, h: 10 }
+    const t = one(cue('a', { mark: 'highlight', triggerBoxes: [word, low] }))
+    expect(t.mark).toBe('highlight')
+    expect(t.fills).toEqual([
+      { x: 299, y: 495, w: 42, h: 10 },
+      { x: 99, y: 475, w: 62, h: 10 },
+    ])
+    expect(t.triggerBoxes).toEqual([word, low])
+    expect(t.underlines).toEqual([])
+    expect(t.tick).toBeNull()
+    expect(t.bar).toBeNull()
+    expect(t.leader?.at(-1)).toEqual({ x: 299, y: 494 })
+    const r = one(cue('a', { side: 'right', mark: 'highlight', triggerBoxes: [word, low] }))
+    expect(r.leader?.at(-1)).toEqual({ x: 341, y: 494 })
+  })
+
+  test('highlight with no trigger boxes falls back to the tick', () => {
+    const t = one(cue('a', { mark: 'highlight', anchorX: 250 }))
+    expect(t.fills).toEqual([])
+    expect(t.underlines).toEqual([])
+    expect(t.tick).toEqual({ x: 250, y1: 493, y2: 504 })
+    expect(t.leader?.at(-1)).toEqual({ x: 250, y: 493 })
+  })
+
+  test('line: the bar is at the caret x, the word height plus the overhang each end; the leader ends at it', () => {
+    const t = one(cue('a', { mark: 'line', triggerBoxes: [word], caret }))
+    expect(t.mark).toBe('line')
+    expect(t.bar).toEqual({
+      x: 320,
+      y1: 495 - BAR_OVERHANG,
+      y2: 505 + BAR_OVERHANG,
+      pointer: false,
+    })
+    expect(t.underlines).toEqual([])
+    expect(t.tick).toBeNull()
+    expect(t.fills).toEqual([])
+    expect(t.triggerBoxes).toEqual([word])
+    expect(t.leader?.at(-1)).toEqual({ x: 320, y: 494 })
+    const r = one(cue('a', { side: 'right', mark: 'line', triggerBoxes: [word], caret }))
+    expect(r.leader?.at(-1)).toEqual({ x: 320, y: 494 })
+  })
+
+  test('pointer: the same bar with pointer true', () => {
+    const t = one(cue('a', { mark: 'pointer', triggerBoxes: [word], caret }))
+    expect(t.mark).toBe('pointer')
+    expect(t.bar).toEqual({ x: 320, y1: 492, y2: 508, pointer: true })
+    expect(t.underlines).toEqual([])
+    expect(t.tick).toBeNull()
+    expect(t.leader?.at(-1)).toEqual({ x: 320, y: 494 })
+  })
+
+  test('line with no caret: a free bar of FREE_BAR_HEIGHT centred on y at anchorX, the leader ends at its bottom', () => {
+    const t = one(cue('a', { mark: 'line', anchorX: 250 }))
+    expect(t.bar).toEqual({ x: 250, y1: 493, y2: 507, pointer: false })
+    expect(t.bar && t.bar.y2 - t.bar.y1).toBe(FREE_BAR_HEIGHT)
+    expect(t.tick).toBeNull()
+    expect(t.underlines).toEqual([])
+    expect(t.leader?.at(-1)).toEqual({ x: 250, y: 493 })
+    const p = one(cue('a', { mark: 'pointer', anchorX: 250 }))
+    expect(p.bar).toEqual({ x: 250, y1: 493, y2: 507, pointer: true })
+  })
+
+  test('a line right of the tag edge on a left tag draws a leader; a bar under the tag draws none', () => {
+    const far = one(cue('a', { mark: 'line', triggerBoxes: [word], caret }))
+    expect(far.leader).not.toBeNull()
+    const under = { x: 10, y: 495, w: 40, h: 10 }
+    const near = one(
+      cue('a', { mark: 'line', triggerBoxes: [under], caret: { x: 12, box: under } }),
+    )
+    expect(near.bar?.x).toBe(12)
+    expect(near.leader).toBeNull()
+  })
+
+  test('leaders of two marks on one line still stagger by LEADER_STEP', () => {
+    const [a, b] = layout([
+      cue('a', {
+        mark: 'line',
+        triggerBoxes: [word],
+        caret,
+        sortKey: { department: 0, major: 1, minor: 0 },
+      }),
+      cue('b', {
+        mark: 'highlight',
+        triggerBoxes: [word],
+        sortKey: { department: 0, major: 2, minor: 0 },
+      }),
+    ]) as [CueTagLayout, CueTagLayout]
+    expect(a.leader?.at(-1)?.y).toBe(494)
+    expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - LEADER_STEP)
+  })
+})
+
+describe('moved bubbles', () => {
+  const under = { x: 300, y: 495, w: 40, h: 10 }
+  const moved = (id: string, over: Partial<CueTagInput> = {}) =>
+    cue(id, { tag: { dx: 20, dy: -30 }, triggerBoxes: [under], anchorX: 300, ...over })
+
+  test('moved is false for a margin tag, and true for a cue with a tag', () => {
+    expect(one(cue('a')).moved).toBe(false)
+    expect(one(cue('a', { tag: null })).moved).toBe(false)
+    expect(one(moved('a')).moved).toBe(true)
+  })
+
+  test('a moved bubble is centred at (anchorX + dx, y + dy)', () => {
+    const t = one(moved('a'))
+    expect(t.tag.x + t.tag.w / 2).toBeCloseTo(300 + 20)
+    expect(t.centreY).toBe(500 - 30)
+    expect(t.tag.y + t.tag.h / 2).toBe(470)
+    expect(t.tag.h).toBe(TAG_HEIGHT)
+    expect(t.leadX).toBeCloseTo(t.tag.x + TAG_PAD)
+    // The side does not decide where it sits.
+    const right = one(moved('b', { side: 'right' }))
+    expect(right.tag.x + right.tag.w / 2).toBeCloseTo(320)
+  })
+
+  test('it is clamped inside the page width and the vertical bounds (so never in the footer)', () => {
+    const w = tagWidth('LX', '10')
+    const farRight = one(moved('a', { tag: { dx: 5000, dy: 0 } }))
+    expect(farRight.tag.x + farRight.tag.w).toBeCloseTo(WIDTH)
+    const farLeft = one(moved('a', { tag: { dx: -5000, dy: 0 } }))
+    expect(farLeft.tag.x).toBeCloseTo(0)
+    expect(farLeft.tag.w).toBeCloseTo(w)
+    const [footer] = layoutCueTags({
+      pageWidth: WIDTH,
+      bounds: { minY: 40, maxY: 800 },
+      textExtent: WIDE,
+      cues: [moved('a', { tag: { dx: 0, dy: -5000 } })],
+    }) as [CueTagLayout]
+    expect(footer.centreY).toBe(40 + TAG_HEIGHT / 2)
+    expect(footer.tag.y).toBe(40)
+    const top = one(moved('a', { tag: { dx: 0, dy: 5000 } }))
+    expect(top.centreY).toBe(800 - TAG_HEIGHT / 2)
+    expect(top.tag.y + top.tag.h).toBe(800)
+  })
+
+  test('it takes no part in stacking: margin tags that would have stepped around it do not, and it does not step around them', () => {
+    const margin = [
+      cue('a', { y: 500, sortKey: { department: 0, major: 1, minor: 0 } }),
+      cue('b', { y: 500, sortKey: { department: 0, major: 2, minor: 0 } }),
+    ]
+    const alone = layout(margin)
+    // A bubble sitting right where the margin tags are.
+    const withBubble = layout([
+      ...margin,
+      moved('m', { y: 500, anchorX: 20, tag: { dx: 0, dy: 0 }, triggerBoxes: [] }),
+    ])
+    expect(withBubble[0]?.centreY).toBe(alone[0]?.centreY)
+    expect(withBubble[1]?.centreY).toBe(alone[1]?.centreY)
+    expect(withBubble[2]?.centreY).toBe(500)
+    // A lone moved bubble does not push a margin tag away either, nor does a pile of them.
+    const pile = layout([
+      cue('a', { y: 500 }),
+      ...[1, 2, 3].map((n) =>
+        moved(`m${n}`, { y: 500, tag: { dx: 0, dy: 0 }, anchorX: 20, triggerBoxes: [] }),
+      ),
+    ])
+    expect(pile[0]?.centreY).toBe(500)
+    expect(pile[1]?.centreY).toBe(500)
+    expect(pile[2]?.centreY).toBe(500)
+  })
+
+  test('it shows the full lead, never the shrunk one', () => {
+    const narrow = { minX: 40, maxX: 560 }
+    const tag = { dx: 10, dy: 0 }
+    const c = { lead: 'SB LX', typeWord: 'SB', number: '14.5', type: 'standby' as const }
+    const margin = one(cue('a', { ...c, y: 500 }), narrow)
+    expect(margin.lead).not.toBe('SB LX')
+    const t = one(moved('b', { ...c, tag }), narrow)
+    expect(t.lead).toBe('SB LX')
+    expect(t.tag.w).toBeCloseTo(tagWidth('SB LX', '14.5'))
+  })
+
+  test('it draws no note, and the note does not lift it off the footer', () => {
+    const t = one(moved('a', { note: 'Ride the pad' }))
+    expect(t.note).toBeNull()
+    const [low] = layoutCueTags({
+      pageWidth: WIDTH,
+      bounds: { minY: 40, maxY: 800 },
+      textExtent: WIDE,
+      cues: [moved('a', { note: 'Ride the pad', tag: { dx: 0, dy: -5000 } })],
+    }) as [CueTagLayout]
+    expect(low.centreY).toBe(40 + TAG_HEIGHT / 2)
+  })
+
+  test('its leader is one straight segment from the tag centre to the mark, even off the line', () => {
+    // The underline runs x 300 to 340. A bubble 60 to the right is nearest its right end ...
+    const t = one(moved('a', { tag: { dx: 60, dy: -80 } }))
+    const centre = { x: t.tag.x + t.tag.w / 2, y: t.centreY }
+    expect(t.leader).toEqual([centre, { x: 340, y: 494 }])
+    // ... and one 60 to the left of it is nearest the left end, whichever side its department is on.
+    const r = one(moved('b', { side: 'right', tag: { dx: -60, dy: 40 } }))
+    expect(r.leader).toHaveLength(2)
+    expect(r.leader?.[1]).toEqual({ x: 300, y: 494 })
+  })
+
+  describe('which end of the mark its leader aims at', () => {
+    // An underline (or highlight fill) from x 300 to 500; its first word starts the line.
+    const wide = { x: 300, y: 495, w: 200, h: 10 }
+    const aim = (over: Partial<CueTagInput>) =>
+      one(moved('a', { triggerBoxes: [wide], ...over })).leader?.at(-1)
+
+    test('a left-side cue whose bubble sits right of its underline aims at the right end, left of it at the left end', () => {
+      expect(aim({ side: 'left', tag: { dx: 260, dy: -40 } })).toEqual({ x: 500, y: 494 })
+      expect(aim({ side: 'left', tag: { dx: -60, dy: -40 } })).toEqual({ x: 300, y: 494 })
+      expect(aim({ side: 'right', tag: { dx: 260, dy: -40 } })).toEqual({ x: 500, y: 494 })
+      expect(aim({ side: 'right', tag: { dx: -60, dy: -40 } })).toEqual({ x: 300, y: 494 })
+    })
+
+    test('the nearer end wins by x distance, and a tie keeps the department side', () => {
+      // centre x = anchorX (300) + dx; ends at 300 and 500, middle 400
+      expect(aim({ side: 'left', tag: { dx: 80, dy: -40 } })).toEqual({ x: 300, y: 494 })
+      expect(aim({ side: 'left', tag: { dx: 120, dy: -40 } })).toEqual({ x: 500, y: 494 })
+      expect(aim({ side: 'left', tag: { dx: 100, dy: -40 } })).toEqual({ x: 300, y: 494 })
+      expect(aim({ side: 'right', tag: { dx: 100, dy: -40 } })).toEqual({ x: 500, y: 494 })
+    })
+
+    test('a highlight aims at the padded end nearest the bubble', () => {
+      const right = aim({ mark: 'highlight', side: 'left', tag: { dx: 260, dy: -40 } })
+      const left = aim({ mark: 'highlight', side: 'left', tag: { dx: -60, dy: -40 } })
+      expect(right?.x).toBeGreaterThan(500)
+      expect(left?.x).toBeLessThan(300)
+      expect(right?.y).toBe(494)
+    })
+
+    test('a line or pointer bar and an unbound tick are single points: the bubble side makes no difference', () => {
+      const caret = { x: 320, box: wide }
+      for (const dx of [-200, 400]) {
+        expect(aim({ mark: 'line', caret, anchorX: 320, tag: { dx, dy: 60 } })).toEqual({
+          x: 320,
+          y: 494,
+        })
+        expect(aim({ mark: 'pointer', caret, anchorX: 320, tag: { dx, dy: 60 } })?.x).toBe(320)
+        expect(aim({ triggerBoxes: [], anchorX: 300, tag: { dx, dy: 60 } })?.x).toBe(300)
+      }
+    })
+
+    test('a margin tag still aims at the end on its department side, wherever it is', () => {
+      const t = (side: 'left' | 'right') => one(cue('m', { side, triggerBoxes: [wide] }))
+      expect(t('left').leader?.at(-1)?.x).toBe(300)
+      expect(t('right').leader?.at(-1)?.x).toBe(500)
+    })
+  })
+
+  test('its leader ends at the bar of a line, the fill of a highlight and the tick of an unbound cue', () => {
+    const caret = { x: 320, box: under }
+    const line = one(moved('a', { mark: 'line', caret, tag: { dx: 0, dy: 60 } }))
+    expect(line.leader?.at(-1)).toEqual({ x: 320, y: 494 })
+    const unbound = one(moved('b', { triggerBoxes: [], anchorX: 300, tag: { dx: 0, dy: 60 } }))
+    expect(unbound.leader?.at(-1)).toEqual({ x: 300, y: 500 - 7 })
+  })
+
+  test('it has no leader when the tag overlaps the mark', () => {
+    // Centred on the underline start (left tag target x 300), so the pill covers it.
+    const t = one(moved('a', { tag: { dx: 0, dy: -4 } }))
+    expect(t.tag.x).toBeLessThan(300)
+    expect(t.tag.x + t.tag.w).toBeGreaterThan(300)
+    expect(t.leader).toBeNull()
+  })
+
+  describe('overlapping any part of its own mark', () => {
+    // A wide underline from x 300 to 500 at y 494.
+    const wide = { x: 300, y: 495, w: 200, h: 10 }
+    // The pill is ~21 wide and 14 tall; its centre is (anchorX + dx, y + dy), y = 500.
+    const over = (mark: CueTagInput['mark'], extra: Partial<CueTagInput>, dx: number, dy: number) =>
+      one(moved('a', { mark, triggerBoxes: [wide], tag: { dx, dy }, ...extra }))
+
+    test('a bubble over the middle of its wide underline draws no leader', () => {
+      const t = over(undefined, {}, 100, -2)
+      expect(t.tag.x).toBeGreaterThan(300)
+      expect(t.tag.x + t.tag.w).toBeLessThan(500)
+      expect(t.leader).toBeNull()
+    })
+
+    test('over the middle of a wide highlight draws no leader', () => {
+      const t = over('highlight', {}, 100, 3)
+      expect(t.fills).toHaveLength(1)
+      expect(t.leader).toBeNull()
+    })
+
+    test("over its line's bar or pointer draws no leader", () => {
+      const caret = { x: 320, box: { x: 300, y: 495, w: 40, h: 10 } }
+      // On the bar, but not on the word-underline end the leader would target.
+      const line = over('line', { caret, anchorX: 320 }, 0, 14)
+      expect(line.bar).not.toBeNull()
+      expect(line.leader).toBeNull()
+      // Over the pointer's triangle above the bar.
+      const pointer = over('pointer', { caret, anchorX: 320 }, 0, 17)
+      expect(pointer.leader).toBeNull()
+      // Over the word the line sits in, away from the bar.
+      const word = over('line', { caret, anchorX: 320 }, 15, 0)
+      expect(word.leader).toBeNull()
+    })
+
+    test('over the tick of an unbound cue draws no leader', () => {
+      const t = over(undefined, { triggerBoxes: [], anchorX: 300 }, 0, 2)
+      expect(t.tick).not.toBeNull()
+      expect(t.leader).toBeNull()
+    })
+
+    test('a bubble just off the mark still draws its straight leader', () => {
+      // The pill's bottom edge (496) is clear of the top of the underline's 1.5 pt stroke (494.75).
+      const clear = over(undefined, {}, 100, 3)
+      expect(clear.tag.y).toBeGreaterThan(494 + UNDERLINE_WIDTH / 2)
+      expect(clear.tag.y).toBeLessThan(500)
+      expect(clear.leader).toHaveLength(2)
+      expect(clear.leader?.[1]).toEqual({ x: 300, y: 494 })
+      const below = over(undefined, {}, 100, -30)
+      expect(below.leader).toHaveLength(2)
+    })
+  })
+
+  test('parallel-leader staggering ignores it', () => {
+    const word = { x: 300, y: 495, w: 40, h: 10 }
+    const [a, m, b] = layout([
+      cue('a', {
+        triggerBoxes: [word],
+        sortKey: { department: 0, major: 1, minor: 0 },
+      }),
+      moved('m', {
+        triggerBoxes: [word],
+        tag: { dx: 0, dy: 60 },
+        sortKey: { department: 0, major: 2, minor: 0 },
+      }),
+      cue('b', {
+        triggerBoxes: [word],
+        sortKey: { department: 0, major: 3, minor: 0 },
+      }),
+    ]) as [CueTagLayout, CueTagLayout, CueTagLayout]
+    // The moved bubble's leader ends exactly on the mark target (no stagger) ...
+    expect(m.leader?.at(-1)?.y).toBe(494)
+    // ... and does not push the margin tags' leaders down: b is the second margin tag, one step.
+    expect(a.leader?.at(-1)?.y).toBe(494)
+    expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - LEADER_STEP)
+  })
+})
+
+describe('connector width and pattern', () => {
+  const word = { x: 300, y: 495, w: 40, h: 10 }
+  const sort = (department: number, major: number) => ({ department, major, minor: 0 })
+  const styled = (
+    id: string,
+    width: 'thin' | 'medium' | 'bold',
+    pattern: 'solid' | 'dashed' | 'dotted' = 'solid',
+    over: Partial<CueTagInput> = {},
+  ) =>
+    cue(id, { triggerBoxes: [word], connector: { width, pattern }, sortKey: sort(0, 1), ...over })
+
+  test('each width maps to 0.75, 1.5 and 2.5 pt', () => {
+    expect(LEADER_WIDTH).toBe(0.75)
+    expect(one(styled('a', 'thin')).stroke.width).toBe(0.75)
+    expect(one(styled('a', 'medium')).stroke.width).toBe(1.5)
+    expect(one(styled('a', 'bold')).stroke.width).toBe(2.5)
+  })
+
+  test('solid gives no dash and butt-or-default caps, dashed [4w, 2.5w], dotted round caps with [0, 2.5w]', () => {
+    expect(one(styled('a', 'bold', 'solid')).stroke).toEqual({
+      width: 2.5,
+      dash: null,
+      round: false,
+    })
+    expect(one(styled('a', 'medium', 'dashed')).stroke).toEqual({
+      width: 1.5,
+      dash: [6, 3.75],
+      round: false,
+    })
+    expect(one(styled('a', 'bold', 'dotted')).stroke).toEqual({
+      width: 2.5,
+      dash: [0, 6.25],
+      round: true,
+    })
+    expect(one(styled('a', 'thin', 'dashed')).stroke.dash).toEqual([3, 1.875])
+  })
+
+  test('connectorStroke is the same function the layout uses', () => {
+    expect(connectorStroke({ width: 'bold', pattern: 'dashed' })).toEqual(
+      one(styled('a', 'bold', 'dashed')).stroke,
+    )
+  })
+
+  test('no connector input behaves exactly as before: thin, solid, default y', () => {
+    const plain = one(cue('a', { triggerBoxes: [word] }))
+    expect(plain.stroke).toEqual({ width: 0.75, dash: null, round: false })
+    const explicit = one(styled('a', 'thin', 'solid', { sortKey: sort(0, 10) }))
+    expect(explicit.leader).toEqual(plain.leader)
+    expect(explicit.stroke).toEqual(plain.stroke)
+  })
+
+  test('the stroke does not move the tag, the marks or the leader path', () => {
+    const plain = one(cue('a', { triggerBoxes: [word] }))
+    const bold = one(styled('a', 'bold', 'dotted', { sortKey: sort(0, 10) }))
+    expect(bold.leader).toEqual(plain.leader)
+    expect(bold.tag).toEqual(plain.tag)
+    expect(bold.underlines).toEqual(plain.underlines)
+    expect(bold.outlineWidth).toBe(plain.outlineWidth)
+    expect(bold.dash).toBe(plain.dash)
+  })
+
+  test('parallel leaders of equal width step by max(1.5, w + 0.75)', () => {
+    const ys = (width: 'thin' | 'medium' | 'bold') =>
+      layout([
+        styled('a', width, 'solid', { sortKey: sort(0, 1) }),
+        styled('b', width, 'solid', { sortKey: sort(1, 2) }),
+        styled('c', width, 'solid', { sortKey: sort(2, 3) }),
+      ]).map((t) => t.leader?.at(-1)?.y)
+    expect(ys('thin')).toEqual([494, 492.5, 491])
+    // medium: 1.5 + 0.75 = 2.25
+    expect(ys('medium')).toEqual([494, 491.75, 489.5])
+    // bold: 2.5 + 0.75 = 3.25
+    expect(ys('bold')).toEqual([494, 490.75, 487.5])
+  })
+
+  test('mixed widths step by the pair formula, accumulated in placement order', () => {
+    const [a, b, c] = layout([
+      styled('a', 'thin', 'solid', { sortKey: sort(0, 1) }),
+      styled('b', 'bold', 'solid', { sortKey: sort(1, 2) }),
+      styled('c', 'thin', 'solid', { sortKey: sort(2, 3) }),
+    ]) as [CueTagLayout, CueTagLayout, CueTagLayout]
+    // thin then bold: (0.75 + 2.5) / 2 + 0.75 = 2.375; bold then thin: the same again.
+    expect(a.leader?.at(-1)?.y).toBe(494)
+    expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - 2.375)
+    expect(c.leader?.at(-1)?.y).toBeCloseTo(494 - 4.75)
+  })
+
+  test('thin leaders keep exactly the LEADER_STEP', () => {
+    const [a, b] = layout([
+      styled('a', 'thin', 'solid', { sortKey: sort(0, 1) }),
+      styled('b', 'thin', 'solid', { sortKey: sort(1, 2) }),
+    ]) as [CueTagLayout, CueTagLayout]
+    expect((a.leader?.at(-1)?.y ?? 0) - (b.leader?.at(-1)?.y ?? 0)).toBe(LEADER_STEP)
+  })
+
+  test('leaders on other lines or sides start afresh', () => {
+    const tags = layout([
+      styled('a', 'bold', 'solid', { y: 500 }),
+      styled('b', 'bold', 'solid', { y: 400, triggerBoxes: [{ ...word, y: 395 }] }),
+      styled('c', 'bold', 'solid', { side: 'right' }),
+    ])
+    expect(tags.map((t) => t.leader?.at(-1)?.y)).toEqual([494, 394, 494])
+  })
+
+  test('a moved bubble carries the stroke on its straight leader and takes no part in the stagger', () => {
+    const [a, m, b] = layout([
+      styled('a', 'bold', 'dashed', { sortKey: sort(0, 1) }),
+      styled('m', 'medium', 'dotted', { sortKey: sort(0, 2), tag: { dx: 0, dy: 60 } }),
+      styled('b', 'bold', 'dashed', { sortKey: sort(0, 3) }),
+    ]) as [CueTagLayout, CueTagLayout, CueTagLayout]
+    expect(m.moved).toBe(true)
+    expect(m.leader).toHaveLength(2)
+    expect(m.stroke).toEqual({ width: 1.5, dash: [0, 3.75], round: true })
+    expect(m.leader?.at(-1)?.y).toBe(494)
+    expect(a.stroke).toEqual({ width: 2.5, dash: [10, 6.25], round: false })
+    expect(b.leader?.at(-1)?.y).toBeCloseTo(494 - 3.25)
   })
 })

@@ -1,11 +1,24 @@
 import {
   anchorAtMatch,
   buildWordStream,
+  clampOffset,
   findQuote,
   type QuoteMatch,
   type StreamWord,
+  withMark,
 } from '@binder/core'
-import type { Actor, CueNumber, CueType } from '@binder/shared'
+import {
+  type Actor,
+  type Anchor,
+  type BubbleOffset,
+  CUE_MARKS,
+  type CueMark,
+  type CueNumber,
+  type CueType,
+  isCaretMark,
+  markOf,
+  type WordLayer,
+} from '@binder/shared'
 import type { BlobStore } from '../blob/BlobStore'
 import { invalid, notFound } from '../errors'
 import { type CueView, createCue, getCue } from './cues'
@@ -18,6 +31,101 @@ import { loadVersionText } from './wordLayers'
 
 const SNIPPET_CONTEXT_WORDS = 4
 const MAX_AMBIGUOUS = 20
+/** The most characters into a word a line or pointer can sit; far beyond any real word. */
+export const MAX_CHAR_OFFSET = 1000
+/** The farthest a cue's bubble can sit from its mark, in PDF points, either way on each axis. */
+export const MAX_BUBBLE_OFFSET = 14400
+
+function checkBubble(bubble: BubbleOffset | null | undefined): void {
+  if (bubble === undefined || bubble === null) return
+  for (const axis of ['dx', 'dy'] as const) {
+    const v = bubble[axis]
+    if (typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) > MAX_BUBBLE_OFFSET) {
+      throw invalid(
+        `bubble.${axis} must be a number from -${MAX_BUBBLE_OFFSET} to ${MAX_BUBBLE_OFFSET} points`,
+      )
+    }
+  }
+}
+
+function checkMark(mark: CueMark | undefined): void {
+  if (mark !== undefined && !CUE_MARKS.includes(mark)) {
+    throw invalid(`mark must be one of ${CUE_MARKS.join(', ')}`)
+  }
+}
+
+function checkCharOffset(charOffset: number | undefined, mark: CueMark): void {
+  if (charOffset === undefined) return
+  if (!Number.isInteger(charOffset) || charOffset < 0 || charOffset > MAX_CHAR_OFFSET) {
+    throw invalid(`charOffset must be a whole number from 0 to ${MAX_CHAR_OFFSET}`)
+  }
+  if (!isCaretMark(mark)) throw invalid('charOffset only applies to a line or pointer mark')
+}
+
+/**
+ * The anchor an `update_cue` call that restyles ends with: `current` (the cue's anchor now, null when
+ * unplaced) or the new `change.anchor` (applied first), drawn with `change.mark` and/or a character
+ * offset, and with its bubble moved by `change.bubble` (an offset from the anchor's point, in points;
+ * null puts it back in the margin by removing the `tag` key; a bubble given without `mark` or
+ * `charOffset` changes only the `tag`, never the mark, `x` or the word offset). `mark` defaults to the base anchor's own;
+ * the offset applies to the word at `text.wordStart`, clamped to its length, and `x` follows the caret
+ * when the page's word layer can be read (otherwise the change still applies). `invalid` when the cue
+ * is unplaced, when the call also sets `anchor: null` (it would both unplace and restyle the cue),
+ * when `charOffset` is given and no word is bound or the mark is not a line or pointer, or when a
+ * bubble offset is not a finite number within +/-14400 points.
+ */
+export async function restyleAnchor(
+  db: Executor,
+  blobs: BlobStore,
+  current: Anchor | null,
+  change: {
+    anchor?: Anchor | null
+    mark?: CueMark
+    charOffset?: number
+    bubble?: BubbleOffset | null
+  },
+): Promise<Anchor> {
+  if (change.anchor === null) {
+    throw invalid(
+      'this call both unplaces the cue (anchor: null) and restyles it (mark, charOffset or bubble); do one or the other',
+    )
+  }
+  const anchor = change.anchor ?? current
+  if (!anchor) {
+    throw invalid('the cue is unplaced; place it before changing its mark, charOffset or bubble')
+  }
+  checkMark(change.mark)
+  checkBubble(change.bubble)
+  const withBubble = (a: Anchor): Anchor => {
+    if (change.bubble === undefined) return a
+    const { tag: _drop, ...rest } = a
+    return change.bubble === null
+      ? rest
+      : { ...rest, tag: { dx: change.bubble.dx, dy: change.bubble.dy } }
+  }
+  // A bubble alone (no mark, no character offset) is only the tag: the mark is not re-drawn, so a
+  // bar's `x` and the word offset stay exactly as stored and no word layer is read.
+  if (change.bubble !== undefined && change.mark === undefined && change.charOffset === undefined) {
+    return withBubble(anchor)
+  }
+  const mark = change.mark ?? markOf(anchor)
+  checkCharOffset(change.charOffset, mark)
+  const bound = anchor.text !== undefined && anchor.text.wordStart >= 0
+  if (change.charOffset !== undefined && !bound) {
+    throw invalid('charOffset needs a cue anchored to a word; this cue is not bound to any')
+  }
+  let layer: WordLayer | undefined
+  if (bound && isCaretMark(mark)) {
+    try {
+      layer = (await loadVersionText(db, blobs, anchor.documentVersionId)).layers.get(
+        anchor.pageIndex,
+      )
+    } catch {
+      layer = undefined
+    }
+  }
+  return withBubble(withMark(anchor, mark, { layer, offset: change.charOffset }))
+}
 
 export interface PlaceCueAtTextInput {
   showId: string
@@ -33,6 +141,10 @@ export interface PlaceCueAtTextInput {
   label?: string
   type?: CueType
   notes?: string
+  /** How the cue is drawn; default underline. A highlight covers the whole matched quote. */
+  mark?: CueMark
+  /** Characters into the quote's first word for a line or pointer mark (default 0). */
+  charOffset?: number
   batchId?: string
 }
 
@@ -57,7 +169,9 @@ function snippetOf(stream: StreamWord[], m: QuoteMatch): string {
  * Editor on the department's layer. Anchors a cue where `quote` occurs in a document's current
  * version (exact matches first, then case, punctuation and hyphenation tolerant ones). When the
  * quote occurs several times, `occurrence` or `nearPageIndex` picks one; otherwise nothing is
- * written and the matches are returned for the caller to choose from.
+ * written and the matches are returned for the caller to choose from. `mark` says how the cue is
+ * drawn: a highlight anchors the whole matched quote, a line or pointer sits `charOffset`
+ * characters into the quote's first word.
  */
 export async function placeCueAtText(
   db: Executor,
@@ -73,6 +187,9 @@ export async function placeCueAtText(
   if (!department) throw invalid(`unknown department: ${input.department}`)
   await requireLayerEdit(db, actor, input.showId, { kind: 'department', id: department.id })
   if (!input.quote.trim()) throw invalid('quote must not be empty')
+  checkMark(input.mark)
+  const mark = input.mark ?? 'underline'
+  checkCharOffset(input.charOffset, mark)
   if (
     input.occurrence !== undefined &&
     (!Number.isInteger(input.occurrence) || input.occurrence < 1)
@@ -137,16 +254,22 @@ export async function placeCueAtText(
     }
   }
 
-  const at = anchorAtMatch(stream, chosen, text)
-  const cue = await createCue(db, actor, {
-    showId: input.showId,
-    departmentId: department.id,
-    number: input.number,
-    label: input.label,
-    type: input.type,
-    notes: input.notes,
-    batchId: input.batchId,
-    anchor: {
+  const at = anchorAtMatch(
+    stream,
+    chosen,
+    text,
+    mark === 'highlight' ? Number.POSITIVE_INFINITY : undefined,
+  )
+  const layer = text.layers.get(at.pageIndex) as WordLayer
+  const first = layer.words[at.text.wordStart]
+  const length = first ? clampOffset(first.t, Number.POSITIVE_INFINITY) : 0
+  if (input.charOffset !== undefined && input.charOffset > length) {
+    throw invalid(
+      `charOffset ${input.charOffset} is past the end of "${first?.t}" (${length} characters)`,
+    )
+  }
+  const anchor = withMark(
+    {
       documentId: document.id,
       documentVersionId: version.id,
       pageIndex: at.pageIndex,
@@ -155,6 +278,18 @@ export async function placeCueAtText(
       text: at.text,
       status: 'ok',
     },
+    mark,
+    { layer, offset: input.charOffset },
+  )
+  const cue = await createCue(db, actor, {
+    showId: input.showId,
+    departmentId: department.id,
+    number: input.number,
+    label: input.label,
+    type: input.type,
+    notes: input.notes,
+    batchId: input.batchId,
+    anchor,
   })
   return {
     status: 'placed',

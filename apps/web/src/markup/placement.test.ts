@@ -1,6 +1,7 @@
+import { snapToCaret } from '@binder/core'
 import type { WordLayer } from '@binder/shared'
-import { expect, test } from 'vitest'
-import { anchorAt, numberAt } from './placement'
+import { describe, expect, test } from 'vitest'
+import { anchorAt, markAnchorAt, numberAt } from './placement'
 
 /** Two lines: "To be or not" centred on y 705, "Pirates of Penzance" centred on y 655. */
 const layer: WordLayer = {
@@ -101,4 +102,90 @@ test('a dropped cue starts at the nearest word when the pointer is within the li
   }
   // Not near a line: exactly where it was dropped.
   expect(anchorAt({ ...drop, point: { x: 10, y: 600 } })).toMatchObject({ x: 10, y: 600 })
+})
+
+describe('markAnchorAt', () => {
+  const input = { ...base, words: layer, snap: true }
+
+  test('underline is anchorAt as before with no mark key', () => {
+    const point = { x: 70, y: 702 }
+    const anchor = markAnchorAt({ ...input, point, mark: 'underline' })
+    expect(anchor).toEqual(anchorAt({ ...input, point }))
+    expect('mark' in anchor).toBe(false)
+  })
+
+  test("highlight with snap takes the one word under the pointer, mark highlight, x the word's left", () => {
+    expect(markAnchorAt({ ...input, point: { x: 90, y: 702 }, mark: 'highlight' })).toEqual({
+      ...base,
+      x: 86,
+      y: 705,
+      text: { quote: 'or', wordStart: 2, wordEnd: 2 },
+      status: 'ok',
+      mark: 'highlight',
+    })
+  })
+
+  test('line with snap stores mark line, text.offset and x at the caret', () => {
+    const point = { x: 90, y: 702 }
+    const caret = snapToCaret(layer, point)
+    if (!caret) throw new Error('no caret')
+    const anchor = markAnchorAt({ ...input, point, mark: 'line' })
+    expect(anchor).toEqual({
+      ...base,
+      x: caret.x,
+      y: 705,
+      text: caret.text,
+      status: 'ok',
+      mark: 'line',
+    })
+    expect(anchor.text?.offset).toBeTypeOf('number')
+    expect(anchor.x).not.toBe(point.x)
+  })
+
+  test('pointer likewise', () => {
+    const point = { x: 108, y: 698 }
+    const caret = snapToCaret(layer, point)
+    if (!caret) throw new Error('no caret')
+    expect(markAnchorAt({ ...input, point, mark: 'pointer' })).toEqual({
+      ...base,
+      x: caret.x,
+      y: 705,
+      text: caret.text,
+      status: 'ok',
+      mark: 'pointer',
+    })
+  })
+
+  test('line with snap off or no line near is a free bar: no text, x and y at the pointer, mark line', () => {
+    const near = { x: 70, y: 702 }
+    expect(markAnchorAt({ ...input, snap: false, point: near, mark: 'line' })).toEqual({
+      ...base,
+      ...near,
+      status: 'ok',
+      mark: 'line',
+    })
+    const far = { x: 70, y: 600 }
+    expect(markAnchorAt({ ...input, point: far, mark: 'line' })).toEqual({
+      ...base,
+      ...far,
+      status: 'ok',
+      mark: 'line',
+    })
+    expect(markAnchorAt({ ...input, words: null, point: near, mark: 'pointer' })).toEqual({
+      ...base,
+      ...near,
+      status: 'ok',
+      mark: 'pointer',
+    })
+  })
+
+  test('highlight with snap off is the old unbound tick anchor', () => {
+    const point = { x: 70, y: 702 }
+    expect(markAnchorAt({ ...input, snap: false, point, mark: 'highlight' })).toEqual({
+      ...base,
+      ...point,
+      status: 'ok',
+      mark: 'highlight',
+    })
+  })
 })

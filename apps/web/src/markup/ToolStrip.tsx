@@ -1,4 +1,4 @@
-import type { CueType } from '@binder/shared'
+import type { CueMark, CueType } from '@binder/shared'
 import { type ReactNode, useId, useLayoutEffect, useRef, useState } from 'react'
 import { SearchIcon } from '@/components/icons'
 import { Kbd } from '@/components/ui/kbd'
@@ -8,7 +8,7 @@ import { useCloseMenuKeepingFocus } from '../viewer/PhoneBarMenu'
 import { useMarkupSession } from './MarkupSession'
 import { TOOL_DEFS } from './MarkupTools'
 import { StampPicker } from './StampPicker'
-import { setStamp, setTool, useTool } from './tools'
+import { setCueMark, setStamp, setTool, useTool } from './tools'
 import { UndoRedoButtons } from './UndoRedoButtons'
 
 // The mockup's `.tool`: 34 x 34, radius 9, a 17 px icon in `--muted`, at the desktop with a mouse.
@@ -127,7 +127,7 @@ function Flyout({ floating, children }: { floating: boolean; children: ReactNode
  */
 export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'inline' }) {
   const session = useMarkupSession()
-  const { tool, cueType, stamp } = useTool()
+  const { tool, cueType, cueMark, stamp } = useTool()
   const hintId = useId()
   const annotationHintId = useId()
   const floating = variant === 'floating'
@@ -178,6 +178,8 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
             tool="cue"
             cueType={cueType}
             onCueTypeChange={(type) => setTool('cue', type)}
+            cueMark={cueMark}
+            onCueMarkChange={setCueMark}
           />
         )}
         {t === 'stamp' && tool === 'stamp' && (
@@ -275,7 +277,13 @@ export function ToolStrip({ variant = 'floating' }: { variant?: 'floating' | 'in
 /** Stateless native fields and the actual flyout container, also usable without a local session. */
 export function ToolFlyout(
   props: { floating: boolean } & (
-    | { tool: 'cue'; cueType: CueType; onCueTypeChange: (type: CueType) => void }
+    | {
+        tool: 'cue'
+        cueType: CueType
+        onCueTypeChange: (type: CueType) => void
+        cueMark: CueMark
+        onCueMarkChange: (mark: CueMark) => void
+      }
     | {
         tool: 'stamp'
         stamps: string[]
@@ -288,16 +296,29 @@ export function ToolFlyout(
   return (
     <Flyout floating={props.floating}>
       {props.tool === 'cue' ? (
-        <select
-          aria-label="Cue type"
-          value={props.cueType}
-          className={FIELD}
-          onChange={(e) => props.onCueTypeChange(e.target.value as CueType)}
-        >
-          <option value="go">Go</option>
-          <option value="standby">Standby</option>
-          <option value="warn">Warn</option>
-        </select>
+        <>
+          <select
+            aria-label="Cue type"
+            value={props.cueType}
+            className={FIELD}
+            onChange={(e) => props.onCueTypeChange(e.target.value as CueType)}
+          >
+            <option value="go">Go</option>
+            <option value="standby">Standby</option>
+            <option value="warn">Warn</option>
+          </select>
+          <select
+            aria-label="Cue mark"
+            value={props.cueMark}
+            className={cn(FIELD, 'ml-1.5')}
+            onChange={(e) => props.onCueMarkChange(e.target.value as CueMark)}
+          >
+            <option value="underline">Underline</option>
+            <option value="highlight">Highlight</option>
+            <option value="line">Line</option>
+            <option value="pointer">Line with pointer</option>
+          </select>
+        </>
       ) : (
         <StampPicker
           stamps={props.stamps}

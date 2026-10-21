@@ -32,6 +32,7 @@ Work moves through three kinds of document:
 | M0 foundation | `2026-10-14-binder-platform-design.md` | `2026-10-14-m0-foundation.md` | `2026-10-15-m0-rulings.md`, `2026-10-15-m0-final-review.md` |
 | M1 script markup | (platform spec) | `2026-10-15-m1-script-markup.md` | `2026-10-15-m1-rulings.md` |
 | Cue margin markers | `2026-10-15-cue-margin-markers.md` | (small, no plan) | (in the spec) |
+| Cue marker styles | `2026-10-20-cue-marker-styles.md` | `2026-10-20-cue-marker-styles.md` | (in the spec) |
 | UI restyle and four features | `2026-10-16-ui-restyle.md`, `2026-10-16-mockup-features.md` | `2026-10-16-ui-restyle.md` | `2026-10-16-ui-restyle-rulings.md` |
 
 The roadmap after M1 is in section 10 of the platform spec: M2 the show graph (people, characters, casting, mics,
