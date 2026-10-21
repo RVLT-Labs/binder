@@ -6,7 +6,6 @@ import {
   HIGHLIGHT_OPACITY,
   HIGHLIGHT_OPACITY_ACTIVE,
   HIGHLIGHT_RADIUS,
-  LEADER_WIDTH,
   markerText,
   POINTER_HEIGHT,
   POINTER_WIDTH,
@@ -306,7 +305,10 @@ export function CueTrigger({
           points={tag.leader.map((p) => `${p.x},${p.y}`).join(' ')}
           fill="none"
           stroke={colour}
-          strokeWidth={LEADER_WIDTH}
+          strokeWidth={tag.stroke.width}
+          strokeDasharray={tag.stroke.dash ? tag.stroke.dash.join(' ') : undefined}
+          // Only a dotted line has round caps (its dots); a solid or dashed line keeps the default.
+          strokeLinecap={tag.stroke.round ? 'round' : undefined}
           strokeLinejoin="miter"
         />
       )}

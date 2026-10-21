@@ -1,4 +1,9 @@
-import { COLOUR_RE, DEPARTMENT_COLOUR_PRESETS, deptChrome } from '@binder/shared'
+import {
+  COLOUR_RE,
+  type ConnectorStyle,
+  DEPARTMENT_COLOUR_PRESETS,
+  deptChrome,
+} from '@binder/shared'
 import { useQuery } from '@powersync/react'
 import { useMutation } from '@tanstack/react-query'
 import { type FormEvent, type ReactNode, useId, useState } from 'react'
@@ -9,7 +14,16 @@ import { Input } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { cn } from '@/lib/utils'
 import { api } from '../api/client'
-import { MarkerSideControl, SIDE_LABEL, useMarkerSides } from '../markup/MarkerSideEditor'
+import {
+  ConnectorPatternControl,
+  ConnectorWidthControl,
+  MarkerSideControl,
+  PATTERN_LABEL,
+  SIDE_LABEL,
+  useConnectorStyles,
+  useMarkerSides,
+  WIDTH_LABEL,
+} from '../markup/MarkerSideEditor'
 import type { DepartmentRow } from '../markup/useDepartments'
 import { SECTION_LABEL } from '../panel/fields'
 import { ColourField } from './ColourField'
@@ -73,6 +87,7 @@ export function DepartmentsSection({
   editable: boolean
 }) {
   const sides = useMarkerSides(showId)
+  const connectors = useConnectorStyles(showId)
   const { data: counts } = useQuery<{ department_id: string; n: number }>(
     'SELECT department_id, count(*) AS n FROM cues WHERE show_id = ? GROUP BY department_id',
     [showId],
@@ -110,9 +125,16 @@ export function DepartmentsSection({
                 cues={cueCount(d.id)}
                 side={sides.sideOf(d.id)}
                 onSide={(s) => void sides.setSide(d.id, s)}
+                connector={connectors.styleOf(d.id)}
+                onConnector={(change) => void connectors.setStyle(d.id, change)}
               />
             ) : (
-              <ReadOnlyRow department={d} cues={cueCount(d.id)} side={sides.sideOf(d.id)} />
+              <ReadOnlyRow
+                department={d}
+                cues={cueCount(d.id)}
+                side={sides.sideOf(d.id)}
+                connector={connectors.styleOf(d.id)}
+              />
             )}
           </li>
         ))}
@@ -127,6 +149,8 @@ const ROW_BOX = cn(
   'flex flex-col gap-1.5 rounded-[var(--r)] border-2 border-line-2 bg-card px-3.5 pt-2.5 pb-3 shadow-card',
   'md:min-h-10 md:rounded-none md:border-0 md:bg-transparent md:px-3 md:py-0 md:shadow-none',
   ROW_GRID,
+  // The table's second line (the connector controls) sits under the name, close to its row.
+  'md:gap-y-1 md:pb-2 md:pt-0.5',
 )
 
 /** Phone: the code, name and cue count along the top of the card. Table: the cells join the row. */
@@ -134,14 +158,27 @@ const HEAD = 'flex items-center justify-between gap-2.5 md:contents'
 /** Phone: Colour, Number format and Marker side in one row of the card. */
 const CONTROLS = 'grid grid-cols-[44px_1.05fr_1fr] items-end gap-2 md:contents'
 
+/**
+ * Phone: Connector width and Connector pattern, one under the other in the card (three words each
+ * need the card's width). Table: a second line under the name, beside no header, so each control
+ * carries its own label.
+ */
+const CONNECTOR_ROW =
+  'grid gap-2 md:col-span-3 md:col-start-3 md:row-start-2 md:flex md:flex-wrap md:items-center md:gap-x-5 md:gap-y-1'
+/** One labelled connector control; the label sits over it on a phone and to its left in the table. */
+const CONNECTOR_FIELD = 'min-w-0 md:flex md:items-center md:gap-2'
+const CONNECTOR_LABEL = cn(FIELD_LABEL, 'mb-[3px] md:mb-0 md:whitespace-nowrap')
+
 function ReadOnlyRow({
   department: d,
   cues,
   side,
+  connector,
 }: {
   department: DepartmentRow
   cues: number
   side: 'left' | 'right'
+  connector: ConnectorStyle
 }) {
   const format = d.number_format === 'point' ? '10.50' : '10.5'
   return (
@@ -187,6 +224,16 @@ function ReadOnlyRow({
           </span>
         </div>
       </div>
+      <div className={CONNECTOR_ROW}>
+        <div className={CONNECTOR_FIELD}>
+          <div className={CONNECTOR_LABEL}>Connector width</div>
+          <span className="text-[13px] text-ink-2">{WIDTH_LABEL[connector.width]}</span>
+        </div>
+        <div className={CONNECTOR_FIELD}>
+          <div className={CONNECTOR_LABEL}>Connector pattern</div>
+          <span className="text-[13px] text-ink-2">{PATTERN_LABEL[connector.pattern]}</span>
+        </div>
+      </div>
       {d.hidden ? (
         <span className="text-[12px] text-muted md:col-start-7 md:row-start-1">hidden</span>
       ) : null}
@@ -199,11 +246,15 @@ function EditableRow({
   cues,
   side,
   onSide,
+  connector,
+  onConnector,
 }: {
   department: DepartmentRow
   cues: number
   side: 'left' | 'right'
   onSide: (side: 'left' | 'right') => void
+  connector: ConnectorStyle
+  onConnector: (change: Partial<ConnectorStyle>) => void
 }) {
   const [name, setName] = useState(department.name ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -268,6 +319,26 @@ function EditableRow({
           />
         </div>
       </div>
+      <div className={CONNECTOR_ROW}>
+        <div className={CONNECTOR_FIELD}>
+          <div className={CONNECTOR_LABEL}>Connector width</div>
+          <ConnectorWidthControl
+            code={code}
+            width={connector.width}
+            onChange={(width) => onConnector({ width })}
+            className="flex md:inline-flex"
+          />
+        </div>
+        <div className={CONNECTOR_FIELD}>
+          <div className={CONNECTOR_LABEL}>Connector pattern</div>
+          <ConnectorPatternControl
+            code={code}
+            pattern={connector.pattern}
+            onChange={(pattern) => onConnector({ pattern })}
+            className="flex md:inline-flex"
+          />
+        </div>
+      </div>
       <div className="flex items-center gap-2 max-md:min-h-11 md:col-start-7 md:row-start-1">
         <Checkbox
           id={hiddenId}
@@ -281,7 +352,7 @@ function EditableRow({
       {error && (
         <p
           role="alert"
-          className="m-0 text-[12px] text-ink-2 md:col-span-full md:row-start-2 md:pb-2"
+          className="m-0 text-[12px] text-ink-2 md:col-span-full md:row-start-3 md:pb-2"
         >
           {error}
         </p>

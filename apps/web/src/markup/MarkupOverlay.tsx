@@ -107,7 +107,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   /** The page's cues as stored now, for a drag that ends long after it began. */
   const liveCues = useRef(cues)
   liveCues.current = cues
-  const { markerSide, departments } = session
+  const { markerSide, connectorStyle, departments } = session
   const selectedCue = selection?.table === 'cues' ? selection.id : null
   // Arrow-key nudges: drawn at once, written once per burst.
   const nudges = useBubbleNudge(
@@ -143,8 +143,9 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
         { width: size.width, height: size.height },
         (id) => markerSide(id),
         (id) => departments.find((d) => d.id === id)?.sort_order ?? 0,
+        (id) => connectorStyle(id),
       ),
-    [drawnCues, words, size.width, size.height, markerSide, departments],
+    [drawnCues, words, size.width, size.height, markerSide, connectorStyle, departments],
   )
   /** Where the dragged bubble would land, laid out as the saved cue would be (full lead, clamped to the page). */
   const bubblePreview = useMemo(() => {
@@ -160,9 +161,10 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
       { width: size.width, height: size.height },
       (id) => markerSide(id),
       (id) => departments.find((d) => d.id === id)?.sort_order ?? 0,
+      (id) => connectorStyle(id),
     ).get(cue.id)
     return layout ? { cue, layout } : null
-  }, [bubbleDrag, cues, words, size.width, size.height, markerSide, departments])
+  }, [bubbleDrag, cues, words, size.width, size.height, markerSide, connectorStyle, departments])
   const annotations = session.view.annotationsByPage.get(pageIndex) ?? []
   const placing = tool === 'cue' && !('disabled' in session.cueTarget)
   const annotating =

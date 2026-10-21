@@ -54,6 +54,7 @@ function mountSession(cues: unknown[] = []) {
     },
     pages: [page],
     markerSide: () => 'left',
+    connectorStyle: () => ({ width: 'thin', pattern: 'solid' }),
     layerColour: () => '#888888',
     stamps: [],
     hover: { current: null },

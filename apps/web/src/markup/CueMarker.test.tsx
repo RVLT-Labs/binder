@@ -1,5 +1,5 @@
 import { type CueTagLayout, helveticaBoldWidth, helveticaWidth } from '@binder/core'
-import type { WordLayer } from '@binder/shared'
+import type { ConnectorStyle, WordLayer } from '@binder/shared'
 import { fireEvent, render } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { CueMarker, CueTrigger, cueAccessibleName } from './CueMarker'
@@ -46,13 +46,18 @@ const bound = {
   anchor: { ...cue.anchor, text: { quote: 'the hill', wordStart: 1, wordEnd: 2 } },
 }
 
-function tagOf(c: LayoutCue, side: 'left' | 'right' = 'left') {
+function tagOf(
+  c: LayoutCue,
+  side: 'left' | 'right' = 'left',
+  connector: ConnectorStyle = { width: 'thin', pattern: 'solid' },
+) {
   const tag = layoutPageCues(
     [c],
     words,
     { width: 600, height: 800 },
     () => side,
     () => 0,
+    () => connector,
   ).get(c.id)
   if (!tag) throw new Error('no layout')
   return tag
@@ -287,6 +292,7 @@ test('in a narrow margin a standby tag sheds its department and then its SB word
       { width: 600, height: 800 },
       () => 'left',
       () => 0,
+      () => ({ width: 'thin', pattern: 'solid' }),
     ).get('c1')
     if (!tag) throw new Error('no layout')
     return draw(standby, tag).container
@@ -322,6 +328,7 @@ test('a tag pushed off its line draws a three-segment connector that jogs in the
     { width: 600, height: 800 },
     () => 'left',
     () => 0,
+    () => ({ width: 'thin', pattern: 'solid' }),
   )
   const tag = layouts.get('c2')
   if (!tag) throw new Error('no layout')
@@ -488,6 +495,7 @@ test('a cue with no word layer renders a tick (underline, highlight) or a free b
       { width: 600, height: 800 },
       () => 'left',
       () => 0,
+      () => ({ width: 'thin', pattern: 'solid' }),
     ).get(c.id)
     if (!tag) throw new Error('no layout')
     return triggerOf(c, tag)
@@ -680,5 +688,52 @@ describe('a finger needs 44 px to grab the mark of a selected cue', () => {
         unmount()
       }
     }
+  })
+})
+
+describe('the connector takes its department style', () => {
+  const leaderOf = (connector?: ConnectorStyle) => {
+    // A bound cue's connector runs from the tag in the margin to the underline.
+    const tag = tagOf(bound, 'left', connector)
+    const { container } = render(
+      <svg aria-label="Page 1 markup">
+        <CueTrigger cue={bound} tag={tag} interactive />
+      </svg>,
+    )
+    return container.querySelector('polyline.cue-leader') as SVGPolylineElement
+  }
+
+  test('the leader polyline uses the stroke width, dash and round caps from the layout', () => {
+    const dotted = leaderOf({ width: 'bold', pattern: 'dotted' })
+    expect(dotted.getAttribute('stroke-width')).toBe('2.5')
+    expect(dotted.getAttribute('stroke-dasharray')).toBe('0 6.25')
+    expect(dotted.getAttribute('stroke-linecap')).toBe('round')
+    expect(dotted.getAttribute('stroke-linejoin')).toBe('miter')
+
+    const dashed = leaderOf({ width: 'medium', pattern: 'dashed' })
+    expect(dashed.getAttribute('stroke-width')).toBe('1.5')
+    expect(dashed.getAttribute('stroke-dasharray')).toBe('6 3.75')
+    expect(dashed.getAttribute('stroke-linecap')).toBeNull()
+  })
+
+  test('a solid default leader is exactly as before: 0.75 wide, no dash, no cap attribute', () => {
+    const leader = leaderOf()
+    expect(leader.getAttribute('stroke-width')).toBe('0.75')
+    expect(leader.getAttribute('stroke-dasharray')).toBeNull()
+    expect(leader.getAttribute('stroke-linecap')).toBeNull()
+    expect(leader.getAttribute('class')).toBe('cue-leader')
+  })
+
+  test('a moved bubble draws its straight leader in the department style too', () => {
+    const moved: LayoutCue = { ...bound, anchor: { ...bound.anchor, tag: { dx: 150, dy: -40 } } }
+    const tag = tagOf(moved, 'left', { width: 'bold', pattern: 'dashed' })
+    const { container } = render(
+      <svg aria-label="Page 1 markup">
+        <CueTrigger cue={moved} tag={tag} interactive />
+      </svg>,
+    )
+    const leader = container.querySelector('polyline.cue-leader') as SVGPolylineElement
+    expect(leader.getAttribute('stroke-width')).toBe('2.5')
+    expect(leader.getAttribute('stroke-dasharray')).not.toBeNull()
   })
 })

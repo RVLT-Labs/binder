@@ -20,10 +20,10 @@ import {
 } from './mutations'
 
 const db = { getOptional: vi.fn(), getAll: vi.fn() }
-const show = vi.hoisted(() => ({ status: 'prep' }))
+const show = vi.hoisted(() => ({ status: 'prep', settings: '' }))
 vi.mock('@powersync/react', () => ({
   usePowerSync: () => db,
-  useQuery: () => ({ data: [{ status: show.status, settings: '{"stampSet":["Hold","Go"]}' }] }),
+  useQuery: () => ({ data: [{ status: show.status, settings: show.settings }] }),
 }))
 const loadWords = vi.hoisted(() => ({ layer: null as unknown }))
 vi.mock('./wordLayers', () => ({ loadWordLayer: vi.fn(async () => loadWords.layer) }))
@@ -105,6 +105,7 @@ beforeEach(() => {
     layer_id: 'lx',
   })
   show.status = 'prep'
+  show.settings = '{"stampSet":["Hold","Go"]}'
   clearNotices()
 })
 afterEach(() => vi.clearAllMocks())
@@ -268,6 +269,15 @@ test('the session offers the show’s stamp set', () => {
 })
 
 const OLD_VERSION = 'Viewing v1 — read-only'
+
+test('the session offers a department’s connector style from the show settings, thin and solid by default', () => {
+  show.settings =
+    '{"stampSet":["Hold"],"connectorStyles":{"snd":{"width":"bold","pattern":"dashed"}}}'
+  const session = renderSession()
+  expect(session.connectorStyle('snd')).toEqual({ width: 'bold', pattern: 'dashed' })
+  expect(session.connectorStyle('lx')).toEqual({ width: 'thin', pattern: 'solid' })
+  expect(session.connectorStyle(null)).toEqual({ width: 'thin', pattern: 'solid' })
+})
 
 test('viewing a version that is not current disables every tool and says why', () => {
   const session = renderSession({ versionReadOnly: OLD_VERSION })

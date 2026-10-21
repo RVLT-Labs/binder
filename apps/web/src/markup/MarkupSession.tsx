@@ -2,6 +2,7 @@ import { snapRange } from '@binder/core'
 import {
   type Anchor,
   type BubbleOffset,
+  type ConnectorStyle,
   type CueMark,
   type CueType,
   canEditLayer,
@@ -30,6 +31,7 @@ import type { PageRow, ShowRow } from '../powersync/schema'
 import type { ViewerHandle } from '../viewer/Viewer'
 import { annotationToolState, cueToolState } from './activeDepartment'
 import { focusCueMarker } from './CueMarker'
+import { readConnectorStyle } from './connectorStyleSettings'
 import type { LayerState, LayerStore } from './layerState'
 import { readMarkerSide } from './markerSideSettings'
 import type { CueRowWithDept, MarkupView } from './markupView'
@@ -81,6 +83,8 @@ export interface MarkupSession extends AnnotationActions {
   stamps: string[]
   /** The page margin a department's cue tags sit in (the show's setting; left by default). */
   markerSide(departmentId: string | null): MarkerSide
+  /** How a department's connector is drawn (the show's setting; thin and solid by default). */
+  connectorStyle(departmentId: string | null): ConnectorStyle
   snap: boolean
   setSnap(on: boolean): void
   view: MarkupView
@@ -252,6 +256,10 @@ export function MarkupSessionProvider({
   const showSettings = shows[0]?.settings
   const markerSide = useCallback(
     (departmentId: string | null) => readMarkerSide(showSettings, departmentId ?? ''),
+    [showSettings],
+  )
+  const connectorStyle = useCallback(
+    (departmentId: string | null) => readConnectorStyle(showSettings, departmentId ?? ''),
     [showSettings],
   )
   const snap = effectiveSnap(snapDefault, snapOverride)
@@ -609,6 +617,7 @@ export function MarkupSessionProvider({
     annotationTarget,
     stamps,
     markerSide,
+    connectorStyle,
     snap,
     setSnap,
     view,

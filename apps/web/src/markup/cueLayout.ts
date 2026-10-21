@@ -8,7 +8,7 @@ import {
   markInputs,
   textExtent,
 } from '@binder/core'
-import type { CueMark, MarkerSide, TextAnchor, WordLayer } from '@binder/shared'
+import type { ConnectorStyle, CueMark, MarkerSide, TextAnchor, WordLayer } from '@binder/shared'
 import type { MarkerCue } from './CueMarker'
 
 export type LayoutCue = MarkerCue & {
@@ -19,7 +19,8 @@ export type LayoutCue = MarkerCue & {
 /**
  * Where every cue tag, highlight and leader on one page goes: the layout core also uses to stamp
  * the print, so screen and paper match. `words` is the page's word layer (null when it has none, so
- * every cue draws a tick), `sideOf` and `orderOf` give a department's margin and sort order.
+ * every cue draws a tick), `sideOf`, `orderOf` and `connectorOf` give a department's margin, sort
+ * order and connector style (its weight and pattern).
  */
 export function layoutPageCues(
   cues: readonly LayoutCue[],
@@ -27,6 +28,7 @@ export function layoutPageCues(
   size: { width: number; height: number },
   sideOf: (departmentId: string) => MarkerSide,
   orderOf: (departmentId: string) => number,
+  connectorOf: (departmentId: string) => ConnectorStyle,
 ): Map<string, CueTagLayout> {
   const layouts = layoutCueTags({
     pageWidth: size.width,
@@ -49,6 +51,7 @@ export function layoutPageCues(
         caret,
         anchorX: c.anchor.x,
         tag: c.anchor.tag ?? null,
+        connector: connectorOf(department),
         sortKey: { department: orderOf(department), major: c.major ?? 0, minor: c.minor ?? 0 },
       }
     }),

@@ -35,6 +35,7 @@ test('lays out every cue of a page by its department side and sort order', () =>
     { width: 600, height: 800 },
     (id) => (id === 'd-snd' ? 'right' : 'left'),
     (id) => (id === 'd-snd' ? 10 : 0),
+    () => ({ width: 'thin', pattern: 'solid' }),
   )
   expect(layouts.get('lx')?.tag.x).toBe(4)
   const snd = layouts.get('snd')
@@ -51,6 +52,7 @@ test('a bound cue takes its trigger boxes from the words; unbound or without wor
     { width: 600, height: 800 },
     () => 'left',
     () => 0,
+    () => ({ width: 'thin', pattern: 'solid' }),
   )
   expect(layouts.get('bound')?.triggerBoxes).toHaveLength(1)
   expect(layouts.get('bound')?.tick).toBeNull()
@@ -61,6 +63,7 @@ test('a bound cue takes its trigger boxes from the words; unbound or without wor
     { width: 600, height: 800 },
     () => 'left',
     () => 0,
+    () => ({ width: 'thin', pattern: 'solid' }),
   )
   expect(none.get('c')?.tick).not.toBeNull()
 })
@@ -75,6 +78,7 @@ test('a cue whose anchor carries a tag is laid out as a moved bubble at the offs
     { width: 600, height: 800 },
     () => 'left',
     () => 0,
+    () => ({ width: 'thin', pattern: 'solid' }),
   )
   const a = layouts.get('a')
   expect(a?.moved).toBe(true)
@@ -82,4 +86,32 @@ test('a cue whose anchor carries a tag is laid out as a moved bubble at the offs
   expect((box?.x ?? 0) + (box?.w ?? 0) / 2).toBeCloseTo(250)
   expect((box?.y ?? 0) + (box?.h ?? 0) / 2).toBeCloseTo(460)
   expect(layouts.get('b')?.moved).toBe(false)
+})
+
+test('each cue takes its department connector style into the layout stroke', () => {
+  const layouts = layoutPageCues(
+    [
+      {
+        ...base,
+        id: 'lx',
+        department_id: 'd-lx',
+        anchor: at(500, { quote: 'b', wordStart: 1, wordEnd: 1 }),
+      },
+      {
+        ...base,
+        id: 'snd',
+        dept_code: 'SND',
+        department_id: 'd-snd',
+        anchor: at(480, { quote: 'b', wordStart: 1, wordEnd: 1 }),
+      },
+    ],
+    words,
+    { width: 600, height: 800 },
+    () => 'left',
+    () => 0,
+    (id) =>
+      id === 'd-snd' ? { width: 'bold', pattern: 'dashed' } : { width: 'thin', pattern: 'solid' },
+  )
+  expect(layouts.get('lx')?.stroke).toEqual({ width: 0.75, dash: null, round: false })
+  expect(layouts.get('snd')?.stroke).toEqual({ width: 2.5, dash: [10, 6.25], round: false })
 })
