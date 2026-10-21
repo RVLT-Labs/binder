@@ -109,7 +109,7 @@ The same function draws and snaps, so what the preview shows is what is stored a
 | medium | 1.5 pt |
 | bold | 2.5 pt |
 
-Solid is a plain stroke. Dashed repeats a dash of `4w` and a gap of `2.5w`. Dotted uses round caps with a zero-length dash and a gap of `2.5w`, so the dots scale with the weight. The stagger between parallel connectors on one line becomes `max(LEADER_STEP, w + 0.75)`, so heavy connectors do not merge. The tag's own outline (standby dashed, warn heavier) is separate and unchanged. It reaches core through `buildStampItems`, which already receives the show's `settings`, and through the web overlay's session.
+Solid is a plain stroke. Dashed repeats a dash of `4w` and a gap of `2.5w`. Dotted uses round caps with a zero-length dash and a gap of `2.5w`, so the dots scale with the weight. The stagger between parallel connectors on one line and side becomes `max(LEADER_STEP, w + 0.75)`, so heavy connectors do not merge. Two connectors on one line can belong to departments with different widths, so the offsets accumulate pairwise in placement order: `offset_i = offset_prev + max(LEADER_STEP, (w_prev + w_i) / 2 + 0.75)`, the first connector having offset 0. For equal widths this is exactly `max(LEADER_STEP, w + 0.75)`, and for thin it is exactly today's 1.5 pt, so existing shows are unchanged. A thin connector never crosses a glyph; a heavier one staggered under a crowded line can touch the line below (the formula puts the second bold connector about 3.25 pt under the underline). The tag's own outline (standby dashed, warn heavier) is separate and unchanged. It reaches core through `buildStampItems`, which already receives the show's `settings`, and through the web overlay's session.
 
 ## Interaction (web)
 
