@@ -8,7 +8,7 @@ import { stepCue } from './markupView'
 import { endRelocate, isRelocating } from './relocate'
 import { clearSelection, useSelection } from './selection'
 import { resolveShortcut } from './shortcuts'
-import { setTool, useTool } from './tools'
+import { clickMark, setTool, useTool } from './tools'
 
 /** Inputs that take no typing: a shortcut pressed while one has focus still counts. */
 const NON_TEXT_INPUTS = new Set([
@@ -94,7 +94,13 @@ export function useMarkupShortcuts(calling?: CallingKeys): void {
         case 'placeCue': {
           const at = session.hover.current
           if (!at) return
-          void session.placeCue(at.pageIndex, at.point, tool.cueType, undefined, tool.cueMark)
+          void session.placeCue(
+            at.pageIndex,
+            at.point,
+            tool.cueType,
+            undefined,
+            clickMark(tool.cueMark),
+          )
           break
         }
         case 'jumpToPage':

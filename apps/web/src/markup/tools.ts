@@ -2,11 +2,27 @@ import type { AnnotationType, CueMark, CueType } from '@binder/shared'
 import { useSyncExternalStore } from 'react'
 
 export type Tool = 'select' | 'cue' | AnnotationType
+
+/** What the cue tool is set to: one mark for every placement, or `auto`, where the gesture decides. */
+export type CueMarkChoice = CueMark | 'auto'
+
+/** The mark a click places: Auto draws a line at the click. */
+export const clickMark = (choice: CueMarkChoice): CueMark => (choice === 'auto' ? 'line' : choice)
+
+/**
+ * The mark a press-and-drag over words places: Auto highlights them. Line and pointer have no range,
+ * so they return null and a drag does nothing special.
+ */
+export function dragMark(choice: CueMarkChoice): 'underline' | 'highlight' | null {
+  if (choice === 'auto') return 'highlight'
+  return choice === 'underline' || choice === 'highlight' ? choice : null
+}
+
 export interface ToolState {
   tool: Tool
   cueType: CueType
-  /** How the cue tool marks its words: underline, highlight, line or line with pointer. */
-  cueMark: CueMark
+  /** How the cue tool marks its words: Auto (the default), underline, highlight, line or line with pointer. */
+  cueMark: CueMarkChoice
   /** The stamp the stamp tool places; null until one is chosen (the picker then offers its first). */
   stamp: string | null
   /** The highlight whose words the next word drag replaces ("Re-select words"). */
@@ -27,7 +43,7 @@ export const isAnnotationTool = (tool: Tool): tool is AnnotationType =>
 let state: ToolState = {
   tool: 'select',
   cueType: 'go',
-  cueMark: 'underline',
+  cueMark: 'auto',
   stamp: null,
   rebind: null,
 }
@@ -52,7 +68,7 @@ export function setTool(tool: Tool, cueType?: CueType): void {
 }
 
 /** Chooses how the cue tool marks its words; changing tool or cue type keeps it. */
-export function setCueMark(cueMark: CueMark): void {
+export function setCueMark(cueMark: CueMarkChoice): void {
   set({ ...state, cueMark })
 }
 

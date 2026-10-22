@@ -304,6 +304,33 @@ test('choosing Underline from Line removes the offset and the mark key', async (
   row.anchor = null
 })
 
+test('choosing Highlight on a line covers only the word it sits in, not the line it was placed with', async () => {
+  // a line is placed with up to eight words as its quote; the highlight is the one word at the bar
+  row.anchor = placedAnchor({
+    mark: 'line',
+    text: { quote: 'hello there my friend', wordStart: 0, wordEnd: 3, offset: 2 },
+  }) as never
+  const layer = {
+    words: [
+      { t: 'hello', x: 100, y: 50, w: 50, h: 10 },
+      { t: 'there', x: 160, y: 50, w: 40, h: 10 },
+      { t: 'my', x: 210, y: 50, w: 20, h: 10 },
+      { t: 'friend', x: 240, y: 50, w: 50, h: 10 },
+    ],
+    lines: [[0, 1, 2, 3]],
+  }
+  vi.mocked(loadWordLayer).mockResolvedValueOnce(layer as never)
+  const { getByRole } = render(<CueEditor cueId="c1" />)
+  fireEvent.click(
+    within(getByRole('radiogroup', { name: 'Mark' })).getByRole('radio', { name: 'Highlight' }),
+  )
+  await vi.waitFor(() => expect(updateCue).toHaveBeenCalledTimes(1))
+  const { anchor } = vi.mocked(updateCue).mock.calls[0][3]
+  expect(anchor?.mark).toBe('highlight')
+  expect(anchor?.text).toEqual({ quote: 'hello', wordStart: 0, wordEnd: 0 })
+  row.anchor = null
+})
+
 test('choosing the current mark does nothing', () => {
   row.anchor = placedAnchor() as never
   const { getByRole } = render(<CueEditor cueId="c1" />)

@@ -124,19 +124,22 @@ test('the cue flyout has a Cue mark choice beside Cue type, remembered across to
   fireEvent.click(screen.getByRole('button', { name: 'Cue tool' }))
   const mark = screen.getByLabelText('Cue mark') as HTMLSelectElement
   expect([...mark.options].map((o) => [o.value, o.text])).toEqual([
+    ['auto', 'Auto'],
     ['underline', 'Underline'],
     ['highlight', 'Highlight'],
     ['line', 'Line'],
     ['pointer', 'Line with pointer'],
   ])
-  expect(mark.value).toBe('underline')
+  // Auto is the default: a drag over words highlights, a click places a line
+  expect(mark.value).toBe('auto')
+  expect(mark.title).toMatch(/drag.*highlight.*click.*line/i)
   fireEvent.change(mark, { target: { value: 'pointer' } })
   fireEvent.change(screen.getByLabelText('Cue type'), { target: { value: 'warn' } })
   expect((screen.getByLabelText('Cue mark') as HTMLSelectElement).value).toBe('pointer')
   fireEvent.click(screen.getByRole('button', { name: 'Stamp tool' }))
   fireEvent.click(screen.getByRole('button', { name: 'Cue tool' }))
   expect((screen.getByLabelText('Cue mark') as HTMLSelectElement).value).toBe('pointer')
-  fireEvent.change(screen.getByLabelText('Cue mark'), { target: { value: 'underline' } })
+  fireEvent.change(screen.getByLabelText('Cue mark'), { target: { value: 'auto' } })
 })
 
 test('a disabled tool names its reason through aria-describedby on a .tool-hint', () => {

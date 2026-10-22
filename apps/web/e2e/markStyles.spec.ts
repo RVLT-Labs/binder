@@ -30,9 +30,10 @@ import {
 } from './revisionsHelpers'
 
 /**
- * Cue mark styles on the short libretto: underline (the default), highlight, line and line with a
- * pointer, chosen per cue from the cue flyout or the cue editor, drawn by the overlay, printed, and
- * kept (not misread) by Calling mode and the revision review.
+ * Cue mark styles on the short libretto: underline, highlight, line and line with a pointer, chosen
+ * per cue from the cue flyout or the cue editor (or, with the flyout on its default Auto, by the
+ * gesture: a click is a line, a drag over words a highlight), drawn by the overlay, printed, and kept
+ * (not misread) by Calling mode and the revision review.
  */
 test.use({ viewport: { width: 1440, height: 1000 } })
 
@@ -76,8 +77,8 @@ const trigger = (page: Page, id: string) => page.locator(`[data-cue-trigger="${i
 /** The effective mark of a stored anchor: absent means underline. */
 const markOf = (anchor: Anchor | null | undefined): CueMark => anchor?.mark ?? 'underline'
 
-/** Chooses the cue tool and the mark in its flyout. */
-async function chooseMark(page: Page, mark: CueMark): Promise<void> {
+/** Chooses the cue tool and the mark in its flyout (`auto`: a click places a line, a drag over words a highlight). */
+async function chooseMark(page: Page, mark: CueMark | 'auto'): Promise<void> {
   const tool = page.getByRole('button', { name: 'Cue tool' })
   if ((await tool.getAttribute('aria-pressed')) !== 'true') await tool.click()
   await page.getByLabel('Cue mark').selectOption(mark)
@@ -268,6 +269,76 @@ test("change a cue's mark in the editor and see it redrawn", async ({ browser })
       await expect.poll(async () => markOf((await localCue(page, id))?.anchor)).toBe('underline')
     } finally {
       await removeCues(page, id ? [id] : [])
+    }
+  })
+})
+
+test('Auto, the cue tool default: a click places a line, a drag over words places a highlight, and the editor changes either', async ({
+  browser,
+}) => {
+  await withUsers(browser, ['owner'], async ([a]) => {
+    const { page } = a
+    const ids: string[] = []
+    try {
+      await page.getByLabel('Active layer LX').check()
+      await zoomOutTo(page)
+      const layer = (await pageText(page, 0)).words
+      const versionId = readRun().libretto.versionId
+      await page.getByRole('button', { name: 'Cue tool' }).click()
+      // Nothing chosen: the flyout opens on Auto.
+      await expect(page.getByLabel('Cue mark')).toHaveValue('auto')
+
+      // A click: a line, on a character boundary of the word nearest the click.
+      const clicked = lineOf(layer, 2)
+      const lineId = await placeAt(page, versionId, clicked.x, clicked.centre - 3)
+      ids.push(lineId)
+      await expect.poll(async () => markOf((await localCue(page, lineId))?.anchor)).toBe('line')
+      await expect(trigger(page, lineId).locator('line.cue-bar')).toHaveCount(1)
+      await expect(trigger(page, lineId).locator('line.cue-underline')).toHaveCount(0)
+
+      // A drag from the start of a line's first word to the middle of its third: one highlight on the three.
+      const indices = layer.lines.filter((l) => l.length >= 3)[5] as number[]
+      const [first, , third] = indices.map((i) => layer.words[i])
+      const centre = first.y + first.h / 2
+      const from = await clientPoint(page, 0, first.x + 2, centre)
+      const to = await clientPoint(page, 0, third.x + third.w / 2, centre)
+      const before = await versionCueIds(page, versionId)
+      await page.mouse.move(from.x, from.y)
+      await page.mouse.down()
+      await page.mouse.move(to.x, to.y, { steps: 10 })
+      await page.mouse.up()
+      await expect
+        .poll(async () => (await versionCueIds(page, versionId)).length)
+        .toBe(before.length + 1)
+      const dragId = (await versionCueIds(page, versionId)).find((c) => !before.includes(c)) ?? ''
+      ids.push(dragId)
+      await expect(marker(page, dragId)).toHaveAttribute('data-selected', 'true')
+      const dragged = (await localCue(page, dragId))?.anchor
+      expect(markOf(dragged)).toBe('highlight')
+      expect([dragged?.text?.wordStart, dragged?.text?.wordEnd]).toEqual([indices[0], indices[2]])
+      await expect(trigger(page, dragId).locator('rect.cue-fill').first()).toBeVisible()
+      // The drag placed one cue: the click that ends it placed none.
+      expect((await versionCueIds(page, versionId)).length).toBe(before.length + 1)
+
+      // The editor changes either afterwards. A line made a highlight covers the one word at its bar.
+      const editor = page.getByRole('region', { name: 'Cue editor' })
+      const mark = editor.getByRole('radiogroup', { name: 'Mark' })
+      await page.getByRole('button', { name: 'Select', exact: true }).click()
+      await marker(page, lineId).click()
+      await mark.getByRole('radio', { name: 'Highlight', exact: true }).click()
+      await expect
+        .poll(async () => markOf((await localCue(page, lineId))?.anchor))
+        .toBe('highlight')
+      const narrowed = (await localCue(page, lineId))?.anchor?.text
+      expect(narrowed?.wordEnd).toBe(narrowed?.wordStart)
+      expect(narrowed?.quote.includes(' ')).toBe(false)
+      // ...and the highlight made a line.
+      await marker(page, dragId).click()
+      await mark.getByRole('radio', { name: 'Line', exact: true }).click()
+      await expect.poll(async () => markOf((await localCue(page, dragId))?.anchor)).toBe('line')
+      await expect(trigger(page, dragId).locator('line.cue-bar')).toHaveCount(1)
+    } finally {
+      await removeCues(page, ids.filter(Boolean))
     }
   })
 })

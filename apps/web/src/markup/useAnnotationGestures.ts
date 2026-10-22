@@ -22,7 +22,7 @@ import { toPagePoint } from './pagePoint'
 import { isRelocating } from './relocate'
 import { chosenStamp } from './StampPicker'
 import { select } from './selection'
-import { endRebind, isDragTool, useTool } from './tools'
+import { dragMark, endRebind, isDragTool, useTool } from './tools'
 import { highlightPoint, wordRangeFromDrag } from './wordRange'
 
 type Point = { x: number; y: number }
@@ -98,17 +98,20 @@ export function useAnnotationGestures({ pageIndex, size, words, session, slot, r
     dragPlaced.current = false
     return was
   }, [])
+  /** What a drag over words places with the cue tool as set: Auto highlights, Underline and Highlight as named. */
+  const rangeMark = dragMark(cueMark)
   const cueRange =
     tool === 'cue' &&
     !('disabled' in session.cueTarget) &&
-    // With Snap off a press-and-drag is not a range: the click places an unbound tick, as before.
+    // With Snap off a press-and-drag is not a range: the click places an unbound mark, as before.
     session.snap &&
-    (cueMark === 'underline' || cueMark === 'highlight')
+    rangeMark !== null
 
   /**
-   * A press on the page with the cue tool in underline or highlight mode: a drag past the threshold
-   * selects the words it covers, shown as a preview, and the release places one cue on them. A press
-   * and release without a drag is left to the click, which places as it always did.
+   * A press on the page with the cue tool in Auto, underline or highlight mode: a drag past the
+   * threshold selects the words it covers, shown as a preview, and the release places one cue on
+   * them. A press and release without a drag is left to the click, which places as it always did
+   * (a line in Auto).
    */
   const beginCueRange = useCallback(
     (e: ReactPointerEvent<SVGElement>, from: Point, mark: 'underline' | 'highlight') => {
@@ -154,8 +157,7 @@ export function useAnnotationGestures({ pageIndex, size, words, session, slot, r
         // A touch screen keeps its scroll: only a mouse or pen drags a range.
         if (!cueRange || isRelocating() || e.pointerType === 'touch') return
         const start = toPoint(e.clientX, e.clientY)
-        if (start && (cueMark === 'underline' || cueMark === 'highlight'))
-          beginCueRange(e, start, cueMark)
+        if (start && rangeMark) beginCueRange(e, start, rangeMark)
         return
       }
       // No native text selection or image drag under a drawing gesture.
@@ -244,7 +246,7 @@ export function useAnnotationGestures({ pageIndex, size, words, session, slot, r
       tool,
       rebind,
       cueRange,
-      cueMark,
+      rangeMark,
       beginCueRange,
       toPoint,
       words,

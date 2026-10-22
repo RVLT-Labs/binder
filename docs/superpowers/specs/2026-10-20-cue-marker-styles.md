@@ -115,7 +115,9 @@ Solid is a plain stroke. Dashed repeats a dash of `4w` and a gap of `2.5w`. Dott
 
 ### Placing
 
-The cue flyout (the one that holds the cue type) gains a **Mark** choice: Underline, Highlight, Line, Line + pointer. It is remembered the way the cue type is.
+The cue flyout (the one that holds the cue type) gains a **Mark** choice: Auto, Underline, Highlight, Line, Line + pointer. It is remembered the way the cue type is.
+
+- **Auto** (the default, added 2026-10-22 on Jayden's request: "if I drag and select a word, or multiple words, highlight; if I just click somewhere, make it a line"). A press-and-drag with a mouse or pen over words places one highlight on exactly those words (the whole range is the quote); a click places a line, as the Line choice does, including its ghost bar. The ghost gives way to the range preview while a drag is under way. A touch screen keeps its scroll, so a finger only clicks: Auto places lines there. With Snap off a drag selects nothing and a click places a free bar. The Place cue button and the `c` key are clicks, so they place a line. The choices below are overrides and work as written.
 
 - **Underline.** A click is today's behaviour. A drag selects a range (`wordRangeFromDrag`).
 - **Highlight.** A click takes the one word under the pointer; a drag selects a range. The quote is the whole range.
@@ -124,7 +126,7 @@ The cue flyout (the one that holds the cue type) gains a **Mark** choice: Underl
 
 ### Editing
 
-- The cue editor gets a **Mark** control (Segmented, the same four) under Type. Switching between underline and highlight keeps the range. Switching to a line puts it at the start of the first word; switching away from a line underlines the quote's words.
+- The cue editor gets a **Mark** control (Segmented, the same four) under Type. Switching between underline and highlight keeps the range. Switching to a line puts it at the start of the first word; switching away from a line underlines (or highlights) just the word the bar sits in, since a line's stored quote runs on to the end of its line (2026-10-22; the MCP `update_cue` keeps the whole quote).
 - It gets a **Bubble** row: "In the margin" or "Moved", and a **Reset to margin** button when moved (clears `tag`).
 
 ### Dragging

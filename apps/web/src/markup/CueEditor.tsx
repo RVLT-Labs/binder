@@ -100,8 +100,9 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
   }
 
   /**
-   * Switches how the cue marks its place; the range stays, and a line takes the caret's x (leaving a
-   * line keeps x where the caret was).
+   * Switches how the cue marks its place. A line takes the caret's x and keeps the range; leaving a
+   * line covers just the word the bar sits in (the range of a line runs to the end of its line) and
+   * keeps x where the caret was.
    */
   async function saveMark(mark: CueMark) {
     const anchor = cue.anchor
@@ -117,7 +118,7 @@ export function CueEditor({ cueId, onDone }: CueEditorProps) {
     } catch {
       // a page whose words will not load still changes mark; withMark copes without a layer
     }
-    await save({ anchor: withMark(anchor, mark, { layer }) })
+    await save({ anchor: withMark(anchor, mark, { layer, oneWord: true }) })
   }
 
   function saveNumber(text: string) {

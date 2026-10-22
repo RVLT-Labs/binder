@@ -44,6 +44,14 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   No server or MCP change: an owner changing `status` back was already the one write an archived show accepts.
 
 ### Changed
+- The cue tool places by gesture. Its `Cue mark` choice has a new default, **Auto**: dragging over one or more
+  words (mouse or pen) highlights exactly those words, and a plain click places a line on the nearest character
+  boundary (with the ghost bar showing where). Underline, Highlight, Line and Line with pointer stay in the
+  choice as overrides and behave as before; a finger on a touch screen still scrolls, so there Auto only
+  places lines (use Highlight, or the cue editor, for a highlight). The Place cue button and the `c` key place
+  a line in Auto. In the cue editor, switching a line to Underline or Highlight now covers just the word the
+  bar sits in instead of the rest of the line; MCP `update_cue` still keeps the cue's whole quote. A cue with
+  no `mark` is still an underline, and an MCP placement still defaults to underline.
 - Dragging a cue's bubble no longer moves the cue; it moves only the bubble. To move the cue, drag its mark
   (with the Select tool) or use "Move to...".
 - Crowded margin bubbles now spread up and down around their own lines instead of only drifting down the

@@ -1,4 +1,4 @@
-import type { CueMark, CueType } from '@binder/shared'
+import type { CueType } from '@binder/shared'
 import { type ReactNode, useId, useLayoutEffect, useRef, useState } from 'react'
 import { SearchIcon } from '@/components/icons'
 import { Kbd } from '@/components/ui/kbd'
@@ -8,7 +8,7 @@ import { useCloseMenuKeepingFocus } from '../viewer/PhoneBarMenu'
 import { useMarkupSession } from './MarkupSession'
 import { TOOL_DEFS } from './MarkupTools'
 import { StampPicker } from './StampPicker'
-import { setCueMark, setStamp, setTool, useTool } from './tools'
+import { type CueMarkChoice, setCueMark, setStamp, setTool, useTool } from './tools'
 import { UndoRedoButtons } from './UndoRedoButtons'
 
 // The mockup's `.tool`: 34 x 34, radius 9, a 17 px icon in `--muted`, at the desktop with a mouse.
@@ -281,8 +281,8 @@ export function ToolFlyout(
         tool: 'cue'
         cueType: CueType
         onCueTypeChange: (type: CueType) => void
-        cueMark: CueMark
-        onCueMarkChange: (mark: CueMark) => void
+        cueMark: CueMarkChoice
+        onCueMarkChange: (mark: CueMarkChoice) => void
       }
     | {
         tool: 'stamp'
@@ -311,8 +311,10 @@ export function ToolFlyout(
             aria-label="Cue mark"
             value={props.cueMark}
             className={cn(FIELD, 'ml-1.5')}
-            onChange={(e) => props.onCueMarkChange(e.target.value as CueMark)}
+            title="Auto: drag over words to highlight them, click to place a line"
+            onChange={(e) => props.onCueMarkChange(e.target.value as CueMarkChoice)}
           >
+            <option value="auto">Auto</option>
             <option value="underline">Underline</option>
             <option value="highlight">Highlight</option>
             <option value="line">Line</option>

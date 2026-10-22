@@ -22,7 +22,7 @@ function session(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   setTool('select', 'standby')
-  setCueMark('underline')
+  setCueMark('auto')
   session()
 })
 
@@ -35,6 +35,14 @@ test('it is a red button at least 56 px high that says Place cue', () => {
 })
 
 test('it places a cue at the middle of the visible page, of the chosen type, through placeCue', () => {
+  render(<PlaceCueButton />)
+  fireEvent.click(screen.getByRole('button', { name: 'Place cue' }))
+  // Auto: a button press is a click, so a line
+  expect(placeCue).toHaveBeenCalledWith(2, { x: 306, y: 400 }, 'standby', undefined, 'line')
+})
+
+test('it keeps an explicit mark chosen in the flyout', () => {
+  setCueMark('underline')
   render(<PlaceCueButton />)
   fireEvent.click(screen.getByRole('button', { name: 'Place cue' }))
   expect(placeCue).toHaveBeenCalledWith(2, { x: 306, y: 400 }, 'standby', undefined, 'underline')
