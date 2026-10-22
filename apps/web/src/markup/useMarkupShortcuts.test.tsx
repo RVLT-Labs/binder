@@ -92,5 +92,15 @@ test('the c shortcut places with the current mark', () => {
   })
   press(document.body, 'c')
   expect(placeCue).toHaveBeenCalledWith(1, { x: 5, y: 6 }, 'warn', undefined, 'pointer')
-  act(() => setCueMark('underline'))
+  act(() => setCueMark('auto'))
+})
+
+test('the c shortcut in Auto places a line: there is no drag to make a highlight from', () => {
+  render(<Harness />)
+  act(() => {
+    setTool('cue', 'go')
+    setCueMark('auto')
+  })
+  press(document.body, 'c')
+  expect(placeCue).toHaveBeenCalledWith(1, { x: 5, y: 6 }, 'go', undefined, 'line')
 })

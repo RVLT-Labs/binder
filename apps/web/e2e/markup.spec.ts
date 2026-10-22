@@ -71,10 +71,15 @@ async function selectedId(page: Page): Promise<string> {
   return (await selected(page).getAttribute('data-cue-id')) ?? ''
 }
 
-/** Places a cue with the cue tool on `line` of a page, and returns its id once it is selected. */
+/**
+ * Places an underlined cue with the cue tool on `line` of a page, and returns its id once it is
+ * selected. The tool's default (Auto) draws a line on a click; these specs are about the underline
+ * (its words, its connector), so it is chosen explicitly. markStyles.spec covers Auto.
+ */
 async function placeWithTool(page: Page, pageIndex: number, line: Line): Promise<string> {
   const tool = page.getByRole('button', { name: 'Cue tool' })
   if ((await tool.getAttribute('aria-pressed')) !== 'true') await tool.click()
+  await page.getByLabel('Cue mark').selectOption('underline')
   const before = await versionCueIds(page)
   await clickAt(page, pageIndex, line.x, line.centre - 3)
   await expect.poll(async () => (await versionCueIds(page)).length).toBe(before.length + 1)

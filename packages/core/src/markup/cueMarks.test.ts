@@ -83,14 +83,74 @@ describe('withMark', () => {
     expect(withMark(base, 'line', { layer, offset: 99 }).x).toBeCloseTo(170)
   })
 
-  test('from line to underline or highlight drops the offset and keeps the range', () => {
+  test('from line to underline or highlight drops the offset and keeps the range, as the MCP always has', () => {
     const line: Anchor = { ...base, mark: 'line', text: { ...range, offset: 3 } }
     for (const mark of ['underline', 'highlight'] as const) {
       const r = withMark(line, mark)
       expect(r.text).toEqual(range)
       expect(r.text && 'offset' in r.text).toBe(false)
+      expect(withMark(line, mark, { layer }).text).toEqual(range)
     }
-    expect(line.text?.offset).toBe(3)
+    expect(line.text).toEqual({ ...range, offset: 3 })
+  })
+
+  test('with oneWord, from line to underline or highlight covers only the word the bar sits in', () => {
+    const line: Anchor = { ...base, mark: 'line', text: { ...range, offset: 3 } }
+    for (const mark of ['underline', 'highlight'] as const) {
+      for (const opts of [{ oneWord: true }, { layer, oneWord: true }]) {
+        const r = withMark(line, mark, opts)
+        expect(r.text).toEqual({ quote: 'welcome', wordStart: 0, wordEnd: 0 })
+        expect(r.text && 'offset' in r.text).toBe(false)
+        // x stays put, so a moved bubble (an offset from x) does not shift
+        expect(r.x).toBe(line.x)
+        expect(r.y).toBe(line.y)
+      }
+    }
+    expect(line.text).toEqual({ ...range, offset: 3 })
+  })
+
+  test('the word comes from the layer when it has one, else from the quote', () => {
+    const line: Anchor = {
+      ...base,
+      mark: 'pointer',
+      text: { quote: 'stale words', wordStart: 1, wordEnd: 2, offset: 1 },
+    }
+    const one = { oneWord: true }
+    expect(withMark(line, 'highlight', { layer, ...one }).text?.quote).toBe('there')
+    expect(withMark(line, 'highlight', one).text?.quote).toBe('stale')
+    expect(withMark(line, 'highlight', { layer, ...one }).text).toMatchObject({
+      wordStart: 1,
+      wordEnd: 1,
+    })
+  })
+
+  test('a line that already covers one word, or is unbound, keeps its text as it is', () => {
+    const one: Anchor = {
+      ...base,
+      mark: 'line',
+      text: { quote: 'welcome', wordStart: 0, wordEnd: 0, offset: 2 },
+    }
+    expect(withMark(one, 'highlight', { oneWord: true }).text).toEqual({
+      quote: 'welcome',
+      wordStart: 0,
+      wordEnd: 0,
+    })
+    const unbound: Anchor = {
+      ...base,
+      mark: 'line',
+      text: { quote: '', wordStart: -1, wordEnd: -1 },
+    }
+    expect(withMark(unbound, 'highlight', { oneWord: true }).text).toEqual({
+      quote: '',
+      wordStart: -1,
+      wordEnd: -1,
+    })
+  })
+
+  test('between underline and highlight the range is untouched, even with oneWord', () => {
+    const hl = withMark(base, 'highlight', { oneWord: true })
+    expect(hl.text).toEqual(range)
+    expect(withMark(hl, 'underline', { oneWord: true }).text).toEqual(range)
   })
 
   test('to line on an unbound anchor adds no offset and leaves x and y', () => {

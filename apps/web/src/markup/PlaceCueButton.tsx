@@ -2,7 +2,7 @@ import { Plus } from 'lucide-react'
 import { useId } from 'react'
 import { Button } from '@/components/ui/button'
 import { useMarkupSession } from './MarkupSession'
-import { useTool } from './tools'
+import { clickMark, useTool } from './tools'
 
 /**
  * Phone only: the red "Place cue" button that floats at the stage's bottom right while nothing is
@@ -37,7 +37,8 @@ export function PlaceCueButton({ hidden = false }: { hidden?: boolean }) {
         aria-describedby={why ? hintId : undefined}
         onClick={() => {
           const at = session.viewer.current?.visiblePoint()
-          if (at) void session.placeCue(at.pageIndex, at.point, cueType, undefined, cueMark)
+          if (at)
+            void session.placeCue(at.pageIndex, at.point, cueType, undefined, clickMark(cueMark))
         }}
       >
         <Plus aria-hidden className="!size-5" strokeWidth={2.2} />

@@ -37,7 +37,7 @@ import type { AnnotationRow, CueRowWithDept } from './markupView'
 import { pageAt, toPagePoint } from './pagePoint'
 import { endRelocate, useRelocating } from './relocate'
 import { clearSelection, select, useSelection } from './selection'
-import { isDragTool, useTool } from './tools'
+import { clickMark, isDragTool, useTool } from './tools'
 import { rowKey, useAnnotationGestures } from './useAnnotationGestures'
 import { hundredth, tagKey as storedTagKey, useBubbleNudge } from './useBubbleNudge'
 import { useWordLayer } from './wordLayers'
@@ -172,14 +172,16 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
   const dragging = rebind !== null || (annotating && isDragTool(tool))
   const gestures = useAnnotationGestures({ pageIndex, size, words, session, slot, root })
   const { preview } = gestures
-  // A line or pointer is aimed with a ghost bar at the character boundary the click would take.
-  const aiming = placing && isCaretMark(cueMark) && !relocating
+  // A click that places a line or pointer (Auto's click does) is aimed with a ghost bar at the
+  // character boundary it would take. A drag over words is not a click, so the bar gives way to its preview.
+  const aiming = placing && isCaretMark(clickMark(cueMark)) && !relocating
+  const ranging = preview?.kind === 'range'
   const caretGhost = useMemo(() => {
-    if (!aiming || !aim || !session.snap || !words) return null
+    if (!aiming || ranging || !aim || !session.snap || !words) return null
     const caret = snapToCaret(words, aim)
     const at = caret && caretAt(words, caret.text)
     return caret && at ? barAt({ x: caret.x, box: at.box }) : null
-  }, [aiming, aim, session.snap, words])
+  }, [aiming, ranging, aim, session.snap, words])
   const { cueTarget } = session
   const cueColour =
     'departmentId' in cueTarget
@@ -231,7 +233,7 @@ export function MarkupOverlay({ page, words, zoom }: MarkupOverlayProps) {
     } else if (placing) {
       // The click that ends a range drag has already placed its cue.
       if (!gestures.consumeDragClick()) {
-        void session.placeCue(pageIndex, point, cueType, words, cueMark)
+        void session.placeCue(pageIndex, point, cueType, words, clickMark(cueMark))
       }
     } else if (gestures.placeByClick(point) || dragging) return
     else clearSelection()

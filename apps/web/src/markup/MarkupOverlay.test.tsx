@@ -209,6 +209,99 @@ test('line and pointer marks do not drag a range: a drag places nothing, the cli
   expect(placeCueRange).not.toHaveBeenCalled()
 })
 
+describe('Auto: the gesture picks the mark', () => {
+  beforeEach(() => setCueMark('auto'))
+
+  test('a click places a line', () => {
+    const { surface } = mount()
+    fireEvent.click(surface, { clientX: 70, clientY: 98 })
+    expect(placeCue).toHaveBeenCalledTimes(1)
+    expect(placeCue).toHaveBeenCalledWith(0, { x: 70, y: 702 }, 'go', words, 'line')
+    expect(placeCueRange).not.toHaveBeenCalled()
+  })
+
+  test('a press and release without a drag is a click: a line', () => {
+    const { surface } = mount()
+    pointer('pointerdown', 70, 98, surface)
+    pointer('pointerup', 70, 98, window)
+    fireEvent.click(surface, { clientX: 70, clientY: 98 })
+    expect(placeCue).toHaveBeenCalledTimes(1)
+    expect(placeCue).toHaveBeenCalledWith(0, { x: 70, y: 702 }, 'go', words, 'line')
+    expect(placeCueRange).not.toHaveBeenCalled()
+  })
+
+  test('a drag over words places one highlight on them, and the click that follows places none', () => {
+    const { surface } = mount()
+    // From "be" (word 1) down to "of" (word 5).
+    dragAndClick(surface, [75, 705], [100, 655])
+    expect(placeCueRange).toHaveBeenCalledTimes(1)
+    expect(placeCueRange).toHaveBeenCalledWith(
+      0,
+      { quote: 'be or not Pirates of', wordStart: 1, wordEnd: 5 },
+      'go',
+      'highlight',
+      words,
+    )
+    expect(placeCue).not.toHaveBeenCalled()
+    // The next, separate click is a line again.
+    fireEvent.click(surface, { clientX: 70, clientY: 98 })
+    expect(placeCue).toHaveBeenCalledWith(0, { x: 70, y: 702 }, 'go', words, 'line')
+  })
+
+  test('a drag across a single word highlights that one word', () => {
+    const { surface } = mount()
+    dragAndClick(surface, [88, 705], [97, 705])
+    expect(placeCueRange).toHaveBeenCalledWith(
+      0,
+      { quote: 'or', wordStart: 2, wordEnd: 2 },
+      'go',
+      'highlight',
+      words,
+    )
+  })
+
+  test('a finger keeps its scroll: a touch drag selects nothing and the click places a line', () => {
+    const { surface } = mount()
+    const a = client(75, 705)
+    const b = client(100, 655)
+    pointer('pointerdown', a.x, a.y, surface, 'touch')
+    pointer('pointermove', b.x, b.y, window, 'touch')
+    pointer('pointerup', b.x, b.y, window, 'touch')
+    fireEvent.click(surface, { clientX: b.x, clientY: b.y })
+    expect(placeCueRange).not.toHaveBeenCalled()
+    expect(placeCue).toHaveBeenCalledWith(0, { x: 100, y: 655 }, 'go', words, 'line')
+  })
+
+  test('with Snap off a drag selects no range: the click places a free line', () => {
+    snap = false
+    const { surface, container } = mount()
+    const a = client(75, 705)
+    const b = client(100, 655)
+    pointer('pointerdown', a.x, a.y, surface)
+    pointer('pointermove', b.x, b.y, window)
+    expect(container.querySelector('rect.cue-range-preview')).toBeNull()
+    pointer('pointerup', b.x, b.y, window)
+    fireEvent.click(surface, { clientX: b.x, clientY: b.y })
+    expect(placeCueRange).not.toHaveBeenCalled()
+    expect(placeCue).toHaveBeenCalledWith(0, { x: 100, y: 655 }, 'go', words, 'line')
+  })
+
+  test('the ghost bar shows where a click would put the line, and gives way to the drag preview', () => {
+    const { surface, container } = mount()
+    fireEvent.pointerMove(surface, { clientX: 90, clientY: 98 })
+    expect(container.querySelector('line.cue-caret-ghost')).not.toBeNull()
+    const a = client(75, 705)
+    const b = client(100, 655)
+    pointer('pointerdown', a.x, a.y, surface)
+    pointer('pointermove', b.x, b.y, window)
+    expect(container.querySelectorAll('rect.cue-range-preview')).toHaveLength(2)
+    // The pointer moves over the surface during the drag too: no bar beside the preview.
+    fireEvent.pointerMove(surface, { clientX: b.x, clientY: b.y })
+    expect(container.querySelector('line.cue-caret-ghost')).toBeNull()
+    pointer('pointerup', b.x, b.y, window)
+  })
+})
+
 test('with the line mark a ghost bar follows the pointer, snapped to the caret, in the department colour', () => {
   setCueMark('line')
   const { surface, container } = mount()
