@@ -103,6 +103,9 @@ quoting problems. For a local API on plain http, add `"--allow-http"` after the 
 | `get_document` | read-only | A document, its versions, and one version's page summaries. |
 | `update_document` | write, idempotent | Title, kind, OCR mode, snapToText, sort order. Editors. |
 | `upload_document` | write, open-world | Server downloads a PDF from a public http(s) URL as a new document or a new version. Editors. |
+| `begin_document_upload` | write | Start uploading a local PDF: declare `mode` (`new_document`, or `new_version` behind `confirm`), `sizeBytes` and `sha256`; returns a one-time `PUT` URL, its secret and a `curl` command. Editors. |
+| `complete_document_upload` | write, idempotent | After the `PUT`: add the document or version as begun and queue processing. A retry returns the same result. |
+| `cancel_document_upload` | write, destructive | Discard an unfinished upload and its staged bytes. |
 | `get_page` | read-only | A page as a JPEG (at most 1600 px on the long side) plus its word layer. |
 | `search_script` | read-only | Phrase search over a version, with page, snippet and the first word's box. |
 | `get_history` | read-only | A show's change log, newest first: who, when, via web, sync or mcp, and the before and after values. Filter by row, table, layer, user, kind (human or agent) and time window. Each entry's `seq` is what `revert_change` takes. Paginated with `before`. |
@@ -145,7 +148,24 @@ render is cached as `.../pages/{index}/image-1600.jpg`.
 `upload_document` refuses non-http(s) URLs, URLs with credentials, and any host that resolves to a
 private, loopback, link-local (including cloud metadata), CGNAT, multicast or reserved address,
 checked at connect time and again after every redirect. Downloads are capped at 200 MB while
-streaming and abort after 60 s. For a file on your own machine, upload it directly:
+streaming and abort after 60 s.
+
+For a file on the agent's own machine (a private script must never be published to get a URL), the
+agent negotiates an upload. `begin_document_upload` records the intent, size and SHA-256 and returns
+a `PUT` URL on the API with a one-time `bndu_` secret. The agent sends the raw bytes there, then
+calls `complete_document_upload`, which stores the file through the same service as every other
+upload (logged `via: mcp` with the client's name). The bytes travel outside MCP because MCP bodies
+are capped at 2 MB and a model cannot write megabytes of base64 into a tool call. The secret only
+accepts the declared bytes, for at most 5 attempts and 30 minutes, and is stored hashed; on its own
+it cannot read anything or create rows. Design and limits:
+`docs/superpowers/records/2026-10-27-mcp-private-pdf-upload.md`.
+
+```bash
+curl --fail-with-body -sS -T script.pdf -H 'Authorization: Bearer bndu_…' \
+  -H 'Content-Type: application/pdf' "$BINDER_API/api/uploads/$UPLOAD_ID"
+```
+
+A person holding their own token can still use the REST multipart upload:
 
 ```bash
 curl -F kind=libretto -F title=Script -F file=@script.pdf \

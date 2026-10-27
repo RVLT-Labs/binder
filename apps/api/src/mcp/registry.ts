@@ -33,6 +33,9 @@ export const TOOL_NAMES = [
   'get_document',
   'update_document',
   'upload_document',
+  'begin_document_upload',
+  'complete_document_upload',
+  'cancel_document_upload',
   'cancel_version_processing',
   'retry_version',
   'remove_version',
@@ -89,6 +92,9 @@ export const OPERATION_TO_TOOL: Record<string, ToolName> = {
   uploadDocumentFromUrl: 'upload_document',
   createDocument: 'upload_document',
   addDocumentVersion: 'upload_document',
+  beginDocumentUpload: 'begin_document_upload',
+  completeDocumentUpload: 'complete_document_upload',
+  cancelDocumentUpload: 'cancel_document_upload',
   cancelVersionProcessing: 'cancel_version_processing',
   retryVersion: 'retry_version',
   removeVersion: 'remove_version',
@@ -124,6 +130,8 @@ export const UI_ONLY_OPERATIONS: Record<string, string> = {
   authenticateToken:
     'auth plumbing: the MCP endpoint itself authenticates the bearer token with it',
   tokenAllowsShow: 'auth plumbing: a pure token scope predicate, not an operation',
+  receiveDocumentUpload:
+    'byte transfer, not a tool: PDF bytes cannot fit the 2 MB MCP body, so begin_document_upload hands out a PUT URL and one-time secret for them, and complete_document_upload finishes the upload',
   createExportRecord:
     'client-generated exports upload their file over REST; agents export with export_marked_script and export_cue_list, which create the record server side',
 }

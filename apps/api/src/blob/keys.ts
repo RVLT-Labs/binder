@@ -60,6 +60,16 @@ export function pageImageBlobKey(
   return `${versionPrefix(showId, documentId, versionId)}/pages/${index}/image-${maxPx}.jpg`
 }
 
+/** The bytes of a negotiated upload, between its PUT and its completion (or expiry). */
+export function uploadStagingBlobKey(showId: string, uploadId: string): string {
+  return `shows/${showId}/uploads/${uploadId}/staged.pdf`
+}
+
+/** True for any key under `shows/{showId}/uploads/`: unvalidated bytes that are never served. */
+export function isUploadStagingKey(key: string): boolean {
+  return key.split('/')[2] === 'uploads'
+}
+
 /**
  * An export's file. The nonce is server-generated per upload, so two uploads racing on one export
  * id never write the same key (the loser deletes its own blob).

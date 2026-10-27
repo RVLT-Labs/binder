@@ -26,6 +26,7 @@ import { revisions } from './routes/revisions'
 import { sync } from './routes/sync'
 import { tenancy } from './routes/tenancy'
 import { tokens } from './routes/tokens'
+import { uploads } from './routes/uploads'
 
 export interface AppDeps {
   config: Config
@@ -100,6 +101,7 @@ export function createApp(deps: AppDeps): BinderApp {
   api.route('/', history)
   api.route('/', exportRoutes)
   api.route('/', revisions)
+  api.route('/', uploads)
   api.route('/', createPresenceRoutes(upgradeWebSocket))
   app.route('/api', api)
   app.route('/', blobs)
@@ -115,8 +117,13 @@ export const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
 
 /** The multipart uploads: documents, document versions and exports. */
 const UPLOAD_PATH = /^\/api\/shows\/[^/]+\/(?:documents(?:\/[^/]+\/versions)?|exports)\/?$/
+/** The raw PDF body of a negotiated upload, capped at its declared size by the service. */
+const BYTE_UPLOAD_PATH = /^\/api\/uploads\/[^/]+\/?$/
 
 const limit = bodyLimit({ maxSize: MAX_JSON_BODY_BYTES })
 
 const jsonBodyLimit: MiddlewareHandler<AppEnv> = (c, next) =>
-  c.req.method === 'POST' && UPLOAD_PATH.test(c.req.path) ? next() : limit(c, next)
+  (c.req.method === 'POST' && UPLOAD_PATH.test(c.req.path)) ||
+  (c.req.method === 'PUT' && BYTE_UPLOAD_PATH.test(c.req.path))
+    ? next()
+    : limit(c, next)

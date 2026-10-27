@@ -23,7 +23,7 @@ const ocrMode = z.enum(['auto', 'never'])
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
 
-const documentSummary = (d: Document) => ({
+export const documentSummary = (d: Document) => ({
   id: d.id,
   showId: d.showId,
   title: d.title,
@@ -34,7 +34,7 @@ const documentSummary = (d: Document) => ({
   snapToText: d.snapToText,
 })
 
-const versionSummary = (v: DocumentVersion) => ({
+export const versionSummary = (v: DocumentVersion) => ({
   id: v.id,
   versionNumber: v.versionNumber,
   label: v.label,
@@ -137,8 +137,7 @@ export function registerDocumentTools(server: McpServer, mcp: McpContext): void 
         'documentId as the next version of that document (optional label). Editors and owners. ' +
         'Processing (OCR, word layers) then runs in the background: poll get_document until the ' +
         'version is ready. Private and local addresses are refused. For a file on your own ' +
-        'machine, upload it directly instead: curl -F kind=libretto -F title=Script ' +
-        '-F file=@script.pdf -H "Authorization: Bearer $TOKEN" $API/api/shows/$SHOW/documents',
+        'machine (a private script you must not publish), use begin_document_upload instead.',
       inputSchema: z.object({
         showId: id('show'),
         url: z.string().min(1).describe('Public http(s) URL of the PDF.'),

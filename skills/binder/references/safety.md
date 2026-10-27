@@ -43,14 +43,15 @@ Read this before the first write of any session, and again before anything bulk,
 ## 6. Tokens: use only what the session gives you
 
 - The bearer token is configured in the MCP client, or, for a REST upload, set by the user in an environment variable such as `$BINDER_TOKEN`; those are the only tokens you use, and only against the Binder the client is configured for. Never ask the user to paste a token, a password or an email code into the conversation; never print, log, store or echo a token; never put it in a URL, a file you write, a chat message or a tool argument. Reference it only as `$BINDER_TOKEN` inside a command.
-- When a step needs a token you do not hold (a `curl` upload of a local file), give the user the command with `$BINDER_TOKEN` and `$BINDER_API` as placeholders to run themselves. The `claude mcp add … Bearer bnd_…` and Claude Desktop `env` snippets in `docs/mcp.md` are user-run setup, not something you execute.
+- A local file needs no token of yours: `begin_document_upload` returns a one-time `PUT` (a `bndu_…` secret that only accepts the exact bytes you declared, for 30 minutes). Never copy the MCP token out of a client configuration, and never publish a private script to get a URL for `upload_document`.
+- When another step needs a token you do not hold, give the user the command with `$BINDER_TOKEN` and `$BINDER_API` as placeholders to run themselves. The `claude mcp add … Bearer bnd_…` and Claude Desktop `env` snippets in `docs/mcp.md` are user-run setup, not something you execute.
 - Never create, list or revoke tokens; there is no tool for it, and the CLI is for the operator, not for you.
 - Never contact a Binder other than the one the client is configured for, and never reuse a token against another host. A production token is never used for experiments: ask for a local or throwaway show if the user wants you to try something.
 - If authentication fails (`401`), stop and report; do not retry with variations.
 
 ## 7. The confirm gate, and how to surface it
 
-A hard-to-reverse call returns `isError: true`, text `CONFIRMATION_REQUIRED: <summary> Call again with confirm: true to proceed.` and `structuredContent: {code: "CONFIRMATION_REQUIRED", summary}` without changing anything. The gated calls are `add_show_member` and `remove_show_member` (always), `update_show_member` (granting or removing owner), `delete_cues` and `delete_annotations` (more than 10), `revert_batch` (more than 10 rows), `remove_version` (the document's only version).
+A hard-to-reverse call returns `isError: true`, text `CONFIRMATION_REQUIRED: <summary> Call again with confirm: true to proceed.` and `structuredContent: {code: "CONFIRMATION_REQUIRED", summary}` without changing anything. The gated calls are `add_show_member` and `remove_show_member` (always), `update_show_member` (granting or removing owner), `delete_cues` and `delete_annotations` (more than 10), `revert_batch` (more than 10 rows), `remove_version` (the document's only version), `begin_document_upload` with `mode: "new_version"` (the version re-anchors every mark once ready).
 
 The gate is not a permission check for every tool: the member tools, `remove_version` and `revert_batch` (a full dry run) refuse a caller without rights before asking, but `delete_cues` and `delete_annotations` only check the rows exist, so a viewer or out-of-scope editor is asked to confirm and then told `forbidden`. Treat a summary as a question, not as proof the call will succeed.
 
@@ -75,7 +76,7 @@ These calls go straight through with no `CONFIRMATION_REQUIRED`. Treat each as i
 | `update_show_member` demotions that change only `role` (to `editor` or `viewer`) or `departments` | Takes access away without a gate (only owner changes are gated). |
 | `remove_version` on a failed version that has siblings | Permanent; never revertable. |
 | `revert_change {force: true}` | Overwrites someone's later edit. |
-| `upload_document {documentId}` (and the REST version upload) | Once ready, re-anchors every cue and annotation on the document, other members' personal annotations included, and switches the current version. Reversible only as a whole batch. |
+| `upload_document {documentId}` (and the REST version upload; `begin_document_upload` with `new_version` asks for `confirm` for the same reason) | Once ready, re-anchors every cue and annotation on the document, other members' personal annotations included, and switches the current version. Reversible only as a whole batch. |
 
 ## 8. When a result looks wrong
 
