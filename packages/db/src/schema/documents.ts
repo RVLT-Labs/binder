@@ -74,6 +74,53 @@ export const documentVersions = pgTable(
   ],
 )
 
+/**
+ * A PDF upload negotiated over MCP (begin, PUT the bytes, complete). Server-only: never in the
+ * PowerSync publication, so neither hash leaves the API. The staged bytes live at `staging_key` until
+ * the upload completes, is cancelled or expires; `expires_at` drives the sweep.
+ */
+export const documentUploads = pgTable(
+  'document_uploads',
+  {
+    id: text('id').primaryKey(),
+    showId: text('show_id')
+      .notNull()
+      .references(() => shows.id, { onDelete: 'cascade' }),
+    // The user who began it; only they can complete or cancel it.
+    userId: text('user_id').notNull(),
+    mode: text('mode').$type<'new_document' | 'new_version'>().notNull(),
+    // new_version only. No FK: a removed document fails the completion instead of the row vanishing.
+    documentId: text('document_id'),
+    kind: text('kind').$type<DocumentKind>(),
+    title: text('title'),
+    ocrMode: text('ocr_mode').$type<OcrMode>(),
+    label: text('label'),
+    sizeBytes: integer('size_bytes').notNull(),
+    sha256: text('sha256').notNull(),
+    // SHA-256 of the one-time upload secret; the secret itself is never stored.
+    secretHash: text('secret_hash').notNull(),
+    status: text('status')
+      .$type<'pending' | 'receiving' | 'received' | 'completing' | 'completed'>()
+      .notNull()
+      .default('pending'),
+    // PUTs that began, failed ones included; capped.
+    attempts: integer('attempts').notNull().default(0),
+    stagingKey: text('staging_key').notNull(),
+    resultDocumentId: text('result_document_id'),
+    resultVersionId: text('result_version_id'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index('document_uploads_user_idx').on(t.userId, t.status),
+    index('document_uploads_expires_idx').on(t.expiresAt),
+  ],
+)
+
 export const pages = pgTable(
   'pages',
   {

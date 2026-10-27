@@ -13,11 +13,24 @@ Read this when adding a script, when a version is not `ready`, or when a user as
 
 ## Uploading
 
-Two paths, same token:
+Three paths:
 
 **From a public URL** with `upload_document {showId, url, kind?, title?, ocrMode?, documentId?, label?}`. The server fetches the PDF itself. Rules: http or https only; no user:password in the URL; the host must not resolve to a private, loopback, link-local (cloud metadata included), CGNAT, multicast or reserved address, checked at connect time and after every redirect; at most 200 MB while streaming; 60 s timeout; the response must be `200`. `kind` is required for a new document (`title` defaults to the file name, `ocrMode` to `auto`); `documentId` adds a version instead (`label` defaults to the file name), and then `kind`, `title` and `ocrMode` are refused (`invalid: kind, title and ocrMode apply only to a new document; use update_document`).
 
-**From the user's machine** over REST, because MCP carries no file bodies:
+**From your own machine** with `begin_document_upload`, one HTTP `PUT` of the bytes, then `complete_document_upload` (full shapes in [tools.md](tools.md)). Use it for a private script: it needs no token beyond the MCP connection and nothing is published. The bytes go in a `PUT` rather than the tool call because MCP bodies are capped at 2 MB.
+
+```bash
+shasum -a 256 script.pdf; wc -c < script.pdf   # sha256 and sizeBytes for the begin call
+# begin_document_upload {showId, mode: "new_document", kind: "libretto", title: "Script", sizeBytes, sha256}
+# then run the "curl" it returns, with script.pdf replaced by the path:
+curl --fail-with-body -sS -T script.pdf -H 'Authorization: Bearer bndu_…' \
+  -H 'Content-Type: application/pdf' 'https://binder.rvlt.app/api/uploads/019a…'
+# complete_document_upload {uploadId} -> {document, version}; poll get_document
+```
+
+State the intent with `mode`: `new_document` (`kind`, `title`) never touches an existing document; `new_version` (`documentId`, `label`) asks for `confirm`, because the version re-anchors every mark once ready. A wrong size, a wrong SHA-256 or a file that is not a PDF is refused at the `PUT` and can be sent again (5 attempts). An unfinished upload expires after 30 minutes, and `cancel_document_upload` discards one sooner. Completing twice returns the same document.
+
+**From a person's machine** over REST, with a token they hold themselves:
 
 ```bash
 # new document: kind and title required, ocrMode optional (snapToText is not accepted here: use update_document)

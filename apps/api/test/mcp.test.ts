@@ -134,7 +134,9 @@ describe.each(['legacy', 'auto'] as const)('%s protocol era', (era) => {
       expect(byName.get('list_shows')?.annotations?.readOnlyHint).toBe(true)
       expect(byName.get('get_page')?.annotations?.readOnlyHint).toBe(true)
       expect(byName.get('create_show')?.annotations?.readOnlyHint).toBe(false)
-      expect(byName.get('upload_document')?.description).toContain('-F file=@script.pdf')
+      // Local files go through the negotiated upload, never a copied access token.
+      expect(byName.get('upload_document')?.description).toContain('begin_document_upload')
+      expect(byName.get('upload_document')?.description).not.toContain('$TOKEN')
     })
 
     test('list_shows and get_show respect token show scope', async () => {

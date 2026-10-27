@@ -8,6 +8,16 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 ## [Unreleased]
 
 ### Added
+- MCP upload of a PDF from the agent's own machine, so a private script never has to be published or
+  an access token copied. `begin_document_upload` takes the intent (`mode: new_document`, or
+  `new_version` behind `confirm` because the version re-anchors once ready), the exact size and the
+  SHA-256, and returns a one-time `PUT /api/uploads/{id}` with a `bndu_` secret.
+  `complete_document_upload` (idempotent) then stores the file through `createDocument` or
+  `addDocumentVersion`, logged `via: mcp`; `cancel_document_upload` discards an upload. The secret
+  only accepts the declared bytes, for 5 attempts and 30 minutes, and is stored hashed. Limits: 200 MB
+  per file and 5 unfinished uploads per user. Abandoned uploads are swept every 5 minutes. Needs
+  migration `0018_document_uploads` (one additive table). Record:
+  `docs/superpowers/records/2026-10-27-mcp-private-pdf-upload.md`.
 - Cue mark styles. A cue is drawn as an underline (as before, and the default), a highlight (a translucent
   fill in the department colour, 28% and 40% while selected), a line (a bar on a character boundary, so a cue
   can sit in the middle of a word) or a line with a pointer. The mark is chosen per cue: a `Cue mark` choice

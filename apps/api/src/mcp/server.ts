@@ -18,6 +18,7 @@ import { registerPageTools } from './tools/pages'
 import { registerRevisionTools } from './tools/revisions'
 import { registerSearchTools } from './tools/search'
 import { registerShowTools } from './tools/shows'
+import { registerUploadTools } from './tools/uploads'
 
 declare module 'hono' {
   interface ContextVariableMap {
@@ -33,6 +34,7 @@ const INSTRUCTIONS = [
   'indices are zero-based and coordinates are PDF points with the origin at the bottom left.',
   'When a revised script becomes current, get_reanchor_review lists the cues and annotations that could not be placed (or are still on an older version) and resolve_reanchor_item accepts, reverts or re-anchors one; get_version_anchors shows anchors as they were on any version and compare_versions diffs two versions line by line.',
   'A document version that fails to process has a failureCode and failureMessage in list_documents and get_document; cancel_version_processing stops one that is still running, retry_version runs a failed one again from the stored file (for a damaged, password-protected or text-less file upload a corrected one instead), and remove_version deletes a failed one permanently, and its document when it was the only version.',
+  'To add a PDF from your own machine (never publish a private script to get a URL), call begin_document_upload, PUT the file as it says, then complete_document_upload; upload_document takes public URLs only.',
   "export_marked_script prints a document with chosen layers to a PDF (read it as a binder://shows/{showId}/exports/{exportId} resource); export_cue_list makes a department's cue sheet as a PDF, XLSX or CSV; list_exports lists a show's exports.",
   'House rules for cue style, mic and DCA practice and the .tmix format are the binder://guides',
   'resources; read them before marking up a script.',
@@ -53,6 +55,7 @@ export function createMcpServerFactory(deps: McpDeps): McpServerFactory {
     registerCueTools(server, mcp)
     registerAnnotationTools(server, mcp)
     registerDocumentTools(server, mcp)
+    registerUploadTools(server, mcp)
     registerHistoryTools(server, mcp)
     registerExportTools(server, mcp)
     registerRevisionTools(server, mcp)

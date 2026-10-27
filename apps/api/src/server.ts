@@ -10,6 +10,7 @@ import { connectAndMigrate } from './db'
 import { PresenceHub } from './presence/hub'
 import { createJobQueue } from './processing/queue'
 import { sweepPendingReanchors } from './processing/reanchorSweep'
+import { sweepExpiredDocumentUploads } from './services/documentUploads'
 import { createShutdown } from './shutdown'
 
 const config = loadConfig(process.env)
@@ -30,6 +31,14 @@ const sweepReanchors = () =>
   sweepPendingReanchors({ db, jobs }).catch((err) => console.error('re-anchor sweep failed', err))
 await sweepReanchors()
 const reanchorSweepTimer = setInterval(() => void sweepReanchors(), 5 * 60 * 1000)
+
+// Negotiated uploads that were abandoned (never PUT, never completed) expire after 30 minutes; their
+// rows and staged bytes go here, every five minutes (and whenever an upload begins).
+const sweepUploads = () =>
+  sweepExpiredDocumentUploads(db, blobs).catch((err) =>
+    console.error('document upload sweep failed', (err as Error).message),
+  )
+const uploadSweepTimer = setInterval(() => void sweepUploads(), 5 * 60 * 1000)
 
 // Presence (spec 3.9) is in memory: one process, one hub. Connections silent for 15 s are swept.
 const presence = new PresenceHub()
@@ -55,6 +64,7 @@ const shutdown = createShutdown({
   },
   stopQueue: () => {
     clearInterval(reanchorSweepTimer)
+    clearInterval(uploadSweepTimer)
     return boss.stop({ graceful: true, timeout: 10_000 })
   },
   endPool: () => pool.end(),

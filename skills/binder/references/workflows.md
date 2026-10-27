@@ -100,7 +100,7 @@ The user supplies a CSV with the columns of Binder's own cue sheet (`Cue, Type, 
 ## 5. Handle a new script revision
 
 1. Steps 0a–0c. Note `currentVersionId` (v1) and `list_cues {showId, documentId}` as the before-picture.
-2. Tell the user the upload will re-anchor every mark on the document (other members' personal notes included) and switch the current version, ungated; wait for a yes. Upload: `upload_document {showId, url, documentId, label: "Rehearsal cut 2"}`, or over REST for a local file (`curl -F label="Rehearsal cut 2" -F file=@script.pdf -H "Authorization: Bearer $BINDER_TOKEN" "$BINDER_API/api/shows/$SHOW/documents/$DOC/versions"`, with the session token the user set in the environment, or hand them the command). Keep `version.id` (v2).
+2. Tell the user the upload will re-anchor every mark on the document (other members' personal notes included) and switch the current version; wait for a yes. Upload: `upload_document {showId, url, documentId, label: "Rehearsal cut 2"}` (not gated), or for a local file `begin_document_upload {showId, mode: "new_version", documentId, label: "Rehearsal cut 2", sizeBytes, sha256}` without `confirm`: show its `CONFIRMATION_REQUIRED` summary, and only after an explicit yes to it call again with `confirm: true`; then the `curl` it returns, then `complete_document_upload {uploadId}`. Keep `version.id` (v2).
 3. Poll `get_document {documentId}` until v2 is `ready` and `document.currentVersionId` is v2. If v2 is `failed`, read `failureMessage` and go to [documents-and-processing.md](documents-and-processing.md).
 4. `compare_versions {fromVersionId: v1, toVersionId: v2, context: 0, limit: 200}` and summarise for the user: how many lines added and removed, and where.
    ```json

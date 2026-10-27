@@ -21,6 +21,13 @@ export {
   updateDocument,
   uploadDocumentFromUrl,
 } from './documents'
+export type { DocumentUpload } from './documentUploads'
+export {
+  beginDocumentUpload,
+  cancelDocumentUpload,
+  completeDocumentUpload,
+  receiveDocumentUpload,
+} from './documentUploads'
 export type { ExportRecord } from './exports'
 export {
   createExportRecord,

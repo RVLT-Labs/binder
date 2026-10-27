@@ -2,7 +2,7 @@ import { Readable } from 'node:stream'
 import { Hono } from 'hono'
 import type { AppEnv } from '../app'
 import { requireUser } from '../auth/middleware'
-import { parseExportKey, showIdFromKey, validateBlobKey } from '../blob/keys'
+import { isUploadStagingKey, parseExportKey, showIdFromKey, validateBlobKey } from '../blob/keys'
 import { invalid, notFound } from '../errors'
 import { requireShowRole } from '../services'
 import { readableExport } from '../services/exports'
@@ -34,6 +34,8 @@ blobs.get('/blobs/*', requireUser, async (c) => {
   const key = keyFromPath(c.req.path)
   const showId = showIdFromKey(key)
   if (!showId) throw invalid('Invalid blob key')
+  // Staged upload bytes have not been completed (or even checked) yet: no member may read them.
+  if (isUploadStagingKey(key)) throw notFound('Blob not found')
   const { db } = c.var.deps
   await requireShowRole(db, actorOf(c), showId, 'viewer')
   // Exports are the one place a show member may not read a blob: a private export is its owner's alone.

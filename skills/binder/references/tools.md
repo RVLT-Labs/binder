@@ -510,7 +510,7 @@ Returns `{document, version}` with the version `queued`; poll `get_document` unt
 
 Errors: `invalid: Not a valid URL`, `invalid: Only http and https URLs can be fetched`, `invalid: URLs with credentials are not accepted`, `invalid: URL resolves to a private or reserved address`, `invalid: Download failed with HTTP N`, `invalid: Download failed (ECONNREFUSED)` and similar, `invalid: Too many redirects`, `payload_too_large: Download exceeds 200 MB`, `invalid: File is not a PDF`, `invalid: kind is required for a new document`, `invalid: kind, title and ocrMode apply only to a new document; use update_document`, `invalid: label applies only to a new version of a document`, `forbidden: show is archived`, `forbidden: Forbidden` (viewer).
 
-For a file on the user's machine, the REST upload takes the same bearer token (see "Calling the endpoint with plain HTTP" above for how to hold it). New document: `kind` and `title` required, `ocrMode` optional; `snapToText` is **not** accepted and is silently dropped, so set it with `update_document` afterwards. New version: `label` required. Both answer `201` with the rows.
+For a file on your own machine, use [`begin_document_upload`](#begin_document_upload) below: it needs no token outside the MCP connection, and a private script never has to be published to get a URL. The REST multipart upload still works for a person (or a script) that holds its own token in `$BINDER_TOKEN`; never copy the MCP token out of a client configuration to use it. New document: `kind` and `title` required, `ocrMode` optional; `snapToText` is **not** accepted and is silently dropped, so set it with `update_document` afterwards. New version: `label` required. Both answer `201` with the rows.
 
 ```bash
 curl -F kind=libretto -F title="Pirates libretto" -F ocrMode=auto -F file=@script.pdf \
@@ -518,6 +518,74 @@ curl -F kind=libretto -F title="Pirates libretto" -F ocrMode=auto -F file=@scrip
 curl -F label="Rehearsal cut 2" -F file=@script.pdf \
   -H "Authorization: Bearer $BINDER_TOKEN" "$BINDER_API/api/shows/$SHOW/documents/$DOC/versions"
 ```
+
+### `begin_document_upload`
+
+Starts uploading a PDF that is on your own machine, in three steps: this call, an HTTP `PUT` of the raw bytes, then `complete_document_upload`. The bytes travel outside MCP because an MCP request body is capped at 2 MB and a model cannot write megabytes of base64 into a tool call. Hints: write, not idempotent (each call begins a new upload). Editors and owners on an unarchived show, within the token's show scope. **Confirm-gated** for `mode: "new_version"`.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `showId` | string | yes | |
+| `mode` | `new_document` `new_version` | yes | Say which one; nothing is inferred. |
+| `kind` | document kind | `new_document` | Refused with `new_version`. |
+| `title` | string 1..200 | `new_document` | Refused with `new_version`. |
+| `ocrMode` | `auto` `never` | no | `new_document` only. |
+| `documentId` | string | `new_version` | A document of this show. Refused with `new_document`. |
+| `label` | string 1..200 | `new_version` | Refused with `new_document`. |
+| `sizeBytes` | integer | yes | The file's exact size, 1 byte to 200 MB (`wc -c < script.pdf`, or `stat`). |
+| `sha256` | 64 hex characters | yes | `shasum -a 256 script.pdf` or `sha256sum script.pdf`. |
+| `confirm` | boolean | `new_version` | Without it a new version returns `CONFIRMATION_REQUIRED` and nothing is recorded. |
+
+**Why `new_version` is gated:** once the new version is `ready`, the server re-anchors every cue and annotation on the document (other members' personal annotations included) and makes it the current version. Show the summary, get a yes, then call again with `confirm: true`. `new_document` never touches an existing document.
+
+Returns:
+
+```json
+{
+  "uploadId": "019a…",
+  "mode": "new_document",
+  "showId": "019a…",
+  "documentId": null,
+  "sizeBytes": 48213,
+  "sha256": "9f2c…",
+  "expiresAt": "2026-10-27T12:30:00.000Z",
+  "put": {
+    "method": "PUT",
+    "url": "https://binder.rvlt.app/api/uploads/019a…",
+    "headers": { "authorization": "Bearer bndu_…", "content-type": "application/pdf" }
+  },
+  "curl": "curl --fail-with-body -sS -T script.pdf -H 'Authorization: Bearer bndu_…' -H 'Content-Type: application/pdf' 'https://binder.rvlt.app/api/uploads/019a…'",
+  "next": "PUT the file, then call complete_document_upload with this uploadId."
+}
+```
+
+Run `curl` with `script.pdf` replaced by the file's path (quote it if it has spaces). The PUT answers `200 {"uploadId", "status": "received", "sizeBytes", "sha256"}`. Its errors are HTTP statuses with `{error, message}`: `400 invalid` (`File is not a PDF`, a size or SHA-256 that differs from what you declared, an interrupted body; the staged bytes are discarded and you may PUT again), `413 payload_too_large` (more bytes than declared), `415` (a `Content-Type` other than `application/pdf` or `application/octet-stream`), `401` (no `Authorization: Bearer` header), `404 not_found` (unknown upload, wrong secret, cancelled or expired), `409 conflict` (`The file was already received; call complete_document_upload`, another PUT in progress, or 5 attempts used).
+
+The `bndu_…` secret is not an access token: it only stages bytes for this upload, only bytes with the declared size and SHA-256, for at most 5 attempts, until `expiresAt` (30 minutes). Still treat it like any credential: do not paste it into chat or logs.
+
+Errors: `invalid: kind is required for a new document`, `invalid: title is required for a new document`, `invalid: documentId and label apply only to mode new_version`, `invalid: kind, title and ocrMode apply only to mode new_document; use update_document`, `invalid: documentId is required for a new version`, `invalid: label is required for a new version`, `invalid: sizeBytes must be a positive whole number of bytes`, `payload_too_large: Upload exceeds 200 MB`, `not_found: Document not found`, `forbidden: show is archived`, `forbidden: token scope does not include this show`, `forbidden: Forbidden` (viewer), `conflict: You already have 5 unfinished uploads; complete or cancel one first`.
+
+### `complete_document_upload`
+
+Finishes an upload whose PUT succeeded: adds the document or version exactly as begun, logs it as you (through MCP) and queues processing. Hints: write, idempotent. Only the user who began it; role, token scope and archived state are checked again.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `uploadId` | string | yes |
+
+Returns `{document, version}` like `upload_document`, the version `queued`; poll `get_document` until `ready` or `failed`. Calling it again after success returns the same document and version and stores nothing more. If it fails (for example the show was archived since), the upload stays received and can be completed later, until it expires.
+
+Errors: `conflict: The file has not been received yet: PUT it to the upload URL first`, `conflict: This upload is already being completed; call again in a moment`, `not_found: Upload not found` (someone else's, cancelled or expired), `not_found: Document not found` (the target document was removed), `forbidden: show is archived`, `forbidden: Forbidden`.
+
+### `cancel_document_upload`
+
+Discards an upload that has not completed, with any bytes already sent; its PUT URL stops working. Hints: write, destructive. Only the user who began it. Unfinished uploads also expire on their own (30 minutes to start the PUT, up to 2 hours for the PUT itself, then 30 minutes to complete), and expired ones are removed every few minutes.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `uploadId` | string | yes |
+
+Returns `{cancelled: uploadId}`. Errors: `conflict: This upload has completed; remove_version removes the version it made`, `not_found: Upload not found`.
 
 ### `cancel_version_processing`
 
