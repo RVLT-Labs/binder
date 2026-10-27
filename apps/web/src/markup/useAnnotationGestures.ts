@@ -3,6 +3,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
+  useEffect,
   useRef,
   useState,
 } from 'react'
@@ -82,12 +83,31 @@ export function useAnnotationGestures({ pageIndex, size, words, session, slot, r
     [sheet, size],
   )
 
+  /** The settle timers still running, cleared with the page so none fires on a page that is gone. */
+  const settleTimers = useRef(new Set<ReturnType<typeof setTimeout>>())
+  const mounted = useRef(true)
+  useEffect(() => {
+    const timers = settleTimers.current
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      for (const timer of timers) clearTimeout(timer)
+      timers.clear()
+    }
+  }, [])
+
   /** Keeps `shown` on the page until the write lands (the row changes) or it plainly did not. */
   const settle = useCallback((shown: Preview, write: Promise<unknown>) => {
     setPreview(shown)
-    void write.finally(() =>
-      setTimeout(() => setPreview((cur) => (cur === shown ? null : cur)), SETTLE_MS),
-    )
+    void write.finally(() => {
+      // The write may land after the page has gone: there is then nothing to settle.
+      if (!mounted.current) return
+      const timer = setTimeout(() => {
+        settleTimers.current.delete(timer)
+        setPreview((cur) => (cur === shown ? null : cur))
+      }, SETTLE_MS)
+      settleTimers.current.add(timer)
+    })
   }, [])
 
   /** Set when a cue-tool drag placed its range, so the click that follows the release places nothing more. */
