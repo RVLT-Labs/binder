@@ -282,8 +282,13 @@ test('an owner makes SND large: settings, reload, offline replay, page, hit area
           contentType: 'application/pdf',
         })
         const content = await firstPageContent(readFileSync(saved))
-        expect(content).toMatch(/\/Helvetica-Bold[-\d]* 11\.7 Tf/)
-        expect(content).toMatch(/\/Helvetica-Bold[-\d]* 9 Tf/)
+        // The bold face's sizes as numbers: pdf-lib prints 11.7 as 11.700000000000001.
+        const boldSizes = [...content.matchAll(/\/Helvetica-Bold[-\d]* ([\d.]+) Tf/g)].map((m) =>
+          Number(m[1]),
+        )
+        expect(boldSizes.some((s) => Math.abs(s - 11.7) < 1e-6)).toBe(true)
+        expect(boldSizes.some((s) => s === 9)).toBe(true)
+        expect(boldSizes.every((s) => s === 9 || Math.abs(s - 11.7) < 1e-6)).toBe(true)
 
         // The stored cues as they are before the size changes: a size is a show setting and
         // never touches a cue's number, label, notes, anchor, bubble offset, type or department.
