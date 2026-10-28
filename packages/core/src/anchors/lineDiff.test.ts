@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, test } from 'vitest'
+import * as jsdiff from 'diff'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { versionFromLines } from '../../test/textLayers'
 import { diffVersionLines, diffVersionLinesBounded } from './lineDiff'
+
+// The real diff, watched: the bounded diff must not start its search when it cannot fit.
+vi.mock('diff', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('diff')>()
+  return { ...actual, diffArrays: vi.fn(actual.diffArrays) }
+})
 
 const pirates = readFileSync(
   new URL('../../../../fixtures/public/pirates.txt', import.meta.url),
@@ -96,5 +103,64 @@ describe('diffVersionLinesBounded', () => {
     const old = versionFromLines(lines('alpha', 3000), { versionId: 'v1' })
     const rewritten = versionFromLines(lines('beta', 3000), { versionId: 'v2' })
     expect(diffVersionLinesBounded(old, rewritten, 500)).toBeUndefined()
+  })
+})
+
+describe('diffVersionLinesBounded gives up early, never wrongly', () => {
+  const spy = vi.mocked(jsdiff.diffArrays)
+  beforeEach(() => {
+    spy.mockClear()
+  })
+  const v = (ls: string[], id: string) => versionFromLines(ls, { versionId: id })
+  const distinct = (prefix: string, n: number) =>
+    Array.from({ length: n }, (_, i) => `${prefix} line ${i} alpha beta gamma`)
+
+  test('two long versions with no line in common give up without starting the search', () => {
+    // The API's worst case: 6000 lines each, nothing shared, a 4000-line budget.
+    const old = v(distinct('first', 6000), 'v1')
+    const rewritten = v(distinct('second', 6000), 'v2')
+    const started = performance.now()
+    expect(diffVersionLinesBounded(old, rewritten, 4000)).toBeUndefined()
+    expect(spy).not.toHaveBeenCalled()
+    // Linear work only: far under the API's 2 s guard even on a slow runner.
+    expect(performance.now() - started).toBeLessThan(1000)
+  })
+
+  /** Each case at its exact edit distance D: within at D and D + 1, given up at D - 1. */
+  const cases: Array<[string, string[], string[]]> = [
+    [
+      'a cut and an insert',
+      distinct('a', 100),
+      [...distinct('a', 100).slice(10), ...distinct('n', 10)],
+    ],
+    [
+      'a reversed order (same lines, so no early give-up)',
+      distinct('r', 40),
+      distinct('r', 40).reverse(),
+    ],
+    [
+      'duplicated lines on both sides',
+      ['x', 'x', 'x', 'x', 'x', 'y', 'z'],
+      ['x', 'x', 'y', 'y', 'y', 'z', 'w'],
+    ],
+    ['identical', distinct('s', 50), distinct('s', 50)],
+    ['nothing in common, short', distinct('p', 30), distinct('q', 30)],
+  ]
+  test.each(cases)('%s: the bound decides exactly as the full diff', (_name, a, b) => {
+    const full = diffVersionLines(v(a, 'v1'), v(b, 'v2'))
+    const d = full.added + full.removed
+    expect(diffVersionLinesBounded(v(a, 'v1'), v(b, 'v2'), d)).toEqual(full)
+    expect(diffVersionLinesBounded(v(a, 'v1'), v(b, 'v2'), d + 1)).toEqual(full)
+    if (d > 0) expect(diffVersionLinesBounded(v(a, 'v1'), v(b, 'v2'), d - 1)).toBeUndefined()
+  })
+
+  test('the 4000-line budget itself: 2000 lines out and 2000 in is diffed, one more is not', () => {
+    const base = distinct('k', 3000)
+    const within = [...base.slice(2000), ...distinct('n', 2000)]
+    const over = [...base.slice(2001), ...distinct('n', 2001)]
+    const d = diffVersionLinesBounded(v(base, 'v1'), v(within, 'v2'), 4000)
+    expect(d?.removed).toBe(2000)
+    expect(d?.added).toBe(2000)
+    expect(diffVersionLinesBounded(v(base, 'v1'), v(over, 'v2'), 4000)).toBeUndefined()
   })
 })

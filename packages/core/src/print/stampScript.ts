@@ -48,8 +48,6 @@ import {
   NOTE_FONT_SIZE,
   POINTER_HEIGHT,
   POINTER_WIDTH,
-  TAG_FONT_SIZE,
-  TAG_RADIUS,
   UNDERLINE_WIDTH,
 } from '../markup/cueTags'
 import { helveticaWidth } from '../markup/helvetica'
@@ -458,6 +456,7 @@ function layoutCues(
     anchorX: c.x,
     tag: c.tag,
     connector: c.connector,
+    size: c.size,
     sortKey: c.sortKey,
     // A moved bubble sits on the script, where a note would hide words.
     note: c.tag ? '' : toWinAnsi(notes.get(c.id)?.text ?? ''),
@@ -525,14 +524,14 @@ function drawTag(
 ) {
   const { tag } = t
   // An opaque white pill outlined in the department colour: the script never shows through.
-  d.roundedRect(tag.x, tag.y, tag.w, tag.h, TAG_RADIUS, {
+  d.roundedRect(tag.x, tag.y, tag.w, tag.h, t.radius, {
     fill: WHITE,
     stroke: colour,
     strokeWidth: t.outlineWidth,
     dash: t.dash ? [3, 2] : undefined,
   })
-  if (t.lead) d.centredText(t.lead, t.leadX, t.centreY, TAG_FONT_SIZE, numberInk)
-  d.centredText(t.number, t.numberX, t.centreY, TAG_FONT_SIZE, numberInk, true)
+  if (t.lead) d.centredText(t.lead, t.leadX, t.centreY, t.fontSize, numberInk)
+  d.centredText(t.number, t.numberX, t.centreY, t.fontSize, numberInk, true)
 }
 
 /** The cue's note: one line of 7 pt text in the department colour, under the tag. */

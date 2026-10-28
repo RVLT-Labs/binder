@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import {
+  CUE_SIZE_SCALE,
+  CUE_SIZES,
   connectorStyle,
+  cueSize,
   DEFAULT_CONNECTOR_STYLE,
   DEFAULT_STAMPS,
   isCaretMark,
@@ -14,6 +17,7 @@ import {
   annotationFieldsSchema,
   annotationPatchSchema,
   cueFieldsSchema,
+  cueSizesSchema,
   geometrySchema,
   styleSchema,
 } from './markupSchemas'
@@ -289,6 +293,56 @@ describe('connectorStyle', () => {
     const a = connectorStyle({}, 'd1')
     a.width = 'bold'
     expect(connectorStyle({}, 'd1').width).toBe('thin')
+  })
+})
+
+describe('cueSize', () => {
+  test('is normal unless the show makes the department large', () => {
+    expect(CUE_SIZES).toEqual(['normal', 'large'])
+    expect(cueSize({}, 'd1')).toBe('normal')
+    expect(cueSize({ cueSizes: { d1: 'large' } }, 'd1')).toBe('large')
+    expect(cueSize({ cueSizes: { d1: 'large' } }, 'd2')).toBe('normal')
+    expect(cueSize({ cueSizes: { d1: 'normal' } }, 'd1')).toBe('normal')
+  })
+
+  test('falls back to normal for anything malformed', () => {
+    expect(cueSize(null as never, 'd1')).toBe('normal')
+    expect(cueSize({ cueSizes: 'large' }, 'd1')).toBe('normal')
+    expect(cueSize({ cueSizes: ['large'] }, '0')).toBe('normal')
+    expect(cueSize({ cueSizes: null }, 'd1')).toBe('normal')
+    expect(cueSize({ cueSizes: { d1: 'huge' } }, 'd1')).toBe('normal')
+    expect(cueSize({ cueSizes: { d1: 1.3 } }, 'd1')).toBe('normal')
+    expect(cueSize({ cueSizes: {} }, 'constructor')).toBe('normal')
+    expect(cueSize(JSON.parse('{"cueSizes":{"__proto__":"large"}}'), 'x')).toBe('normal')
+  })
+
+  test('large is a third bigger than normal, which is exactly today', () => {
+    expect(CUE_SIZE_SCALE.normal).toBe(1)
+    expect(CUE_SIZE_SCALE.large).toBeGreaterThanOrEqual(1.25)
+    expect(CUE_SIZE_SCALE.large).toBeLessThanOrEqual(1.4)
+  })
+})
+
+describe('cueSizesSchema', () => {
+  test('accepts a map of department id to normal or large', () => {
+    expect(cueSizesSchema.safeParse({}).success).toBe(true)
+    expect(cueSizesSchema.safeParse({ d1: 'large', d2: 'normal' }).success).toBe(true)
+  })
+
+  test('refuses any other size, shape or key', () => {
+    for (const bad of [
+      'large',
+      ['large'],
+      null,
+      { d1: 'huge' },
+      { d1: 1.3 },
+      { d1: { size: 'large' } },
+      { '': 'large' },
+      { ['x'.repeat(201)]: 'large' },
+      { 'a\u0000b': 'large' },
+    ]) {
+      expect(cueSizesSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false)
+    }
   })
 })
 

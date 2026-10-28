@@ -288,7 +288,8 @@ test('editing a number to "12.5" shows 12.5; "abc" shows an error and changes no
     await field.fill('12.5')
     await field.press('Enter')
     await expect(field).toHaveValue('12.5')
-    expect((await numbers(page, [id]))[id]).toBe('12.50')
+    // The field shows what was typed at once; the row is written a moment later.
+    await expect.poll(async () => (await numbers(page, [id]))[id]).toBe('12.50')
     await expect(page.getByRole('alert')).toHaveCount(0)
 
     await field.fill('abc')

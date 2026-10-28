@@ -116,9 +116,9 @@ Changes title, status or settings. Hints: write, idempotent. Owners only. **Not 
 | `showId` | string | yes | |
 | `title` | string 1..200 | no | |
 | `status` | `prep` `rehearsal` `running` `archived` | no | Archiving makes the show read-only; only an owner changing `status` back can write to it after that. |
-| `settings` | object | no | Replaces **all** settings. Read `get_show` first and send the merged object. Keys the app reads: `paperSize` (`A4` or `Letter`), `stampSet` (string list), `markerSides` (`{<departmentId>: "left" | "right"}`), `connectorStyles` (`{<departmentId>: {"width": "thin" | "medium" | "bold", "pattern": "solid" | "dashed" | "dotted"}}`; each missing or invalid field falls back to its default, thin or solid). |
+| `settings` | object | no | Replaces **all** settings. Read `get_show` first and send the merged object. Keys the app reads: `paperSize` (`A4` or `Letter`), `stampSet` (string list), `markerSides` (`{<departmentId>: "left" | "right"}`), `connectorStyles` (`{<departmentId>: {"width": "thin" | "medium" | "bold", "pattern": "solid" | "dashed" | "dotted"}}`; each missing or invalid field falls back to its default, thin or solid), `cueSizes` (`{<departmentId>: "normal" | "large"}`: how big that department's cue bubbles and the code and number in them are drawn; `large` is 1.3 times `normal`, and a department with no entry is `normal`). `cueSizes` is the one key the server checks: it must be an object of those two values, and every new or changed entry must name a department of this show. |
 
-Returns the show row. A patch that changes nothing returns the current row and logs nothing. Errors: `forbidden: Forbidden` (not an owner), `forbidden: show is archived` (any other change to an archived show).
+Returns the show row. A patch that changes nothing returns the current row and logs nothing. Errors: `forbidden: Forbidden` (not an owner), `forbidden: show is archived` (any other change to an archived show), `invalid: settings.cueSizes: …` (a size other than `normal` or `large`, a `cueSizes` that is not an object, or an entry for a department that is not in this show).
 
 ```json
 {"id":"01a146d3-…","settings":{"stampSet":["Enter","Exit","Blackout","Fly in","Fly out","Mic swap"],"paperSize":"A4","markerSides":{"01a146d3-e223-71ae-80f9-a877475e6464":"right"}}}

@@ -10,8 +10,6 @@ import {
   POINTER_HEIGHT,
   POINTER_WIDTH,
   SELECTED_FILL_OPACITY,
-  TAG_FONT_SIZE,
-  TAG_RADIUS,
   UNDERLINE_WIDTH,
 } from '@binder/core'
 import type { BubbleOffset, CueMark, CueType, NumberFormat, TextAnchor } from '@binder/shared'
@@ -406,7 +404,7 @@ function TagPill({ cue, tag }: { cue: MarkerCue; tag: CueTagLayout }) {
         y={box.y}
         width={box.w}
         height={box.h}
-        rx={TAG_RADIUS}
+        rx={tag.radius}
         // Opaque white: the script never shows through the tag.
         fill="var(--page)"
         stroke={colour}
@@ -420,7 +418,7 @@ function TagPill({ cue, tag }: { cue: MarkerCue; tag: CueTagLayout }) {
           y={tag.centreY}
           fill={INK}
           fontFamily={FONT_FAMILY}
-          fontSize={TAG_FONT_SIZE}
+          fontSize={tag.fontSize}
           dominantBaseline="central"
         >
           {tag.lead}
@@ -432,7 +430,7 @@ function TagPill({ cue, tag }: { cue: MarkerCue; tag: CueTagLayout }) {
         y={tag.centreY}
         fill={INK}
         fontFamily={FONT_FAMILY}
-        fontSize={TAG_FONT_SIZE}
+        fontSize={tag.fontSize}
         fontWeight={700}
         dominantBaseline="central"
       >

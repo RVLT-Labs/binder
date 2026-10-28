@@ -1,5 +1,5 @@
 import { type CueTagLayout, helveticaBoldWidth, helveticaWidth } from '@binder/core'
-import type { ConnectorStyle, WordLayer } from '@binder/shared'
+import { type ConnectorStyle, CUE_SIZE_SCALE, type CueSize, type WordLayer } from '@binder/shared'
 import { fireEvent, render } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { CueMarker, CueTrigger, cueAccessibleName } from './CueMarker'
@@ -50,6 +50,7 @@ function tagOf(
   c: LayoutCue,
   side: 'left' | 'right' = 'left',
   connector: ConnectorStyle = { width: 'thin', pattern: 'solid' },
+  size: CueSize = 'normal',
 ) {
   const tag = layoutPageCues(
     [c],
@@ -58,6 +59,7 @@ function tagOf(
     () => side,
     () => 0,
     () => connector,
+    () => size,
   ).get(c.id)
   if (!tag) throw new Error('no layout')
   return tag
@@ -74,6 +76,26 @@ const draw = (
       <CueMarker cue={c} tag={tag} selected={false} {...props} />
     </svg>,
   )
+
+test('a large department draws a bigger pill, radius and type; the marks and label stay the same', () => {
+  const S = CUE_SIZE_SCALE.large
+  const { container } = draw(bound, tagOf(bound, 'left', undefined, 'large'))
+  const g = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+  expect(g.getAttribute('data-cue-label')).toBe('LX 10.5')
+  const body = g.querySelector('rect.cue-tag-body') as SVGRectElement
+  expect(Number(body.getAttribute('height'))).toBeCloseTo(14 * S)
+  expect(Number(body.getAttribute('rx'))).toBeCloseTo(7 * S)
+  expect(Number(body.getAttribute('width'))).toBeCloseTo(
+    (6 + helveticaWidth('LX', 9) + 3 + helveticaBoldWidth('10.5', 9) + 6) * S,
+  )
+  for (const text of g.querySelectorAll('text')) {
+    expect(Number(text.getAttribute('font-size'))).toBeCloseTo(9 * S)
+  }
+  const normal = draw(bound, tagOf(bound)).container
+  const underline = (c: Element) => c.querySelector('.cue-underline')?.outerHTML
+  expect(underline(container)).toBeDefined()
+  expect(underline(container)).toBe(underline(normal))
+})
 
 test('B05/B16 a go marker preserves geometry with the entire label in page ink', () => {
   const { container } = draw(cue, tagOf(cue))

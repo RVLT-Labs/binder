@@ -6,11 +6,18 @@ import { DepartmentsSection, firstUnusedColour } from './DepartmentsSection'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() }))
 vi.mock('../api/client', () => ({ api }))
-const show = vi.hoisted(() => ({ settings: null as string | null }))
+const show = vi.hoisted(() => ({ settings: null as string | null, writes: [] as unknown[][] }))
 vi.mock('@powersync/react', () => ({
   usePowerSync: () => ({
     execute: vi.fn(),
     getOptional: vi.fn(async () => ({ settings: show.settings })),
+    writeTransaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        getOptional: async () => ({ settings: show.settings }),
+        execute: async (_sql: string, params: unknown[]) => {
+          show.writes.push(params)
+        },
+      }),
   }),
   useQuery: (sql: string) => ({
     data: sql.includes('FROM cues')
@@ -46,6 +53,7 @@ function renderSection(editable: boolean, departments = DEPARTMENTS) {
 beforeEach(() => {
   vi.clearAllMocks()
   show.settings = null
+  show.writes = []
   api.patch.mockResolvedValue({})
   api.post.mockResolvedValue({})
 })
@@ -152,7 +160,37 @@ test('a non-owner reads the connector style as words, with no controls', () => {
   expect(rows[1]).toContain('Solid')
 })
 
-test('a card reads in tab order: name, colour, number format, marker side, Hidden, then the connector controls', () => {
+test('the owner has a Normal / Large cue size control on every department; choosing Large writes settings.cueSizes and keeps the rest', async () => {
+  show.settings = '{"markerSides":{"d-snd":"right"},"cueSizes":{"d-snd":"large"}}'
+  renderSection(true)
+  const lx = screen.getByRole('radiogroup', { name: 'LX cue size' })
+  expect(within(lx).getByRole('radio', { name: 'Normal' }).getAttribute('aria-checked')).toBe(
+    'true',
+  )
+  const snd = screen.getByRole('radiogroup', { name: 'SND cue size' })
+  expect(within(snd).getByRole('radio', { name: 'Large' }).getAttribute('aria-checked')).toBe(
+    'true',
+  )
+  fireEvent.click(within(lx).getByRole('radio', { name: 'Large' }))
+  await waitFor(() => expect(show.writes).toHaveLength(1))
+  expect(JSON.parse(show.writes[0]?.[0] as string)).toEqual({
+    markerSides: { 'd-snd': 'right' },
+    cueSizes: { 'd-snd': 'large', 'd-lx': 'large' },
+  })
+  expect(show.writes[0]?.[1]).toBe('s1')
+})
+
+test('a non-owner reads the cue size as a word, with no control', () => {
+  show.settings = '{"cueSizes":{"d-lx":"large"}}'
+  renderSection(false, [dept({}), dept({ id: 'd-snd', code: 'SND', name: 'Sound' })])
+  expect(screen.queryByRole('radiogroup', { name: 'LX cue size' })).toBeNull()
+  const rows = screen.getAllByRole('listitem').map((li) => li.textContent ?? '')
+  expect(rows[0]).toContain('Cue size')
+  expect(rows[0]).toContain('Large')
+  expect(rows[1]).toContain('Normal')
+})
+
+test('a card reads in tab order: name, colour, number format, marker side, Hidden, then the connector and cue size controls', () => {
   renderSection(true)
   const inDom = [
     screen.getByLabelText('LX name'),
@@ -162,6 +200,7 @@ test('a card reads in tab order: name, colour, number format, marker side, Hidde
     screen.getAllByLabelText('Hidden')[0],
     screen.getByRole('radiogroup', { name: 'LX connector width' }),
     screen.getByRole('radiogroup', { name: 'LX connector pattern' }),
+    screen.getByRole('radiogroup', { name: 'LX cue size' }),
   ]
   // Each element comes after the one before it in the document (and so in the tab order).
   for (let i = 1; i < inDom.length; i++) {

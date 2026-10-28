@@ -1,6 +1,7 @@
 import {
   COLOUR_RE,
   type ConnectorStyle,
+  type CueSize,
   DEPARTMENT_COLOUR_PRESETS,
   deptChrome,
 } from '@binder/shared'
@@ -17,10 +18,13 @@ import { api } from '../api/client'
 import {
   ConnectorPatternControl,
   ConnectorWidthControl,
+  CueSizeControl,
   MarkerSideControl,
   PATTERN_LABEL,
   SIDE_LABEL,
+  SIZE_LABEL,
   useConnectorStyles,
+  useCueSizes,
   useMarkerSides,
   WIDTH_LABEL,
 } from '../markup/MarkerSideEditor'
@@ -86,6 +90,7 @@ export function DepartmentsSection({
 }) {
   const sides = useMarkerSides(showId)
   const connectors = useConnectorStyles(showId)
+  const sizes = useCueSizes(showId)
   const { data: counts } = useQuery<{ department_id: string; n: number }>(
     'SELECT department_id, count(*) AS n FROM cues WHERE show_id = ? GROUP BY department_id',
     [showId],
@@ -125,6 +130,8 @@ export function DepartmentsSection({
                 onSide={(s) => void sides.setSide(d.id, s)}
                 connector={connectors.styleOf(d.id)}
                 onConnector={(change) => void connectors.setStyle(d.id, change)}
+                size={sizes.sizeOf(d.id)}
+                onSize={(s) => void sizes.setSize(d.id, s)}
               />
             ) : (
               <ReadOnlyRow
@@ -132,6 +139,7 @@ export function DepartmentsSection({
                 cues={cueCount(d.id)}
                 side={sides.sideOf(d.id)}
                 connector={connectors.styleOf(d.id)}
+                size={sizes.sizeOf(d.id)}
               />
             )}
           </li>
@@ -157,9 +165,9 @@ const HEAD = 'flex items-center justify-between gap-2.5 md:contents'
 const CONTROLS = 'grid grid-cols-[44px_1.05fr_1fr] items-end gap-2 md:contents'
 
 /**
- * Phone: Connector width and Connector pattern, one under the other in the card (three words each
- * need the card's width). Table: a second line under the name, beside no header, so each control
- * carries its own label.
+ * Phone: Connector width, Connector pattern and Cue size, one under the other in the card (three
+ * words each need the card's width). Table: a second line under the name, beside no header, so each
+ * control carries its own label.
  */
 const CONNECTOR_ROW =
   'grid gap-2 md:col-span-5 md:col-start-3 md:row-start-2 md:flex md:flex-wrap md:items-center md:gap-x-5 md:gap-y-1'
@@ -172,11 +180,13 @@ function ReadOnlyRow({
   cues,
   side,
   connector,
+  size,
 }: {
   department: DepartmentRow
   cues: number
   side: 'left' | 'right'
   connector: ConnectorStyle
+  size: CueSize
 }) {
   const format = d.number_format === 'point' ? '10.50' : '10.5'
   return (
@@ -231,6 +241,10 @@ function ReadOnlyRow({
           <div className={CONNECTOR_LABEL}>Connector pattern</div>
           <span className="text-[13px] text-ink-2">{PATTERN_LABEL[connector.pattern]}</span>
         </div>
+        <div className={CONNECTOR_FIELD}>
+          <div className={CONNECTOR_LABEL}>Cue size</div>
+          <span className="text-[13px] text-ink-2">{SIZE_LABEL[size]}</span>
+        </div>
       </div>
       {d.hidden ? (
         <span className="text-[12px] text-muted md:col-start-7 md:row-start-1">hidden</span>
@@ -246,6 +260,8 @@ function EditableRow({
   onSide,
   connector,
   onConnector,
+  size,
+  onSize,
 }: {
   department: DepartmentRow
   cues: number
@@ -253,6 +269,8 @@ function EditableRow({
   onSide: (side: 'left' | 'right') => void
   connector: ConnectorStyle
   onConnector: (change: Partial<ConnectorStyle>) => void
+  size: CueSize
+  onSize: (size: CueSize) => void
 }) {
   const [name, setName] = useState(department.name ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -343,6 +361,15 @@ function EditableRow({
             code={code}
             pattern={connector.pattern}
             onChange={(pattern) => onConnector({ pattern })}
+            className="flex md:inline-flex"
+          />
+        </div>
+        <div className={CONNECTOR_FIELD}>
+          <div className={CONNECTOR_LABEL}>Cue size</div>
+          <CueSizeControl
+            code={code}
+            size={size}
+            onChange={onSize}
             className="flex md:inline-flex"
           />
         </div>

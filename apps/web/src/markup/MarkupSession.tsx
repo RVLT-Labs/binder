@@ -4,6 +4,7 @@ import {
   type BubbleOffset,
   type ConnectorStyle,
   type CueMark,
+  type CueSize,
   type CueType,
   canEditLayer,
   isCaretMark,
@@ -32,6 +33,7 @@ import type { ViewerHandle } from '../viewer/Viewer'
 import { annotationToolState, cueToolState } from './activeDepartment'
 import { focusCueMarker } from './CueMarker'
 import { readConnectorStyle } from './connectorStyleSettings'
+import { readCueSize } from './cueSizeSettings'
 import type { LayerState, LayerStore } from './layerState'
 import { readMarkerSide } from './markerSideSettings'
 import type { CueRowWithDept, MarkupView } from './markupView'
@@ -85,6 +87,8 @@ export interface MarkupSession extends AnnotationActions {
   markerSide(departmentId: string | null): MarkerSide
   /** How a department's connector is drawn (the show's setting; thin and solid by default). */
   connectorStyle(departmentId: string | null): ConnectorStyle
+  /** How big a department's cue bubbles are drawn (the show's setting; normal by default). */
+  cueSize(departmentId: string | null): CueSize
   snap: boolean
   setSnap(on: boolean): void
   view: MarkupView
@@ -260,6 +264,10 @@ export function MarkupSessionProvider({
   )
   const connectorStyle = useCallback(
     (departmentId: string | null) => readConnectorStyle(showSettings, departmentId ?? ''),
+    [showSettings],
+  )
+  const cueSize = useCallback(
+    (departmentId: string | null) => readCueSize(showSettings, departmentId ?? ''),
     [showSettings],
   )
   const snap = effectiveSnap(snapDefault, snapOverride)
@@ -618,6 +626,7 @@ export function MarkupSessionProvider({
     stamps,
     markerSide,
     connectorStyle,
+    cueSize,
     snap,
     setSnap,
     view,

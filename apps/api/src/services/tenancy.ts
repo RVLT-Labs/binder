@@ -9,6 +9,7 @@ import {
 } from '@binder/db'
 import {
   type Actor,
+  cueSizesSchema,
   DEFAULT_DEPARTMENTS,
   layerKey,
   newId,
@@ -285,6 +286,9 @@ export async function updateShow(
     const [current] = await tx.select().from(shows).where(eq(shows.id, input.showId))
     if (!current) throw notFound('Show not found')
     assertShowWritable(current, { allowUnarchive: true, patch: input.patch })
+    if (input.patch.settings !== undefined) {
+      await assertCueSizes(tx, input.showId, input.patch.settings, current.settings)
+    }
 
     const before: Record<string, unknown> = {}
     const after: Record<string, unknown> = {}
@@ -315,6 +319,46 @@ export async function updateShow(
     })
     return updated
   })
+}
+
+/**
+ * `settings.cueSizes`, when present, maps department ids to `normal` or `large` and nothing else.
+ * Every entry that is new or changed must name one of this show's departments; an entry already
+ * stored with the same value is kept, so a stale one never blocks an unrelated settings write.
+ */
+async function assertCueSizes(
+  tx: Executor,
+  showId: string,
+  next: Record<string, unknown>,
+  current: unknown,
+): Promise<void> {
+  if (!Object.hasOwn(next, 'cueSizes')) return
+  const parsed = cueSizesSchema.safeParse(next.cueSizes)
+  if (!parsed.success) throw invalid(`settings.cueSizes: ${issuesMessage(parsed.error)}`)
+  const stored =
+    current && typeof current === 'object' && !Array.isArray(current)
+      ? (current as Record<string, unknown>).cueSizes
+      : undefined
+  const before =
+    stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Record<string, unknown>)
+      : {}
+  const changed = Object.entries(parsed.data)
+    .filter(([id, size]) => !(Object.hasOwn(before, id) && before[id] === size))
+    .map(([id]) => id)
+  if (changed.length === 0) return
+  const own = new Set(
+    (
+      await tx
+        .select({ id: departments.id })
+        .from(departments)
+        .where(eq(departments.showId, showId))
+    ).map((d) => d.id),
+  )
+  const stranger = changed.find((id) => !own.has(id))
+  if (stranger !== undefined) {
+    throw invalid(`settings.cueSizes: ${stranger} is not a department of this show`)
+  }
 }
 
 export async function addShowMember(

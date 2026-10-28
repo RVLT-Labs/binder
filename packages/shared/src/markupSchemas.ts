@@ -3,7 +3,9 @@ import {
   type AnnotationType,
   COLOUR_RE,
   CUE_MARKS,
+  CUE_SIZES,
   type CueMark,
+  type CueSize,
   isCaretMark,
   QUOTE_MAX_CHARS,
 } from './markup'
@@ -12,6 +14,9 @@ import {
 const str = () => z.string().refine((s) => !s.includes('\u0000'), 'must not contain NUL')
 const id = () => str().min(1).max(200)
 const coord = () => z.number().finite().min(0).max(14400)
+
+/** `settings.cueSizes`: department id to `normal` or `large`. Nothing else is accepted. */
+export const cueSizesSchema = z.record(id(), z.enum(CUE_SIZES as [CueSize, ...CueSize[]]))
 
 const textAnchorSchema = z
   .object({

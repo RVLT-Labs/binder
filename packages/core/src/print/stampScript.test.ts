@@ -1,3 +1,4 @@
+import { CUE_SIZE_SCALE } from '@binder/shared'
 import { degrees, PDFDict, PDFDocument, PDFName, PDFNumber } from 'pdf-lib'
 import { describe, expect, test } from 'vitest'
 import { pdfContent, pdfTexts } from '../../test/pdfTexts'
@@ -254,6 +255,53 @@ function drawnText(content: string): Array<{ text: string; x: number; y: number;
   }
   return out
 }
+
+describe('cue size', () => {
+  test('a large cue prints its code and number at the large scale, in a pill that grew with them', async () => {
+    const normal = drawnText(await stampedContent([cueItem('12')]))
+    const largeContent = await stampedContent([{ ...cueItem('12'), size: 'large' }])
+    const large = drawnText(largeContent)
+    const at = (d: typeof normal, text: string) => d.find((t) => t.text === text)
+    expect(at(normal, 'LX')?.size).toBe(9)
+    expect(at(normal, '12')?.size).toBe(9)
+    expect(at(large, 'LX')?.size).toBeCloseTo(9 * CUE_SIZE_SCALE.large)
+    expect(at(large, '12')?.size).toBeCloseTo(9 * CUE_SIZE_SCALE.large)
+    // Padding and the gap grow too: the number sits further along a pill that is still flush left.
+    expect(at(large, 'LX')?.x).toBeCloseTo(TAG_EDGE + TAG_PAD * CUE_SIZE_SCALE.large)
+    expect(at(large, '12')?.x).toBeCloseTo(
+      TAG_EDGE +
+        TAG_PAD * CUE_SIZE_SCALE.large +
+        helveticaWidth('LX', 9 * CUE_SIZE_SCALE.large) +
+        3 * CUE_SIZE_SCALE.large,
+    )
+    // The pill is a rounded rect as wide as the large tag, 18.2 high around the cue's y (200): its
+    // path starts on its bottom edge one radius in from the left and reaches its top edge.
+    const w = tagWidth('LX', '12', CUE_SIZE_SCALE.large)
+    expect(w).toBeCloseTo(tagWidth('LX', '12') * CUE_SIZE_SCALE.large)
+    const ops = (content: string, op: 'm' | 'l') =>
+      [...content.matchAll(new RegExp(`([-\\d.]+) ([-\\d.]+) ${op}\\n`, 'g'))].map((m) => ({
+        x: Number(m[1]),
+        y: Number(m[2]),
+      }))
+    const near = (a: number, b: number) => Math.abs(a - b) < 1e-6
+    const pillSpan = (content: string, radius: number) => {
+      // The pill's path starts one radius in from its left end, on its bottom edge...
+      const start = ops(content, 'm').find(
+        (p) => near(p.x, TAG_EDGE + radius) && near(p.y, 200 - radius),
+      )
+      // ...and runs along its top edge, a full height above.
+      const top = ops(content, 'l').find(
+        (p) => near(p.x, TAG_EDGE + radius) && near(p.y, 200 + radius),
+      )
+      return Boolean(start && top)
+    }
+    const largeRadius = (14 * CUE_SIZE_SCALE.large) / 2
+    expect(pillSpan(largeContent, largeRadius)).toBe(true)
+    const normalContent = await stampedContent([cueItem('12')])
+    expect(pillSpan(normalContent, 7)).toBe(true)
+    expect(pillSpan(normalContent, largeRadius)).toBe(false)
+  })
+})
 
 const noteItem = (cueId: string, text: string): StampItem => ({
   kind: 'cue-note',

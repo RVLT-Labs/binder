@@ -188,6 +188,29 @@ export function markerSide(settings: Record<string, unknown>, departmentId: stri
   return side === 'right' ? 'right' : 'left'
 }
 
+/** How big a department's cue bubbles (and the code and number in them) are drawn. */
+export type CueSize = 'normal' | 'large'
+export const CUE_SIZES: readonly CueSize[] = ['normal', 'large']
+/** The scale each size draws the bubble and its text at: normal is today's 14 pt pill and 9 pt type. */
+export const CUE_SIZE_SCALE: Readonly<Record<CueSize, number>> = Object.freeze({
+  normal: 1,
+  large: 1.3,
+})
+
+/**
+ * A department's cue size: `settings.cueSizes[departmentId]` when it is `'large'`, else `'normal'`.
+ * Anything malformed falls back to normal, so a show that never set it looks as it always has.
+ */
+export function cueSize(settings: Record<string, unknown>, departmentId: string): CueSize {
+  if (!settings || typeof settings !== 'object') return 'normal'
+  const sizes = settings.cueSizes
+  if (!sizes || typeof sizes !== 'object' || Array.isArray(sizes)) return 'normal'
+  const size = Object.hasOwn(sizes, departmentId)
+    ? (sizes as Record<string, unknown>)[departmentId]
+    : undefined
+  return size === 'large' ? 'large' : 'normal'
+}
+
 export type ConnectorWidth = 'thin' | 'medium' | 'bold'
 export type ConnectorPattern = 'solid' | 'dashed' | 'dotted'
 

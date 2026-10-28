@@ -80,6 +80,27 @@ export interface LineDiff {
   removed: number
 }
 
+/**
+ * A lower bound on the lines the diff must add and remove, in linear time. Lines kept in common
+ * can be no more than the keys the two versions share, counted with repeats, so at least the rest
+ * must be added or removed. `diffArrays` gives up only when the real count exceeds its bound, so a
+ * lower bound over the bound means it would give up too: saying so now skips a search that grows
+ * with the square of the bound (seconds for two unrelated long scripts).
+ */
+function minEditLength(oldKeys: readonly string[], newKeys: readonly string[]): number {
+  const counts = new Map<string, number>()
+  for (const k of oldKeys) counts.set(k, (counts.get(k) ?? 0) + 1)
+  let shared = 0
+  for (const k of newKeys) {
+    const n = counts.get(k) ?? 0
+    if (n > 0) {
+      shared++
+      counts.set(k, n - 1)
+    }
+  }
+  return oldKeys.length + newKeys.length - 2 * shared
+}
+
 function diffLines(
   from: VersionText,
   to: VersionText,
@@ -94,6 +115,9 @@ function diffLines(
   let j = 0
   const oldKeys = a.map((l) => l.key)
   const newKeys = b.map((l) => l.key)
+  if (maxEditLength !== undefined && minEditLength(oldKeys, newKeys) > maxEditLength) {
+    return undefined
+  }
   const changes =
     maxEditLength === undefined
       ? diffArrays(oldKeys, newKeys)

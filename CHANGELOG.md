@@ -8,6 +8,16 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 ## [Unreleased]
 
 ### Added
+- Cue bubble size per department. The owner picks Normal (the default, exactly as before) or Large in
+  the Departments section of Show settings (`Cue size`); Large draws the bubble, its padding and gap and
+  the code and number 1.3 times bigger (an 18.2 pt pill, 11.7 pt type) on screen, in browser print and in
+  the server export, through the one layout in `@binder/core`, so stacking, page bounds, the margin's
+  shed-the-code ladder, leader start points and the bubble's hit area and drag limits all follow the
+  size. Marks, connectors and notes keep their size. Stored as `settings.cueSizes`
+  (`{<departmentId>: "normal" | "large"}`), with no migration; unlike the other settings keys the server
+  validates it (`updateShow`, so the web sync path and MCP `update_show` alike): any other value, a
+  non-object, or a new entry for a department outside the show is refused `invalid`. Editors and viewers
+  read the size as a word. Record: `docs/superpowers/records/2026-10-28-cue-bubble-sizing.md`.
 - MCP upload of a PDF from the agent's own machine, so a private script never has to be published or
   an access token copied. `begin_document_upload` takes the intent (`mode: new_document`, or
   `new_version` behind `confirm` because the version re-anchors once ready), the exact size and the
