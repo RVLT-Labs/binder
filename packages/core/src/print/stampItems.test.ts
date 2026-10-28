@@ -85,6 +85,7 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       colour: '#F5A623',
       side: 'left',
       connector: { width: 'thin', pattern: 'solid' },
+      size: 'normal',
       sortKey: { department: 0, major: 10, minor: 0 },
       triggerBoxes: [],
       mark: 'underline',
@@ -106,6 +107,7 @@ test('buildStampItems keeps only the version and the selected layers, with marke
       colour: '#F5A623',
       side: 'left',
       connector: { width: 'thin', pattern: 'solid' },
+      size: 'normal',
       sortKey: { department: 0, major: 14, minor: 50 },
       triggerBoxes: [],
       mark: 'underline',
@@ -235,6 +237,17 @@ test('a cue carries its department connector style; a department with no entry g
     { width: 'thin', pattern: 'solid' },
     { width: 'bold', pattern: 'dotted' },
   ])
+})
+
+test('a cue carries its department cue size; a department with no entry, or a bad one, is normal', () => {
+  const items = buildStampItems({
+    ...base,
+    settings: { cueSizes: { 'd-tm': 'large', 'd-lx': 'huge' } },
+    layers: [dept('d-lx'), dept('d-tm')],
+    cues: [cue('a'), cue('b', { departmentId: 'd-tm' })],
+    annotations: [],
+  })
+  expect(items.map((i) => (i.kind === 'cue' ? i.size : null))).toEqual(['normal', 'large'])
 })
 
 test('a bound cue carries the word boxes of its trigger, one per line; unbound or no words carry none', () => {

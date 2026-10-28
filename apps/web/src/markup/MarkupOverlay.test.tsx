@@ -40,6 +40,7 @@ const setBubble = vi.fn(async (id: string, _tag: unknown, from?: 'nudge') => {
 const moveCue = vi.fn(async () => {})
 const placeCueRange = vi.fn(async () => {})
 let snap = true
+let cueSize: 'normal' | 'large' = 'normal'
 
 function mountSession(cues: unknown[] = []) {
   h.session = {
@@ -55,6 +56,7 @@ function mountSession(cues: unknown[] = []) {
     pages: [page],
     markerSide: () => 'left',
     connectorStyle: () => ({ width: 'thin', pattern: 'solid' }),
+    cueSize: () => cueSize,
     layerColour: () => '#888888',
     stamps: [],
     hover: { current: null },
@@ -114,6 +116,7 @@ function dragAndClick(surface: SVGRectElement, from: [number, number], to: [numb
 
 beforeEach(() => {
   snap = true
+  cueSize = 'normal'
   placeCue.mockClear()
   placeCueRange.mockClear()
   setBubble.mockClear()
@@ -445,6 +448,33 @@ describe('dragging a cue bubble', () => {
     expect(container.querySelector('.cue-bubble-preview')).toBeNull()
     expect(container.querySelector('.cue-drag-ghost')).toBeNull()
     expect(document.querySelector('.cue-drag-ghost')).toBeNull()
+  })
+
+  test("a large department's bubble is drawn large, grabbed by its larger pill, and its drag preview is large too", () => {
+    cueSize = 'large'
+    select('cues', 'c1')
+    const { container } = mount([placed])
+    pageUnderPointer(container, true)
+    const body = container.querySelector('[data-cue-id="c1"] rect.cue-tag-body') as SVGRectElement
+    expect(Number(body.getAttribute('height'))).toBeCloseTo(18.2)
+    expect(Number(body.getAttribute('rx'))).toBeCloseTo(9.1)
+    const marker = container.querySelector('[data-cue-id="c1"]') as SVGGElement
+    const centre = pillCentre(container)
+    // Grab 8 points above the centre: inside a large pill (half height 9.1), outside a normal one.
+    const down = client(centre.x, centre.y + 8)
+    pointer('pointerdown', down.x, down.y, marker)
+    // Drag towards the top right corner: the preview is held on the page by its large size.
+    const to = client(598, 798)
+    pointer('pointermove', to.x, to.y, window)
+    const preview = container.querySelector(
+      '.cue-bubble-preview rect.cue-tag-body',
+    ) as SVGRectElement
+    const n = (k: string) => Number(preview.getAttribute(k))
+    expect(n('height')).toBeCloseTo(18.2)
+    expect(n('x') + n('width')).toBeLessThanOrEqual(600 + 1e-9)
+    expect(n('y') + n('height')).toBeLessThanOrEqual(800 + 1e-9)
+    pointer('pointerup', to.x, to.y, window)
+    expect(setBubble).toHaveBeenCalledTimes(1)
   })
 
   test('a finger needs about 8 px to drag a bubble, so a tap that drifts a little moves nothing; a mouse needs 3 px', () => {

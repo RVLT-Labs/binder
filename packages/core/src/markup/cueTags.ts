@@ -1,7 +1,9 @@
 import {
   type BubbleOffset,
   type ConnectorStyle,
+  CUE_SIZE_SCALE,
   type CueMark,
+  type CueSize,
   type CueType,
   DEFAULT_CONNECTOR_STYLE,
   type MarkerSide,
@@ -126,12 +128,25 @@ export function textExtent(layer: WordLayer | null | undefined): TextExtent | nu
 
 /**
  * The width of a pill holding `lead` (the code, in regular weight), a gap and `number` (bold). A
- * pill with no lead (the last step of the shrink ladder) holds just the number.
+ * pill with no lead (the last step of the shrink ladder) holds just the number. `scale` is the cue
+ * size's (`CUE_SIZE_SCALE`): the type, the padding and the gap all grow with it.
  */
-export function tagWidth(lead: string, number: string): number {
-  const num = helveticaBoldWidth(number, TAG_FONT_SIZE)
-  if (lead === '') return TAG_PAD + num + TAG_PAD
-  return TAG_PAD + helveticaWidth(lead, TAG_FONT_SIZE) + TAG_TEXT_GAP + num + TAG_PAD
+export function tagWidth(lead: string, number: string, scale = 1): number {
+  const font = TAG_FONT_SIZE * scale
+  const pad = TAG_PAD * scale
+  const num = helveticaBoldWidth(number, font)
+  if (lead === '') return pad + num + pad
+  return pad + helveticaWidth(lead, font) + TAG_TEXT_GAP * scale + num + pad
+}
+
+/** A cue size's scale; anything unknown is normal. */
+function scaleOf(size: CueSize | undefined): number {
+  return size === 'large' ? CUE_SIZE_SCALE.large : CUE_SIZE_SCALE.normal
+}
+
+/** A cue's pill height: `TAG_HEIGHT` at its size's scale. */
+function heightOf(c: CueTagInput): number {
+  return TAG_HEIGHT * scaleOf(c.size)
 }
 
 export interface CueTagInput {
@@ -164,6 +179,11 @@ export interface CueTagInput {
   tag?: BubbleOffset | null
   /** The connector's width and pattern; absent is thin and solid, today's line. */
   connector?: ConnectorStyle
+  /**
+   * The department's cue size: the pill and its code and number grow by `CUE_SIZE_SCALE[size]`.
+   * Absent is normal, today's 14 pt pill and 9 pt type. Marks, connectors and notes keep their size.
+   */
+  size?: CueSize
   /** Cues on one line are ordered by department sort order, then cue number, then id. */
   sortKey: { department: number; major: number; minor: number }
 }
@@ -182,6 +202,10 @@ export interface CueTagLayout {
   lead: string
   number: string
   tag: Box
+  /** The cue size the tag is drawn at, its type size and its corner radius (half its height). */
+  size: CueSize
+  fontSize: number
+  radius: number
   /**
    * The note under the tag: its text, cut with an ellipsis to the tag column, and its box (a block
    * `NOTE_HEIGHT` high directly under the tag, flush with the tag's outer edge; `w` is the text's
@@ -260,15 +284,17 @@ export function layoutCueTags(input: {
   const isMoved = cues.map((c) => c.tag != null)
   const notes = cues.map((c, i) => (isMoved[i] ? null : fitNote(c.note, columns[c.side])))
   const noteExtra = notes.map((n) => (n ? NOTE_HEIGHT : 0))
+  const heights = cues.map(heightOf)
   const fitted = cues.map((c, i) => {
+    const scale = scaleOf(c.size)
     // A moved bubble is not in the margin, so it keeps its whole lead.
-    if (isMoved[i]) return { lead: c.lead, w: tagWidth(c.lead, c.number) }
+    if (isMoved[i]) return { lead: c.lead, w: tagWidth(c.lead, c.number, scale) }
     const room = (c.side === 'left' ? left : pageWidth - right) - TAG_EDGE
     // The department goes first, then the type word: the outline carries the type, but a word is
     // what survives a photocopy.
     const steps = [...new Set([c.lead, c.typeWord, ''])]
-    const lead = steps.find((l) => tagWidth(l, c.number) <= room) ?? ''
-    return { lead, w: tagWidth(lead, c.number) }
+    const lead = steps.find((l) => tagWidth(l, c.number, scale) <= room) ?? ''
+    return { lead, w: tagWidth(lead, c.number, scale) }
   })
   const centres: number[] = []
   const rank = new Map<number, number>()
@@ -280,7 +306,7 @@ export function layoutCueTags(input: {
     order.forEach((i, k) => {
       rank.set(i, k)
     })
-    stackSide(order, cues, noteExtra, centres, bounds)
+    stackSide(order, cues, heights, noteExtra, centres, bounds)
   }
   const targets = cues.map((c) => markTarget(c))
   const offsets = leaderOffsets(cues, targets, rank)
@@ -312,7 +338,7 @@ function movedCentre(
   pageWidth: number,
   bounds: { minY: number; maxY: number },
 ): { x: number; y: number } {
-  const half = TAG_HEIGHT / 2
+  const half = heightOf(c) / 2
   return {
     x: Math.max(w / 2, Math.min(pageWidth - w / 2, c.anchorX + tag.dx)),
     y: Math.min(bounds.maxY - half, Math.max(bounds.minY + half, c.y + tag.dy)),
@@ -334,15 +360,20 @@ function movedCentre(
 function stackSide(
   order: number[],
   cues: readonly CueTagInput[],
+  /** Each tag's height: `TAG_HEIGHT` at its cue size. */
+  heights: readonly number[],
   /** The points a note adds under each tag: 0 or `NOTE_HEIGHT`. */
   extra: readonly number[],
   centres: number[],
   bounds: { minY: number; maxY: number },
 ) {
-  const step = TAG_HEIGHT + TAG_GAP
-  const ceiling = bounds.maxY - TAG_HEIGHT / 2
+  const half = (i: number) => (heights[i] as number) / 2
+  // Neighbours in a stack sit half of each apart plus the gap, and the upper one's note.
+  const step = (upper: number, lower: number) =>
+    half(upper) + half(lower) + TAG_GAP + (extra[upper] as number)
+  const ceilingOf = (i: number) => bounds.maxY - half(i)
   // A note hangs below its tag, so the tag is lifted that much further off the floor.
-  const floorOf = (i: number) => bounds.minY + TAG_HEIGHT / 2 + (extra[i] as number)
+  const floorOf = (i: number) => bounds.minY + half(i) + (extra[i] as number)
   interface Group {
     members: number[]
     /** Where each member sits below the group's first tag (0 for the first). */
@@ -355,14 +386,17 @@ function stackSide(
     let offset = 0
     let wanted = 0
     members.forEach((i, k) => {
-      if (k > 0) offset += step + (extra[members[k - 1] as number] as number)
+      if (k > 0) offset += step(members[k - 1] as number, i)
       offsets.push(offset)
       wanted += (cues[i] as CueTagInput).y + offset
     })
     // The lowest tag is the one the footer can reach; the highest is the one the page top can.
     const lowest = members[members.length - 1] as number
     const lowestOffset = offsets[offsets.length - 1] as number
-    const top = Math.min(Math.max(wanted / members.length, floorOf(lowest) + lowestOffset), ceiling)
+    const top = Math.min(
+      Math.max(wanted / members.length, floorOf(lowest) + lowestOffset),
+      ceilingOf(members[0] as number),
+    )
     return { members, offsets, top }
   }
   const bottomOf = (g: Group) => g.top - (g.offsets[g.offsets.length - 1] as number)
@@ -370,8 +404,9 @@ function stackSide(
   for (const i of order) {
     let group = place([i])
     for (let prev = groups[groups.length - 1]; prev; prev = groups[groups.length - 1]) {
-      const held = extra[prev.members[prev.members.length - 1] as number] as number
-      if (bottomOf(prev) - group.top >= TAG_HEIGHT + held) break
+      const last = prev.members[prev.members.length - 1] as number
+      const held = extra[last] as number
+      if (bottomOf(prev) - group.top >= half(last) + half(group.members[0] as number) + held) break
       groups.pop()
       group = place([...prev.members, ...group.members])
     }
@@ -381,7 +416,7 @@ function stackSide(
     g.members.forEach((i, k) => {
       // A cluster too big for the room between the footer and the top cannot be spread; it still
       // stays on the page, overlapping, rather than leave it.
-      centres[i] = Math.min(ceiling, Math.max(g.top - (g.offsets[k] as number), floorOf(i)))
+      centres[i] = Math.min(ceilingOf(i), Math.max(g.top - (g.offsets[k] as number), floorOf(i)))
     })
   }
 }
@@ -494,16 +529,21 @@ function layoutOne(
   movedTo: { x: number; y: number } | null,
 ): CueTagLayout {
   const left = c.side === 'left'
+  const size: CueSize = c.size === 'large' ? 'large' : 'normal'
+  const scale = scaleOf(size)
+  const h = TAG_HEIGHT * scale
+  const fontSize = TAG_FONT_SIZE * scale
   const x = movedTo ? movedTo.x - w / 2 : left ? TAG_EDGE : pageWidth - TAG_EDGE - w
-  const tag: Box = { x, y: centre - TAG_HEIGHT / 2, w, h: TAG_HEIGHT }
+  const tag: Box = { x, y: centre - h / 2, w, h }
   const noteBox = note
     ? {
         text: note,
         box: noteBoxUnder(tag, note, left),
       }
     : null
-  const leadX = x + TAG_PAD
-  const numberX = lead === '' ? leadX : leadX + helveticaWidth(lead, TAG_FONT_SIZE) + TAG_TEXT_GAP
+  const leadX = x + TAG_PAD * scale
+  const numberX =
+    lead === '' ? leadX : leadX + helveticaWidth(lead, fontSize) + TAG_TEXT_GAP * scale
   const mark = c.mark ?? 'underline'
   const barred = mark === 'line' || mark === 'pointer'
   const underlines =
@@ -564,6 +604,9 @@ function layoutOne(
     lead,
     number: c.number,
     tag,
+    size,
+    fontSize,
+    radius: h / 2,
     note: noteBox,
     leadX,
     numberX,
@@ -656,8 +699,10 @@ function connector(o: {
   const edge = left ? tag.x + tag.w : tag.x
   // Already touching or overlapping the mark.
   if (left ? edge >= target.x : edge <= target.x) return null
-  if (Math.abs(target.y - centre) <= TAG_HEIGHT / 2 + STRAIGHT_TOLERANCE) {
-    return [{ x: left ? edge - TAG_RADIUS : edge + TAG_RADIUS, y: target.y }, target]
+  // The pill's radius is half its height, whatever its cue size.
+  const radius = tag.h / 2
+  if (Math.abs(target.y - centre) <= radius + STRAIGHT_TOLERANCE) {
+    return [{ x: left ? edge - radius : edge + radius, y: target.y }, target]
   }
   // The gutter is never beyond the tag's edge or the mark.
   const gx = left

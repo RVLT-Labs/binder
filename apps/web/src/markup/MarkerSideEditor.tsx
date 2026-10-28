@@ -1,7 +1,14 @@
-import type { ConnectorPattern, ConnectorStyle, ConnectorWidth, MarkerSide } from '@binder/shared'
+import type {
+  ConnectorPattern,
+  ConnectorStyle,
+  ConnectorWidth,
+  CueSize,
+  MarkerSide,
+} from '@binder/shared'
 import { usePowerSync, useQuery } from '@powersync/react'
 import { Segmented } from '@/components/ui/segmented'
 import { readConnectorStyle, withConnectorStyle } from './connectorStyleSettings'
+import { readCueSize, withCueSize } from './cueSizeSettings'
 import { readMarkerSide, withMarkerSide } from './markerSideSettings'
 import { updateShowSettings } from './updateShowSettings'
 
@@ -157,6 +164,64 @@ export function ConnectorPatternControl({
       value={pattern}
       onValueChange={(v) => onChange(v as ConnectorPattern)}
       options={PATTERNS}
+      className={className}
+      itemClassName="flex-1 md:flex-none"
+    />
+  )
+}
+
+const SIZES: Array<{ value: CueSize; label: string }> = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'large', label: 'Large' },
+]
+
+export const SIZE_LABEL: Record<CueSize, string> = { normal: 'Normal', large: 'Large' }
+
+/**
+ * How big each department's cue bubbles (and the code and number in them) are drawn: normal, as
+ * they have always been, or large. Stored in the show's settings like the marker sides, so the
+ * owner picks and everyone reads; it applies on screen, in browser print and in the server export.
+ */
+export function useCueSizes(showId: string): {
+  sizeOf: (departmentId: string) => CueSize
+  setSize: (departmentId: string, size: CueSize) => Promise<void>
+} {
+  const db = usePowerSync()
+  const { data } = useQuery<{ settings: string | null }>(
+    'SELECT settings FROM shows WHERE id = ?',
+    [showId],
+  )
+  const settings = data[0]?.settings ?? null
+  return {
+    sizeOf: (departmentId) => readCueSize(settings, departmentId),
+    async setSize(departmentId, size) {
+      // Read and written in one transaction against the latest local settings, so a change made a
+      // moment ago in this browser (or already synced here) is kept. The whole settings object is
+      // uploaded, as for every show setting: a change another device makes while this one is
+      // offline can be replaced when this one's write goes up.
+      await updateShowSettings(db, showId, (current) => withCueSize(current, departmentId, size))
+    },
+  }
+}
+
+/** One department's Normal / Large control (the departments table's "Cue size"). */
+export function CueSizeControl({
+  code,
+  size,
+  onChange,
+  className,
+}: {
+  code: string
+  size: CueSize
+  onChange: (size: CueSize) => void
+  className?: string
+}) {
+  return (
+    <Segmented
+      aria-label={`${code} cue size`}
+      value={size}
+      onValueChange={(v) => onChange(v as CueSize)}
+      options={SIZES}
       className={className}
       itemClassName="flex-1 md:flex-none"
     />
