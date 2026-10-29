@@ -7,6 +7,27 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
 
 ## [Unreleased]
 
+### Known issues
+Listed in full, with their fixes, in `docs/superpowers/records/2026-10-16-ui-restyle-rulings.md` under "Known
+issues and open follow-ups". The ones worth knowing:
+- The e2e test "compare shows the cut lines as removed" (`revisions.spec.ts`) fails about one full run in three
+  on a cold dev server; it passes alone and is not a user-facing problem.
+- The offline banner takes layout space, so the document stage shifts by about 56 px when the network flaps.
+- In Calling mode the strip's page counter lags after a keypad jump until the next scroll.
+- On an archived show, the phone script keeps a disabled Place cue button whose tooltip covers script text.
+- A highlight or underline whose quote was cut at 400 characters and whose range crosses a page is not flagged
+  `approximate` when a revision re-anchors it, so it can shrink to the part that fits without landing in the
+  review list.
+- On a touch screen the cue tool places a cue with a tap, which under Auto is a line: a finger cannot drag a
+  range because the page scrolls. To highlight several words use an Apple Pencil, or choose Underline in the
+  flyout, tap, and switch its Mark to Highlight in the cue editor.
+
+## 2026-10-22: cue marks, bubbles and connectors, reactivate, and placement by gesture (`e34de82`)
+
+Deployed to production on 2026-10-22 after a fully green CI run on `main` (`check`, `images` and the browser
+`e2e` suite). This entry also collects everything since `d8ecf93` that was never dated: the canonical-contracts
+work from #2 first went out as `967f0c4` on 2026-10-20.
+
 ### Added
 - Cue bubble size per department. The owner picks Normal (the default, exactly as before) or Large in
   the Departments section of Show settings (`Cue size`); Large draws the bubble, its padding and gap and
@@ -107,21 +128,6 @@ reasoning is in the decisions log at the end of `DESIGN.md`.
   a connector style) no longer loses the first change: the settings editors read and write the show's settings
   in one local transaction. Tab order on a department row now runs marker side, Hidden, then the connector
   controls.
-
-### Known issues
-Listed in full, with their fixes, in `docs/superpowers/records/2026-10-16-ui-restyle-rulings.md` under "Known
-issues and open follow-ups". The ones worth knowing:
-- The e2e test "compare shows the cut lines as removed" (`revisions.spec.ts`) fails about one full run in three
-  on a cold dev server; it passes alone and is not a user-facing problem.
-- The offline banner takes layout space, so the document stage shifts by about 56 px when the network flaps.
-- In Calling mode the strip's page counter lags after a keypad jump until the next scroll.
-- On an archived show, the phone script keeps a disabled Place cue button whose tooltip covers script text.
-- A highlight or underline whose quote was cut at 400 characters and whose range crosses a page is not flagged
-  `approximate` when a revision re-anchors it, so it can shrink to the part that fits without landing in the
-  review list.
-- On a touch screen the cue tool places a cue with a tap: a finger cannot drag a range because the page scrolls.
-  To highlight several words use an Apple Pencil, or place an underline and switch its Mark to Highlight in the
-  cue editor.
 
 ## 2026-10-17: fixes, license and housekeeping (`d8ecf93`)
 

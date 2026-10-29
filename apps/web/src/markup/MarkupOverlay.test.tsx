@@ -305,6 +305,26 @@ describe('Auto: the gesture picks the mark', () => {
   })
 })
 
+test('the timer that keeps a dropped range on screen does not outlive the page', async () => {
+  // A timer left running after the page is gone fires after the test environment is torn down and
+  // fails the whole run with "window is not defined" (it did in CI).
+  vi.useFakeTimers()
+  try {
+    const { surface, unmount } = mount()
+    dragAndClick(surface, [75, 705], [100, 655])
+    expect(placeCueRange).toHaveBeenCalledTimes(1)
+    // let the write settle: the preview is then kept for a moment by a timer
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 test('with the line mark a ghost bar follows the pointer, snapped to the caret, in the department colour', () => {
   setCueMark('line')
   const { surface, container } = mount()
