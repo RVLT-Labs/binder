@@ -77,6 +77,7 @@ export {
   UNDERLINE_WIDTH,
 } from './markup/cueTags'
 export { helveticaBoldWidth, helveticaWidth } from './markup/helvetica'
+export { inkPath } from './markup/ink'
 export type { Box } from './markup/markers'
 export { asCueType, markerLead, markerText, markerTypeWord } from './markup/markers'
 export { wordBoxes } from './markup/wordBoxes'

@@ -51,6 +51,7 @@ import {
   UNDERLINE_WIDTH,
 } from '../markup/cueTags'
 import { helveticaWidth } from '../markup/helvetica'
+import { inkPath } from '../markup/ink'
 import { type FooterInfo, footerText } from './footer'
 import type { StampItem } from './stampItems'
 import { toWinAnsi } from './winAnsi'
@@ -402,6 +403,22 @@ class DisplayedPage {
     })
   }
 
+  inkPen(
+    x: number,
+    y: number,
+    geometry: Record<string, number>,
+    width: number,
+    colour: ReturnType<typeof rgb>,
+  ) {
+    const origin = displayedToUser(this.frame, x, y)
+    this.page.drawSvgPath(inkPath(geometry, width, true), {
+      x: origin.x,
+      y: origin.y,
+      rotate: this.turn,
+      color: colour,
+    })
+  }
+
   inkHighlight(
     points: Array<[number, number]>,
     colour: ReturnType<typeof rgb>,
@@ -582,16 +599,7 @@ function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'anno
         )
         return
       }
-      for (let i = 1; i < Math.min(num('count'), 4096); i++) {
-        d.line(
-          x + num(`x${i - 1}`),
-          y + num(`y${i - 1}`),
-          x + num(`x${i}`),
-          y + num(`y${i}`),
-          colour,
-          sw * (0.4 + (num(`p${i - 1}`) + num(`p${i}`)) * 0.6),
-        )
-      }
+      d.inkPen(x, y, g, sw, colour)
       return
     case 'rect':
       d.rect(x, y, num('w'), num('h'), { stroke: colour, strokeWidth: sw })

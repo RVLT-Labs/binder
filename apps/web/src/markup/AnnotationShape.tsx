@@ -4,6 +4,7 @@ import {
   DEFAULT_STAMP_FONT,
   DEFAULT_STROKE,
   helveticaWidth,
+  inkPath,
   NOTE_LINE_HEIGHT as LINE_HEIGHT,
   mixIntoWhite,
   NOTE_BAR_WIDTH,
@@ -337,19 +338,11 @@ function draw(a: ShapeAnnotation, colour: string, words: WordLayer | null): Draw
                 strokeLinejoin="round"
               />
             ) : (
-              points.slice(1).map((p, i) => (
-                <line
-                  // biome-ignore lint/suspicious/noArrayIndexKey: segments are ordered samples of one immutable stroke
-                  key={i}
-                  x1={points[i].x}
-                  y1={points[i].y}
-                  x2={p.x}
-                  y2={p.y}
-                  stroke={colour}
-                  strokeWidth={sw * (0.4 + (p.p + points[i].p) * 0.6)}
-                  strokeLinecap="round"
-                />
-              ))
+              <path
+                d={inkPath(a.geometry, sw)}
+                transform={`translate(${a.anchor.x} ${a.anchor.y})`}
+                fill={colour}
+              />
             )}
           </g>
         ),

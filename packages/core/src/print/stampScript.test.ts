@@ -908,11 +908,11 @@ test('ink exports in page coordinates with pressure-adjusted stroke widths', asy
     footer,
   )
   const content = (await pdfContent(out))[0] ?? ''
-  expect(content).toContain('100 200 m')
-  expect(content).toContain('120 210 l')
-  expect(content).toContain('130 190 l')
-  expect(content).toContain('2 w')
-  expect(content).toContain('2.5999999999999996 w')
+  expect(content).toContain('1 0 0 1 100 200 cm')
+  expect(content).toContain('1 0 m')
+  expect(content).toContain('21 -10 m')
+  expect(content).toContain('31.6 10 m')
+  expect(content).toContain('f')
 })
 
 test('Pencil highlighter exports one translucent multiply-blended path', async () => {
