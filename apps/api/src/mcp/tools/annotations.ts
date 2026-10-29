@@ -38,6 +38,7 @@ const LAYER_DESCRIPTION =
 const GEOMETRY_DESCRIPTION =
   'In PDF points, relative to the anchor. rect and ellipse: {w, h}, each above 0, the anchor being ' +
   'the bottom-left corner. line and arrow: {dx, dy} from the anchor (the start), not both 0. ' +
+  'ink: {count, x0, y0, p0, ...}, 2 to 4096 points; x/y are offsets, p is pressure from 0 to 1. ' +
   'note, stamp and highlight take none ({}).'
 
 /** The anchor point, plus the quote a highlight is bound to. */
@@ -98,7 +99,7 @@ export function registerAnnotationTools(server: McpServer, mcp: McpContext): voi
     {
       title: 'List annotations',
       description:
-        "Lists a show's annotations (note, rect, ellipse, line, arrow, stamp, highlight) oldest " +
+        "Lists a show's annotations (note, rect, ellipse, line, arrow, stamp, highlight, ink) oldest " +
         'first: every department layer plus your own personal layer; other people’s personal ' +
         'layers are never shown. Each has id, layer (a layer key), layerKind, layerId, type, ' +
         'anchor (documentId, documentVersionId, pageIndex, x, y in PDF points), geometry ' +

@@ -89,6 +89,7 @@ export type StampItem =
       text: string
       colour: string
       strokeWidth: number
+      opacity?: number
       fontSize: number
       /** A highlight's rectangles, one per covered line; empty when its words are not bound. */
       wordBoxes: Box[]
@@ -149,7 +150,12 @@ export function buildStampItems(input: StampInput): StampItem[] {
     if (!selected.has(layerKey({ kind: a.layerKind, id: a.layerId }))) continue
     const dept = a.layerKind === 'department' ? departments.get(a.layerId) : undefined
     if (a.layerKind === 'department' && !dept) continue
-    const style = a.style as { colour?: unknown; strokeWidth?: unknown; fontSize?: unknown }
+    const style = a.style as {
+      colour?: unknown
+      strokeWidth?: unknown
+      fontSize?: unknown
+      opacity?: unknown
+    }
     const layerColour = dept?.colour ?? PERSONAL_LAYER_COLOUR
     const text = a.type === 'highlight' ? (a.anchor.text?.quote ?? '') : a.text
     const words = input.wordLayers.get(a.anchor.pageIndex)
@@ -163,6 +169,7 @@ export function buildStampItems(input: StampInput): StampItem[] {
       text,
       colour: typeof style.colour === 'string' ? style.colour : layerColour,
       strokeWidth: asNumber(style.strokeWidth) ?? DEFAULT_STROKE,
+      ...(asNumber(style.opacity) !== undefined ? { opacity: asNumber(style.opacity) } : {}),
       fontSize:
         asNumber(style.fontSize) ?? (a.type === 'stamp' ? DEFAULT_STAMP_FONT : DEFAULT_NOTE_FONT),
       wordBoxes:

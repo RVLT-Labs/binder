@@ -27,8 +27,9 @@ Moving: `update_annotation {annotationId, layer}` from personal to a department 
 | `ellipse` | `{w, h}` > 0 | optional | no | An ellipse in that box. |
 | `line` | `{dx, dy}` not both 0 | optional | no | From the anchor by the offset. |
 | `arrow` | `{dx, dy}` not both 0 | optional | no | The same, with the head at the end. |
+| `ink` | `{count, x0, y0, p0, ...}` | optional | no | Freehand stroke: 2 to 4096 samples, x/y offsets from the anchor and pressure p from 0 to 1. |
 
-`style` is `{colour?: "#RRGGBB", strokeWidth?: 0.5..12, fontSize?: 6..72}`; omitted values mean the layer colour, 1.5 pt, and 10 pt (12 pt for stamps). The personal layer's colour is grey `#6B7280`.
+`style` is `{colour?: "#RRGGBB", strokeWidth?: 0.5..12, fontSize?: 6..72, opacity?: 0.05..1}`; omitted values mean the layer colour, 1.5 pt, and 10 pt (12 pt for stamps). The personal layer's colour is grey `#6B7280`.
 
 Geometry is in points **relative to the anchor**, so a revision that moves the anchor moves the shape with it.
 
@@ -69,4 +70,4 @@ Annotations re-anchor like cues: a highlight by its quote, everything else by pa
 
 Annotations print when the export includes their layer and `includeAnnotations` is true (the default). Your personal layer prints only when you list `personal` in `layers`, which makes the export private to you. Nobody can print another member's personal layer.
 
-Not possible: freehand ink. There is no stroke or path type; use `line`, `arrow`, `rect`, `ellipse`, `highlight`, `note` and `stamp`.
+Freehand ink uses `type: "ink"`. Every point supplies numeric x/y offsets (within ±14400 points) and pressure p (0..1); `count` must exactly match the samples. Ink with `style.opacity` draws as a constant-width translucent highlighter; omit opacity for pressure-sensitive pen strokes. The iPad creates these on the caller's personal layer.

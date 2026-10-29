@@ -434,3 +434,23 @@ test('markOf treats a missing mark as underline and isCaretMark is line and poin
   expect(isCaretMark('underline')).toBe(false)
   expect(isCaretMark('highlight')).toBe(false)
 })
+
+test('ink geometry validates point count, pressure, coordinates, and exact point keys', () => {
+  const geometry = { count: 2, x0: 0, y0: 0, p0: 0.5, x1: 20, y1: -10, p1: 1 }
+  expect(
+    annotationFieldsSchema('create').safeParse({ ...ann, type: 'ink', text: '', geometry }).success,
+  ).toBe(true)
+  for (const change of [
+    { count: 1 },
+    { count: 4097 },
+    { x1: Infinity },
+    { p1: 1.1 },
+    { x1: 14401 },
+    { extra: 1 },
+    { count: 2.5 },
+  ]) {
+    expect(geometrySchema('ink').safeParse({ ...geometry, ...change }).success).toBe(false)
+  }
+  const { p1, ...missing } = geometry
+  expect(geometrySchema('ink').safeParse(missing).success).toBe(false)
+})

@@ -373,7 +373,7 @@ With a collision (an unplaced `12` and a renumbered cue that landed on `12`):
 
 ## Annotations
 
-An annotation is `{id, showId, layerKind, layerId, layer, anchor, type, geometry, text, style, createdAt, updatedAt, updatedBy}`; `layer` is the layer key (`department:<id>` or `personal:<userId>`). Types: `note`, `rect`, `ellipse`, `line`, `arrow`, `stamp`, `highlight`. See [annotations.md](annotations.md).
+An annotation is `{id, showId, layerKind, layerId, layer, anchor, type, geometry, text, style, createdAt, updatedAt, updatedBy}`; `layer` is the layer key (`department:<id>` or `personal:<userId>`). Types: `note`, `rect`, `ellipse`, `line`, `arrow`, `stamp`, `highlight`, `ink`. See [annotations.md](annotations.md).
 
 Layer arguments accept `personal` (your own layer), a department code or id, or a layer key.
 
@@ -408,9 +408,9 @@ Hints: write. Your personal layer, or a department layer you can edit.
 | `layer` | layer ref | yes | |
 | `type` | annotation type | yes | |
 | `anchor` | `{documentId, pageIndex, x, y, text?}` | yes | On the current version. `text: {quote (1..400), wordStart, wordEnd}` is required for a `highlight` (inclusive word indices on that page, from `get_page` or `search_script`). |
-| `geometry` | object | for shapes | `rect`/`ellipse`: `{w, h}` both > 0 (anchor is the bottom-left corner). `line`/`arrow`: `{dx, dy}` not both 0 (anchor is the start). Others: `{}`. |
+| `geometry` | object | for shapes | `rect`/`ellipse`: `{w, h}` both > 0 (anchor is the bottom-left corner). `line`/`arrow`: `{dx, dy}` not both 0 (anchor is the start). `ink`: `{count, x0, y0, p0, ...}` with 2 to 4096 samples, x/y offsets within ±14400 and pressure p from 0 to 1. Others: `{}`. |
 | `text` | string ≤2000 | for note, stamp | A `note` needs text; a `stamp` 1 to 40 characters (the show's `stampSet` lists the usual choices). |
-| `style` | object | no | `{colour: #RRGGBB, strokeWidth: 0.5..12, fontSize: 6..72}`, each optional. |
+| `style` | object | no | `{colour: #RRGGBB, strokeWidth: 0.5..12, fontSize: 6..72, opacity: 0.05..1}`, each optional. Ink opacity selects a translucent highlighter. |
 
 Returns the annotation. Errors: `invalid: text: a note needs text`, `invalid: text: a stamp needs 1 to 40 characters`, `invalid: anchor: a highlight needs anchor text`, `invalid: geometry.w: Invalid input: expected number, received undefined; …`, `invalid: anchor pageIndex N is beyond the P pages`, `forbidden: a personal annotation goes on your own personal layer`, `forbidden: you cannot edit this layer`.
 

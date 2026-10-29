@@ -43,7 +43,7 @@ export interface ShapeAnnotation {
   }
   geometry: Record<string, number>
   text: string
-  style: { colour?: string; strokeWidth?: number; fontSize?: number }
+  style: { colour?: string; strokeWidth?: number; fontSize?: number; opacity?: number }
 }
 
 /** A local annotation row as the shape draws it. */
@@ -310,6 +310,51 @@ function drawHighlight(a: ShapeAnnotation, colour: string, words: WordLayer | nu
 function draw(a: ShapeAnnotation, colour: string, words: WordLayer | null): Drawn {
   const sw = a.style.strokeWidth ?? DEFAULT_STROKE
   switch (a.type) {
+    case 'ink': {
+      const points = Array.from({ length: Math.min(a.geometry.count ?? 0, 4096) }, (_, i) => ({
+        x: a.anchor.x + num(a.geometry, `x${i}`),
+        y: a.anchor.y + num(a.geometry, `y${i}`),
+        p: num(a.geometry, `p${i}`),
+      }))
+      const xs = points.map((p) => p.x),
+        ys = points.map((p) => p.y)
+      return {
+        box: {
+          x: Math.min(...xs),
+          y: Math.min(...ys),
+          w: Math.max(...xs) - Math.min(...xs),
+          h: Math.max(...ys) - Math.min(...ys),
+        },
+        body: (
+          <g className="annotation-ink" opacity={a.style.opacity}>
+            {a.style.opacity !== undefined ? (
+              <polyline
+                points={points.map((p) => `${p.x},${p.y}`).join(' ')}
+                fill="none"
+                stroke={colour}
+                strokeWidth={sw}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : (
+              points.slice(1).map((p, i) => (
+                <line
+                  // biome-ignore lint/suspicious/noArrayIndexKey: segments are ordered samples of one immutable stroke
+                  key={i}
+                  x1={points[i].x}
+                  y1={points[i].y}
+                  x2={p.x}
+                  y2={p.y}
+                  stroke={colour}
+                  strokeWidth={sw * (0.4 + (p.p + points[i].p) * 0.6)}
+                  strokeLinecap="round"
+                />
+              ))
+            )}
+          </g>
+        ),
+      }
+    }
     case 'rect':
     case 'ellipse':
       return drawRect(a, colour, sw)

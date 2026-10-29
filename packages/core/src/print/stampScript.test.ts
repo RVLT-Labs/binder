@@ -873,3 +873,80 @@ describe('connector style', () => {
     expect(content).toMatch(/1\.5 w/)
   })
 })
+
+test('ink exports in page coordinates with pressure-adjusted stroke widths', async () => {
+  const src = await PDFDocument.create()
+  src.addPage([600, 800])
+  const out = await stampScript(
+    await src.save(),
+    [
+      {
+        kind: 'annotation',
+        pageIndex: 0,
+        type: 'ink',
+        x: 100,
+        y: 200,
+        geometry: {
+          count: 3,
+          x0: 0,
+          y0: 0,
+          p0: 0.5,
+          x1: 20,
+          y1: 10,
+          p1: 0.5,
+          x2: 30,
+          y2: -10,
+          p2: 1,
+        },
+        text: '',
+        colour: '#C43732',
+        strokeWidth: 2,
+        fontSize: 12,
+        wordBoxes: [],
+      },
+    ],
+    footer,
+  )
+  const content = (await pdfContent(out))[0] ?? ''
+  expect(content).toContain('100 200 m')
+  expect(content).toContain('120 210 l')
+  expect(content).toContain('130 190 l')
+  expect(content).toContain('2 w')
+  expect(content).toContain('2.5999999999999996 w')
+})
+
+test('Pencil highlighter exports one translucent multiply-blended path', async () => {
+  const src = await PDFDocument.create()
+  src.addPage([600, 800])
+  const out = await stampScript(
+    await src.save(),
+    [
+      {
+        kind: 'annotation',
+        pageIndex: 0,
+        type: 'ink',
+        x: 100,
+        y: 200,
+        geometry: { count: 2, x0: 0, y0: 0, p0: 0.5, x1: 20, y1: 10, p1: 0.5 },
+        text: '',
+        colour: '#E9B72F',
+        strokeWidth: 12,
+        opacity: 0.3,
+        fontSize: 12,
+        wordBoxes: [],
+      },
+    ],
+    footer,
+  )
+  const content = (await pdfContent(out))[0] ?? ''
+  expect(content).toContain('100 -200 m')
+  expect(content).toContain('120 -210 l')
+  const doc = await PDFDocument.load(out)
+  const resources = doc.getPage(0).node.Resources()?.lookup(PDFName.of('ExtGState'), PDFDict)
+  expect(resources).toBeTruthy()
+  const state = resources
+    ?.values()
+    .map((value) => doc.context.lookup(value, PDFDict))
+    .find((value) => value.get(PDFName.of('BM'))?.toString() === '/Multiply')
+  expect(state?.get(PDFName.of('CA'))?.toString()).toBe('0.3')
+})

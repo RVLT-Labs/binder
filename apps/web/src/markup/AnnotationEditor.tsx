@@ -63,7 +63,7 @@ export function AnnotationEditor({ annotationId, onDone }: AnnotationEditorProps
   const layers = [layer, ...choices.filter((l) => layerKey(l) !== layerKey(layer))]
   const sortedLayers = choices.some((l) => layerKey(l) === layerKey(layer)) ? choices : layers
   const layerColour = session.layerColour(layer)
-  const hasStroke = ['rect', 'ellipse', 'line', 'arrow', 'stamp'].includes(a.type)
+  const hasStroke = ['rect', 'ellipse', 'line', 'arrow', 'stamp', 'ink'].includes(a.type)
   const hasFont = a.type === 'note' || a.type === 'stamp'
   const stamps = session.stamps.includes(a.text) ? session.stamps : [...session.stamps, a.text]
 

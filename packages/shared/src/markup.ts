@@ -79,7 +79,15 @@ export interface LayerRef {
   id: string
 }
 
-export type AnnotationType = 'note' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'highlight'
+export type AnnotationType =
+  | 'note'
+  | 'rect'
+  | 'ellipse'
+  | 'line'
+  | 'arrow'
+  | 'stamp'
+  | 'highlight'
+  | 'ink'
 
 const LAYER_KINDS: readonly LayerKind[] = ['department', 'personal']
 

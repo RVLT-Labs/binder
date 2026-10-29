@@ -6,3 +6,6 @@ import { magicLinkEnabled } from '../config'
 export const health = new Hono<AppEnv>().get('/health', (c) =>
   c.json({ ok: true, magicLink: magicLinkEnabled(c.var.deps.config) }),
 )
+
+// Additive feature discovery lets older native clients keep working across server updates.
+health.get('/capabilities', (c) => c.json({ ink: true }))

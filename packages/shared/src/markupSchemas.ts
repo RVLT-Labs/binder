@@ -67,7 +67,16 @@ export const cueFieldsSchema = z.object({
 })
 
 const MAX_POINTS = 14400
-const ANNOTATION_TYPES = ['note', 'rect', 'ellipse', 'line', 'arrow', 'stamp', 'highlight'] as const
+const ANNOTATION_TYPES = [
+  'note',
+  'rect',
+  'ellipse',
+  'line',
+  'arrow',
+  'stamp',
+  'highlight',
+  'ink',
+] as const
 
 /**
  * Geometry is relative to the anchor, in points (so re-anchoring moves a shape with its anchor).
@@ -76,6 +85,28 @@ const ANNOTATION_TYPES = ['note', 'rect', 'ellipse', 'line', 'arrow', 'stamp', '
  */
 export function geometrySchema(type: AnnotationType) {
   switch (type) {
+    case 'ink':
+      // Flat numeric geometry keeps ink compatible with existing storage and sync.
+      return z.record(z.string(), z.number().finite()).superRefine((g, ctx) => {
+        const n = g.count
+        if (!Number.isInteger(n) || n < 2 || n > 4096 || Object.keys(g).length !== 1 + n * 3) {
+          ctx.addIssue({ code: 'custom', message: 'ink needs 2 to 4096 points' })
+          return
+        }
+        for (let i = 0; i < n; i++) {
+          if (
+            !Number.isFinite(g[`x${i}`]) ||
+            Math.abs(g[`x${i}`]) > MAX_POINTS ||
+            !Number.isFinite(g[`y${i}`]) ||
+            Math.abs(g[`y${i}`]) > MAX_POINTS ||
+            !Number.isFinite(g[`p${i}`]) ||
+            g[`p${i}`] < 0 ||
+            g[`p${i}`] > 1
+          ) {
+            ctx.addIssue({ code: 'custom', message: 'invalid ink point' })
+          }
+        }
+      })
     case 'rect':
     case 'ellipse':
       return z.strictObject({
@@ -96,6 +127,7 @@ export function geometrySchema(type: AnnotationType) {
 }
 
 export const styleSchema = z.strictObject({
+  opacity: z.number().min(0.05).max(1).optional(),
   colour: z.string().regex(COLOUR_RE, 'must be a colour like #F5A623').optional(),
   strokeWidth: z.number().min(0.5).max(12).optional(),
   fontSize: z.number().min(6).max(72).optional(),

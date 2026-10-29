@@ -402,6 +402,28 @@ class DisplayedPage {
     })
   }
 
+  inkHighlight(
+    points: Array<[number, number]>,
+    colour: ReturnType<typeof rgb>,
+    width: number,
+    opacity: number,
+  ) {
+    const path = points
+      .map(([x, y], i) => {
+        const p = displayedToUser(this.frame, x, y)
+        return `${i === 0 ? 'M' : 'L'} ${p.x} ${-p.y}`
+      })
+      .join(' ')
+    this.page.drawSvgPath(path, {
+      x: 0,
+      y: 0,
+      borderColor: colour,
+      borderWidth: width,
+      borderOpacity: opacity,
+      blendMode: BlendMode.Multiply,
+    })
+  }
+
   /** A filled polygon through displayed points. */
   polygon(points: Array<[number, number]>, colour: ReturnType<typeof rgb>) {
     const [first, ...rest] = points.map(([x, y]) => displayedToUser(this.frame, x, y))
@@ -547,6 +569,30 @@ function drawAnnotation(d: DisplayedPage, item: Extract<StampItem, { kind: 'anno
   const sw = item.strokeWidth
   const num = (key: string) => Number(g[key]) || 0
   switch (item.type) {
+    case 'ink':
+      if (item.opacity !== undefined) {
+        d.inkHighlight(
+          Array.from({ length: Math.min(num('count'), 4096) }, (_, i) => [
+            x + num(`x${i}`),
+            y + num(`y${i}`),
+          ]),
+          colour,
+          sw,
+          item.opacity,
+        )
+        return
+      }
+      for (let i = 1; i < Math.min(num('count'), 4096); i++) {
+        d.line(
+          x + num(`x${i - 1}`),
+          y + num(`y${i - 1}`),
+          x + num(`x${i}`),
+          y + num(`y${i}`),
+          colour,
+          sw * (0.4 + (num(`p${i - 1}`) + num(`p${i}`)) * 0.6),
+        )
+      }
+      return
     case 'rect':
       d.rect(x, y, num('w'), num('h'), { stroke: colour, strokeWidth: sw })
       return
